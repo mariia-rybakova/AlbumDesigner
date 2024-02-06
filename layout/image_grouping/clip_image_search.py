@@ -1,37 +1,26 @@
 import os
-import json
 import pickle
 import shutil
 
 import clip
+from clip import tokenize
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
-import pandas as pd
 from PIL import Image
-import psycopg2 as psy
-from sqlalchemy import create_engine
+
 import torch
 from tqdm import tqdm
+from utils import hparams as hp
+from utils.define_sim_threshold import define_threshold
+from utils.get_story_sequence import get_tag_list
+from utils.last_keywords import keywords
 
-from clip_train.clip_inference.clip_preprocess import preprocess, tokenize
-from image_tagging.clip_image_search.define_sim_threshold import define_threshold
-from image_tagging.clip_image_search.get_key_words import get_tag_list
-from image_tagging.clip_image_search.last_keywords import keywords
-from image_tagging.hparams import Parameters as hp
-from image_tagging.utils.files_utils import get_file_names
-from image_tagging.utils.plot_utils import plot_images
+from utils.get_file_name import get_file_names
+from utils.plot_utils import plot_images
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-tag_queries_table = 'keyword_queries'
-# device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-device = 'cpu'
 
-with open(hp.db_engine_file, 'r') as f:
-    db_engine_query = f.readline()
-db_engine = create_engine(db_engine_query)
-db_connection = db_engine.connect()
-
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
 class ImageSearch:
 
@@ -46,43 +35,21 @@ class ImageSearch:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         if device == 'cpu':
             self.model.float()
-        # load torchscript models if exits
-        if img_pt_model_path and txt_pt_model_path:
-            self.image_encoder = torch.jit.load(img_pt_model_path)
-            self.text_encoder = torch.jit.load(txt_pt_model_path)
-            self.use_torchscript = True
-        else:
-            self.use_torchscript = False
         self.tag_features = {}
         self.image_features = None
         self.tag_similarities = {}
         self.sorted_images = {}
 
-    @staticmethod
-    def create_queries(tag: str) -> list:
-        queries = ['An image of {}'.format(tag.lower()), ]
-        return queries
 
     def comp_tag_features(self, tag: str) -> np.array:
-        tag = tag.replace("'", "")
-        queries_df = pd.read_sql("SELECT query FROM {} WHERE tag='{}';".format(tag_queries_table, tag), db_connection)
-        if not queries_df.empty:
-            queries = list(queries_df['query'])
-        else:
-            queries = self.create_queries(tag)
-        print('QUERIES', queries)
-        # print('Queries: ', queries)
-        # text_tokens = clip.tokenize(queries).to(device)
+        queries_df = dict()
+        queries = list(queries_df['query'])
         text_tokens = tokenize(queries)
-        if not self.use_torchscript:
-            with torch.no_grad():
-                text_features = self.model.encode_text(text_tokens).float()
-            text_features /= text_features.norm(dim=1, keepdim=True)
-            return text_features.cpu().numpy()
-        else:
-            text_features = self.text_encoder(text_tokens)
-            print('text_features shape', text_features.shape)
-            return text_features.cpu().detach().numpy()
+        with torch.no_grad():
+            text_features = self.model.encode_text(text_tokens).float()
+        text_features /= text_features.norm(dim=1, keepdim=True)
+        return text_features.cpu().numpy()
+
 
     def comp_tags_features(self):
         for tag in self.tags:
@@ -93,17 +60,13 @@ class ImageSearch:
         images = []
         for image_file in tqdm(self.image_paths[:]):
             image = Image.open(image_file).convert('RGB')
-            # images.append(self.preprocess(image))
             images.append(preprocess(image))
         image_input = torch.tensor(np.stack(images)).to(device)
-        if not self.use_torchscript:
-            with torch.no_grad():
-                self.image_features = self.model.encode_image(image_input).float()
-            self.image_features /= self.image_features.norm(dim=-1, keepdim=True)
-            self.image_features = self.image_features.cpu().numpy()
-        else:
-            self.image_features = self.image_encoder(image_input)
-            self.image_features = self.image_features.cpu().detach().numpy()
+        with torch.no_grad():
+            self.image_features = self.model.encode_image(image_input).float()
+        self.image_features /= self.image_features.norm(dim=-1, keepdim=True)
+        self.image_features = self.image_features.cpu().numpy()
+
 
     def comp_tag_similarity(self, tag):
         similarity = self.tag_features[tag] @ self.image_features.T
