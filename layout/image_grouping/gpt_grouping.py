@@ -50,7 +50,7 @@ def process_img(image_path):
 
     return encode_image(image_path), resized_image_size_bytes
 
-
+#"text": "Given the following images, generate a narrative story based on these images, then each part of the generated narrative group images by each part of the sequence, and describe based on what you grouped the images, for example 100 images we grouped them to 4 groups, image 1,5,7 are representing 'wedding ceremony' part of narrative, image 8,9,10 for part 'wedding dancing', last part of narrative 'they lived happily together' image 7,9,10."
 def get_response(encoded_image_list):
 
     headers = {
@@ -61,7 +61,7 @@ def get_response(encoded_image_list):
     contents = [
     {
         "type": "text",
-        "text": "Given the following images, generate a narrative story based on these images, then each part of the generated narrative group images by each part of the sequence, and describe based on what you grouped the images, for example 100 images we grouped them to 4 groups, image 1,5,7 are representing 'wedding ceremony' part of narrative, image 8,9,10 for part 'wedding dancing', last part of narrative 'they lived happily together' image 7,9,10."
+        "text": "group the following images into groups each group has 3 or 4 images based on the content and color"
     }
 ]
 
@@ -77,14 +77,18 @@ def get_response(encoded_image_list):
         "model": "gpt-4-vision-preview",
         "messages": [{
             "role": "user",
-            "content": contents
-        }],
+            "content": contents,
+
+        }, { "role": "assistant", "content": 'In order to group these images effectively, I will group them considering both content and' }, {"role": "assistant", "content":"color similarities. Here's a possible grouping based on these criteria:\n\nGroup 1 (Images with predominantly green and natural background):\n- Image showing three individuals in suits standing in front of greenery.\n- Image showing two individuals, one in a bridal dress and one in a suit, standing in a forested area.\n- Image showing a couple on a wooden dock with green trees and a blue sky in the background.\n\nGroup 2 (Images with bright, airy indoor or outdoor settings with a focus on bridal attire):\n- Image of an individual in a white robe with a bright interior background.\n- Image of two individuals, one in a wedding dress and the other in a suit, standing inside with a white wall and stairs in the background.\n- Image of a couple on a beach, with one individual in a wedding dress and the other in a suit, in a black and white photo.\n- Image of a couple on the wooden dock where both individuals are smiling and facing each other, with a light and natural color palette.\n\nGroup 3 (Images with a focus on formal group settings):\n- Image showing a large group of people gathered on steps outside a building, many wearing formal attire.\n- Image showing two children in white dresses and others walking in a procession inside a building with blue accents on their clothing.\n\nThe images that do not fit neatly into the above three groups due to differing elements (such as setting or number of people) may either form their own group or be considered separately if no other images match their characteristics. In this case, the remaining image would be:\n\nGroup 4 (Images that are unique in content and do not form a group with others):\n- Image showing an individual in a bridal dress with an individual in a suit, standing together indoors with a hint of greenery in the background.\n\nThese groups are somewhat flexible and subject to interpretation, but these categorizations should provide a coherent way to organize the images by similar content and color themes"},
+            {"role":"user", "content":[{"type":"text", "text":"can you give me the images numbers for each group "}]}],
+        "max_tokens": 1000,
 
     }
 
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     if response.status_code == 200:
          print(response.json())
+         print(response.json().choices[0].message['content'])
     else:
         print("Error:", response.status_code, response.json())
 
