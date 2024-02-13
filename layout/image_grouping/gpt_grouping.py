@@ -55,7 +55,7 @@ def process_img(image_path):
 
 
 #"text": "Given the following images, generate a narrative story based on these images, then each part of the generated narrative group images by each part of the sequence, and describe based on what you grouped the images, for example 100 images we grouped them to 4 groups, image 1,5,7 are representing 'wedding ceremony' part of narrative, image 8,9,10 for part 'wedding dancing', last part of narrative 'they lived happily together' image 7,9,10."
-def get_response(encoded_image_list,image_names):
+def get_response(encoded_image_list,image_names,porject_id):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
@@ -97,15 +97,15 @@ def get_response(encoded_image_list,image_names):
          print(response.json())
          result = response.json()
          result = result['choices'][0]['message']['content']
-         save_to_file(result, "./files/response.txt")
+         save_to_file(result, f"./{porject_id}_response.txt")
     else:
         print("Error:", response.status_code, response.json())
 
 
 if __name__ == "__main__":
     print("Uploading images...")
-    porject_id ='27807822'
-    dir = '../../datasets/selected_imges/selected_imges/27807822'
+    porject_id ='27314637'
+    dir = '../../datasets/selected_imges/selected_imges/27314637'
     encoded_imges_list = []
     image_names= []
     total_resized_image_size_bytes = 0
@@ -128,22 +128,25 @@ if __name__ == "__main__":
         os.makedirs(save_folder, exist_ok=True)
         create_folders_and_move_images(dir,save_folder,ground_truth)
         start_time = time.time()
-        #get_response(encoded_imges_list, image_names)
+        get_response(encoded_imges_list, image_names,porject_id)
         end_time = time.time()
         response_time = end_time - start_time
         print("Response time:", response_time, "seconds")
 
-        filename = "./response.txt"
-        saved_text = read_from_file(filename)
-        print("Text read from", filename, ":", saved_text)
-        predicted_dict = extract_dict_from_text(saved_text)
-        if predicted_dict is not None:
-            print("Extracted dictionary:", predicted_dict)
-            destination_folder = os.path.join("./gpt_grouping_results",porject_id)
-            os.makedirs(destination_folder, exist_ok=True)
-            organize_images_by_category(dir,destination_folder, predicted_dict)
-            print("Rand Index:", rand_index(ground_truth, predicted_dict))
+        filename = f"./{porject_id}_response.txt"
+        if not os.path.exists(filename):
+            print(f"File {filename} doesnt exists!")
         else:
-            print("No dictionary found in the provided text.")
+            saved_text = read_from_file(filename)
+            print("Text read from", filename, ":", saved_text)
+            predicted_dict = extract_dict_from_text(saved_text)
+            if predicted_dict is not None:
+                print("Extracted dictionary:", predicted_dict)
+                destination_folder = os.path.join("./gpt_grouping_results",porject_id)
+                os.makedirs(destination_folder, exist_ok=True)
+                organize_images_by_category(dir,destination_folder, predicted_dict)
+                print("Rand Index:", rand_index(ground_truth, predicted_dict))
+            else:
+                print("No dictionary found in the provided text.")
 
 

@@ -58,7 +58,7 @@ def create_folders_and_move_images(imgs_folder,destination_dir, organized_dict):
             if os.path.exists(image_path):
                 destination = os.path.join(folder_path, os.path.basename(image_name))
                 shutil.copy(image_path, destination)
-                print(f"Moved {image_name} to {spread} folder.")
+                print(f"Copied {image_name} to {spread} folder.")
             else:
                 print(f"Image {image_name} not found.")
 
