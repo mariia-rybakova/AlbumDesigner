@@ -25,7 +25,7 @@ def read_mongoextjson_file(filename):
         return data
 
 # Read images ids and spreads number of gallery for the albumn and order of images
-galleries = [23320463,26065526,27314637,27807822]
+galleries = [30246437,30430170,30518750,30127105]
 for gallery_id in galleries:
     if not os.path.exists(f'json_files/{gallery_id}.json'):
         print("Json file for {gallery_id} is not exists!")

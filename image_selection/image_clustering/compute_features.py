@@ -6,8 +6,8 @@ from PIL import Image
 import torch
 from torchvision import models, transforms
 
-from autoencoder.pretrained_autoencoder import Encoder as PretrainedEncoder
-from autoencoder.conv_autoencoder import Autoencoder, Decoder, Encoder
+from image_selection.autoencoder.pretrained_autoencoder import Encoder as PretrainedEncoder
+from image_selection.autoencoder.conv_autoencoder import Autoencoder, Decoder, Encoder
 
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -251,5 +251,5 @@ def run_encoder():
     res = model.encode_image(inputs.to(device))
 
 
-if __name__ == '__main__':
-    run_trunc_encoder()
+# if __name__ == '__main__':
+#     run_trunc_encoder()

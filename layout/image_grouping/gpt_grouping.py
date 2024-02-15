@@ -55,7 +55,7 @@ def process_img(image_path):
 
 
 #"text": "Given the following images, generate a narrative story based on these images, then each part of the generated narrative group images by each part of the sequence, and describe based on what you grouped the images, for example 100 images we grouped them to 4 groups, image 1,5,7 are representing 'wedding ceremony' part of narrative, image 8,9,10 for part 'wedding dancing', last part of narrative 'they lived happily together' image 7,9,10."
-def get_response(encoded_image_list,image_names,porject_id):
+def get_response(encoded_image_list,image_names,ground_truth,porject_id):
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
@@ -81,7 +81,8 @@ def get_response(encoded_image_list,image_names,porject_id):
         "messages": [{
             "role": "user",
             "content": contents,
-        }],
+        },{"role":"assistant", "content":"Based on the details you\'ve provided and the images shared, I will arrange the images in a sequence that represents the wedding day\'s timeline while adhering to the confidentiality guidelines. Here is a logical and visually appealing sequence for the wedding album:\\n\\n```\\n{\\n  \'full_cover_image\': [\'7629309260_S9_O11.jpg\'],  # Because it\'s a beautiful and focused shot of the bride, good for cover\\n  \'preparing_before_wedding\': [\\n    \'7628839964_S3_O26.jpg\',  # Image of bride getting ready\\n    \'7628962709_S5_O3.jpg\',  # Groom and groomsmen\\n    \'7629309258_S9_O10.jpg\',  # Shoes, a detail commonly associated with preparation\\n    \'7629457106_S12_O21.jpg\'  # Bridesmaids getting ready\\n  ],\\n  \'photoshoot_between_bride_and_groom\': [\\n    \'7629016252_S5_O2.jpg\',  # A personal moment between the couple\\n    \'7629016259_S5_O4.jpg\',  # Another intimate moment in a serene setting\\n    \'7629108465_S7_O31.jpg\',  # A photo with a scenic background\\n    \'7629058684_S6_O6.jpg\'  # A black and white image that adds variety to the photoshoot section\\n  ],\\n  \'walking_down_the_aisle\': [\\n    \'7629309239_S9_O12.jpg\',  # Beginning of the aisle walk\\n    \'7629058687_S6_O7.jpg\',  # Continued aisle walk\\n    \'7629457139_S11_O19.jpg\'  # Bride walking with her father\\n  ],\\n  \'wedding_ceremony\': [\\n    \'7629431696_S11_O17.jpg\',  # Rings exchange\\n    \'7629058688_S6_O5.jpg\',  # First kiss as a married couple\\n    \'7629168556_S8_O9.jpg\'  # Ceremony setting showing guests and the couple\\n  ],\\n  \'photosession_for_bride_and_groom\': [\\n    \'7628840029_S3_O25.jpg\',  # Bride and groom in a different setting\\n    \'7628962657_S4_O23.jpg\',  # Candid couple moment\\n    \'7629079278_S7_O35.jpg\'  # Smiling couple in the photo\\n  ],\\n  \'reception\': [\\n    \'7629502243_S12_O20.jpg\',  # Wedding cake\\n    \'7629079285_S7_O32.jpg\',  # Reception hall interior\\n    \'7629375720_S10_O15.jpg\'  # A toast by the couple\\n  ],\\n  \'family_gathering_and_dancing_night\': [\\n    \'7629502277_S12_O23.jpg\',  # Group photo on the stairs\\n    \'7629502284_S12_O20.jpg\',  # Dancing moment\\n    \'7629309239_S9_O12.jpg\',  # Toast at the table\\n    \'7629457106_S12_O21.jpg\'  # Bride dancing with groom\\n  ],\\n  \'bride_and_groom_with_beautiful_background\': [\\n    \'7629016313_S2_O1.jpg\',  # Stunning backdrop with the couple\\n    \'7629168556_S8_O9.jpg\',  # Couple at the dock during sunset\\n    \'7629375748_S10_O14.jpg\'  # Couple with a scenic view\\n  ]\\n}\\n```\\n\\nPlease note that the sequence is designed to tell the story of a wedding day from preparations to the final celebration, in line with traditional Western wedding album layouts. The image IDs are placeholders based on your provided scenario and may not correspond to the actual image files."},
+            {"role":"user", "content":f"if the client designed the album as the following dict which spread is a page of album and image list names are related to the same image names and images I provided in the previous question,{ground_truth},write steps on how to create a beautiful album that the client would also like using AI models, tools and how to cluster the images into groups (spreads) to create an album? type down methods,tools ,or models names to do that!"}],
         "max_tokens": 2000,
 
     }
@@ -104,8 +105,8 @@ def get_response(encoded_image_list,image_names,porject_id):
 
 if __name__ == "__main__":
     print("Uploading images...")
-    porject_id ='27314637'
-    dir = '../../datasets/selected_imges/selected_imges/27314637'
+    porject_id ='27807822'
+    dir = '../../datasets/selected_imges/selected_imges/27807822'
     encoded_imges_list = []
     image_names= []
     total_resized_image_size_bytes = 0
@@ -128,7 +129,7 @@ if __name__ == "__main__":
         os.makedirs(save_folder, exist_ok=True)
         create_folders_and_move_images(dir,save_folder,ground_truth)
         start_time = time.time()
-        get_response(encoded_imges_list, image_names,porject_id)
+        get_response(encoded_imges_list, image_names,ground_truth,porject_id)
         end_time = time.time()
         response_time = end_time - start_time
         print("Response time:", response_time, "seconds")

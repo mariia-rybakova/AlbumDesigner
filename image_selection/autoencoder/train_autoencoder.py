@@ -10,7 +10,7 @@ from torchvision import transforms as T
 from tqdm import tqdm
 
 from .conv_autoencoder import Autoencoder, Decoder, Encoder
-from utils.files_utils import get_file_names
+from image_selection.utils.files_utils import get_file_names
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 random.seed(0)

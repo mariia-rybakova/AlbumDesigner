@@ -20,18 +20,14 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, normalize
 import torch
 from tqdm import tqdm
 
-import sys
-# caution: path[0] is reserved for script path (or '' in REPL)
-sys.path.insert(1, 'image-selection/utils')
-sys.path.insert(1, 'image-selection/clip_context_classification')
-
-from clip_context_classification.category_queries import category_queries
-from clip_context_classification.classify_context import ImageContext
-from .compute_features import load_resnet101, load_resnet152, load_trained_encoder, \
+from image_selection.clip_context_classification.category_queries import category_queries
+from image_selection.clip_context_classification.classify_context import ImageContext
+from compute_features import load_resnet101, load_resnet152, load_trained_encoder, \
     load_full_encoder, load_contrastive_encoder, load_trunk_encoder
-from .color_features import ColorDescriptor
-from utils.files_utils import get_file_paths
-from utils.plot_utils import plot_images
+from color_features import ColorDescriptor
+from image_selection.utils.files_utils import get_file_paths
+from image_selection.utils.plot_utils import plot_images
+
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -57,6 +53,8 @@ class ImageSimCalculator:
         # define image encoder
         if image_encoder == 'CLIP_ViT-B/32':
             self.model, self.preprocess = clip.load('ViT-B/32', device, jit=False)
+            checkpoint = torch.load('../../models/clip_model_v1.pt')
+            self.model.load_state_dict(checkpoint['model_state_dict'])
         elif image_encoder == 'Resnet101':
             self.model, self.preprocess = load_resnet101()
         elif image_encoder == 'Resnet152':
@@ -361,7 +359,7 @@ def run():
     # image_dir = 'H:/Data/pic_time/Photos/Mila_initial_photos/photos'
     # image_dir = 'H:/Data/pic_time/Photos/Imagesets/photos/110'
     gallery_num = 27807822
-    image_dir = './datasets/selected_imges/{}'.format(gallery_num)
+    image_dir = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\{}'.format(gallery_num)
     cluster_path = '../results/ordered_clustered_images/{}.pdf'.format(gallery_num)
     csv_path = '../results/ordered_clustered_images/{}.csv'.format(gallery_num)
     image_paths = list(get_file_paths(image_dir))
