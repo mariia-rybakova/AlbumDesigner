@@ -20,11 +20,16 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, normalize
 import torch
 from tqdm import tqdm
 
+import sys
+# caution: path[0] is reserved for script path (or '' in REPL)
+sys.path.insert(1, 'image-selection/utils')
+sys.path.insert(1, 'image-selection/clip_context_classification')
+
 from clip_context_classification.category_queries import category_queries
 from clip_context_classification.classify_context import ImageContext
-from image_clustering.compute_features import load_resnet101, load_resnet152, load_trained_encoder, \
+from .compute_features import load_resnet101, load_resnet152, load_trained_encoder, \
     load_full_encoder, load_contrastive_encoder, load_trunk_encoder
-from image_clustering.color_features import ColorDescriptor
+from .color_features import ColorDescriptor
 from utils.files_utils import get_file_paths
 from utils.plot_utils import plot_images
 
@@ -355,10 +360,10 @@ def save_clusters_info(gallery_num, cluster_dict, cluster_context_dict, csv_path
 def run():
     # image_dir = 'H:/Data/pic_time/Photos/Mila_initial_photos/photos'
     # image_dir = 'H:/Data/pic_time/Photos/Imagesets/photos/110'
-    gallery_num = 33049458
-    image_dir = 'H:/Data/pic_time/ordered_images/photos_8/{}'.format(gallery_num)
-    cluster_path = 'h:/Projects/pic_time/results/ordered_images/clustered_images/{}.pdf'.format(gallery_num)
-    csv_path = 'h:/Projects/pic_time/results/ordered_images/clustered_images/{}.csv'.format(gallery_num)
+    gallery_num = 27807822
+    image_dir = './datasets/selected_imges/{}'.format(gallery_num)
+    cluster_path = '../results/ordered_clustered_images/{}.pdf'.format(gallery_num)
+    csv_path = '../results/ordered_clustered_images/{}.csv'.format(gallery_num)
     image_paths = list(get_file_paths(image_dir))
     image_paths = image_paths[:]
     max_plot_images = 40

@@ -9,7 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms as T
 from tqdm import tqdm
 
-from autoencoder.conv_autoencoder import Autoencoder, Decoder, Encoder
+from .conv_autoencoder import Autoencoder, Decoder, Encoder
 from utils.files_utils import get_file_names
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'

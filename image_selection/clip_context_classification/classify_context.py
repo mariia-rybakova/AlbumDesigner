@@ -8,7 +8,7 @@ from PIL import Image
 import torch
 from tqdm import tqdm
 
-from clip_context_classification.category_queries import category_queries as CAT_QUERIES
+from .category_queries import category_queries as CAT_QUERIES
 from utils.files_utils import get_file_paths
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
