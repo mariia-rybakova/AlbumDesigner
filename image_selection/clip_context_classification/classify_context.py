@@ -9,12 +9,13 @@ import torch
 from tqdm import tqdm
 import pandas as pd
 
-from category_queries import category_queries as CAT_QUERIES
+from .category_queries import category_queries as CAT_QUERIES
 from image_selection.utils.files_utils import get_file_paths
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 CLIP_MODEL = 'ViT-B/32'
 
+"""This file Cluster the selected images based on content "Queries" Only and saved in csv file"""
 
 class ImageContext:
     def __init__(self, tags: list, clip_path: str = '',
@@ -188,8 +189,8 @@ def save_clusters_info(gallery_num, cluster_dict, csv_path):
 
 
 def run():
-    gallery_num = 27807822
-    image_dir = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\27807822'
+    gallery_num = 30127105
+    image_dir = f'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\{gallery_num}'
     cluster_path = '../results/ordered_clustered_images/{}.pdf'.format(gallery_num)
     csv_path = '../results/ordered_clustered_images/{}.csv'.format(gallery_num)
     image_paths = list(get_file_paths(image_dir))
@@ -206,9 +207,10 @@ def run():
               clustering_content[category] = []
           clustering_content[category].append((image_path[0],context[1]))
 
-    print(clustering_content)
-    save_clustered(clustering_content, cluster_path)
-    save_clusters_info(gallery_num, clustering_content, csv_path)
+    return clustering_content
+    # print(clustering_content)
+    # save_clustered(clustering_content, cluster_path)
+    # save_clusters_info(gallery_num, clustering_content, csv_path)
 
 
 if __name__ == '__main__':

@@ -360,8 +360,8 @@ def run():
     # image_dir = 'H:/Data/pic_time/Photos/Imagesets/photos/110'
     gallery_num = 27807822
     image_dir = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\{}'.format(gallery_num)
-    cluster_path = '../results/ordered_clustered_images/{}.pdf'.format(gallery_num)
-    csv_path = '../results/ordered_clustered_images/{}.csv'.format(gallery_num)
+    cluster_path = '../results/ordered_clustered_images/{}_features.pdf'.format(gallery_num)
+    csv_path = '../results/ordered_clustered_images/{}_features.csv'.format(gallery_num)
     image_paths = list(get_file_paths(image_dir))
     image_paths = image_paths[:]
     max_plot_images = 40
