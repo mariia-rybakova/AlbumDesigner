@@ -31,13 +31,13 @@ class ImageContext:
         self.tokenize = clip.tokenize
         if device == 'cpu':
             self.model.float()
-        self.tags_features = {}
         self.cat_queries = cat_queries
-        self.comp_tags_features()
+        self.i = None
+        self.image_tag_similarity = dict()
 
     def create_queries(self, tag: str) -> list:
-        if tag in self.cat_queries.keys():
-            queries = self.cat_queries[tag]
+        if tag in list(self.cat_queries[f'cluster_{self.i}'].keys()):
+            queries = self.cat_queries[f'cluster_{self.i}'][tag]
         else:
             queries = ['{}'.format(tag.lower()), ]
         return queries
@@ -50,12 +50,13 @@ class ImageContext:
         text_features /= text_features.norm(dim=1, keepdim=True)
         return text_features.cpu().numpy()
 
-    def comp_tags_features(self):
-        for tag in self.tags:
-            self.tags_features[tag] = self.comp_tag_features(tag)
+    def comp_tags_features(self,i):
+        tags_features = dict()
+        for tag in self.cat_queries[f'cluster_{i}']:
+            tags_features[tag] = self.comp_tag_features(tag)
+        return tags_features
 
     def comp_images_features(self, image_paths: list, batch_size: int = 64) -> np.array:
-        image_paths.sort()
         # images = []
         image_features = None
         for i in range(0, len(image_paths), batch_size):
@@ -78,10 +79,10 @@ class ImageContext:
                 image_features = np.concatenate((image_features, batch_image_features), axis=0)
         return image_features
 
-    def comp_tag_similarity(self, tag, image_features):
+    def comp_tag_similarity(self, tag, image_features,tags_features):
         # print('tag {} features shape'.format(tag), self.tags_features[tag].shape)
         # print('images features shape', image_features.shape)
-        similarity = self.tags_features[tag] @ image_features.T
+        similarity = tags_features[tag] @ image_features.T
         # maximum similarity by query
         max_query_similarity = np.max(similarity, axis=0)
         # mean similarity by image
@@ -92,7 +93,7 @@ class ImageContext:
     def define_category(category_similarities):
         return max(category_similarities, key=category_similarities.get)
 
-    def classify(self, image_paths: list) -> tuple:
+    def classify(self, image_paths: list, i:int) -> tuple:
         '''
         image_paths: list - list of image paths to classify context
         '''
@@ -100,11 +101,15 @@ class ImageContext:
         image_features = self.comp_images_features(image_paths)
         # print('Computing similarity ...')
         tags_similarities = {}
-        for tag in self.tags_features.keys():
-            tags_similarities[tag] = self.comp_tag_similarity(tag, image_features)
+        self.i = i
+        tags_features = self.comp_tags_features(i)
+
+        for tag in tags_features.keys():
+            tags_similarities[tag] = self.comp_tag_similarity(tag, image_features, tags_features)
         # pprint(tags_similarities)
         category = self.define_category(tags_similarities)
-        return category, tags_similarities[category]
+        self.image_tag_similarity[image_paths[0]] = tags_similarities
+        return category, tags_similarities[category], self.image_tag_similarity[image_paths[0]]
 
 
 def plot_images(score_list: list, title: str, n_row=4, n_col=5) -> plt.Figure:
@@ -212,20 +217,34 @@ def save_clusters_info(gallery_num, cluster_dict, csv_path):
     # save_clustered(clustering_content, cluster_path)
     # save_clusters_info(gallery_num, clustering_content, csv_path)
 
-def run(cluster_path,image_paths):
+def run(assigned_intervals,cluster_path):
     tags = list(CAT_QUERIES.keys())
-    if os.path.exists(cluster_path):
-        os.remove(cluster_path)
+    if not os.path.exists(cluster_path):
+        os.mkdir(cluster_path)
     image_context = ImageContext(tags,clip_path='C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\models\\clip_model_v1.pt')
     clustering_content = {}
-    for image_path in image_paths:
-          image_path = [image_path]
-          context = image_context.classify(image_path)
-          category = context[0]
-          if category not in clustering_content:
-              clustering_content[category] = []
-          clustering_content[category].append((image_path[0],context[1]))
-
+    categorey_images_score = {}
+    if len(assigned_intervals) > 100:
+        for i in range(0, 6):
+              images_interval = [image for image in assigned_intervals if image[2] == i ]
+              images_paths = [image[0] for image in  images_interval]
+              for i, image_path in enumerate(images_paths):
+                  context = image_context.classify(image_path, i)
+                  category = context[0]
+                  if category not in clustering_content:
+                      clustering_content[category] = []
+                  clustering_content[category].append((image_path,context[1],images_interval[i][1]))
+    else:
+        for i in range(0, 3):
+            images_interval = [image for image in assigned_intervals if image[2] == i]
+            images_paths = [image[0] for image in images_interval]
+            for j, image_path in enumerate(images_paths):
+                image_path_list = [image_path]
+                context = image_context.classify(image_path_list, i)
+                category = context[0]
+                categorey_images_score[image_path] = context[2]
+                if category not in clustering_content:
+                    clustering_content[category] = []
+                clustering_content[category].append((image_path, context[1], images_interval[j][1]))
+    print("CAT Score",categorey_images_score)
     return clustering_content
-# if __name__ == '__main__':
-#     run()

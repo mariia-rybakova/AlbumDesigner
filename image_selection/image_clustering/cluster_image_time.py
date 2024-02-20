@@ -79,7 +79,7 @@ def plot_images2(score_list: list, title: str, n_row=4, n_col=5) -> plt.Figure:
                     if type(score) == float:
                         img_title = '{} - {:,.4f}'.format(image_name, score)
                     else:
-                        img_title = '{} - \n score {}'.format(image_name, score)
+                        img_title = '{} - \n  {}'.format(image_name, score)
                 else:
                     image_path = score_list[img_num]
                     image_name = os.path.basename(image_path)[-25:]
@@ -109,7 +109,7 @@ def save_clustered(cluster_dict, res_path, n_row=4, n_col=5):
     pdf.close()
 
 def order_clustered_images_by_time(time_img_dict_conv,imges_labeled_dict):
-    cluster_df = pd.DataFrame(columns=['context', 'num_images', 'image_id', 'image_order'], )
+    cluster_df = pd.DataFrame(columns=['context', 'num_images', 'image_id', 'time'], )
     cluster_ordered_dict = {}
     for key, values in tqdm(imges_labeled_dict.items()):
         num_images = len(values)
@@ -124,7 +124,7 @@ def order_clustered_images_by_time(time_img_dict_conv,imges_labeled_dict):
                 cluster_df.loc[len(cluster_df)] = [key, num_images, img_id, time]
             cluster_ordered_dict[label] = sorted(ordered_images, key=lambda x: x[1])
 
-    cluster_df = cluster_df.sort_values(['image_order'], ascending=[False])
+    cluster_df = cluster_df.sort_values(['time'], ascending=[False])
     cluster_df = cluster_df.reset_index(drop=True)
     return cluster_ordered_dict, cluster_df
 
@@ -235,21 +235,22 @@ def reorganize_images_3(image_dict, images_labeled_dict):
 
 if __name__ == "__main__":
     # read csv file to get images with thier labels
-    gallery_num = 30127105
-    clustered_csv_path = f'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\image_selection\\results\\ordered_clustered_images\\{gallery_num}.csv'
-    image_dir = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\{}'.format(gallery_num)
-    cluster_path = '../results/ordered_clustered_images/{}_time.pdf'.format(gallery_num)
-    result_csv_path = '../results/ordered_clustered_images/{}_features.csv'.format(gallery_num)
-    # Get images path
-    image_paths = list(get_file_paths(image_dir))
-    # Get images Time
-    time_image_dict = create_time_image_dict( f'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\time_files\\{gallery_num}_times.txt')
-    # get images clustered by content
-    imges_labeled_dict = read_csv(clustered_csv_path)
-    time_img_dict_conv = compute_time(image_paths,time_image_dict)
+    # 27807822,30127105,27314637,26065526
+    for gallery_num in [27807822,30127105,27314637,26065526]:
+        clustered_csv_path = f'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\image_selection\\results\\ordered_clustered_images\\{gallery_num}.csv'
+        image_dir = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\{}'.format(gallery_num)
+        cluster_path = '../results/ordered_clustered_images/{}_time.pdf'.format(gallery_num)
+        result_csv_path = '../results/ordered_clustered_images/{}_features.csv'.format(gallery_num)
+        # Get images path
+        image_paths = list(get_file_paths(image_dir))
+        # Get images Time
+        time_image_dict = create_time_image_dict( f'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\time_files\\{gallery_num}_times.txt')
+        # get images clustered by content
+        imges_labeled_dict = read_csv(clustered_csv_path)
+        time_img_dict_conv = compute_time(image_paths,time_image_dict)
+        cluster_ordered_dict, cluster_df = order_clustered_images_by_time(time_img_dict_conv, imges_labeled_dict)
 
-    cluster_ordered_dict, cluster_df = order_clustered_images_by_time(time_img_dict_conv, imges_labeled_dict)
-    new_image_dict = reorganize_images_2(cluster_ordered_dict, imges_labeled_dict)
-    #new_image_dict, images_labeled_dict = reorganize_images_2(cluster_ordered_dict, imges_labeled_dict)
-    print(new_image_dict)
-    save_clustered(new_image_dict, cluster_path)
+        #new_image_dict, images_labeled_dict = reorganize_images(cluster_ordered_dict, imges_labeled_dict)
+        #new_image_dict, images_labeled_dict = reorganize_images_2(cluster_ordered_dict, imges_labeled_dict)
+        #print(new_image_dict)
+        save_clustered(cluster_ordered_dict, cluster_path)
