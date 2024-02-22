@@ -48,6 +48,28 @@ def read_csv(path):
 
     return imges_labeled
 
+def parse_date(date_string):
+    try:
+        # Attempt to parse the date with the first format
+        date_object = datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        try:
+            # If parsing with the first format fails, try the second format
+            date_object = datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%S.%fZ')
+        except ValueError:
+            # If both formats fail, return None or handle the error as needed
+            print("Error: Date format not recognized")
+            return None
+    return date_object
+
+def preprocess_timestamp(timestamp):
+    hour = timestamp.hour
+    if hour <= 7:
+        hour = timestamp.hour + 12
+
+    new_dt_obj = timestamp.replace(hour=hour)
+
+    return new_dt_obj
 
 
 def compute_time_features(image_paths):
@@ -62,7 +84,8 @@ def compute_time_features(image_paths):
             print('image name contains version', image_name)
             image_id = int(image_name.split('_')[0])
         time_list.append(time_image_dict[image_id])
-    time_list = [datetime.strptime(item, '%Y-%m-%dT%H:%M:%S.%fZ') for item in time_list]
+    time_list = [parse_date(item) for item in time_list]
+    time_list = [preprocess_timestamp(item) for item in time_list]
     time_list = [[(item.hour*60 + item.minute) for item in time_list]]
     time_arr = np.array(time_list)
     time_arr = StandardScaler().fit_transform(time_arr.reshape(-1, 1))

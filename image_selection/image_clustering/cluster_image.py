@@ -35,15 +35,37 @@ sns.set_theme()
 warnings.simplefilter('ignore')
 
 
-ORDERED_IMAGES_PATH = 'H:/Data/pic_time/ordered_images/export (6).csv'
-TIME_IMAGES_PATH = 'H:/Data/pic_time/ordered_images/times.txt'
+# ORDERED_IMAGES_PATH = 'H:/Data/pic_time/ordered_images/export (6).csv'
+TIME_IMAGES_PATH = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\time_files\\27807822_times.txt'
 
 
-def get_ordered_ids():
-    id_df = pd.read_csv(ORDERED_IMAGES_PATH, header=0)
-    ordered_ids = list(id_df['photo_id'].values)
-    return ordered_ids
+# def get_ordered_ids():
+#     id_df = pd.read_csv(ORDERED_IMAGES_PATH, header=0)
+#     ordered_ids = list(id_df['photo_id'].values)
+#     return ordered_ids
 
+def parse_date(date_string):
+    try:
+        # Attempt to parse the date with the first format
+        date_object = datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError:
+        try:
+            # If parsing with the first format fails, try the second format
+            date_object = datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%S.%fZ')
+        except ValueError:
+            # If both formats fail, return None or handle the error as needed
+            print("Error: Date format not recognized")
+            return None
+    return date_object
+
+def preprocess_timestamp(timestamp):
+    hour = timestamp.hour
+    if hour <= 7:
+        hour = timestamp.hour + 12
+
+    new_dt_obj = timestamp.replace(hour=hour)
+
+    return new_dt_obj
 
 class ImageSimCalculator:
     '''Class for computing similarity between images'''
@@ -188,11 +210,13 @@ class ImageSimCalculator:
             try:
                 image_id = int(image_name)
             except ValueError:
-                print('image name contains version', image_name)
+                #print('image name contains version', image_name)
+
                 image_id = int(image_name.split('_')[0])
             time_list.append(self.time_image_dict[image_id])
-        time_list = [datetime.strptime(item, '%Y-%m-%dT%H:%M:%SZ') for item in time_list]
-        time_list = [[(item.hour*60 + item.minute) for item in time_list]]
+        time_list = [parse_date(item) for item in time_list]
+        time_list = [preprocess_timestamp(item) for item in time_list]
+        time_list = [[(item.hour*60 + item.minute + item.second) for item in time_list]]
         time_arr = np.array(time_list)
         time_arr = StandardScaler().fit_transform(time_arr.reshape(-1, 1))
         return time_arr
@@ -244,7 +268,13 @@ class ImageSimCalculator:
         '''
         Iterative cluster images with increasing epsilon
         '''
-        n_cluster_items = 4
+        if len(image_paths) >= 100:
+            n_cluster_items = 50
+        elif len(image_paths) <= 50:
+            n_cluster_items = 12
+        else:
+            n_cluster_items = 20
+
         eps_step = 0.025
         full_cluster_dict = {}
         start_id = 0
@@ -253,6 +283,7 @@ class ImageSimCalculator:
             print('iteration {}, number of images for clustering {}'.format(iteration, len(rest_image_paths)))
             cluster_dict, cluster_labels = self.cluster(rest_image_paths, eps=eps,
                                                         metric=metric, n_components=n_components)
+            print(f'iteration {iteration} number of labels created {cluster_labels} with eps {eps}')
             rest_image_paths = []
             if (iteration + 1) < n_iterations:
                 for key, value in cluster_dict.items():
@@ -278,7 +309,6 @@ class ImageSimCalculator:
 
 def analyze_results(cluster_dict, cluster_context_dict, sort_by_cluster_size=False):
     print('Analyze clusters')
-    ordered_ids_set = set(get_ordered_ids())
     cluster_df = pd.DataFrame(columns=['cluster', 'num_images', 'num_ordered', 'context'], )
     cluster_ordered_dict = {}
     for key, values in tqdm(cluster_dict.items()):
@@ -287,13 +317,7 @@ def analyze_results(cluster_dict, cluster_context_dict, sort_by_cluster_size=Fal
         ordered_images = []
         for image_path in values:
             base_name = os.path.basename(image_path)
-            try:
-                image_id = int(base_name.split('.')[0])
-            except ValueError:
-                image_id = 0
-                print('image name {} is not converted to int'.format(base_name))
-            if image_id in ordered_ids_set:
-                ordered_images.append(image_path)
+            ordered_images.append(image_path)
         cluster_ordered_dict[key] = ordered_images
         num_ordered = len(ordered_images)
         cluster_df.loc[len(cluster_df)] = [key, num_images, num_ordered, cluster_context_dict[key]]
@@ -309,6 +333,7 @@ def classify_context(cluster_dict):
     cluster_context_dict = {}
     for label, image_paths in tqdm(cluster_dict.items()):
         context, sim = image_context.classify(image_paths)
+
         cluster_context_dict[label] = context
     return cluster_context_dict
 
@@ -356,14 +381,13 @@ def save_clusters_info(gallery_num, cluster_dict, cluster_context_dict, csv_path
 
 
 def run():
-    # image_dir = 'H:/Data/pic_time/Photos/Mila_initial_photos/photos'
-    # image_dir = 'H:/Data/pic_time/Photos/Imagesets/photos/110'
     gallery_num = 27807822
     image_dir = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesign_dev\\datasets\\selected_imges\\selected_imges\\{}'.format(gallery_num)
-    cluster_path = '../results/ordered_clustered_images/{}_features.pdf'.format(gallery_num)
-    csv_path = '../results/ordered_clustered_images/{}_features.csv'.format(gallery_num)
+    cluster_path = '../results/embedding/{}/{}_features.pdf'.format(gallery_num,gallery_num)
+    csv_path = '../results/embedding/{}/{}_features.csv'.format(gallery_num,gallery_num)
     image_paths = list(get_file_paths(image_dir))
     image_paths = image_paths[:]
+    os.makedirs(f'../results/embedding/{gallery_num}', exist_ok=True)
     max_plot_images = 40
 
     sim_calculator = ImageSimCalculator(image_encoder='CLIP_ViT-B/32',
@@ -371,11 +395,11 @@ def run():
                                         color_features=False,
                                         time_image_path=TIME_IMAGES_PATH,
                                         image_weight=1.0,
-                                        color_weight=1.0,
+                                        color_weight=0.0,
                                         num_reduced_image_fs=0,
-                                        seq_weight=0.05)
-    cluster_dict = sim_calculator.cluster_images(image_paths, eps=0.25, metric='cosine',
-                                                 n_components=50, n_iterations=8)
+                                        seq_weight=1.0)
+    cluster_dict = sim_calculator.cluster_images(image_paths, eps=0.5, metric='cosine',
+                                                 n_components=30, n_iterations=8)
     cluster_context_dict = classify_context(cluster_dict)
     cluster_ordered_dict, cluster_df = analyze_results(cluster_dict, cluster_context_dict)
     save_clustered(cluster_dict, cluster_ordered_dict, cluster_df, cluster_context_dict, cluster_path)
