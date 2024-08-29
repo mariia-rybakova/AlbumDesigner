@@ -1,5 +1,6 @@
-image-clustering.zip
 .idea/
 venv
-models
+servicelog.log
+__pycache__/
+
 
