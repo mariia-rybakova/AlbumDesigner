@@ -1,8 +1,0 @@
-results
-autoencoder/__pycache__/
-clip_context_classification/__pycache__/
-image_clustering/__pycache__/
-utils/__pycache__/
-LLaVa
-
-
