@@ -1,3 +1,7 @@
+from ptinfra.azure.pt_file import PTFile
+from utils.protos import PersonInfo_pb2 as person_vector
+
+
 def get_persons_ids(persons_file, images_dict={},logger=None):
     try:
         person_info_bytes = PTFile(persons_file)  # load file

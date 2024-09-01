@@ -1,3 +1,7 @@
+from ptinfra.azure.pt_file import PTFile
+from utils.protos import FaceVector_pb2 as face_vector
+
+
 def get_faces_info(faces_file, images_dict,logger=None):
     try:
         faces_info_bytes = PTFile(faces_file)  # load file

@@ -1,14 +1,10 @@
 import math
-import os
 import time
-import json
 import numpy as np
 import statistics
-import pickle
 import pandas as pd
 
-from config import DESIGN_PARAMS
-from utils  import get_photos_from_db, get_int_photo_id,generate_filtered_multi_spreads,add_ranking_score,load_layouts, load_layouts_coordinates, get_layouts_data, get_important_imgs, get_cover_img, get_cover_layout, get_general_times,generate_json_response, process_illegal_groups
+from utils import get_photos_from_db,generate_filtered_multi_spreads,add_ranking_score, get_layouts_data, get_important_imgs, get_cover_img, get_cover_layout,generate_json_response, process_illegal_groups
 from utils.clusters_labels import label_list
 
 
@@ -165,7 +161,7 @@ def map_cluster_label(cluster_label):
         return "Unknown"
 
 
-def create_AI_album(images_data_dict, layouts_df):
+def create_automatic_album(images_data_dict, layouts_df):
     # Start time
     start_time = time.time()
     data_df = pd.DataFrame.from_dict(images_data_dict, orient='index')
@@ -228,10 +224,10 @@ def create_AI_album(images_data_dict, layouts_df):
         return result, error
 
 
-if __name__ == '__main__':
-    layouts_file_path = r'C:\Users\karmel\Desktop\PicTime\Projects\AlbumDesigner\layouts.csv'
-    layouts_df = load_layouts(layouts_file_path)
-    with open("my_dict.pkl", "rb") as file:
-        loaded_dict = pickle.load(file)
-        # image_time  image_as image_orderInScene image_orientation scene_order
-    create_album_AI(loaded_dict, layouts_df)
+# if __name__ == '__main__':
+#     layouts_file_path = r'C:\Users\karmel\Desktop\PicTime\Projects\AlbumDesigner\layouts.csv'
+#     layouts_df = load_layouts(layouts_file_path)
+#     with open("my_dict.pkl", "rb") as file:
+#         loaded_dict = pickle.load(file)
+#         # image_time  image_as image_orderInScene image_orientation scene_order
+#     create_automatic_album(loaded_dict, layouts_df)

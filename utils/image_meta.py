@@ -1,3 +1,8 @@
+from ptinfra.azure.pt_file import PTFile
+from utils.protos import BGSegmentation_pb2 as meta_vector
+
+
+
 def get_photo_meta(file, images_dict, logger=None):
     try:
         meta_info_bytes = PTFile(file)  # load file
@@ -41,11 +46,11 @@ def get_photo_meta(file, images_dict, logger=None):
             images_dict[photo.photoId].update(
                 {'image_time': image_time, "scene_order": scene_order, 'image_as': image_as,
                  'image_color': image_color, 'image_orientation': image_orientation,
-                 'image_orderInScene': image_orderInScene, 'background_centroid':background_centroid})
+                 'image_orderInScene': image_orderInScene, 'background_centroid':background_centroid, 'diameter':photo.blobDiameter })
         else:
             images_dict[photo.photoId] = {'image_time': image_time, "scene_order": scene_order,
                                           'image_as': image_as,
                                           'image_color': image_color, 'image_orientation': image_orientation,
-                                          'image_orderInScene': image_orderInScene, "background_centroid":background_centroid}
+                                          'image_orderInScene': image_orderInScene, "background_centroid":background_centroid,'diameter':photo.blobDiameter}
 
     return images_dict

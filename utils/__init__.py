@@ -7,7 +7,7 @@ from .image_queries import *
 from .handle_illegal import *
 from .album_tools import *
 from .album_scores import *
-from .layouts import *
+from .load_layouts import *
 from .photos import *
 from .spreads import *
 from .response import *

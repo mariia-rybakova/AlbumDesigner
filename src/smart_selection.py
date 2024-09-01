@@ -1,22 +1,10 @@
 import os
-import io
-import sys
-import time
-import pickle
-import shutil
-import random
-import clip
-import torch
-import math
-import numpy as np
-import scipy.stats as stats
-from collections import defaultdict
 
-from sklearn.metrics.pairwise import cosine_similarity
-from ptinfra.azure.pt_file import PTFile
-
-from utils import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta
-from utils.clusters_labels import label_list
+from utils import get_image_embeddings, get_faces_info, get_persons_ids, get_clusters_info, get_photo_meta
+from utils.image_queries import generate_query
+from utils.image_selection_scores import map_cluster_label, calculate_scores
+from utils.read_files_types import read_pkl_file
+from utils.user_relation_percentage import relations
 
 """We will get 10 Photos examples
 relation to the bride and groom
@@ -26,13 +14,16 @@ Tag cloud flowers hugs, food"""
 """Selection will be baised twoards the tags but not strict """
 
 """We dont know if the user will select average number of photos for each event, or even total number of images for album"""
-def select_images(clusters_class_imgs,gallery_photos_info,ten_photos, people_ids, tags_features):
+
+
+def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,
+                  logger=None):
     ai_images_selected = []
     category_picked = {}
     for iteration, (event, imges) in enumerate(clusters_class_imgs.items()):
         cluster_images_scores = {}
         for image in imges:
-            image_score = calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags)
+            image_score = calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags_features)
             cluster_images_scores[image] = image_score
 
         # pick images based on relations percentage
@@ -99,7 +90,9 @@ def select_images(clusters_class_imgs,gallery_photos_info,ten_photos, people_ids
         print("*******************************************************")
 
     return ai_images_selected, gallery_photos_info
-def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation,queries_file, logger):
+
+
+def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation, queries_file, logger):
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
     persons_file = os.path.join(project_base_url, 'persons_info.pb')
@@ -127,9 +120,8 @@ def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation
 
     tags_features = read_pkl_file(tags_file)
 
-    return select_images(clusters_class_imgs,gallery_photos_info,ten_photos, people_ids, tags_features,logger)
-
-
+    return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, relation,
+                         logger)
 
 # if __name__ == '__main__':
 #     ten_photos = [9741256963, 9741256966, 9741256968, 9741256975, 9741256982, 9741256991, 9741257000, 9741257036,

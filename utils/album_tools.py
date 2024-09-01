@@ -45,7 +45,6 @@ def read_timestamp(timestamp_str):
         # If it fails, try parsing without milliseconds
         return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
 
-
 def get_general_times(data_db):
     timestamps = data_db['image_time']
     timestamps = [read_timestamp(timestamp_str) for timestamp_str in timestamps]

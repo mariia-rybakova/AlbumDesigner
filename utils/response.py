@@ -1,3 +1,7 @@
+import ast
+
+from utils.crop import smart_cropping
+
 def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, group_name2chosen_combinations,
                            layouts_df):
     result = [{
@@ -38,7 +42,8 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
         for box in cover_layout_info:
             x, y, w, h = box['x'], box['y'], box['width'], box['height']
             # Resize the image to fit the box
-            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(cover_img_embedding, int(w), int(h), app, remover)
+
+            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(cover_img['image_as'], cover_img['faces_info'], cover_img['background_centroid'], cover_img['diameter'])
 
             result[0]['compositions'].update({
                 "compositionId": 1,
@@ -115,7 +120,7 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
 
                 x, y, w, h = box['x'], box['y'], box['width'], box['height']
 
-                cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(img_path, int(w), int(h), app, remover)
+                cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(cur_photo['image_as'], cur_photo['faces_info'], cur_photo['background_centroid'], cur_photo['diameter'])
                 result[0]['compositions'].update({
                     "compositionId": compositionId + 1,
                     "compositionPackageId": -1,

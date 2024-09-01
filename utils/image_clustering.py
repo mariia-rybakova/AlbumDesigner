@@ -1,3 +1,5 @@
+from ptinfra.azure.pt_file import PTFile
+from utils.protos  import ContentCluster_pb2 as cluster_vector
 def get_clusters_info(cluster_file, images_dict,logger=None):
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file

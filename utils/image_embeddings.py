@@ -1,5 +1,7 @@
-
-
+import sys
+import io
+import numpy as np
+from ptinfra.azure.pt_file import PTFile
 
 
 def get_image_embeddings(file, logger=None):

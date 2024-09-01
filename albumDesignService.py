@@ -1,15 +1,12 @@
-import os
-import sys
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from schema import albumResponse
 from config import DEPLOY_CONFIGS
 from src.smart_selection import auto_selection
-from src.layouts_processing import generate_layouts_file
-from src.album_processing import create_AI_album
-
-
+from src.album_processing import create_automatic_album
+from utils.generate_layout_file import genereate_layouts_path
+from utils.get_images_data import get_info_only_for_selected_images
 #from ptinfra import intialize, get_logger, AbortRequested
 #from ptinfra.config import get_variable
 
@@ -47,11 +44,14 @@ async def root():
 @app.post("/album", response_model=albumResponse)
 async def create_album(project_base_url:str, request:Request):
     data: bytes = await request.body()
+    design_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files\designs.json'
+    desings_ids = [3444,3415,3417,3418,3419,3420,3421,3423,3424,3425,3426,3427,3428,3429,3430,3431,3432,3433,3434,3435,3436,3437,3438,3439,3440,3441,3442,3443,3445,3449,3450,3451,3452,3453,3454,3455,3456,3457,3458,3459,3460,3461,3462,3463,3464,3465,3466,3467,3468,3469,3470,3471,3472,3473,3474,3475,3476,3477,3478,3479,3480,3481,3482,3483,3484,3485,3486,3487,3488,3489,3490,3491,3492,3494,3495,3496,15971,15972,15973,15974,15975,15976,15977,15978,15979,15980,15981,15982,15983,15984,15990,15991,15992,15994,15995,15997,15998,15999,16000,16001,16002,16003,16004,16111,16112,17109,17110]
+    save_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files'
     # Select images for creating an album
     images_selected, gallery_photos_info = auto_selection(project_base_url, data.ten_photos, data.tags, data.people_ids, data.user_relation)
     layouts_path = genereate_layouts_path(design_path,desings_ids,save_path)
     images_data_dict = get_info_only_for_selected_images(images_selected,gallery_photos_info)
-    album_json_result, error = create_album_AI(images_data_dict,layouts_path)
+    album_json_result, error = create_automatic_album(images_data_dict,layouts_path)
 
     if album_json_result:
         return {"error": False,'error_description':None, "result": album_json_result}

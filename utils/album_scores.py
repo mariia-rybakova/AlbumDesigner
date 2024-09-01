@@ -1,7 +1,4 @@
-import ast
 from scipy.stats import pearsonr
-
-from .photos import get_int_photo_id
 
 
 def calculate_correlation_score(layout_id2data, photos, all_spreads_data):
@@ -66,4 +63,3 @@ def add_ranking_score(filtered_spreads, photos, layout_id2data):
         filtered_spreads[idx][1] *= correlation_score
 
     return filtered_spreads
-

@@ -1,16 +1,7 @@
-import os
-import io
-import sys
-import time
-import pickle
-import shutil
-import random
 import clip
 import torch
-import math
 import numpy as np
-import scipy.stats as stats
-from collections import defaultdict
+
 from clusters_labels import label_list
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -30,6 +21,7 @@ def calculate_similarity_scores(im_embedding, ten_photos_embeddings):
 
     return similarity_scores
 
+
 def map_cluster_label(cluster_label):
     if cluster_label == -1:
         return "None"
@@ -37,6 +29,7 @@ def map_cluster_label(cluster_label):
         return label_list[cluster_label]
     else:
         return "Unknown"
+
 
 def comp_tag_features(tag: str) -> np.array:
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -50,12 +43,14 @@ def comp_tag_features(tag: str) -> np.array:
     text_features /= text_features.norm(dim=1, keepdim=True)
     return text_features.cpu().numpy()
 
+
 def calcuate_text_embedding(tags):
     tags_features = []
     for tag in tags:
         feature = comp_tag_features(tag)
         tags_features.append(feature)
     return tags_features
+
 
 def calcuate_tags_score(tags, image_features):
     tags_features = calcuate_text_embedding(tags)
@@ -70,7 +65,8 @@ def calcuate_tags_score(tags, image_features):
     sorted_scores = sorted(tags_scores, reverse=True)
     return sorted_scores[0]
 
-def calculate_scores(image, gallery_photos_info,ten_photos,people_ids, tags):
+
+def calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags):
     # persons score
     if 'persons_ids' in gallery_photos_info[image]:
         persons_in_image = gallery_photos_info[image]['persons_ids']
@@ -108,6 +104,7 @@ def calculate_scores(image, gallery_photos_info,ten_photos,people_ids, tags):
 
     tags_score = calcuate_tags_score(tags, gallery_photos_info[image]['embedding'])
 
-    total_score = class_matching_score * similarity_score * person_score * gallery_photos_info[image]['ranking'] * tags_score
+    total_score = class_matching_score * similarity_score * person_score * gallery_photos_info[image][
+        'ranking'] * tags_score
 
     return total_score
