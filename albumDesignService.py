@@ -69,7 +69,10 @@ async def create_album(project_base_url:str, request:Request):
 
     # Select images for creating an album
     # project_base_url, ten_photos, tags_file, people_ids, relation, queries_file, logger
-    images_selected, gallery_photos_info = auto_selection(project_base_url, data_dict['ten_photos'], data_dict['tags'], data_dict['people_ids'], data_dict['user_relation'],queries_file_path,logger=None)
+    images_selected, gallery_photos_info, errors = auto_selection(project_base_url, data_dict['ten_photos'], data_dict['tags'], data_dict['people_ids'], data_dict['user_relation'],queries_file_path,logger=None)
+    if errors:
+        return {"error": True,'error_description': errors, "result": None}
+
     layouts_path = genereate_layouts_path(design_path,desings_ids,save_path)
     images_data_dict = get_info_only_for_selected_images(images_selected,gallery_photos_info)
     album_json_result, error = create_automatic_album(images_data_dict,layouts_path)

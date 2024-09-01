@@ -18,6 +18,7 @@ Tag cloud flowers hugs, food"""
 
 def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,
                   logger=None):
+    error_message = None
     ai_images_selected = []
     category_picked = {}
     for iteration, (event, imges) in enumerate(clusters_class_imgs.items()):
@@ -89,7 +90,10 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         print(f"Total images selected so far: {total_selected_images}")
         print("*******************************************************")
 
-    return ai_images_selected, gallery_photos_info
+    if len(ai_images_selected) == 0:
+        error_message = 'No images were selected.'
+
+    return ai_images_selected, gallery_photos_info, error_message
 
 
 def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation, queries_file, logger):
@@ -102,19 +106,19 @@ def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation
     # Get info from protobuf files server
     gallery_photos_info,errors = get_image_embeddings(image_file)
     if errors:
-        return None, errors
+        return None,None, errors
     gallery_photos_info,errors = get_faces_info(faces_file, gallery_photos_info)
     if errors:
-        return None, errors
+        return None,None, errors
     gallery_photos_info,errors = get_persons_ids(persons_file, gallery_photos_info)
     if errors:
-        return None, errors
+        return None,None, errors
     gallery_photos_info,errors = get_clusters_info(cluster_file, gallery_photos_info)
     if errors:
-        return None, errors
+        return None,None, errors
     gallery_photos_info,errors = get_photo_meta(segmentation_file, gallery_photos_info)
     if errors:
-        return None, errors
+        return None,None, errors
 
     # Get Query Content of each image
     gallery_photos_info = generate_query(queries_file, gallery_photos_info)
