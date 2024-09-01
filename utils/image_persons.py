@@ -23,7 +23,7 @@ def get_persons_ids(persons_file, images_dict={},logger=None):
         except Exception as e:
             # logger.warning('Faces data could not be loaded local: {}'.format(e))
             print('Cant load cluster data from local: {}.'.format(e))
-            return None
+            return None,e
 
     if person_descriptor.WhichOneof("versions") == 'v1':
         message_data = person_descriptor.v1
@@ -44,4 +44,4 @@ def get_persons_ids(persons_file, images_dict={},logger=None):
 
             images_dict[im.photoId]['persons_ids'].append(id)
 
-    return images_dict
+    return images_dict,None

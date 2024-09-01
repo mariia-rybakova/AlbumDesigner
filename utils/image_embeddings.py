@@ -30,7 +30,9 @@ def get_image_embeddings(file, logger=None):
                          extra={'error': e,
                                 'matrix_url': file,
                                 'info': sys.exc_info()[0]})
+            return None,e
         else:
             print('Embeddings reading error', 'error', e)
+            return None, e
 
-    return embed
+    return embed, None

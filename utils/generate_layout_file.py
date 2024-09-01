@@ -1,10 +1,5 @@
-import io
 import json
 import csv
-
-import matplotlib.pyplot as plt
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
 
 
 def classify_box(box, tolerance):
@@ -29,8 +24,7 @@ def classify_box(box, tolerance):
         return 'large square', area
 
 
-
-def genereate_layouts_path(json_file_path, id_list, save_path,tolerance=0.05):
+def genereate_layouts_path(json_file_path, id_list, save_path, tolerance=0.05):
     # Read the JSON file
     with open(json_file_path, 'r') as file:
         data = json.load(file)
@@ -161,9 +155,9 @@ def genereate_layouts_path(json_file_path, id_list, save_path,tolerance=0.05):
             right_square = num_right_small_square + num_right_large_square
 
             left_mixed = (left_portrait > 0 and left_landscape > 0) or (left_portrait > 0 and left_square > 0) or (
-                        left_landscape > 0 and left_square > 0)
+                    left_landscape > 0 and left_square > 0)
             right_mixed = (right_portrait > 0 and right_landscape > 0) or (right_portrait > 0 and right_square > 0) or (
-                        right_landscape > 0 and right_square > 0)
+                    right_landscape > 0 and right_square > 0)
 
             # Store the results for the current ID
             result[item['id']] = {
@@ -199,7 +193,7 @@ def genereate_layouts_path(json_file_path, id_list, save_path,tolerance=0.05):
     return csv_file_path
 
 
-def save_results(data,save_path):
+def save_results(data, save_path):
     # File name
     csv_file = save_path + '\\layouts.csv'
 
@@ -221,11 +215,8 @@ def save_results(data,save_path):
     print(f"Layouts data has been written to {csv_file}")
     return csv_file
 
-
 # save_path = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesigner\\results\\layout_csv'
 # json_file_path = '.\\designs.json'
 # desings_ids = [3444,3415,3417,3418,3419,3420,3421,3423,3424,3425,3426,3427,3428,3429,3430,3431,3432,3433,3434,3435,3436,3437,3438,3439,3440,3441,3442,3443,3445,3449,3450,3451,3452,3453,3454,3455,3456,3457,3458,3459,3460,3461,3462,3463,3464,3465,3466,3467,3468,3469,3470,3471,3472,3473,3474,3475,3476,3477,3478,3479,3480,3481,3482,3483,3484,3485,3486,3487,3488,3489,3490,3491,3492,3494,3495,3496,15971,15972,15973,15974,15975,15976,15977,15978,15979,15980,15981,15982,15983,15984,15990,15991,15992,15994,15995,15997,15998,15999,16000,16001,16002,16003,16004,16111,16112,17109,17110]
 # classified_boxes = classify_boxes_global(json_file_path, desings_ids)
 # save_results(save_path, classified_boxes)
-
-

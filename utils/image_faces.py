@@ -23,7 +23,7 @@ def get_faces_info(faces_file, images_dict,logger=None):
         except Exception as e:
             # logger.warning('Faces data could not be loaded local: {}'.format(e))
             print('Cant load Face data from local: {}.'.format(e))
-            return None
+            return None,e
 
     if face_descriptor.WhichOneof("versions") == 'v1':
         message_data = face_descriptor.v1
@@ -37,4 +37,4 @@ def get_faces_info(faces_file, images_dict,logger=None):
         faces = photo.faces
         if photo.photoId in images_dict:
             images_dict[photo.photoId].update({'n_faces': number_faces, 'faces_info': faces})
-    return images_dict
+    return images_dict,None

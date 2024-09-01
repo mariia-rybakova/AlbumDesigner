@@ -2,7 +2,6 @@ from ptinfra.azure.pt_file import PTFile
 from utils.protos import BGSegmentation_pb2 as meta_vector
 
 
-
 def get_photo_meta(file, images_dict, logger=None):
     try:
         meta_info_bytes = PTFile(file)  # load file
@@ -25,7 +24,7 @@ def get_photo_meta(file, images_dict, logger=None):
         except Exception as e:
             # logger.warning('Faces data could not be loaded local: {}'.format(e))
             print('Cant load BGSegmentation  data from local: {}.'.format(e))
-            return None
+            return None,e
 
     if meta_descriptor.WhichOneof("versions") == 'v1':
         message_data = meta_descriptor.v1
@@ -53,4 +52,4 @@ def get_photo_meta(file, images_dict, logger=None):
                                           'image_color': image_color, 'image_orientation': image_orientation,
                                           'image_orderInScene': image_orderInScene, "background_centroid":background_centroid,'diameter':photo.blobDiameter}
 
-    return images_dict
+    return images_dict, None

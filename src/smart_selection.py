@@ -100,11 +100,21 @@ def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation
     segmentation_file = os.path.join(project_base_url, 'ai_bgsegementation.pb')
 
     # Get info from protobuf files server
-    gallery_photos_info = get_image_embeddings(image_file)
-    gallery_photos_info = get_faces_info(faces_file, gallery_photos_info)
-    gallery_photos_info = get_persons_ids(persons_file, gallery_photos_info)
-    gallery_photos_info = get_clusters_info(cluster_file, gallery_photos_info)
-    gallery_photos_info = get_photo_meta(segmentation_file, gallery_photos_info)
+    gallery_photos_info,errors = get_image_embeddings(image_file)
+    if errors:
+        return None, errors
+    gallery_photos_info,errors = get_faces_info(faces_file, gallery_photos_info)
+    if errors:
+        return None, errors
+    gallery_photos_info,errors = get_persons_ids(persons_file, gallery_photos_info)
+    if errors:
+        return None, errors
+    gallery_photos_info,errors = get_clusters_info(cluster_file, gallery_photos_info)
+    if errors:
+        return None, errors
+    gallery_photos_info,errors = get_photo_meta(segmentation_file, gallery_photos_info)
+    if errors:
+        return None, errors
 
     # Get Query Content of each image
     gallery_photos_info = generate_query(queries_file, gallery_photos_info)

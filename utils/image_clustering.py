@@ -21,7 +21,7 @@ def get_clusters_info(cluster_file, images_dict,logger=None):
         except Exception as e:
             # logger.warning('Faces data could not be loaded local: {}'.format(e))
             print('Cant load cluster data from local: {}.'.format(e))
-            return None
+            return None,e
 
     if cluster_descriptor.WhichOneof("versions") == 'v1':
         message_data = cluster_descriptor.v1
@@ -43,4 +43,4 @@ def get_clusters_info(cluster_file, images_dict,logger=None):
             images_dict[photo.photoId] = {'image_class': image_class, "cluster_label": cluster_label,
                                           'cluster_class': cluster_class, 'ranking': image_ranking}
 
-    return images_dict
+    return images_dict,None

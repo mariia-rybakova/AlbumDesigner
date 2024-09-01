@@ -1,6 +1,11 @@
 from pydantic import BaseModel, RootModel
 from typing import List, Dict, Optional, Union
 
+class Request(BaseModel):
+    ten_photos: List[int]
+    tags: List[str]
+    people_ids: List[int] = []
+    user_relation: str
 
 class orderQaResult(BaseModel):
     placementImgId: int

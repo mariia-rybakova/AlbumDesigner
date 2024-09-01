@@ -2,8 +2,9 @@ import clip
 import torch
 import numpy as np
 
-from clusters_labels import label_list
 from sklearn.metrics.pairwise import cosine_similarity
+from .clusters_labels import label_list
+
 
 
 def calculate_similarity_scores(im_embedding, ten_photos_embeddings):
