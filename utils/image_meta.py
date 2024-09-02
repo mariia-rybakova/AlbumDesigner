@@ -6,7 +6,7 @@ def get_photo_meta(file, images_dict, logger=None):
     try:
         meta_info_bytes = PTFile(file)  # load file
         if not meta_info_bytes.exists():
-            return images_dict
+            return images_dict, "the meta file does not exist"
         meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
         meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
         meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)

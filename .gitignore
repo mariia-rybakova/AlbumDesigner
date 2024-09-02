@@ -2,5 +2,5 @@
 venv
 servicelog.log
 __pycache__/
-
+.secrets.yml
 

@@ -104,25 +104,35 @@ def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation
     segmentation_file = os.path.join(project_base_url, 'ai_bgsegementation.pb')
 
     # Get info from protobuf files server
-    gallery_photos_info,errors = get_image_embeddings(image_file)
+    gallery_photos_info,errors = get_image_embeddings(image_file,None)
     if errors:
+        #logger.error('Couldnt find embeddings for images file %s', image_file)
         return None,None, errors
     gallery_photos_info,errors = get_faces_info(faces_file, gallery_photos_info)
     if errors:
+        #logger.error('Couldnt find faces info for images file %s', image_file)
         return None,None, errors
     gallery_photos_info,errors = get_persons_ids(persons_file, gallery_photos_info)
+
     if errors:
+        #logger.error('Couldnt find persons info for images file %s', image_file)
         return None,None, errors
     gallery_photos_info,errors = get_clusters_info(cluster_file, gallery_photos_info)
     if errors:
+        #logger.error('Couldnt find clusters info for images file %s', image_file)
         return None,None, errors
     gallery_photos_info,errors = get_photo_meta(segmentation_file, gallery_photos_info)
     if errors:
+        #logger.error('Couldnt find photo meta for images file %s', image_file)
         return None,None, errors
 
     # Get Query Content of each image
     gallery_photos_info = generate_query(queries_file, gallery_photos_info)
 
+    if gallery_photos_info is None:
+        # logger.error('the gallery images dict is empty ')
+        return None, None, 'Could not generate query'
+    # Group images by cluster class labels
     clusters_class_imgs = {}
     # Get images group clusters class labels
     for im_id, img_info in gallery_photos_info.items():

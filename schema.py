@@ -93,7 +93,7 @@ class PlacementRoot(RootModel):
 class albumResponse(BaseModel):
     error:bool
     error_description:str
-    result: PlacementRoot
+    result: PlacementRoot = None
 
 
 if __name__ == "__main__":

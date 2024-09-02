@@ -1,3 +1,6 @@
+import uvicorn
+import os
+import sys
 import json
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,12 +12,12 @@ from src.smart_selection import auto_selection
 from src.album_processing import create_automatic_album
 from utils.generate_layout_file import genereate_layouts_path
 from utils.get_images_data import get_info_only_for_selected_images
-#from ptinfra import intialize, get_logger, AbortRequested
+from ptinfra import intialize, get_logger, AbortRequested
 #from ptinfra.config import get_variable
 
-# sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-# parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
 app = FastAPI(title='AI Album Designer Service',
               description='Smart Album Designer',
@@ -25,10 +28,9 @@ app = FastAPI(title='AI Album Designer Service',
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
-# settings_filename = os.environ.get('HostingSettingsPath', '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
-# intialize('albumdesinger', settings_filename)
-
-
+settings_filename = os.environ.get('HostingSettingsPath',
+                                   '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
+intialize('ContextCluster', settings_filename)
 @app.on_event("startup")
 async def startup_event():
     """Initialize FastAPI and add variables"""
@@ -44,7 +46,7 @@ async def root():
     return {"Message": "This page is for Album design"}
 
 @app.put("/album/", response_model=albumResponse)
-async def create_album(project_base_url:str, request:Request):
+async def create_album(project_base_url:str):
     #data: bytes = await request.body()
 
     # Convert bytes to string (assuming UTF-8 encoding)
@@ -59,7 +61,7 @@ async def create_album(project_base_url:str, request:Request):
                       9741257062, 9741257105],
             'people_ids': [2,4],
             'tags': ['ceremony', 'dancing', 'bride and groom'],
-            'user_relation': 'parents'  # or 'spouse' or 'children'
+            'user_relation': 'parents'  # or 'spouse' or 'children' # designs ids
         }
 
     design_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files\designs.json'
@@ -68,8 +70,8 @@ async def create_album(project_base_url:str, request:Request):
     queries_file_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl'
 
     # Select images for creating an album
-    # project_base_url, ten_photos, tags_file, people_ids, relation, queries_file, logger
     images_selected, gallery_photos_info, errors = auto_selection(project_base_url, data_dict['ten_photos'], data_dict['tags'], data_dict['people_ids'], data_dict['user_relation'],queries_file_path,logger=None)
+
     if errors:
         return {"error": True,'error_description': errors, "result": None}
 
@@ -82,3 +84,7 @@ async def create_album(project_base_url:str, request:Request):
     else:
         return {"error": True, 'error_description': error, "result": None}
 
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8080)

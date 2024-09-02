@@ -1,6 +1,5 @@
-import json
 import csv
-
+from .read_files_types import read_json_file
 
 def classify_box(box, tolerance):
     # Adjust width and height based on 1:2 aspect ratio
@@ -25,9 +24,7 @@ def classify_box(box, tolerance):
 
 
 def genereate_layouts_path(json_file_path, id_list, save_path, tolerance=0.05):
-    # Read the JSON file
-    with open(json_file_path, 'r') as file:
-        data = json.load(file)
+    data = read_json_file(json_file_path)
 
     # Initialize lists to hold areas for all portrait and landscape boxes
     all_portrait_areas = []
