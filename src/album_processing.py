@@ -6,9 +6,10 @@ import pandas as pd
 
 from utils import get_photos_from_db,generate_filtered_multi_spreads,add_ranking_score, get_layouts_data, get_important_imgs, get_cover_img, get_cover_layout,generate_json_response, process_illegal_groups
 from utils.clusters_labels import label_list
+from utils.load_layouts import load_layouts
+from utils.time_proessing import process_image_time
 
-
-def sort_groups_by_photo_time(data_dict):
+def sort_groups_by_photo_time(data_dict,logger):
     def get_mean_time(sublist):
         # Extract all general_time values from the photos in the sublist
         total_spread_time = []
@@ -17,14 +18,13 @@ def sort_groups_by_photo_time(data_dict):
             total_spread_time.extend(time)
 
         if total_spread_time:
-            print("layout id", sublist[0], 'average time', statistics.mean(total_spread_time))
+            logger.info("layout id", sublist[0], 'average time', statistics.mean(total_spread_time))
             return statistics.median(total_spread_time)
         else:
             return float('inf')
 
     # Iterate over each group in the dictionary
     for group_key in data_dict:
-        print("Group KeY", group_key)
         data_dict[group_key][0].sort(key=get_mean_time)
 
     return data_dict
@@ -81,20 +81,21 @@ def get_images_per_group(data_df):
     return group2images_data_list
 
 
-def gallery_processing(data_df, layouts_df):
+def gallery_processing(data_df, layouts_df, logger):
     ERROR = None
     group2images = get_images_per_group(data_df)
     sub_grouped = data_df.groupby(['image_time', 'cluster_context'])
     start_time = time.time()
-    updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped)
+    updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
-    print(f'Illegal groups processing time: {illegal_time:.2f} minutes')
+    logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 
     layout_id2data = get_layouts_data(layouts_df)
 
     group_name2chosen_combinations = dict()
     for group_name in group2images.keys():
-        print("Starting with group_name {}".format(group_name))
+        logger.info("Starting with group_name {}".format(group_name))
+
         parts = group_name.split('_')
         group_id = (int(parts[0]), '_'.join(parts[1:]))
         try:
@@ -110,7 +111,7 @@ def gallery_processing(data_df, layouts_df):
                     len(cur_group_photos) / spread_params[0] < 3 and len(cur_group_photos) > 24):
                 split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
                 number_of_splits = math.ceil(len(cur_group_photos) / split_size)
-                print('Using splitting to {} parts'.format(number_of_splits))
+                logger.info('Using splitting to {} parts'.format(number_of_splits))
                 for split_num in range(number_of_splits):
                     cur_group_photos_list.append(cur_group_photos[
                                                  split_num * split_size: min((split_num + 1) * split_size,
@@ -120,18 +121,19 @@ def gallery_processing(data_df, layouts_df):
 
             for idx, group_photos in enumerate(cur_group_photos_list):
                 filter_start = time.time()
-                print('Photos: {}'.format(
-                    [[item.id, item.ar, item.color, item.rank, item.photo_class, item.cluster_label, item.general_time]
+
+                logger.info('Photos: {}'.format([[item.id, item.ar, item.color, item.rank, item.photo_class, item.cluster_label, item.general_time]
                      for item in group_photos]))
                 filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params)
-                print('Filtered spreads size: {}'.format(len(filtered_spreads)))
-                print('Filtered spreads time: {}'.format(time.time() - filter_start))
+                logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
+                logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
+
                 if filtered_spreads is None:
                     continue
                 ranking_start = time.time()
                 filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
                 filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-                print('Ranking time: {}'.format(time.time() - ranking_start))
+                logger.info('Ranking time: {}'.format(time.time() - ranking_start))
 
                 best_spread = filtered_spreads[0]
                 cur_spreads = best_spread[0]
@@ -140,15 +142,19 @@ def gallery_processing(data_df, layouts_df):
                     best_spread[0][spread_id][2] = set([group_photos[photo_id] for photo_id in spread[2]])
 
                 group_name2chosen_combinations[group_name + '*' + str(idx)] = best_spread
-                print('{} results:'.format(group_name + '*' + str(idx)))
-                print(group_name2chosen_combinations[group_name + '*' + str(idx)])
+                logger.info('{} results:'.format(group_name + '*' + str(idx)))
+                logger.info(group_name2chosen_combinations[group_name + '*' + str(idx)])
+
                 del filtered_spreads
+
+            logger.info("############################################################")
+
         except Exception as e:
-            print("Theres Error with group_name {}".format(group_name), e)
+            logger.error("Theres Error with group_name {}".format(group_name), e)
             ERROR = "Theres Error with group_name {}".format(group_name), e
             continue
 
-    print(group_name2chosen_combinations)
+    logger.info("LAST RESULT for ALBUM",group_name2chosen_combinations)
     return group_name2chosen_combinations, updated_sub_grouped, ERROR
 
 
@@ -161,8 +167,11 @@ def map_cluster_label(cluster_label):
         return "Unknown"
 
 
-def create_automatic_album(images_data_dict, layouts_df):
+def create_automatic_album(images_data_dict, layouts_path, logger=None):
     # Start time
+    logger.info("Start creating album...")
+    layouts_df = load_layouts(layouts_path)
+
     start_time = time.time()
     data_df = pd.DataFrame.from_dict(images_data_dict, orient='index')
     # Convert the index to a column
@@ -189,38 +198,21 @@ def create_automatic_album(images_data_dict, layouts_df):
         # copy column to make edit when we merge
         data_df["cluster_context_2nd"] = data_df['cluster_context']
 
-        data_df["image_time"] = [1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,3,3,3,3,3,3,4,4,4,4,4,5,5,5,5]
+        sorted_by_time_df, image_id2general_time = process_image_time(data_df)
 
-        # Add image_as with random float values between 0 and 1
-        data_df["image_as"] = np.random.rand(len(data_df))
-
-        # Add image_orderInScene (random order within a scene)
-        data_df["image_orderInScene"] = np.random.randint(1, 6, size=len(data_df))  # Assuming max 5 images per scene
-
-        # Add image_orientation (randomly 'landscape' or 'portrait')
-        orientation_options = ["landscape", "portrait"]
-        data_df["image_orientation"] = np.random.choice(orientation_options, size=len(data_df))
-
-        # Add scene_order (random order within the overall sequence)
-        data_df["scene_order"] = np.random.randint(1, 11, size=len(data_df))  # Assuming max 10 scenes
-
-        # Add image_color (1 for colored, 0 for grayscale)
-        data_df["image_color"] = np.random.choice([1, 0], size=len(data_df))
-
-        sorted_by_time_df = data_df.sort_values(by="image_time", ascending=False)
-        group_name2chosen_combinations, sub_groups, error = gallery_processing(sorted_by_time_df, layouts_df)
+        group_name2chosen_combinations, sub_groups, error = gallery_processing(sorted_by_time_df, layouts_df, logger)
 
         comb_generation_time = (time.time() - start_time) / 60
-        print(f'Combination generation time: {comb_generation_time:.2f} minutes')
+        logger.info(f'Combination generation time: {comb_generation_time:.2f} minutes')
 
-        sorted_group_name2chosen_combinations = sort_groups_by_photo_time(group_name2chosen_combinations)
+        sorted_group_name2chosen_combinations = sort_groups_by_photo_time(group_name2chosen_combinations, logger)
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
         result = generate_json_response(cover_img, cover_img_layout, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df)
 
         # End time
         end_time = time.time()
         elapsed_time = (end_time - start_time) / 60
-        print(f"Elapsed time: {elapsed_time:.2f} minutes")
+        logger.info(f"Elapsed time: {elapsed_time:.2f} minutes")
         return result, error
 
 

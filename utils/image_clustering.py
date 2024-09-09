@@ -1,5 +1,7 @@
 from ptinfra.azure.pt_file import PTFile
 from utils.protos  import ContentCluster_pb2 as cluster_vector
+
+
 def get_clusters_info(cluster_file, images_dict,logger=None):
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file
@@ -10,22 +12,13 @@ def get_clusters_info(cluster_file, images_dict,logger=None):
         cluster_descriptor.ParseFromString(cluster_info_bytes)
 
     except Exception as e:
-        # logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
+        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
         print('Cant load cluster data from server: {}. will Load it from local directory.'.format(e))
-
-        # load data locally
-        try:
-            cluster_descriptor = cluster_vector.ContentClusterMessageWrapper()
-            with open(cluster_file, 'rb') as f:
-                cluster_descriptor.ParseFromString(f.read())
-        except Exception as e:
-            # logger.warning('Faces data could not be loaded local: {}'.format(e))
-            print('Cant load cluster data from local: {}.'.format(e))
-            return None,e
 
     if cluster_descriptor.WhichOneof("versions") == 'v1':
         message_data = cluster_descriptor.v1
     else:
+        logger.error('There is no appropriate version of cluster vector message.')
         raise ValueError('There is no appropriate version of cluster vector message.')
 
     images_photos = message_data.photos

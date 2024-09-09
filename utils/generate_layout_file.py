@@ -1,4 +1,5 @@
 import csv
+import pandas as pd
 from .read_files_types import read_json_file
 
 def classify_box(box, tolerance):
@@ -23,7 +24,7 @@ def classify_box(box, tolerance):
         return 'large square', area
 
 
-def genereate_layouts_path(json_file_path, id_list, save_path, tolerance=0.05):
+def genereate_layouts_path(json_file_path, id_list, save_path, tolerance=0.05, logger=None):
     data = read_json_file(json_file_path)
 
     # Initialize lists to hold areas for all portrait and landscape boxes
@@ -187,6 +188,7 @@ def genereate_layouts_path(json_file_path, id_list, save_path, tolerance=0.05):
             }
 
     csv_file_path = save_results(result, save_path)
+
     return csv_file_path
 
 

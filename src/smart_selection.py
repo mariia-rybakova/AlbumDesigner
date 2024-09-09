@@ -1,6 +1,8 @@
 import os
+import time
 
-from utils import get_image_embeddings, get_faces_info, get_persons_ids, get_clusters_info, get_photo_meta
+from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
+
 from utils.image_queries import generate_query
 from utils.image_selection_scores import map_cluster_label, calculate_scores
 from utils.read_files_types import read_pkl_file
@@ -18,6 +20,8 @@ Tag cloud flowers hugs, food"""
 
 def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,
                   logger=None):
+    logger.info("Image selection Process")
+
     error_message = None
     ai_images_selected = []
     category_picked = {}
@@ -80,9 +84,15 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
 
         if event not in category_picked:
             category_picked[event] = 0
+
         category_picked[event] += len(selected_images)
 
         total_selected_images = len(ai_images_selected)
+        logger.info(f"Iteration {iteration}:")
+        logger.info(f"Event: {event}, Available images: {available_images}")
+        logger.info(f"Images selected this iteration: {len(selected_images)}")
+        logger.info(f"Total images selected so far: {total_selected_images}")
+        logger.info("*******************************************************")
 
         print(f"Iteration {iteration}:")
         print(f"Event: {event}, Available images: {available_images}")
@@ -92,70 +102,86 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
 
     if len(ai_images_selected) == 0:
         error_message = 'No images were selected.'
+        logger.error("No images were selected.")
 
     return ai_images_selected, gallery_photos_info, error_message
 
 
-def auto_selection(project_base_url, ten_photos, tags_file, people_ids, relation, queries_file, logger):
+def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, relation, queries_file,tags_features_file, logger):
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
     persons_file = os.path.join(project_base_url, 'persons_info.pb')
     image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
-    segmentation_file = os.path.join(project_base_url, 'ai_bgsegementation.pb')
+    segmentation_file = os.path.join(project_base_url, 'bg_segmentaion.pb')
 
     # Get info from protobuf files server
-    gallery_photos_info,errors = get_image_embeddings(image_file,None)
+    gallery_photos_info,errors = image_embeddings.get_image_embeddings(image_file,logger)
     if errors:
-        #logger.error('Couldnt find embeddings for images file %s', image_file)
+        if logger is not None:
+            logger.error('Couldnt find embeddings for images file %s', image_file)
         return None,None, errors
-    gallery_photos_info,errors = get_faces_info(faces_file, gallery_photos_info)
+    gallery_photos_info,errors = image_faces.get_faces_info(faces_file, gallery_photos_info,logger)
     if errors:
-        #logger.error('Couldnt find faces info for images file %s', image_file)
+        if logger is not None:
+            logger.error('Couldnt find faces info for images file %s', image_file)
         return None,None, errors
-    gallery_photos_info,errors = get_persons_ids(persons_file, gallery_photos_info)
+    gallery_photos_info,errors = image_persons.get_persons_ids(persons_file, gallery_photos_info,logger)
 
     if errors:
-        #logger.error('Couldnt find persons info for images file %s', image_file)
+        if logger is not None:
+             logger.error('Couldnt find persons info for images file %s', image_file)
         return None,None, errors
-    gallery_photos_info,errors = get_clusters_info(cluster_file, gallery_photos_info)
+    gallery_photos_info,errors = image_clustering.get_clusters_info(cluster_file, gallery_photos_info,logger)
     if errors:
-        #logger.error('Couldnt find clusters info for images file %s', image_file)
+        if logger is not None:
+            logger.error('Couldnt find clusters info for images file %s', image_file)
         return None,None, errors
-    gallery_photos_info,errors = get_photo_meta(segmentation_file, gallery_photos_info)
+    gallery_photos_info,errors = image_meta.get_photo_meta(segmentation_file, gallery_photos_info,logger)
     if errors:
-        #logger.error('Couldnt find photo meta for images file %s', image_file)
+        if logger is not None:
+            logger.error('Couldnt find photo meta for images file %s', image_file)
         return None,None, errors
 
     # Get Query Content of each image
-    gallery_photos_info = generate_query(queries_file, gallery_photos_info)
+    gallery_photos_info = generate_query(queries_file, gallery_photos_info,logger)
 
     if gallery_photos_info is None:
-        # logger.error('the gallery images dict is empty ')
+        if logger is not None:
+            logger.error('the gallery images dict is empty ')
         return None, None, 'Could not generate query'
+
     # Group images by cluster class labels
     clusters_class_imgs = {}
     # Get images group clusters class labels
     for im_id, img_info in gallery_photos_info.items():
+        if 'cluster_class' not in img_info:
+            logger.warning("image id {} has no cluster_class we will ignore it! in auto selection".format(im_id))
+            continue
         cluster_class = img_info['cluster_class']
         cluster_class_label = map_cluster_label(cluster_class)
         if cluster_class_label not in clusters_class_imgs:
             clusters_class_imgs[cluster_class_label] = []
         clusters_class_imgs[cluster_class_label].append(im_id)
 
-    tags_features = read_pkl_file(tags_file)
+    tags_features = read_pkl_file(tags_features_file)
 
-    return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, relation,
+    selected_tags_features = {}
+    for tag in tags_selected:
+        selected_tags_features[tag] = tags_features[tag]
+
+    return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,
                          logger)
 
 # if __name__ == '__main__':
-#     ten_photos = [9741256963, 9741256966, 9741256968, 9741256975, 9741256982, 9741256991, 9741257000, 9741257036,
-#                   9741257062, 9741257105]
-#     people_ids = [2]
+#     ten_photos = [9800170369, 9800170370, 9800170371, 9800170372, 9800170373, 9800170374, 9800170375, 9800170376, 9800170377, 9800170378, 9800170379]
+#     people_ids = [2,4,1,5]
 #     user_relation = 'parents'
 #     tags = ['ceremony', 'dancing', 'bride and groom']
-#     project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
+#     #project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
+#     project_base_url = "ptstorage_32://pictures/40/607/40607142/tydzj68uum3cpmy9mb"
+#     tags_features_file =r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
 #     start = time.time()
-#     auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation)
+#     auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation,r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',tags_features_file, logger=None)
 #     end = time.time()
 #     elapsed_time = (end - start) / 60
 #     print(f"Elapsed time: {elapsed_time:.2f} minutes")

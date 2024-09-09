@@ -12,22 +12,13 @@ def get_persons_ids(persons_file, images_dict={},logger=None):
         person_descriptor.ParseFromString(person_info_bytes)
 
     except Exception as e:
-        # logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
+        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
         print('Cant load cluster data from server: {}. will Load it from local directory.'.format(e))
-
-        # load data locally
-        try:
-            person_descriptor = person_vector.PersonInfoMessageWrapper()
-            with open(persons_file, 'rb') as f:
-                person_descriptor.ParseFromString(f.read())
-        except Exception as e:
-            # logger.warning('Faces data could not be loaded local: {}'.format(e))
-            print('Cant load cluster data from local: {}.'.format(e))
-            return None,e
 
     if person_descriptor.WhichOneof("versions") == 'v1':
         message_data = person_descriptor.v1
     else:
+        logger.error('There is no appropriate version of Person vector message.')
         raise ValueError('There is no appropriate version of Person vector message.')
 
     identity_info = message_data.identities

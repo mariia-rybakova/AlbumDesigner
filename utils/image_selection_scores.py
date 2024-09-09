@@ -53,11 +53,9 @@ def calcuate_text_embedding(tags):
     return tags_features
 
 
-def calcuate_tags_score(tags, image_features):
-    tags_features = calcuate_text_embedding(tags)
-
+def calcuate_tags_score(tags_features, image_features):
     tags_scores = []
-    for tag_feature in tags_features:
+    for tag,tag_feature in tags_features.items():
         similarity = tag_feature @ image_features.T
         # maximum similarity by query
         max_query_similarity = np.max(similarity, axis=0)
@@ -94,7 +92,11 @@ def calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags):
     # class matching between 10 selected images and the intent image
     if 'image_class' in gallery_photos_info[image]:
         image_class = gallery_photos_info[image]['image_class']
-        ten_photos_class = [gallery_photos_info[im]['image_class'] for im in ten_photos]
+        ten_photos_class = []
+        for im in ten_photos:
+            if 'image_class' in gallery_photos_info[im]:
+                ten_photos_class.append(gallery_photos_info[im]['image_class'])
+
         class_match_counts = ten_photos_class.count(image_class)
         if class_match_counts == 0:
             class_matching_score = 0.0001

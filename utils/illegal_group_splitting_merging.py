@@ -8,9 +8,9 @@ from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.metrics import silhouette_score
 
-def split_illegal_group(illegal_group,count, gallery_path, output_base_dir,DEBUG=False):
+def split_illegal_group(illegal_group,count,logger):
     illegal_group_features = illegal_group['embedding'].values.tolist()
-    illegal_time_features = [time for time in illegal_group["time_counted"]]
+    illegal_time_features = [time for time in illegal_group["general_time"]]
 
     cluster_labels = [cluster_label for cluster_label in illegal_group["cluster_label"]]
     min_labels = min(cluster_labels)
@@ -41,11 +41,10 @@ def split_illegal_group(illegal_group,count, gallery_path, output_base_dir,DEBUG
     labels = clf.labels_
     silhouette_avg = silhouette_score(combined_features, labels)
 
-    print(f'Silhouette Score : {silhouette_avg}')
     if silhouette_avg > 0.15:
-        print("Clustering is good.")
+        logger.info("Clustering is good for gallery group.", )
     else:
-        print("Clustering is bad.")
+        logger.info("Clustering is bad.")
         return None, None
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
@@ -54,26 +53,6 @@ def split_illegal_group(illegal_group,count, gallery_path, output_base_dir,DEBUG
     # Assign cluster labels with a prefix or suffix to distinguish them from other groups
     # illegal_group['main_content_cluster'] = [f"{content_cluster_origin}_{label}" for label in labels]
     illegal_group['cluster_context'] = [label for label in labels]
-
-    if DEBUG:
-        # Iterate through each row in the DataFrame
-        for idx, row in illegal_group.iterrows():
-            # Get the image path and cluster label
-            img_name = str(row['image_id']) + '.jpg'
-            cluster_label = row['cluster_context']
-
-            # Define the directory for the current cluster
-            cluster_dir = os.path.join(output_base_dir, f"cluster_{row['image_time']}_{cluster_label}_{count}")
-
-            # Create the cluster directory if it doesn't exist
-            os.makedirs(cluster_dir, exist_ok=True)
-
-            # Define the destination path for the image
-            # img_name = os.path.basename(img_path)  # Get the image file name
-            dest_path = os.path.join(cluster_dir, img_name)
-
-            # Copy the image to the destination directory
-            shutil.copy(os.path.join(gallery_path, img_name), dest_path)
 
     return illegal_group, label_counts
 

@@ -6,29 +6,20 @@ def get_photo_meta(file, images_dict, logger=None):
     try:
         meta_info_bytes = PTFile(file)  # load file
         if not meta_info_bytes.exists():
+            print(f"the meta file {file} does not exist on the server")
             return images_dict, "the meta file does not exist"
         meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
         meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
         meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
 
     except Exception as e:
-        # logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
+        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
         print('Cant load BGSegmentation data from server: {}. trying to Load it from local directory.'.format(e))
-
-        # load data locally
-        try:
-            meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
-            with open(r'C:\Users\karmel\Desktop\PicTime\Projects\AlbumDesigner\proto\proto_files\ai_bgsegmentation.pb',
-                      'rb') as f:
-                meta_descriptor.ParseFromString(f.read())
-        except Exception as e:
-            # logger.warning('Faces data could not be loaded local: {}'.format(e))
-            print('Cant load BGSegmentation  data from local: {}.'.format(e))
-            return None,e
 
     if meta_descriptor.WhichOneof("versions") == 'v1':
         message_data = meta_descriptor.v1
     else:
+        logger.warning('There is no appropriate version of BGSegmentation vector message.')
         raise ValueError('There is no appropriate version of BGSegmentation vector message.')
 
     images_photos = message_data.photos

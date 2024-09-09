@@ -2,8 +2,9 @@ import numpy as np
 from utils.read_files_types import read_pkl_file
 
 
-def generate_query(tags_file, images_data_dict):
+def generate_query(tags_file, images_data_dict, logger=None):
     if images_data_dict is None:
+        logger.error("images data dict is empty cant process the query")
         return None
 
     # Load the dictionary from the binary file
