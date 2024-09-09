@@ -2,9 +2,10 @@ import uvicorn
 import os
 import sys
 import json
+import psutil
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
+from contextlib import asynccontextmanager
 
 from schema import albumResponse
 from config import DEPLOY_CONFIGS
@@ -19,20 +20,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 
-app = FastAPI(title='AI Album Designer Service',
-              description='Smart Album Designer',
-              version='1',
-              terms_of_service=None,
-              contact=None,
-              license_info=None)
-
-app.add_middleware(CORSMiddleware, allow_origins=["*"])
-
-settings_filename = os.environ.get('HostingSettingsPath',
-                                   '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
-intialize('ContextCluster', settings_filename)
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Initialize FastAPI and add variables"""
     logger = get_logger(__name__, 'DEBUG')
 
@@ -40,6 +29,24 @@ async def startup_event():
     app.package = {"image_query": 1,
                    'design_id': DEPLOY_CONFIGS['design_id'],
                    'logger': logger}
+
+    print("App is starting up...")
+    yield
+    print("App is shutting down...")
+
+app = FastAPI(title='AI Album Designer Service',
+              description='Smart Album Designer',
+              version='1',
+              terms_of_service=None,
+              contact=None,
+              license_info=None,
+              lifespan=lifespan)
+
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+
+settings_filename = os.environ.get('HostingSettingsPath',
+                                   '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
+intialize('ContextCluster', settings_filename)
 
 @app.get("/")
 async def root():
@@ -82,6 +89,13 @@ async def create_album(project_base_url:str):
     if len(images_data_dict) == 0:
         return {"error": True, 'error_description': "Theres no data for images that have veen selected", "result": None}
 
+    # Get CPU usage percentage
+    cpu_usage = psutil.cpu_percent(interval=1)
+    memory_info = psutil.virtual_memory()
+
+    logger.info(f"CPU Usage Before creating an Album: {cpu_usage}%")
+    logger.info(f"Memory Usage Before creating an Album: {memory_info.percent}%")
+
     album_json_result, error = create_automatic_album(images_data_dict,layouts_path,logger=logger)
 
     if album_json_result:
@@ -93,8 +107,8 @@ async def create_album(project_base_url:str):
 
 
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8080)
+# if __name__ == "__main__":
+#     uvicorn.run(app, host="127.0.0.1", port=8080,timeout_keep_alive=10000)
 
 
     # 40572615 gal number on dev

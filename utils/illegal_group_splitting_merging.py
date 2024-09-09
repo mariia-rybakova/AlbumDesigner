@@ -1,8 +1,6 @@
-import ast
 import numpy as np
 import pandas as pd
-import os
-import shutil
+
 from collections import Counter
 from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances

@@ -1,6 +1,7 @@
 import math
 import time
 import numpy as np
+import psutil
 import statistics
 import pandas as pd
 
@@ -82,6 +83,8 @@ def get_images_per_group(data_df):
 
 
 def gallery_processing(data_df, layouts_df, logger):
+    logger.info(f'============================')
+    logger.info(f'Start Processing the Gallery')
     ERROR = None
     group2images = get_images_per_group(data_df)
     sub_grouped = data_df.groupby(['image_time', 'cluster_context'])
@@ -89,6 +92,12 @@ def gallery_processing(data_df, layouts_df, logger):
     updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
     logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
+
+    cpu_usage = psutil.cpu_percent(interval=1)
+    memory_info = psutil.virtual_memory()
+
+    logger.info(f"CPU Usage AFTER Illegal Processing: {cpu_usage}%")
+    logger.info(f"Memory Usage AFTER Illegal Processing: {memory_info.percent}%")
 
     layout_id2data = get_layouts_data(layouts_df)
 
@@ -199,6 +208,13 @@ def create_automatic_album(images_data_dict, layouts_path, logger=None):
         data_df["cluster_context_2nd"] = data_df['cluster_context']
 
         sorted_by_time_df, image_id2general_time = process_image_time(data_df)
+
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory_info = psutil.virtual_memory()
+
+        logger.info(f"CPU Usage before gallery processing: {cpu_usage}%")
+        logger.info(f"Memory Usage before gallery processing: {memory_info.percent}%")
+
 
         group_name2chosen_combinations, sub_groups, error = gallery_processing(sorted_by_time_df, layouts_df, logger)
 

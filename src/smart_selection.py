@@ -20,7 +20,8 @@ Tag cloud flowers hugs, food"""
 
 def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,
                   logger=None):
-    logger.info("Image selection Process")
+    logger.info("====================================")
+    logger.info("Starting Image selection Process....")
 
     error_message = None
     ai_images_selected = []
@@ -93,12 +94,6 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         logger.info(f"Images selected this iteration: {len(selected_images)}")
         logger.info(f"Total images selected so far: {total_selected_images}")
         logger.info("*******************************************************")
-
-        print(f"Iteration {iteration}:")
-        print(f"Event: {event}, Available images: {available_images}")
-        print(f"Images selected this iteration: {len(selected_images)}")
-        print(f"Total images selected so far: {total_selected_images}")
-        print("*******************************************************")
 
     if len(ai_images_selected) == 0:
         error_message = 'No images were selected.'

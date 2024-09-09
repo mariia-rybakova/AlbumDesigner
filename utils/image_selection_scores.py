@@ -1,5 +1,3 @@
-import clip
-import torch
 import numpy as np
 
 from sklearn.metrics.pairwise import cosine_similarity
@@ -30,28 +28,6 @@ def map_cluster_label(cluster_label):
         return label_list[cluster_label]
     else:
         return "Unknown"
-
-
-def comp_tag_features(tag: str) -> np.array:
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    CLIP_MODEL = 'ViT-B/32'
-    model, preprocess = clip.load(CLIP_MODEL, device, jit=False)
-
-    tokenize = clip.tokenize
-    text_tokens = tokenize(tag)
-    with torch.no_grad():
-        text_features = model.encode_text(text_tokens.to(device)).float()
-    text_features /= text_features.norm(dim=1, keepdim=True)
-    return text_features.cpu().numpy()
-
-
-def calcuate_text_embedding(tags):
-    tags_features = []
-    for tag in tags:
-        feature = comp_tag_features(tag)
-        tags_features.append(feature)
-    return tags_features
-
 
 def calcuate_tags_score(tags_features, image_features):
     tags_scores = []

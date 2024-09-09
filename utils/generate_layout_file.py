@@ -187,12 +187,12 @@ def genereate_layouts_path(json_file_path, id_list, save_path, tolerance=0.05, l
                 "boxes_info": boxes,
             }
 
-    csv_file_path = save_results(result, save_path)
+    csv_file_path = save_results(result, save_path,logger)
 
     return csv_file_path
 
 
-def save_results(data, save_path):
+def save_results(data, save_path,logger):
     # File name
     csv_file = save_path + '\\layouts.csv'
 
@@ -211,7 +211,7 @@ def save_results(data, save_path):
             row = {'id': key, **value}
             writer.writerow(row)
 
-    print(f"Layouts data has been written to {csv_file}")
+    logger.info(f"Layouts data has been written to {csv_file}")
     return csv_file
 
 # save_path = 'C:\\Users\\karmel\\Desktop\\PicTime\\Projects\\AlbumDesigner\\results\\layout_csv'
