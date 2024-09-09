@@ -107,8 +107,8 @@ async def create_album(project_base_url:str):
 
 
 
-# if __name__ == "__main__":
-#     uvicorn.run(app, host="127.0.0.1", port=8080,timeout_keep_alive=10000)
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8080,timeout_keep_alive=10000)
 
 
     # 40572615 gal number on dev
