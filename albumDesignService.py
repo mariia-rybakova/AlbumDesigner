@@ -71,11 +71,11 @@ async def create_album(project_base_url:str):
             'user_relation': 'parents'  # or 'spouse' or 'children' # designs ids
         }
 
-    design_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files\designs.json'
+    design_path = r'files\designs.json'
     desings_ids = [3444,3415,3417,3418,3419,3420,3421,3423,3424,3425,3426,3427,3428,3429,3430,3431,3432,3433,3434,3435,3436,3437,3438,3439,3440,3441,3442,3443,3445,3449,3450,3451,3452,3453,3454,3455,3456,3457,3458,3459,3460,3461,3462,3463,3464,3465,3466,3467,3468,3469,3470,3471,3472,3473,3474,3475,3476,3477,3478,3479,3480,3481,3482,3483,3484,3485,3486,3487,3488,3489,3490,3491,3492,3494,3495,3496,15971,15972,15973,15974,15975,15976,15977,15978,15979,15980,15981,15982,15983,15984,15990,15991,15992,15994,15995,15997,15998,15999,16000,16001,16002,16003,16004,16111,16112,17109,17110]
-    save_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files'
-    queries_file_path = r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl'
-    tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
+    save_path = r'files'
+    queries_file_path = r'files\queries_features.pkl'
+    tags_features_file = r'files\tags.pkl'
 
     # Select images for creating an album
     images_selected, gallery_photos_info, errors = auto_selection(project_base_url, data_dict['ten_photos'], data_dict['tags'], data_dict['people_ids'], data_dict['user_relation'],queries_file_path,tags_features_file,logger=app.package['logger'])

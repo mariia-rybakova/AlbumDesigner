@@ -115,9 +115,9 @@ def gallery_processing(data_df, layouts_df, logger):
             spread_params = list(lookup_table.get(parts[1], (10, 1.5)))
 
             cur_group_photos_list = list()
-            if (len(cur_group_photos) / spread_params[0] >= 4 or
-                    len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
-                    len(cur_group_photos) / spread_params[0] < 3 and len(cur_group_photos) > 24):
+            if (len(cur_group_photos) / (spread_params[0] - 2*spread_params[1]) >= 4 or
+               # len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
+                len(cur_group_photos) / (spread_params[0] - 2*spread_params[1]) < 3 and len(cur_group_photos) > 24):
                 split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
                 number_of_splits = math.ceil(len(cur_group_photos) / split_size)
                 logger.info('Using splitting to {} parts'.format(number_of_splits))
