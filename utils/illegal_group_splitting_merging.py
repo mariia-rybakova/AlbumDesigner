@@ -42,7 +42,7 @@ def split_illegal_group(illegal_group,count,logger):
     if silhouette_avg > 0.15:
         logger.info("Clustering is good for gallery group.", )
     else:
-        logger.info("Clustering is bad.")
+        logger.info("Clustering is bad.so we wont split it")
         return None, None
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
@@ -50,7 +50,7 @@ def split_illegal_group(illegal_group,count,logger):
     label_counts = Counter(labels)
     # Assign cluster labels with a prefix or suffix to distinguish them from other groups
     # illegal_group['main_content_cluster'] = [f"{content_cluster_origin}_{label}" for label in labels]
-    illegal_group['cluster_context'] = [label for label in labels]
+    illegal_group.loc[:,'cluster_context'] = [label for label in labels]
 
     return illegal_group, label_counts
 
@@ -68,10 +68,10 @@ def merge_illegal_group(main_groups, illegal_group, intended_group_index):
     else:
         intded_group_fe = group_features_np[intended_group_index]
 
-    main_groups_time_without_illegal = [group['image_time'].values.mean() for i, group in enumerate(main_groups) if i != intended_group_index]
+    main_groups_time_without_illegal = [group['general_time'].values.mean() for i, group in enumerate(main_groups) if i != intended_group_index]
     groups_combined_features = np.column_stack((group_features_np[all_groups_except_illegal_mask], main_groups_time_without_illegal))
 
-    inteded_group_time = main_groups[intended_group_index]['image_time'].values.mean()
+    inteded_group_time = main_groups[intended_group_index]['general_time'].values.mean()
     intded_group_fe_with_time = np.column_stack((intded_group_fe,inteded_group_time))
 
     dist_to_illegal_group = pairwise_distances(intded_group_fe_with_time,groups_combined_features,
@@ -101,8 +101,8 @@ def merge_illegal_group(main_groups, illegal_group, intended_group_index):
             break
 
     selected_cluster_content_index = list(selected_cluster['cluster_context'])[0]
-    illegal_group['cluster_context'] = selected_cluster_content_index
-    illegal_group['cluster_context_2nd'] = 'merged'
+    illegal_group.loc[:,'cluster_context'] = selected_cluster_content_index
+    illegal_group.loc[:,'cluster_context_2nd'] = 'merged'
     combine_groups = pd.concat([selected_cluster, illegal_group], ignore_index=False)
 
     return illegal_group, combine_groups, selected_cluster_content_index

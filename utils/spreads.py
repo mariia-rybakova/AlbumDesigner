@@ -342,11 +342,9 @@ def eval_single_comb(comb, photo_times, cluster_labels):
     return score
 
 
-def generate_filtered_multi_spreads(photos, layouts_df, spread_params):
-    start = time.time()
-
+def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
     layout_parts, weight_parts = selectPartitions(len(photos), spread_params)
-    print('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
+    logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
     combs = []
     comb_weights = np.array([])
@@ -361,7 +359,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params):
         for single_comb in single_combs:
             single_weights.append(eval_single_comb(single_comb, photoTimes, cluster_labels))
         if len(single_combs) > maxCombs:
-            print('combinations Found {}, sampled {} combinations foe evaluation'.format(len(single_combs), maxCombs))
+            logger.info('combinations Found {}, sampled {} combinations foe evaluation'.format(len(single_combs), maxCombs))
             sample_idxs = random.sample(range(len(single_combs)), maxCombs)
             single_combs = [single_combs[sample_idx] for sample_idx in sample_idxs]
             single_weights = [single_weights[sample_idx] for sample_idx in sample_idxs]

@@ -92,7 +92,8 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
 
         for group_key, imgs_number in list(images_per_group.items()):
             parts = group_key.split('_')
-            time_cluster_id = int(parts[0])
+            time_cluster_id_str = parts[0]
+            time_cluster_id_float = float(time_cluster_id_str)
             content_cluster_id = '_'.join(parts[1:])
 
             if group_key in keys_to_update.keys():
@@ -101,6 +102,8 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
             else:
                 splitting_score = get_splitting_core(parts[1],lookup_table,content_cluster_id,imgs_number)
 
+            intended_group_key = (time_cluster_id_float, content_cluster_id)
+
             if "wedding dress" in group_key and imgs_number <= 3:
                 selected_cluster = [group for group_id, group in sub_grouped if "bride getting dressed" == group_id[1] or "bride" == group_id[1] or 'getting dressed' == group_id[1] or 'getting hair-makeup' == group_id[1]]
                 if len(selected_cluster) == 0:
@@ -108,12 +111,14 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
                     continue
                 else:
                     selected_cluster = selected_cluster[0]
-                illegal_group = sub_grouped.get_group((time_cluster_id, content_cluster_id))
+
+
+                illegal_group = sub_grouped.get_group((time_cluster_id_float, content_cluster_id))
                 illegal_group.loc[:, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
                 value_to_assign = selected_cluster['general_time'].iloc[0]
                 illegal_group.loc[:, 'general_time'] = value_to_assign
                 updated_group = pd.concat([selected_cluster, illegal_group], ignore_index=False)
-                intended_group_key = (int(time_cluster_id), content_cluster_id)
+
 
                 keys_to_delete.append(f'{group_key}')
                 keys_to_update[
@@ -121,53 +126,62 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
                     updated_group)
 
                 sub_grouped = sub_grouped.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
-                    int(value_to_assign), "bride getting dressed"), illegal_group_key=intended_group_key))
+                    value_to_assign, "bride getting dressed"), illegal_group_key=intended_group_key))
                 sub_grouped = sub_grouped.reset_index(drop=True)
                 sub_grouped = sub_grouped.groupby(['general_time', 'cluster_context'])
 
             elif imgs_number <= 3:
                 # merge this one with the rest
                 main_groups = [group for cluster_key, group in sub_grouped if
-                               int(time_cluster_id) == cluster_key[0]]
-                print("main groups", main_groups)
-                intended_group_key = (int(time_cluster_id), content_cluster_id)
-                print("intended group_key", intended_group_key)
+                               time_cluster_id_float == cluster_key[0]]
 
-                intended_group_index, illegal_group = \
-                    [(intended_group_index, group) for intended_group_index, group in enumerate(main_groups) if
-                     intended_group_key == tuple(
-                         group[['general_time', 'cluster_context']].values[0])][0]
 
                 if len(main_groups) == 1:
                     logger.info(f"main time group has one group {intended_group_key}_ we cant do further merging for this group!!!")
                     continue
                 else:
+                    intended_group_index = None
+                    illegal_group = sub_grouped.get_group(intended_group_key)
+                    if len(illegal_group) == 0 or illegal_group is None:
+                        logger.warning(f"Could'nt find illegal group {intended_group_key} inside the sub grouped")
+                        continue
+
+                    # get the index of illegal group inside the main groups list
+                    for group_index, group in enumerate(main_groups):
+                        if group.equals(illegal_group):
+                            intended_group_index = group_index
+                            break
+
+                    if intended_group_index is None:
+                        logger.warning(f"Cant find illegal group inside the main groups so we cant process splitting or merging for group {intended_group_key}")
+                        illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
+                        continue
+
                     illegal_group, updated_group, selected_cluster_content_index = merge_illegal_group(main_groups,
                                                                                                        illegal_group,
                                                                                                        intended_group_index)
                 # update subgroup that has same time_cluster_id with updated group
-                keys_to_delete.append(f'{time_cluster_id}_{content_cluster_id}')
-                keys_to_update[f'{time_cluster_id}_{selected_cluster_content_index}'] = len(updated_group)
+                keys_to_delete.append(f'{time_cluster_id_str}_{content_cluster_id}')
+                keys_to_update[f'{time_cluster_id_str}_{selected_cluster_content_index}'] = len(updated_group)
 
                 sub_grouped = sub_grouped.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
-                    int(time_cluster_id), selected_cluster_content_index), illegal_group_key=intended_group_key))
+                    time_cluster_id_float, selected_cluster_content_index), illegal_group_key=intended_group_key))
                 sub_grouped = sub_grouped.reset_index(drop=True)
                 sub_grouped = sub_grouped.groupby(['general_time', 'cluster_context'])
 
             elif splitting_score >= 4:
                 # split it
-                intended_group_key = (int(time_cluster_id), content_cluster_id)
-                illegal_group, intended_group_index = \
-                    [(group, index) for index, (cluster_key, group) in enumerate(sub_grouped) if
-                     intended_group_key == cluster_key][0]
-                updated_group, labels_count = split_illegal_group(illegal_group,
-                                                                  count,logger)
+                illegal_group = sub_grouped.get_group(intended_group_key)
+
+                updated_group, labels_count = split_illegal_group(illegal_group,count,logger)
+
                 if updated_group is not None:
                     # update images per group
-                    keys_to_delete.append(f'{time_cluster_id}_{content_cluster_id}')
+                    keys_to_delete.append(f'{time_cluster_id_str}_{content_cluster_id}')
                     for k, val in labels_count.items():
-                        keys_to_update[f'{time_cluster_id}_{k}'] = val
+                        keys_to_update[f'{time_cluster_id_str}_{k}'] = val
                 else:
+                    # we cant split this group
                     illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
                     updated_group = illegal_group
 
@@ -179,5 +193,6 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
         images_per_group = get_images_per_group(sub_grouped)
         lookup_table = genreate_look_up(images_per_group)
 
-    logger.info("Number of groups to create an album", len(sub_grouped))
+    number_groups = len(sub_grouped)
+    logger.info(f"Number of groups to create an album {number_groups}")
     return sub_grouped, images_per_group, lookup_table

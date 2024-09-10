@@ -19,7 +19,7 @@ def sort_groups_by_photo_time(data_dict,logger):
             total_spread_time.extend(time)
 
         if total_spread_time:
-            logger.info("layout id", sublist[0], 'average time', statistics.mean(total_spread_time))
+            logger.info(f"layout id {sublist[0]}, average time, {statistics.mean(total_spread_time)}")
             return statistics.median(total_spread_time)
         else:
             return float('inf')
@@ -52,11 +52,11 @@ def sort_sub_groups(sub_grouped, group_names):
     for group_name in group_names:
         orig_group_name = group_name.split('*')
         parts = orig_group_name[0].split('_')
-        group_id = (int(parts[0]), '_'.join(parts[1:]))
+        group_id = (float(parts[0]), '_'.join(parts[1:]))
         group = sub_grouped.get_group(group_id)
 
         # Calculate the median instead of the mean
-        group_time_median = group["image_time"].median()
+        group_time_median = group["general_time"].median()
         time_group_dict[group_name] = group_time_median
 
     sorted_time_groups = dict(
@@ -73,7 +73,7 @@ def get_images_per_group(data_df):
     Return: dict group_name to list of images data
     """
     group2images_data_list = dict()
-    grouped_by_content = data_df.groupby('image_time')
+    grouped_by_content = data_df.groupby('general_time')
     for main_content_cluster, group_df in grouped_by_content:
         sub_grouped = group_df.groupby('cluster_context')
         for sub_cluster, sub_group_df in sub_grouped:
@@ -87,7 +87,7 @@ def gallery_processing(data_df, layouts_df, logger):
     logger.info(f'Start Processing the Gallery')
     ERROR = None
     group2images = get_images_per_group(data_df)
-    sub_grouped = data_df.groupby(['image_time', 'cluster_context'])
+    sub_grouped = data_df.groupby(['general_time', 'cluster_context'])
     start_time = time.time()
     updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
@@ -106,7 +106,7 @@ def gallery_processing(data_df, layouts_df, logger):
         logger.info("Starting with group_name {}".format(group_name))
 
         parts = group_name.split('_')
-        group_id = (int(parts[0]), '_'.join(parts[1:]))
+        group_id = (float(parts[0]), '_'.join(parts[1:]))
         try:
             group_images_df = updated_sub_grouped.get_group(group_id)
 
@@ -133,7 +133,7 @@ def gallery_processing(data_df, layouts_df, logger):
 
                 logger.info('Photos: {}'.format([[item.id, item.ar, item.color, item.rank, item.photo_class, item.cluster_label, item.general_time]
                      for item in group_photos]))
-                filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params)
+                filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,logger)
                 logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
                 logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
@@ -163,7 +163,7 @@ def gallery_processing(data_df, layouts_df, logger):
             ERROR = "Theres Error with group_name {}".format(group_name), e
             continue
 
-    logger.info("LAST RESULT for ALBUM",group_name2chosen_combinations)
+    logger.info("Album Generation Finished ^_^")
     return group_name2chosen_combinations, updated_sub_grouped, ERROR
 
 
@@ -223,7 +223,7 @@ def create_automatic_album(images_data_dict, layouts_path, logger=None):
 
         sorted_group_name2chosen_combinations = sort_groups_by_photo_time(group_name2chosen_combinations, logger)
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
-        result = generate_json_response(cover_img, cover_img_layout, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df)
+        result = generate_json_response(cover_img, cover_img_layout, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
 
         # End time
         end_time = time.time()

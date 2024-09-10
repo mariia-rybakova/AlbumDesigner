@@ -3,7 +3,7 @@ import ast
 from utils.crop import smart_cropping
 
 def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, group_name2chosen_combinations,
-                           layouts_df):
+                           layouts_df,logger):
     result = [{
         "accountId": 9092,
         "alerts": None,
@@ -37,13 +37,12 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
     if cover_img_layout_id is not None:
         # Plot the cover image
         cover_layout_info = ast.literal_eval(layouts_df.loc[int(cover_img_layout_id)]['boxes_info'])
-        cover_img_embedding = cover_img['embedding']
         cover_image_id = cover_img['image_id']
         for box in cover_layout_info:
             x, y, w, h = box['x'], box['y'], box['width'], box['height']
             # Resize the image to fit the box
 
-            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(cover_img['image_as'], cover_img['faces_info'], cover_img['background_centroid'], cover_img['diameter'])
+            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(float(cover_img['image_as']), list(cover_img['faces_info']), cover_img['background_centroid'], float(cover_img['diameter']))
 
             result[0]['compositions'].update({
                 "compositionId": 1,
@@ -90,7 +89,7 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
 
     for group_name in sorted_sub_groups.keys():
         if group_name not in group_name2chosen_combinations.keys():
-            print(f"Group Name {group_name}  has no results ")
+            logger.warning(f"Group Name {group_name}  has no results ")
             continue
         group_data = group_name2chosen_combinations[group_name][0]
 
@@ -120,7 +119,7 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
 
                 x, y, w, h = box['x'], box['y'], box['width'], box['height']
 
-                cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(cur_photo['image_as'], cur_photo['faces_info'], cur_photo['background_centroid'], cur_photo['diameter'])
+                cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(float(cur_photo['image_as']), list(cur_photo['faces_info']), float(cur_photo['background_centroid']), float(cur_photo['diameter']))
                 result[0]['compositions'].update({
                     "compositionId": compositionId + 1,
                     "compositionPackageId": -1,
