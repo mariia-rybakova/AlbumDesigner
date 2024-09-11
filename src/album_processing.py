@@ -223,7 +223,7 @@ def create_automatic_album(images_data_dict, layouts_path, logger=None):
 
         sorted_group_name2chosen_combinations = sort_groups_by_photo_time(group_name2chosen_combinations, logger)
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
-        result = generate_json_response(cover_img, cover_img_layout, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
+        result = generate_json_response(cover_img, cover_img_layout,sub_groups, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
 
         # End time
         end_time = time.time()

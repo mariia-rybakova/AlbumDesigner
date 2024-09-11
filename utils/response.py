@@ -2,7 +2,7 @@ import ast
 
 from utils.crop import smart_cropping
 
-def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, group_name2chosen_combinations,
+def generate_json_response(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict, group_name2chosen_combinations,
                            layouts_df,logger):
     result = [{
         "accountId": 9092,
@@ -41,10 +41,10 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
         for box in cover_layout_info:
             x, y, w, h = box['x'], box['y'], box['width'], box['height']
             # Resize the image to fit the box
+            centroid = cover_img['background_centroid'].values[0]
+            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]), list(cover_img['faces_info']), centroid, float(cover_img['diameter'].iloc[0]))
 
-            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(float(cover_img['image_as']), list(cover_img['faces_info']), cover_img['background_centroid'], float(cover_img['diameter']))
-
-            result[0]['compositions'].update({
+            result[0]['compositions'].append({
                 "compositionId": 1,
                 "compositionPackageId": -1,
                 "designId": cover_img_layout_id,
@@ -71,11 +71,11 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
                     "d-15450"
                 ]
             })
-            result[0]['placementsImg'].update({{
+            result[0]['placementsImg'].append({
                 "placementImgId": 1,
                 "compositionPackageId": -1,
                 "compositionId": 1,
-                "boxId": box[id],
+                "boxId": box['id'],
                 "photoId": cover_image_id,
                 "cropX": cropped_x,
                 "cropY": cropped_y,
@@ -85,9 +85,9 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
                 "projectId": 3441383,
                 "photoFilter": 0,
                 "photo": None
-            }})
+            })
 
-    for group_name in sorted_sub_groups.keys():
+    for group_name in sorted_sub_groups_dict.keys():
         if group_name not in group_name2chosen_combinations.keys():
             logger.warning(f"Group Name {group_name}  has no results ")
             continue
@@ -108,6 +108,12 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
             all_box_ids = left_box_ids + right_box_ids
             all_photos = left_page_photos + right_page_photos
             compositionId = 1
+
+            orig_group_name = group_name.split('*')
+            parts = orig_group_name[0].split('_')
+            group_id = (float(parts[0]), '_'.join(parts[1:]))
+            c_group = sub_groups.get_group(group_id)
+
             # Loop over boxes and plot images
             for i,box in enumerate(cur_layout_info):
                 box_id = box['id']
@@ -118,49 +124,53 @@ def generate_json_response(cover_img, cover_img_layout_id, sorted_sub_groups, gr
                 cur_photo = all_photos[element_index]
 
                 x, y, w, h = box['x'], box['y'], box['width'], box['height']
+                c_image_id = cur_photo.id
 
-                cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(float(cur_photo['image_as']), list(cur_photo['faces_info']), float(cur_photo['background_centroid']), float(cur_photo['diameter']))
-                result[0]['compositions'].update({
-                    "compositionId": compositionId + 1,
-                    "compositionPackageId": -1,
-                    "designId": layout_id,
-                    "styleId": -1,
-                    "revisionCounter": 0,
-                    "copies": 1,
-                    "boxes": [
-                        {
-                            "id": box['id'],
-                            "x": x,
-                            "y": y,
-                            "width": w,
-                            "height": h,
-                            "layer": -1,
-                            "layerOrder": 0,
-                            "type": 1
-                        }
-                    ],
-                    "logicalSelectionsState": [
-                        "5x7",
-                        "df-3x3",
-                        "white",
-                        "d-portrait",
-                        "d-15450"
-                    ]
-                })
-                result[0]['placementsImg'].update({{
-                    "placementImgId": i,
-                    "compositionPackageId": -1,
-                    "compositionId": compositionId + 1,
-                    "boxId": box[id],
-                    "photoId": cur_photo.id,
-                    "cropX": cropped_x,
-                    "cropY": cropped_y,
-                    "cropWidth": cropped_w,
-                    "cropHeight": cropped_h,
-                    "rotate": 0,
-                    "projectId": 3441383,
-                    "photoFilter": 0,
-                    "photo": None
-                }})
+                c_image_info = c_group[c_group['image_id'] == c_image_id]
+                if len(c_image_info) != 0:
+                    centroid = c_image_info['background_centroid'].values[0]
+                    cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(float(c_image_info['image_as'].iloc[0]), list(c_image_info['faces_info']), centroid, float(c_image_info['diameter'].iloc[0]))
+                    result[0]['compositions'].append({
+                        "compositionId": compositionId + 1,
+                        "compositionPackageId": -1,
+                        "designId": layout_id,
+                        "styleId": -1,
+                        "revisionCounter": 0,
+                        "copies": 1,
+                        "boxes": [
+                            {
+                                "id": box['id'],
+                                "x": x,
+                                "y": y,
+                                "width": w,
+                                "height": h,
+                                "layer": -1,
+                                "layerOrder": 0,
+                                "type": 1
+                            }
+                        ],
+                        "logicalSelectionsState": [
+                            "5x7",
+                            "df-3x3",
+                            "white",
+                            "d-portrait",
+                            "d-15450"
+                        ]
+                    })
+                    result[0]['placementsImg'].append({
+                        "placementImgId": i,
+                        "compositionPackageId": -1,
+                        "compositionId": compositionId + 1,
+                        "boxId": box['id'],
+                        "photoId": cur_photo.id,
+                        "cropX": cropped_x,
+                        "cropY": cropped_y,
+                        "cropWidth": cropped_w,
+                        "cropHeight": cropped_h,
+                        "rotate": 0,
+                        "projectId": 3441383,
+                        "photoFilter": 0,
+                        "photo": None
+                    })
 
     return result

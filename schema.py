@@ -92,20 +92,20 @@ class PlacementRoot(RootModel):
 
 class albumResponse(BaseModel):
     error:bool
-    error_description:str
+    error_description:str = None
     result: PlacementRoot = None
 
 
-if __name__ == "__main__":
-    import json
-    # Load your JSON data
-    with open('album.json', 'r') as f:
-        data = json.load(f)
-
-    # Parse the data
-    parsed_data = PlacementRoot.model_validate(data)
-
-    # Access the data
-    first_placement = parsed_data.root[0]
-    print(first_placement.accountId)
-    print(first_placement.compositions[0].boxes[0].id)
+# if __name__ == "__main__":
+#     import json
+#     # Load your JSON data
+#     with open('album.json', 'r') as f:
+#         data = json.load(f)
+#
+#     # Parse the data
+#     parsed_data = PlacementRoot.model_validate(data)
+#
+#     # Access the data
+#     first_placement = parsed_data.root[0]
+#     print(first_placement.accountId)
+#     print(first_placement.compositions[0].boxes[0].id)

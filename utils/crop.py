@@ -90,130 +90,35 @@ def smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=
     else:
         mask = np.zeros((int(min_dim / (ar * 1.0)), min_dim), dtype=np.uint8)
 
-    mask = cv2.circle(mask, (int(centroid[1] * mask.shape[1]), int(centroid[0] * mask.shape[0])),
-                      int(diameter / 2 * mask.shape[0]), 255, -1)
+
+    mask = cv2.circle(mask, (int(centroid.y * mask.shape[1]), int(centroid.x * mask.shape[0])), int(diameter / 2 * mask.shape[0]), 255, -1)
 
     for face in faces:
-        face['bbox'][0] = int(face['bbox'][0] * mask.shape[1])
-        face['bbox'][1] = int(face['bbox'][1] * mask.shape[0])
-        face['bbox'][2] = int(face['bbox'][2] * mask.shape[1])
-        face['bbox'][3] = int(face['bbox'][3] * mask.shape[0])
+        face = face[0]
+        face.bbox.x1 = int(face.bbox.x1 * mask.shape[1])
+        face.bbox.y1 = int( face.bbox.y1 * mask.shape[0])
+        face.bbox.x2 = int(face.bbox.x2 * mask.shape[1])
+        face.bbox.y2 = int(face.bbox.y2 * mask.shape[0])
 
     face_mask = None
     if len(faces) > 0:
         face_mask = np.zeros_like(mask, dtype=np.uint8)
         for face in faces:
-            bbox = face['bbox'].astype(np.int32)
-            bbox_h = (bbox[3] - bbox[1]) * face_extenssion
-            bbox_w = (bbox[2] - bbox[0]) * face_extenssion
+            face = face[0]
+            bbox = face.bbox
+            x1,y1,x2,y2 = np.int32(bbox.x1), np.int32(bbox.y1), np.int32(bbox.x2), np.int32(bbox.y2)
+            bbox_h = (y2 - y1) * face_extenssion
+            bbox_w = (x2 - x1) * face_extenssion
 
-            bbox[0] = int(max(0, bbox[0] - bbox_w / 2))
-            bbox[1] = int(max(0, bbox[1] - bbox_h / 2))
-            bbox[2] = int(min(mask.shape[1], bbox[2] + bbox_w / 2))
-            bbox[3] = int(min(mask.shape[0], bbox[3] + bbox_h / 2))
+            x1 = int(max(0, x1 - bbox_w / 2))
+            y1 = int(max(0, y1 - bbox_h / 2))
+            x2 = int(min(mask.shape[1], x2 + bbox_w / 2))
+            y2 = int(min(mask.shape[0], y2 + bbox_h / 2))
 
-            single_face_mask = mask[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+            single_face_mask = mask[y1:y2, x1:x2]
             if single_face_mask.sum() > 0:
-                face_mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = 255
+                face_mask[y1:y2, x1:x2] = 255
 
     s_min, s_max, w, h = crop_find(mask, faceMask=face_mask, aspectRatio=1, steps=4)
 
     return s_min[0] / mask.shape[0], s_min[1] / mask.shape[1], w / mask.shape[1], h / mask.shape[0]
-
-#
-# # files = glob(r'C:\temp\wed apr 24\38256105\*.jpg')
-# files = glob(r'C:\temp\face_issue\*.jpg')
-#
-# # files = glob(r'C:\temp\1746253403_S2_O82.jpg')
-# # files = glob(r'C:\temp\croping images\*.jpg')
-# import matplotlib.pyplot as plt
-#
-# remover = Remover() # default setting
-# app = FaceAnalysis(allowed_modules=['detection']) # enable detection model only
-# app.prepare(ctx_id=0, det_size=(1024, 1024))
-#
-# face_extenssion = 2
-#
-# img = ins_get_image('t1')
-#
-# all_faces= []
-# all_centroids=[]
-# all_diameters=[]
-# all_ars = []
-#
-# for idx,file in enumerate(tqdm(files)):
-#
-#
-#     # img = Image.open(r'C:\Users\ZivRotman\Downloads\423328036_18390166600069932_759402819709351851_n.jpg').convert('RGB')
-#     # img = Image.open(r'C:\temp\dec23 weds\batch3\29865519\8048999467.jpg').convert('RGB')
-#     img = Image.open(file).convert('RGB')
-#
-#     img_r = img.resize((img.size[0]//3,img.size[1]//3))
-#     # img_r=img
-#
-#     # img = ins_get_image('t1')
-#     # faces = app.get(img)
-#
-#     out = remover.process(img_r) # default setting - transparent background
-#
-#
-#     np_img = cv2.cvtColor(np.array(img),cv2.COLOR_RGB2BGR)
-#     faces = app.get(np_img)
-#
-#     for face in faces:
-#         face['bbox'][0] = face['bbox'][0]/np_img.shape[1]
-#         face['bbox'][1] = face['bbox'][1]/np_img.shape[0]
-#         face['bbox'][2] = face['bbox'][2]/np_img.shape[1]
-#         face['bbox'][3] = face['bbox'][3]/np_img.shape[0]
-#
-#
-#     all_faces.append(faces)
-#
-#
-#
-#     np_out = np.array(out)
-#     mask = np.squeeze(np_out[:,:,3])>0
-#     mask_o = np.copy(mask)
-#
-#     mask_r = cv2.resize(mask.astype(np.uint8),(np_img.shape[1],np_img.shape[0]))
-#     mask = mask_r
-#
-#     label_img = label(mask)
-#     regions = sorted(regionprops(label_img),key=lambda r: r.area, reverse=True)
-#
-#     all_centroids.append([regions[0].centroid[0]/mask.shape[0],regions[0].centroid[1]/mask.shape[1]])
-#     all_diameters.append(regions[0].equivalent_diameter_area/mask.shape[0])
-#
-#
-#
-#     all_ars.append(np_img.shape[1]/np_img.shape[0])
-#
-#
-
-
-# for idx,file in enumerate(tqdm(files)):
-#
-#     smin0, smin1,w,h = cropImage(all_ars[idx],all_faces[idx],all_centroids[idx],all_diameters[idx],min_dim=1000)
-#
-#     image = Image.open(file).convert('RGB')
-#     np_img = cv2.cvtColor(np.array(image),cv2.COLOR_RGB2BGR)
-#
-#
-#     s_min = np.zeros(2,dtype=int)
-#     s_min[0] = int(smin0*np_img.shape[0])
-#     s_min[1] = int(smin1*np_img.shape[1])
-#     h = int(h*np_img.shape[0])
-#     w = int(w*np_img.shape[1])
-#
-#
-#     crop = np.array(image)
-#     crop = cv2.cvtColor(crop,cv2.COLOR_RGB2BGR)
-#     crop = crop[s_min[0]:s_min[0]+h,s_min[1]:s_min[1]+w]
-#
-#     # crop_resized = cv2.resize(crop,(512,512))
-#
-#     os.makedirs('crops', exist_ok=True)
-#     cv2.imwrite('crops/'+os.path.split(file)[1],crop)
-#     # fileonly,ext = os.path.splitext(os.path.split(file)[1])
-#     # out.save('crops/'+fileonly+'.png')
-#     crop
