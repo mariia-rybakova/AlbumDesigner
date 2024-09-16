@@ -74,7 +74,10 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             filter_scores = [score for score in sorted_scores if score[1] > 0]
 
             # Select N number based on relations
-            select_percentage = relations[user_relation][event]
+            if event not in relations[user_relation]:
+                select_percentage = 0
+            else:
+                select_percentage = relations[user_relation][event]
             available_images = len(sorted_scores)
             n = round(available_images * select_percentage)
             if n == 0:
@@ -168,12 +171,12 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
                          logger)
 
 # if __name__ == '__main__':
-#     ten_photos = [9800170369, 9800170370, 9800170371, 9800170372, 9800170373, 9800170374, 9800170375, 9800170376, 9800170377, 9800170378, 9800170379]
+#     ten_photos = [9835119266,9835119518,9835119524,9835119558,9835119560,9835119569,9835119592,9835119599,9835119985,9835120093]
 #     people_ids = [2,4,1,5]
 #     user_relation = 'parents'
 #     tags = ['ceremony', 'dancing', 'bride and groom']
 #     #project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
-#     project_base_url = "ptstorage_32://pictures/40/607/40607142/tydzj68uum3cpmy9mb"
+#     project_base_url = "ptstorage_32://pictures/40/776/40776737/9le0o22nkwv6hnxz3f"
 #     tags_features_file =r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
 #     start = time.time()
 #     auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation,r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',tags_features_file, logger=None)

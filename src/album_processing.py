@@ -9,6 +9,7 @@ from utils import get_photos_from_db,generate_filtered_multi_spreads,add_ranking
 from utils.clusters_labels import label_list
 from utils.load_layouts import load_layouts
 from utils.time_proessing import process_image_time
+from utils.plotting_results import  plot_album
 
 def sort_groups_by_photo_time(data_dict,logger):
     def get_mean_time(sublist):
@@ -224,7 +225,10 @@ def create_automatic_album(images_data_dict, layouts_path, logger=None):
         sorted_group_name2chosen_combinations = sort_groups_by_photo_time(group_name2chosen_combinations, logger)
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
         result = generate_json_response(cover_img, cover_img_layout,sub_groups, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
-
+        gallery_path = 'dataset\\40776737'
+        output_save_path = r'results'
+        plot_album(cover_img, cover_img_layout, sub_groups, sorted_sub_groups, group_name2chosen_combinations,
+                   layouts_df, logger, gallery_path, output_save_path)
         # End time
         end_time = time.time()
         elapsed_time = (end_time - start_time) / 60

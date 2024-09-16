@@ -21,7 +21,7 @@ def comp_tag_features(tag: str) -> np.array:
     text_features /= text_features.norm(dim=1, keepdim=True)
     return text_features.cpu().numpy()
 
-tags = ['ceremony', 'dancing', 'bride and groom']
+tags = ['bride and groom','group_picture', 'friends','dance','speech', 'party']
 result = {}
 for tag in tags:
     features = comp_tag_features(tag)
