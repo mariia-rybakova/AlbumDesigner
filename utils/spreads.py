@@ -353,16 +353,18 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
     cluster_labels = [item.cluster_label for item in photos]
 
     for i in range(len(layout_parts)):
-        maxCombs = int(DESIGN_PARAMS['MaxCombs'] / np.power(2, i))
+        maxCombsParam = DESIGN_PARAMS['MaxCombs'] if len(photos) <= 12 else DESIGN_PARAMS['MaxCombsLargeGroups']
+        maxCombs = int(maxCombsParam / np.power(2, i))
         single_combs = listSingleCombinations(photos, layout_parts[i])
-        single_weights = []
-        for single_comb in single_combs:
-            single_weights.append(eval_single_comb(single_comb, photoTimes, cluster_labels))
+
         if len(single_combs) > maxCombs:
             logger.info('combinations Found {}, sampled {} combinations foe evaluation'.format(len(single_combs), maxCombs))
             sample_idxs = random.sample(range(len(single_combs)), maxCombs)
             single_combs = [single_combs[sample_idx] for sample_idx in sample_idxs]
-            single_weights = [single_weights[sample_idx] for sample_idx in sample_idxs]
+
+        single_weights = []
+        for single_comb in single_combs:
+            single_weights.append(eval_single_comb(single_comb, photoTimes, cluster_labels))
         combs += single_combs
         comb_weights = np.append(comb_weights, np.array(single_weights) * weight_parts[i])
 

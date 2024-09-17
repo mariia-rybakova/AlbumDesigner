@@ -29,7 +29,8 @@ DESIGN_PARAMS = {
     'orientation_mix': 0.1,
     'spread_score_threshold': 0.01,
     'partition_score_threshold': 100,
-    'MaxCombs': 2000,
+    'MaxCombs': 1000,
+    'MaxCombsLargeGroups': 100,
     'MaxOrientedCombs': 300,
 }
 
