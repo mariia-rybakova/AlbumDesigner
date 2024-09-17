@@ -71,10 +71,19 @@ async def create_album(project_base_url: str):
         data_dict = json.loads(data_str)
     else:
         data_dict = {
-            'ten_photos': [9835120228,9835120218,9835120183,9835120134,9835120121,9835120115,9835120004,9835119650,9835119619,9835119512],
-            'people_ids': [131,61,56,21,23,1,3,10,8,16,4,15],
-            'tags': [ 'bride and groom','group_picture', 'friends','dance','speech', 'party'],
-            'user_relation': 'close_friends'  # or 'spouse' or 'children' # designs ids
+            'ten_photos': [9835119266,
+                           9835119518,
+                           9835119524,
+                           9835119558,
+                           9835119560,
+                           9835119569,
+                           9835119592,
+                           9835119599,
+                           9835119985,
+                           9835120093],
+            'people_ids': [1, 3, 131, 61, 56, 21, 23, 10, 221, 195, 1, 3, 9, 12, 128],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
         }
 
     design_path = r'files\designs.json'
@@ -95,12 +104,13 @@ async def create_album(project_base_url: str):
                                                                   data_dict['user_relation'], queries_file_path,
                                                                   tags_features_file, logger=app.package['logger'])
 
+    print("Number of Selected Images ", len(images_selected))
     if errors:
         return {"error": True, 'error_description': str(errors), "result": None}
 
     layouts_path = genereate_layouts_path(design_path, desings_ids, save_path, logger=logger)
     images_data_dict = get_info_only_for_selected_images(images_selected, gallery_photos_info, logger=logger)
-
+    print("Selected images data info", len(images_data_dict))
     if len(images_data_dict) == 0:
         return {"error": True, 'error_description': "Theres no data for images that have veen selected", "result": None}
 

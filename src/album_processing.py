@@ -219,11 +219,16 @@ def create_automatic_album(images_data_dict, layouts_path, logger=None):
 
         group_name2chosen_combinations, sub_groups, error = gallery_processing(sorted_by_time_df, layouts_df, logger)
 
+        for group_name, group in sub_groups:
+           print(group_name)
+           print(group['image_id'].values)
+
         comb_generation_time = (time.time() - start_time) / 60
         logger.info(f'Combination generation time: {comb_generation_time:.2f} minutes')
 
         sorted_group_name2chosen_combinations = sort_groups_by_photo_time(group_name2chosen_combinations, logger)
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
+
         result = generate_json_response(cover_img, cover_img_layout,sub_groups, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
         gallery_path = 'dataset\\40776737'
         output_save_path = r'results'
