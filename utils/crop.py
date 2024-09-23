@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from PIL import Image
 
 
 def cropWeight(tl, br, foregroundMask=None, faceMask=None, aspectRatio=1, center_weight=200, face_weight=150):
@@ -127,3 +128,46 @@ def smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=
     s_min, s_max, w, h = crop_find(mask, faceMask=face_mask, aspectRatio=1, steps=4)
 
     return s_min[0] / mask.shape[0], s_min[1] / mask.shape[1], w / mask.shape[1], h / mask.shape[0]
+
+
+if __name__ == "__main__":
+    class BBox(object):
+        def __init__(self, x1, y1, x2, y2):
+            self.x1 = x1
+            self.y1 = y1
+            self.x2 = x2
+            self.y2 = y2
+
+    class Face:
+        def __init__(self, x1, y1, x2, y2):
+            self.bbox = BBox(x1, y1, x2, y2)
+
+    class Centroid:
+        def __init__(self, x1, y1):
+            self.x = x1
+            self.y = y1
+
+    image_id = 9850153891
+    ar = 1.0
+    faces  = [[Face(0.303076923,0.564615369,0.392307699,0.696923077)]]
+    centroid  = Centroid(0.799326658,0.321599692)
+    diameter = 0.142827
+
+    cropped_x,cropped_y,cropped_w,cropped_h = smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=2)
+
+    image = Image.open(r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\40850524\9850153891.jpg').convert('RGB')
+
+    np_img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+    s_min = np.zeros(2, dtype=int)
+    x = int(cropped_x * np_img.shape[0])
+    y = int(cropped_y * np_img.shape[1])
+    h = int(cropped_h * np_img.shape[0])
+    w = int(cropped_w * np_img.shape[1])
+
+    crop = np.array(image)
+    crop = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+    cropped_image = crop[x:x + h,y:y + w]
+    # Resize the cropped image
+    img = Image.fromarray(cropped_image)
+    img.show()

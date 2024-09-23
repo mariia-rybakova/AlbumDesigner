@@ -177,7 +177,7 @@ def map_cluster_label(cluster_label):
         return "Unknown"
 
 
-def create_automatic_album(images_data_dict, layouts_path, logger=None):
+def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=None):
     # Start time
     logger.info("Start creating album...")
     layouts_df = load_layouts(layouts_path)
@@ -230,7 +230,6 @@ def create_automatic_album(images_data_dict, layouts_path, logger=None):
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
 
         result = generate_json_response(cover_img, cover_img_layout,sub_groups, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
-        gallery_path = 'dataset\\40776737'
         output_save_path = r'results'
         plot_album(cover_img, cover_img_layout, sub_groups, sorted_sub_groups, group_name2chosen_combinations,
                    layouts_df, logger, gallery_path, output_save_path)

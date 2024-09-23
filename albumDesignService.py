@@ -71,21 +71,13 @@ async def create_album(project_base_url: str):
         data_dict = json.loads(data_str)
     else:
         data_dict = {
-            'ten_photos': [9835119266,
-                           9835119518,
-                           9835119524,
-                           9835119558,
-                           9835119560,
-                           9835119569,
-                           9835119592,
-                           9835119599,
-                           9835119985,
-                           9835120093],
-            'people_ids': [1, 3, 131, 61, 56, 21, 23, 10, 221, 195, 1, 3, 9, 12, 128],
+            'ten_photos': [9863268097,9863268114,9863268124,9863268136,9863268140,9863268145,9863268148,9863268164,9863268228,9863268257],
+            'people_ids': [5,7],
             'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
             'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
         }
 
+    gallery_path = 'dataset\\40919535'
     design_path = r'files\designs.json'
     desings_ids = [3444, 3415, 3417, 3418, 3419, 3420, 3421, 3423, 3424, 3425, 3426, 3427, 3428, 3429, 3430, 3431, 3432,
                    3433, 3434, 3435, 3436, 3437, 3438, 3439, 3440, 3441, 3442, 3443, 3445, 3449, 3450, 3451, 3452, 3453,
@@ -121,7 +113,7 @@ async def create_album(project_base_url: str):
     logger.info(f"CPU Usage Before creating an Album: {cpu_usage}%")
     logger.info(f"Memory Usage Before creating an Album: {memory_info.percent}%")
 
-    album_json_result, error = create_automatic_album(images_data_dict, layouts_path, logger=logger)
+    album_json_result, error = create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=logger)
 
     if album_json_result:
         logger.info("Album created Sucessfully")
@@ -135,13 +127,4 @@ async def create_album(project_base_url: str):
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8080, timeout_keep_alive=15000)
 
-    # ptstorage_32://pictures/40/607/40607142/tydzj68uum3cpmy9mb/
-    # https://testing1eus1public.blob.core.windows.net/pictures/40/607/40607142/tydzj68uum3cpmy9mb/lowres
-    #desings_ids = [3444,3415,3417,3418,3419,3420,3421,3423,3424,3425,3426,3427,3428,3429,3430,3431,3432,3433,3434,3435,3436,3437,3438,3439,3440,3441,3442,3443,3445,3449,3450,3451,3452,3453,3454,3455,3456,3457,3458,3459,3460,3461,3462,3463,3464,3465,3466,3467,3468,3469,3470,3471,3472,3473,3474,3475,3476,3477,3478,3479,3480,3481,3482,3483,3484,3485,3486,3487,3488,3489,3490,3491,3492,3494,3495,3496,15971,15972,15973,15974,15975,15976,15977,15978,15979,15980,15981,15982,15983,15984,15990,15991,15992,15994,15995,15997,15998,15999,16000,16001,16002,16003,16004,16111,16112,17109,17110]
-    #'ten_photos': [9800170369, 9800170370, 9800170371, 9800170372, 9800170373, 9800170374, 9800170375, 9800170376,9800170377, 9800170378, 9800170379],
 
-# service-message: https://testing1eus1public.blob.core.windows.net/pictures/40/776/40776737/9le0o22nkwv6hnxz3f/lowres
-# service-message: https://testing1eus1public.blob.core.windows.net/pictures/40/776/40776739/9iv43gtbr79y4dort7/lowres
-# service-message: https://testing1eus1public.blob.core.windows.net/pictures/40/776/40776746/s19l6qmkvdujffu2o7/lowres
-# service-message: https://testing1eus1public.blob.core.windows.net/pictures/40/776/40776719/yzldofvt91f2yxojit/lowres
-# service-message: https://testing1eus1public.blob.core.windows.net/pictures/40/776/40776729/ioirhmlnhxo1kfva15/lowres

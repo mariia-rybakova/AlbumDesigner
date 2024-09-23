@@ -24,15 +24,28 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
         cover_img_path = os.path.join(gallery_path, str(cover_image_id) + '.jpg')
 
         img = Image.open(cover_img_path)
-        width, height = img.size
 
         # Resize the image to fit the box
         centroid = cover_img['background_centroid'].values[0]
         cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
                                                                    list(cover_img['faces_info']), centroid,
                                                                    float(cover_img['diameter'].iloc[0]))
+        # img.thumbnail((cropped_w, cropped_h))
+        np_img = np.array(img)
 
-        cropped_x, cropped_y, cropped_w, cropped_h = int(cropped_x * width), int(cropped_y * height), int(cropped_w * width), int(cropped_h * height)
+        im_x = int(cropped_x * np_img.shape[0])
+        im_y = int(cropped_y * np_img.shape[1])
+        im_h = int(cropped_h * np_img.shape[0])
+        im_w = int(cropped_w * np_img.shape[1])
+
+        cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
+
+        # Resize the cropped image
+        img = Image.fromarray(cropped_image)
+
+        # Save the resized image to a temporary file
+        temp_img_path = "cover_temp.jpg"
+        img.save(temp_img_path)
 
         for box in cover_layout_info:
             x, y, w, h = box['x'], box['y'], box['width'], box['height']
@@ -42,17 +55,6 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             y = y * page_height
             w = w * page_width
             h = h * page_height
-
-            img.thumbnail((cropped_w, cropped_h))
-            #crop = np.array(img)
-            #crop = crop[cropped_x:cropped_x + height, cropped_y:cropped_y + width]
-
-            # Resize the cropped image
-            #img = Image.fromarray(crop)
-
-            # Save the resized image to a temporary file
-            temp_img_path = "cover_temp.jpg"
-            img.save(temp_img_path)
 
             # Plot the cover image inside the box
             c.drawImage(temp_img_path, x, y, w, h)
@@ -102,7 +104,7 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
                     c_image_info = c_group[c_group['image_id'] == c_image_id]
                     img_path = os.path.join(gallery_path, str(cur_photo.id) + '.jpg')
                     img = Image.open(img_path)
-                    width, height = img.size
+
                     x, y, w, h = box['x'], box['y'], box['width'], box['height']
 
                     # Adjust coordinates and dimensions to fit 1:2 aspect ratio
@@ -116,14 +118,20 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
                                                                                 centroid,
                                                                                 float(c_image_info['diameter'].iloc[0]))
 
-                    cropped_x, cropped_y, cropped_w, cropped_h = int(cropped_x * width), int(cropped_y * height), int(cropped_w * width), int(cropped_h * height)
-                    #crop = np.array(img)
-                    #crop = crop[cropped_x:cropped_x + height, cropped_y:cropped_y + width]
+                    np_img = np.array(img)
+
+                    im_x = int(cropped_x * np_img.shape[0])
+                    im_y = int(cropped_y * np_img.shape[1])
+                    im_h = int(cropped_h * np_img.shape[0])
+                    im_w = int(cropped_w * np_img.shape[1])
+
+                    cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
+
 
                     # Resize the cropped image
-                    #img = Image.fromarray(crop)
+                    img = Image.fromarray(cropped_image)
 
-                    img.thumbnail((cropped_w, cropped_h))
+                    #img.thumbnail((cropped_w, cropped_h))
                     # Save the cropped and resized image to a temporary file
                     temp_img_path = f"{cur_photo.id}_temp.jpg"
                     img.save(temp_img_path)
