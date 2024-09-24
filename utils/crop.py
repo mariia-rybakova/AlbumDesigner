@@ -85,7 +85,7 @@ def crop_find(foregroundMask, faceMask=None, aspectRatio=1, steps=3):
     return s_min, s_max, int(w), int(h)
 
 
-def smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=2):
+def smart_cropping(ar, faces, centroid, diameter,box_aspect_ratio, min_dim=1000, face_extenssion=2):
     if ar > 1:
         mask = np.zeros((min_dim, int(ar * min_dim)), dtype=np.uint8)
     else:
@@ -95,22 +95,23 @@ def smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=
     mask = cv2.circle(mask, (int(centroid.y * mask.shape[1]), int(centroid.x * mask.shape[0])), int(diameter / 2 * mask.shape[0]), 255, -1)
 
     if len(faces) != 0:
+        if not isinstance(faces, list):
+            faces = list(faces)
+
+        faces = faces[0]
         for face in faces:
-            if len(face) != 0:
-                face = face[0]
-                face.bbox.x1 = int(face.bbox.x1 * mask.shape[1])
-                face.bbox.y1 = int( face.bbox.y1 * mask.shape[0])
-                face.bbox.x2 = int(face.bbox.x2 * mask.shape[1])
-                face.bbox.y2 = int(face.bbox.y2 * mask.shape[0])
-            else:
-                print(face)
+            face.bbox.x1 = int(face.bbox.x1 * mask.shape[1])
+            face.bbox.y1 = int(face.bbox.y1 * mask.shape[0])
+            face.bbox.x2 = int(face.bbox.x2 * mask.shape[1])
+            face.bbox.y2 = int(face.bbox.y2 * mask.shape[0])
+
+
 
     face_mask = None
     if len(faces) > 0:
         face_mask = np.zeros_like(mask, dtype=np.uint8)
-        for face in faces:
-            if len(face) != 0:
-                face = face[0]
+        if isinstance(faces, list):
+            for face in faces:
                 bbox = face.bbox
                 x1,y1,x2,y2 = np.int32(bbox.x1), np.int32(bbox.y1), np.int32(bbox.x2), np.int32(bbox.y2)
                 bbox_h = (y2 - y1) * face_extenssion
@@ -125,7 +126,8 @@ def smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=
                 if single_face_mask.sum() > 0:
                     face_mask[y1:y2, x1:x2] = 255
 
-    s_min, s_max, w, h = crop_find(mask, faceMask=face_mask, aspectRatio=1, steps=4)
+
+    s_min, s_max, w, h = crop_find(mask, faceMask=face_mask, aspectRatio=box_aspect_ratio, steps=4)
 
     return s_min[0] / mask.shape[0], s_min[1] / mask.shape[1], w / mask.shape[1], h / mask.shape[0]
 

@@ -28,7 +28,7 @@ def get_faces_info(faces_file, images_dict,logger=None):
 
     for photo in images_photos:
         number_faces = len(photo.faces)
-        faces = photo.faces
+        faces = list(photo.faces)
         if photo.photoId in images_dict:
             images_dict[photo.photoId].update({'n_faces': number_faces, 'faces_info': faces})
 

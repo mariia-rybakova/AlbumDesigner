@@ -96,7 +96,7 @@ async def create_album(project_base_url: str):
                                                                   data_dict['user_relation'], queries_file_path,
                                                                   tags_features_file, logger=app.package['logger'])
 
-    logger.info("Number of Selected Images ", len(images_selected))
+    logger.info(f"Number of Selected Images {len(images_selected)}")
     if errors:
         return {"error": True, 'error_description': str(errors), "result": None}
 

@@ -6,7 +6,7 @@ from PIL import Image
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import landscape
 
-from utils.crop import smart_cropping
+from utils.crop_v2 import smart_cropping
 
 
 def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict, group_name2chosen_combinations,
@@ -22,31 +22,9 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
         cover_layout_info = ast.literal_eval(layouts_df.loc[int(cover_img_layout_id)]['boxes_info'])
         cover_image_id = cover_img['image_id'].values[0]
         cover_img_path = os.path.join(gallery_path, str(cover_image_id) + '.jpg')
-
-        img = Image.open(cover_img_path)
-
+        cover_img_reading = Image.open(cover_img_path)
         # Resize the image to fit the box
         centroid = cover_img['background_centroid'].values[0]
-        cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
-                                                                   list(cover_img['faces_info']), centroid,
-                                                                   float(cover_img['diameter'].iloc[0]))
-        # img.thumbnail((cropped_w, cropped_h))
-        np_img = np.array(img)
-
-        im_x = int(cropped_x * np_img.shape[0])
-        im_y = int(cropped_y * np_img.shape[1])
-        im_h = int(cropped_h * np_img.shape[0])
-        im_w = int(cropped_w * np_img.shape[1])
-
-        cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
-
-        # Resize the cropped image
-        img = Image.fromarray(cropped_image)
-
-        # Save the resized image to a temporary file
-        temp_img_path = "cover_temp.jpg"
-        img.save(temp_img_path)
-
         for box in cover_layout_info:
             x, y, w, h = box['x'], box['y'], box['width'], box['height']
 
@@ -55,6 +33,26 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             y = y * page_height
             w = w * page_width
             h = h * page_height
+
+            box_aspect_ratio = w / h
+            cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
+                                                                        cover_img['faces_info'], centroid,
+                                                                        float(cover_img['diameter'].iloc[0]),box_aspect_ratio)
+            # img.thumbnail((cropped_w, cropped_h))
+            np_img = np.array(cover_img_reading)
+            im_x = int(cropped_x * np_img.shape[0])
+            im_y = int(cropped_y * np_img.shape[1])
+            im_h = int(cropped_h * np_img.shape[0])
+            im_w = int(cropped_w * np_img.shape[1])
+
+            cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
+
+            # Resize the cropped image
+            img = Image.fromarray(cropped_image)
+
+            # Save the resized image to a temporary file
+            temp_img_path = "cover_temp.jpg"
+            img.save(temp_img_path)
 
             # Plot the cover image inside the box
             c.drawImage(temp_img_path, x, y, w, h)
@@ -74,7 +72,6 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             # Loop over each spread
             for spread_index in range(number_of_spreads):
                 c.showPage()
-
                 layout_id = group_data[spread_index][0]
                 cur_layout_info = ast.literal_eval(layouts_df.loc[layout_id]['boxes_info'])
                 left_box_ids = ast.literal_eval(layouts_df.loc[layout_id]['left_box_ids'])
@@ -112,11 +109,13 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
                     y = y * page_height
                     w = w * page_width
                     h = h * page_height
+
+                    box_aspect_ratio = w / h
                     centroid = c_image_info['background_centroid'].values[0]
                     cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(c_image_info['image_as'].iloc[0]),
-                                                                                list(c_image_info['faces_info']),
+                                                                                c_image_info['faces_info'],
                                                                                 centroid,
-                                                                                float(c_image_info['diameter'].iloc[0]))
+                                                                                float(c_image_info['diameter'].iloc[0]),box_aspect_ratio)
 
                     np_img = np.array(img)
 
@@ -126,8 +125,6 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
                     im_w = int(cropped_w * np_img.shape[1])
 
                     cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
-
-
                     # Resize the cropped image
                     img = Image.fromarray(cropped_image)
 

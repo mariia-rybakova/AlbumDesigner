@@ -42,7 +42,8 @@ def generate_json_response(cover_img, cover_img_layout_id,sub_groups, sorted_sub
             x, y, w, h = box['x'], box['y'], box['width'], box['height']
             # Resize the image to fit the box
             centroid = cover_img['background_centroid'].values[0]
-            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]), list(cover_img['faces_info']), centroid, float(cover_img['diameter'].iloc[0]))
+            box_aspect_ratio = w / h
+            cropped_x,cropped_y, croped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]), list(cover_img['faces_info']), centroid, float(cover_img['diameter'].iloc[0]),box_aspect_ratio)
 
             result[0]['compositions'].append({
                 "compositionId": 1,
@@ -124,12 +125,13 @@ def generate_json_response(cover_img, cover_img_layout_id,sub_groups, sorted_sub
                 cur_photo = all_photos[element_index]
 
                 x, y, w, h = box['x'], box['y'], box['width'], box['height']
+                box_aspect_ratio = w /h
                 c_image_id = cur_photo.id
 
                 c_image_info = c_group[c_group['image_id'] == c_image_id]
                 if len(c_image_info) != 0:
                     centroid = c_image_info['background_centroid'].values[0]
-                    cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(float(c_image_info['image_as'].iloc[0]), list(c_image_info['faces_info']), centroid, float(c_image_info['diameter'].iloc[0]))
+                    cropped_x,cropped_y, cropped_w, cropped_h = smart_cropping(float(c_image_info['image_as'].iloc[0]), list(c_image_info['faces_info']), centroid, float(c_image_info['diameter'].iloc[0]),box_aspect_ratio)
                     result[0]['compositions'].append({
                         "compositionId": compositionId + 1,
                         "compositionPackageId": -1,
