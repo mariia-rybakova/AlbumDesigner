@@ -6,9 +6,9 @@ import random
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from torch.nn.functional import embedding
+from sklearn.cluster import AgglomerativeClustering
 
 from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
-
 from utils.image_queries import generate_query
 from utils.image_selection_scores import map_cluster_label, calculate_scores
 from utils.read_files_types import read_pkl_file
@@ -23,9 +23,49 @@ Tag cloud flowers hugs, food"""
 
 """We dont know if the user will select average number of photos for each event, or even total number of images for album"""
 
+events_min_four_images ={
+    'bride and groom',
+    'bride',
+    'groom',
+}
 
 
-def remove_similar_images(selected_images, gallery_photos_info, threshold=0.98):
+def remove_similar_images(selected_images, gallery_photos_info, threshold=0.90):
+    # Extract embeddings
+    embeddings = [gallery_photos_info[image_id]['embedding'] for image_id in selected_images]
+    embeddings = np.array(embeddings)
+
+    # Compute cosine distance (1 - cosine similarity)
+    cosine_distances = cosine_similarity(embeddings)
+
+    # Perform Agglomerative Clustering with the given threshold
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        linkage='ward',
+        distance_threshold= 0.256
+    )
+    clustering.fit(cosine_distances)
+
+    # Dictionary to hold images in each cluster
+    clusters = {}
+    for idx, label in enumerate(clustering.labels_):
+        clusters.setdefault(label, []).append(selected_images[idx])
+
+    # From each cluster, select one image (e.g., the first one or based on a criterion)
+    final_selected_images = []
+    for cluster_label, images_in_cluster in clusters.items():
+        # Here, you can choose to select the image with the highest score or any other criterion
+        # For simplicity, we'll select the first image in the cluster
+        selected_image = images_in_cluster[0]
+        final_selected_images.append(selected_image)
+
+        if len(images_in_cluster) > 1:
+            similar_images = images_in_cluster[1:]
+            print(f"Cluster {cluster_label}: Keeping '{selected_image}', removing similar images: {similar_images}")
+
+    return final_selected_images
+
+def remove_similar_images2(selected_images, gallery_photos_info, threshold=0.90):
     """
     Removes images from the selected_images list if they are too similar
     based on cosine similarity of their embeddings.
@@ -44,20 +84,31 @@ def remove_similar_images(selected_images, gallery_photos_info, threshold=0.98):
     num_images = len(selected_images)
 
     # Initialize a list to keep track of images to keep
-    keep_indices = set(range(num_images))
+    keep_indices = []
+
+    to_consider = np.ones(num_images, dtype=bool)
+
 
     # Compute cosine similarity matrix
     similarity_matrix = cosine_similarity(embeddings)
 
-    # Iterate over the upper triangle of the similarity matrix
     for i in range(num_images):
+        if not to_consider[i]:
+            continue  # Skip images already marked as similar to a previous image
+
+        # Keep the current image
+        keep_indices.append(i)
+
         for j in range(i + 1, num_images):
-            if j in keep_indices and i in keep_indices:
-                similarity = similarity_matrix[i][j]
-                if similarity > threshold:
-                    # Remove one of the images; here we choose to remove the j-th image
-                    keep_indices.remove(j)
-                    print(f"Removing image '{selected_images[j]}' due to high similarity with '{selected_images[i]}' (similarity: {similarity:.4f})")
+            if not to_consider[j]:
+                continue  # Skip images already marked as similar
+
+            similarity = similarity_matrix[i, j]
+            if similarity > threshold:
+                # Mark the j-th image as similar and skip it in future iterations
+                to_consider[j] = False
+                print(
+                    f"Removing image '{selected_images[j]}' due to high similarity with '{selected_images[i]}' (similarity: {similarity:.4f})")
 
     # Build the filtered list of images
     filtered_images = [selected_images[i] for i in sorted(keep_indices)]
@@ -65,7 +116,6 @@ def remove_similar_images(selected_images, gallery_photos_info, threshold=0.98):
     # Identify grayscale images in the filtered list
     grayscale_images = [img for img in filtered_images if gallery_photos_info[img]['image_color'] == 0]
     num_grayscale = len(grayscale_images)
-    print(f"Number of grayscale images after filtering: {num_grayscale}")
 
     if num_grayscale >= 1:
         selected_image = random.choice(grayscale_images)
@@ -88,6 +138,9 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
     ai_images_selected = []
     category_picked = {}
     for iteration, (event, imges) in enumerate(clusters_class_imgs.items()):
+        print("Starting with event:", event)
+        print("Number of images:", len(imges))
+        print("images:", imges)
         cluster_images_scores = {}
         for image in imges:
             image_score = calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags_features)
@@ -97,7 +150,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         sorted_scores = sorted(cluster_images_scores.items(), key=lambda item: item[1], reverse=True)
 
         # if all scores are zeros don't select anything
-        if all(t[1] == 0 for t in sorted_scores):
+        if all(t[1] <= 0 for t in sorted_scores):
             continue
         # we don't want to select identical images of settings
         if event == 'settings':
@@ -136,19 +189,40 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             # Get images that have people we want
             filter_scores = [score for score in sorted_scores if score[1] > 0]
 
+            if len(filter_scores) == 1:
+                continue
+
             # Select N number based on relations
             if event not in relations[user_relation]:
                 select_percentage = 0
             else:
                 select_percentage = relations[user_relation][event]
+
             available_images = len(sorted_scores)
             n = round(available_images * select_percentage)
             if n == 0:
                 continue
 
+            # Enforce a minimum of 4 images for specific events
+            if event in events_min_four_images and n < 4:
+                n = min(4, available_images)
+
+            # Ensure n does not exceed available images
+            n = min(n, available_images)
+
             selected_images = filter_scores[:n]
             selected_images = [image_id for image_id, score in selected_images]
-            filtered_images = remove_similar_images(selected_images, gallery_photos_info, threshold=0.94)
+            if event != 'dancing':
+                filtered_images = remove_similar_images(selected_images, gallery_photos_info, threshold=0.94)
+            else:
+                filtered_images = selected_images
+
+            # if len(filtered_images) < 4:
+            #     number_needed = 4 - len(filtered_images)
+            #     max_n = min(len(filter_scores), (n+number_needed))
+            #     more_imgs = [img_id for img_id,score in filter_scores[n:max_n]]
+            #     filtered_images.extend(more_imgs)
+
             ai_images_selected.extend(filtered_images)
 
         if event not in category_picked:
@@ -162,6 +236,13 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             logger.info(f"Images selected this iteration: {len(filtered_images)}")
             logger.info(f"Total images selected so far: {total_selected_images}")
             logger.info("*******************************************************")
+        else:
+            print(f"Iteration {iteration}:")
+            print(f"Event: {event}, Available images: {available_images}")
+            print(f"Images selected this iteration: {len(filtered_images)}")
+            print(f"Total images selected so far: {total_selected_images}")
+            print("category:", category_picked)
+            print("*******************************************************")
 
     if len(ai_images_selected) == 0:
         error_message = 'No images were selected.'
@@ -267,30 +348,21 @@ def copy_selected_folder(ai_images_selected, gal_path):
         else:
             print(f"Image '{image_id}' not found in '{gal_path}'.")
 
-
-if __name__ == '__main__':
-    ten_photos = [9835119266,
-                           9835119518,
-                           9835119524,
-                           9835119558,
-                           9835119560,
-                           9835119569,
-                           9835119592,
-                           9835119599,
-                           9835119985,
-                           9835120093]
-    people_ids = [1, 3, 131, 61, 56, 21, 23, 10, 221, 195, 1, 3, 9, 12, 128]
-    user_relation = 'bride_groom'
-    tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
-    #project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
-    project_base_url = "ptstorage_32://pictures/40/776/40776737/9le0o22nkwv6hnxz3f"
-    tags_features_file =r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
-    gal_path = r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\40776737'
-    start = time.time()
-    ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation,r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',tags_features_file, logger=None)
-
-    copy_selected_folder(ai_images_selected,gal_path)
-
-    end = time.time()
-    elapsed_time = (end - start) / 60
-    print(f"Elapsed time: {elapsed_time:.2f} minutes")
+#
+# if __name__ == '__main__':
+#     ten_photos = [9850153729,9850153727,9850153746,9850153756,9850153880,9850153914,9850153989,9850154056,9850154504,9850154597]
+#     people_ids = [2,7]
+#     user_relation = 'bride_groom'
+#     tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
+#     #project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
+#     project_base_url = "ptstorage_32://pictures/40/850/40850524/ovnphx078i8o50zomt"
+#     tags_features_file =r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
+#     gal_path = r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\40850524'
+#     start = time.time()
+#     ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation,r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',tags_features_file, logger=None)
+#
+#     copy_selected_folder(ai_images_selected,gal_path)
+#
+#     end = time.time()
+#     elapsed_time = (end - start) / 60
+#     print(f"Elapsed time: {elapsed_time:.2f} minutes")

@@ -6,7 +6,7 @@ def get_important_imgs(data_df, top=5):
     selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment']
     # Step 1: Filter based on the conditions
     filtered_df = data_df[
-        (data_df["image_query_content"] == "bride and groom") &
+        (data_df["cluster_context"] == "bride and groom") &
         (data_df["image_subquery_content"].isin(selection_q))
         ]
 

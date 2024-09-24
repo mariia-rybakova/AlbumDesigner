@@ -9,7 +9,7 @@ def read_timestamp(timestamp_str):
         return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
 
 def convert_to_timestamp(time_integer):
-   return datetime.fromtimestamp(time_integer / 1e3)
+   return datetime.fromtimestamp(time_integer)
 
 def process_image_time(data_df):
         timestamps = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
@@ -25,13 +25,13 @@ def process_image_time(data_df):
         image_id2general_time = dict()
         first_image_time = image_ids2timestamps[0][1]
         for image_id, cur_timestamp in image_ids2timestamps:
-            general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
-
+            #general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
+            general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
             diff_from_first = cur_timestamp - first_image_time
             general_time += diff_from_first.days * 1440
 
-            image_id2general_time[image_id] = general_time
-            data_df.loc[data_df['image_id'] == image_id, 'general_time'] = general_time
+            image_id2general_time[image_id] = int(general_time)
+            data_df.loc[data_df['image_id'] == image_id, 'general_time'] = int(general_time)
 
         sorted_by_time_df = data_df.sort_values(by="general_time", ascending=False)
 

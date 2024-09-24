@@ -96,13 +96,13 @@ async def create_album(project_base_url: str):
                                                                   data_dict['user_relation'], queries_file_path,
                                                                   tags_features_file, logger=app.package['logger'])
 
-    print("Number of Selected Images ", len(images_selected))
+    logger.info("Number of Selected Images ", len(images_selected))
     if errors:
         return {"error": True, 'error_description': str(errors), "result": None}
 
     layouts_path = genereate_layouts_path(design_path, desings_ids, save_path, logger=logger)
     images_data_dict = get_info_only_for_selected_images(images_selected, gallery_photos_info, logger=logger)
-    print("Selected images data info", len(images_data_dict))
+
     if len(images_data_dict) == 0:
         return {"error": True, 'error_description': "Theres no data for images that have veen selected", "result": None}
 
@@ -116,7 +116,7 @@ async def create_album(project_base_url: str):
     album_json_result, error = create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=logger)
 
     if album_json_result:
-        logger.info("Album created Sucessfully")
+        logger.info("Album created Successfully")
         logger.info("Result {}".format(album_json_result))
         return {"error": False, 'error_description': None, "result": album_json_result}
     else:

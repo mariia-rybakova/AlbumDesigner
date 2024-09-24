@@ -135,11 +135,11 @@ def gallery_processing(data_df, layouts_df, logger):
                 logger.info('Photos: {}'.format([[item.id, item.ar, item.color, item.rank, item.photo_class, item.cluster_label, item.general_time]
                      for item in group_photos]))
                 filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,logger)
+                if filtered_spreads is None:
+                    continue
                 logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
                 logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
-                if filtered_spreads is None:
-                    continue
                 ranking_start = time.time()
                 filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
                 filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
@@ -192,21 +192,21 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
     data_df = data_df[['image_id'] + [col for col in data_df.columns if col != 'image_id']]
     data_df.fillna(value='None', inplace=True)
     sorted_ranking_df = data_df.sort_values(by="ranking", ascending=False)
+    # convert cluster class number into text value and make copy when we need merging
+    # apply the mapping function to create the new cluster_context column
+    sorted_ranking_df["cluster_context"] = sorted_ranking_df["cluster_class"].apply(map_cluster_label)
+    # copy column to make edit when we merge
+    sorted_ranking_df["cluster_context_2nd"] = sorted_ranking_df['cluster_context']
+
     # get most import images for cover image
     bride_groom_highest_images = get_important_imgs(sorted_ranking_df, top=50)
 
     # if we didn't find the highest ranking images then we won't be able to get cover image
     if len(bride_groom_highest_images) > 0:
         # get cover image and remove it from dataframe
-        data_df, cover_img = get_cover_img(data_df, bride_groom_highest_images)
+        data_df, cover_img = get_cover_img(sorted_ranking_df, bride_groom_highest_images)
         # Get layout for cover image
         cover_img_layout = get_cover_layout(layouts_df)
-
-        # convert cluster class number into text value and make copy when we need merging
-        # apply the mapping function to create the new cluster_context column
-        data_df["cluster_context"] = data_df["cluster_class"].apply(map_cluster_label)
-        # copy column to make edit when we merge
-        data_df["cluster_context_2nd"] = data_df['cluster_context']
 
         sorted_by_time_df, image_id2general_time = process_image_time(data_df)
 
@@ -216,12 +216,7 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
         logger.info(f"CPU Usage before gallery processing: {cpu_usage}%")
         logger.info(f"Memory Usage before gallery processing: {memory_info.percent}%")
 
-
         group_name2chosen_combinations, sub_groups, error = gallery_processing(sorted_by_time_df, layouts_df, logger)
-
-        for group_name, group in sub_groups:
-           print(group_name)
-           print(group['image_id'].values)
 
         comb_generation_time = (time.time() - start_time) / 60
         logger.info(f'Combination generation time: {comb_generation_time:.2f} minutes')
@@ -238,7 +233,9 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
         elapsed_time = (end_time - start_time) / 60
         logger.info(f"Elapsed time: {elapsed_time:.2f} minutes")
         return result, error
-
+    else:
+        print("Cant process the album without cover image of bride and groom")
+        return None,"No Cover image found"
 
 # if __name__ == '__main__':
 #     layouts_file_path = r'C:\Users\karmel\Desktop\PicTime\Projects\AlbumDesigner\layouts.csv'
