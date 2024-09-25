@@ -1,66 +1,66 @@
 relations = {'parents': {
-    'bride and groom': 0.06,
-    'bride': 0.06,
-    'groom': 0.06,
+    'bride and groom': 1,
+    'bride': 0.7,
+    'groom': 0.7,
     'wedding dress': 0,
 
-    'bride party': 0.03,
-    'groom party': 0.03,
-    'full party': 0.0003,
+    'bride party': 0.2,
+    'groom party': 0.2,
+    'full party': 0.3,
 
     'large_portrait': 0.9,
     'small_portrait': 0.9,
     'portrait': 1,
     'very large group': 1,
-    'walking the aisle': 0.12,
+    'walking the aisle': 1,
 
-    'bride getting dressed': 0.001,
-    'first dance': 0.12,
-    'cake cutting': 0.03,
-    'ceremony': 0.15,
+    'bride getting dressed': 0.5,
+    'first dance': 0.9,
+    'cake cutting': 0.9,
+    'ceremony': 1,
     'couple': 0.03,
     'dancing': 0.0003,
 
     'entertainment': 0.00003,
 
     'kiss': 0.0000003,
-    'pet': 0.000003,
-    'rings':0,
+    'pet': 1,
+    'rings':1,
 
     'accessories': 0.0000003,
-    'settings': 0.9,
-    'speech': 0.06,
+    'settings': 1,
+    'speech': 0.8,
 
-    'detail': 0.003,
-    'getting hair-makeup': 0.003,
+    'detail': 1,
+    'getting hair-makeup': 0.5,
     'food': 0.9,
     'other': 0,
-    'invite': 0,
-    'inside vehicle':0
+    'invite': 1,
+    'inside vehicle':1
 
 },
     'close_friends': {
-    'bride and groom': 0.6,
-    'bride': 0.6,
-    'groom': 0.6,
+    'bride and groom': 0.7,
+    'bride': 0.5,
+    'groom': 0.5,
     'wedding dress': 0,
 
-    'bride party': 0.9,
-    'groom party': 0.9,
-    'full party': 0.9,
+    'bride party': 1,
+    'groom party': 1,
+    'full party': 1,
 
     'large_portrait': 0.9,
     'small_portrait': 0.9,
     'portrait': 1,
     'very large group': 1,
-    'walking the aisle': 0.4,
+    'walking the aisle': 0.3,
 
-    'bride getting dressed': 0.8,
+    'bride getting dressed': 1,
     'first dance': 0.12,
     'cake cutting': 0.03,
-    'ceremony': 0.15,
+    'ceremony': 0.01,
     'couple': 0.03,
-    'dancing': 0.9,
+    'dancing': 2,
 
     'entertainment': 0.00003,
 
@@ -70,14 +70,14 @@ relations = {'parents': {
 
     'accessories': 0.0000003,
     'settings': 0.08,
-    'speech': 0.6,
+    'speech': 1,
 
     'detail': 0.003,
-    'getting hair-makeup': 0.003,
+    'getting hair-makeup': 1,
     'food': 0.09,
     'other': 0,
     'invite': 0,
-     'inside vehicle':0
+    'inside vehicle':0
     },
 'bride_groom': {
     'bride and groom': 1,

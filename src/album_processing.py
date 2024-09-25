@@ -10,6 +10,8 @@ from utils.clusters_labels import label_list
 from utils.load_layouts import load_layouts
 from utils.time_proessing import process_image_time
 from utils.plotting_results import  plot_album
+from utils.clustering_time import cluster_by_time
+
 
 def sort_groups_by_photo_time(data_dict,logger):
     def get_mean_time(sublist):
@@ -74,7 +76,7 @@ def get_images_per_group(data_df):
     Return: dict group_name to list of images data
     """
     group2images_data_list = dict()
-    grouped_by_content = data_df.groupby('general_time')
+    grouped_by_content = data_df.groupby('time_cluster')
     for main_content_cluster, group_df in grouped_by_content:
         sub_grouped = group_df.groupby('cluster_context')
         for sub_cluster, sub_group_df in sub_grouped:
@@ -86,9 +88,11 @@ def get_images_per_group(data_df):
 def gallery_processing(data_df, layouts_df, logger):
     logger.info(f'============================')
     logger.info(f'Start Processing the Gallery')
+
     ERROR = None
+
     group2images = get_images_per_group(data_df)
-    sub_grouped = data_df.groupby(['general_time', 'cluster_context'])
+    sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
     start_time = time.time()
     updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
@@ -215,8 +219,9 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
 
         logger.info(f"CPU Usage before gallery processing: {cpu_usage}%")
         logger.info(f"Memory Usage before gallery processing: {memory_info.percent}%")
+        df = cluster_by_time(sorted_by_time_df)
 
-        group_name2chosen_combinations, sub_groups, error = gallery_processing(sorted_by_time_df, layouts_df, logger)
+        group_name2chosen_combinations, sub_groups, error = gallery_processing(df, layouts_df, logger)
 
         comb_generation_time = (time.time() - start_time) / 60
         logger.info(f'Combination generation time: {comb_generation_time:.2f} minutes')

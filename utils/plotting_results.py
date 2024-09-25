@@ -22,7 +22,9 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
         cover_layout_info = ast.literal_eval(layouts_df.loc[int(cover_img_layout_id)]['boxes_info'])
         cover_image_id = cover_img['image_id'].values[0]
         cover_img_path = os.path.join(gallery_path, str(cover_image_id) + '.jpg')
-        cover_img_reading = Image.open(cover_img_path)
+        img = Image.open(cover_img_path)
+        np_img = np.array(img)
+
         # Resize the image to fit the box
         centroid = cover_img['background_centroid'].values[0]
         for box in cover_layout_info:
@@ -38,14 +40,20 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
                                                                         cover_img['faces_info'], centroid,
                                                                         float(cover_img['diameter'].iloc[0]),box_aspect_ratio)
-            # img.thumbnail((cropped_w, cropped_h))
-            np_img = np.array(cover_img_reading)
-            im_x = int(cropped_x * np_img.shape[0])
-            im_y = int(cropped_y * np_img.shape[1])
-            im_h = int(cropped_h * np_img.shape[0])
-            im_w = int(cropped_w * np_img.shape[1])
+            # Denormalize the coordinates based on the image dimensions
+            im_x = int(cropped_x * np_img.shape[1])  # Multiply by image width
+            im_y = int(cropped_y * np_img.shape[0])  # Multiply by image height
+            im_w = int(cropped_w * np_img.shape[1])  # Multiply by image width
+            im_h = int(cropped_h * np_img.shape[0])  # Multiply by image height
 
-            cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
+            # Ensure the coordinates are within image boundaries
+            im_x = max(0, min(im_x, np_img.shape[1] - 1))
+            im_y = max(0, min(im_y, np_img.shape[0] - 1))
+            im_w = max(0, min(im_w, np_img.shape[1] - im_x))
+            im_h = max(0, min(im_h, np_img.shape[0] - im_y))
+
+            # Crop the image using correct indexing
+            cropped_image = np_img[im_y:im_y + im_h, im_x:im_x + im_w]
 
             # Resize the cropped image
             img = Image.fromarray(cropped_image)
@@ -119,12 +127,20 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
 
                     np_img = np.array(img)
 
-                    im_x = int(cropped_x * np_img.shape[0])
-                    im_y = int(cropped_y * np_img.shape[1])
-                    im_h = int(cropped_h * np_img.shape[0])
-                    im_w = int(cropped_w * np_img.shape[1])
+                    # Denormalize the coordinates based on the image dimensions
+                    im_x = int(cropped_x * np_img.shape[1])  # Multiply by image width
+                    im_y = int(cropped_y * np_img.shape[0])  # Multiply by image height
+                    im_w = int(cropped_w * np_img.shape[1])  # Multiply by image width
+                    im_h = int(cropped_h * np_img.shape[0])  # Multiply by image height
 
-                    cropped_image = np_img[im_x:im_x + im_h, im_y:im_y + im_w]
+                    # Ensure the coordinates are within image boundaries
+                    im_x = max(0, min(im_x, np_img.shape[1] - 1))
+                    im_y = max(0, min(im_y, np_img.shape[0] - 1))
+                    im_w = max(0, min(im_w, np_img.shape[1] - im_x))
+                    im_h = max(0, min(im_h, np_img.shape[0] - im_y))
+
+                    # Crop the image using correct indexing
+                    cropped_image = np_img[im_y:im_y + im_h, im_x:im_x + im_w]
                     # Resize the cropped image
                     img = Image.fromarray(cropped_image)
 

@@ -31,6 +31,9 @@ events_min_four_images ={
 
 
 def remove_similar_images(selected_images, gallery_photos_info, threshold=0.90):
+    if len(selected_images) == 1:
+        return selected_images
+
     # Extract embeddings
     embeddings = [gallery_photos_info[image_id]['embedding'] for image_id in selected_images]
     embeddings = np.array(embeddings)
