@@ -11,7 +11,7 @@ from utils.load_layouts import load_layouts
 from utils.time_proessing import process_image_time
 from utils.plotting_results import  plot_album
 from utils.clustering_time import cluster_by_time
-
+from utils.time_outliers import handle_edited_time
 
 def sort_groups_by_photo_time(data_dict,logger):
     def get_mean_time(sublist):
@@ -22,7 +22,7 @@ def sort_groups_by_photo_time(data_dict,logger):
             total_spread_time.extend(time)
 
         if total_spread_time:
-            logger.info(f"layout id {sublist[0]}, average time, {statistics.mean(total_spread_time)}")
+            #logger.info(f"layout id {sublist[0]}, average time, {statistics.mean(total_spread_time)}")
             return statistics.median(total_spread_time)
         else:
             return float('inf')
@@ -59,7 +59,7 @@ def sort_sub_groups(sub_grouped, group_names):
         group = sub_grouped.get_group(group_id)
 
         # Calculate the median instead of the mean
-        group_time_median = group["general_time"].median()
+        group_time_median = group["edited_general_time"].median()
         time_group_dict[group_name] = group_time_median
 
     sorted_time_groups = dict(
@@ -219,7 +219,9 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
 
         logger.info(f"CPU Usage before gallery processing: {cpu_usage}%")
         logger.info(f"Memory Usage before gallery processing: {memory_info.percent}%")
-        df = cluster_by_time(sorted_by_time_df)
+
+        df = handle_edited_time(sorted_by_time_df)
+        df = cluster_by_time(df)
 
         group_name2chosen_combinations, sub_groups, error = gallery_processing(df, layouts_df, logger)
 

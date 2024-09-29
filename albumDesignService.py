@@ -71,10 +71,10 @@ async def create_album(project_base_url: str):
         data_dict = json.loads(data_str)
     else:
         data_dict = {
-            'ten_photos': [9863268098,9863268113,9863268134,9863268119,9863268156,9863268191,9863268267,9863268293,9863268343,9863268348],
-            'people_ids': [5,7,30,3,4],
-            'tags':  ['dancing', 'bride and groom','friends','speech'],
-            'user_relation': 'close_friends'  # or 'spouse' or 'children' # designs ids
+            'ten_photos': [9863268097,9863268114,9863268124,9863268136,9863268140,9863268145,9863268148,9863268164,9863268228,9863268257],
+            'people_ids': [5,7,13,9,30,8,6,3,4],
+            'tags':  ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
         }
 
     gallery_path = 'dataset\\40919535'

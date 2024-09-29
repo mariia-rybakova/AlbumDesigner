@@ -43,7 +43,7 @@ def get_photos_from_db(data_db):
 
         photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
                             photo_class=class_contex, cluster_label=cluster_label,
-                            general_time=row['image_time']))
+                            general_time=row['edited_general_time']))
 
     photos = sorted(photos, key=lambda photo: photo.id)
 

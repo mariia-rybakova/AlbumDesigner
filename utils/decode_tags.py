@@ -52,7 +52,7 @@ tags = [ 'bride and groom',
     'other',
     'invite',
     'inside vehicle',
-    'friends','group photos']
+    'friends','group photos','parents']
 result = {}
 for tag in tags:
     features = comp_tag_features(tag)
