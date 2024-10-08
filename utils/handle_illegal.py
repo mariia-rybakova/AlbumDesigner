@@ -73,7 +73,8 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
         """Get all groups except the group that has been splitted then group the splitted group so it becomes 2 groups then add them to the others"""
         # Construct a list of tuples containing the name and data for each group
         new_groups = [(name, group) for name, group in grouped_df if name != splitting_key]
-        sub_group_cluster = splitted_group.groupby(['time_cluster', 'cluster_context'])
+        #sub_group_cluster = splitted_group.groupby(['time_cluster', 'cluster_context'])
+        sub_group_cluster = splitted_group.groupby(['scene_order', 'cluster_context'])
         # Add the splitted group to the list of groups
         for sub in sub_group_cluster:
             new_groups.append(sub)
@@ -93,7 +94,7 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
         for group_key, imgs_number in list(images_per_group.items()):
             parts = group_key.split('_')
             time_cluster_id_str = parts[0]
-            time_cluster_id_float = int(time_cluster_id_str)
+            time_cluster_id_float = float(time_cluster_id_str)
             content_cluster_id = '_'.join(parts[1:])
 
             if group_key in keys_to_update.keys():
@@ -115,20 +116,29 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
 
                 illegal_group = sub_grouped.get_group((time_cluster_id_float, content_cluster_id))
                 illegal_group.loc[:, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
-                value_to_assign = selected_cluster['time_cluster'].iloc[0]
-                illegal_group.loc[:, 'time_cluster'] = value_to_assign
+
+                #value_to_assign = selected_cluster['time_cluster'].iloc[0]
+
+                value_to_assign = selected_cluster['scene_order'].iloc[0]
+                #illegal_group.loc[:, 'time_cluster'] = value_to_assign
+                illegal_group.loc[:, 'scene_order'] = value_to_assign
                 updated_group = pd.concat([selected_cluster, illegal_group], ignore_index=False)
 
 
                 keys_to_delete.append(f'{group_key}')
+                # keys_to_update[
+                #     f'{selected_cluster["time_cluster"].values[0]}_{selected_cluster["cluster_context"].iloc[0]}'] = len(
+                #     updated_group)
+
                 keys_to_update[
-                    f'{selected_cluster["time_cluster"].values[0]}_{selected_cluster["cluster_context"].iloc[0]}'] = len(
+                    f'{selected_cluster["scene_order"].values[0]}_{selected_cluster["cluster_context"].iloc[0]}'] = len(
                     updated_group)
 
                 sub_grouped = sub_grouped.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
                     value_to_assign, "bride getting dressed"), illegal_group_key=intended_group_key))
                 sub_grouped = sub_grouped.reset_index(drop=True)
-                sub_grouped = sub_grouped.groupby(['time_cluster', 'cluster_context'])
+                #sub_grouped = sub_grouped.groupby(['time_cluster', 'cluster_context'])
+                sub_grouped = sub_grouped.groupby(['scene_order', 'cluster_context'])
 
             elif imgs_number <= 3:
                 # merge this one with the rest
@@ -166,7 +176,8 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
                 sub_grouped = sub_grouped.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
                     time_cluster_id_float, selected_cluster_content_index), illegal_group_key=intended_group_key))
                 sub_grouped = sub_grouped.reset_index(drop=True)
-                sub_grouped = sub_grouped.groupby(['time_cluster', 'cluster_context'])
+                #sub_grouped = sub_grouped.groupby(['time_cluster', 'cluster_context'])
+                sub_grouped = sub_grouped.groupby(['scene_order', 'cluster_context'])
 
             elif splitting_score >= 4:
                 # split it
@@ -186,7 +197,8 @@ def process_illegal_groups(images_per_group, sub_grouped,logger=None):
 
                 sub_grouped = update_split_groups(sub_grouped, updated_group, intended_group_key)
                 sub_grouped = sub_grouped.reset_index(drop=True)
-                sub_grouped = sub_grouped.groupby(['time_cluster', 'cluster_context'])
+                #sub_grouped = sub_grouped.groupby(['time_cluster', 'cluster_context'])
+                sub_grouped = sub_grouped.groupby(['scene_order', 'cluster_context'])
 
         count += 1
         images_per_group = get_images_per_group(sub_grouped)

@@ -5,6 +5,7 @@ from PIL import Image
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import landscape
+from reportlab.lib import colors
 
 from utils.crop_v2 import smart_cropping
 
@@ -35,6 +36,15 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             y = y * page_height
             w = w * page_width
             h = h * page_height
+
+            # Add text above the image
+            text_x = x
+            text_y = y + h + 20  # Adjust the 20 to move the text further above the image if needed
+
+            # Set font and draw the text
+            c.setFont("Helvetica", 24)  # Set font and size
+            c.setFillColor(colors.black)  # Set text color
+            c.drawString(text_x, text_y, f"{cover_img['image_orderInScene'].iloc[0]}")  # Customize the text as needed
 
             box_aspect_ratio = w / h
             cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
@@ -117,6 +127,17 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
                     y = y * page_height
                     w = w * page_width
                     h = h * page_height
+
+                    # Add text above the image
+                    text_x = x
+                    text_y = y + h + 20  # Adjust the 20 to move the text further above the image if needed
+
+                    # Set font and draw the text
+                    c.setFont("Helvetica", 24)  # Set font and size
+                    c.setFillColor(colors.black)  # Set text color
+                    c.drawString(text_x, text_y,
+                                 f"{c_image_info['image_orderInScene'].iloc[0]}")  # Customize the text as needed
+
 
                     box_aspect_ratio = w / h
                     centroid = c_image_info['background_centroid'].values[0]

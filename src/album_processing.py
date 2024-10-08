@@ -59,7 +59,8 @@ def sort_sub_groups(sub_grouped, group_names):
         group = sub_grouped.get_group(group_id)
 
         # Calculate the median instead of the mean
-        group_time_median = group["edited_general_time"].median()
+        #group_time_median = group["edited_general_time"].median()
+        group_time_median = group["image_orderInScene"].median()
         time_group_dict[group_name] = group_time_median
 
     sorted_time_groups = dict(
@@ -76,7 +77,8 @@ def get_images_per_group(data_df):
     Return: dict group_name to list of images data
     """
     group2images_data_list = dict()
-    grouped_by_content = data_df.groupby('time_cluster')
+    #grouped_by_content = data_df.groupby('time_cluster')
+    grouped_by_content = data_df.groupby('scene_order')
     for main_content_cluster, group_df in grouped_by_content:
         sub_grouped = group_df.groupby('cluster_context')
         for sub_cluster, sub_group_df in sub_grouped:
@@ -92,7 +94,8 @@ def gallery_processing(data_df, layouts_df, logger):
     ERROR = None
 
     group2images = get_images_per_group(data_df)
-    sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
+    #sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
+    sub_grouped = data_df.groupby(['scene_order', 'cluster_context'])
     start_time = time.time()
     updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
