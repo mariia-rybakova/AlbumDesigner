@@ -26,7 +26,11 @@ def process_image_time(data_df):
         first_image_time = image_ids2timestamps[0][1]
         for image_id, cur_timestamp in image_ids2timestamps:
             #general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
-            general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+            if cur_timestamp.hour == 0:
+                general_time =int(24 * 60 + cur_timestamp.minute)
+            else:
+               general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+
             diff_from_first = cur_timestamp - first_image_time
             general_time += diff_from_first.days * 1440
 
