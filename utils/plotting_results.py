@@ -11,10 +11,12 @@ from utils.crop_v2 import smart_cropping
 
 
 def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict, group_name2chosen_combinations,
-                           layouts_df,logger, gallery_path, output_save_path):
+                           layouts_df,logger, gallery_path, output_save_path,relation_type):
     gal_num = gallery_path.split('\\')[-1]
+    save_folder = os.path.join(output_save_path,gal_num)
+    os.makedirs(save_folder, exist_ok=True)
     # Create a PDF canvas with landscape orientation and A4 size (1:2 aspect ratio)
-    c = canvas.Canvas(os.path.join(output_save_path, f'{gal_num}.pdf'), pagesize=landscape((2000, 1000)))
+    c = canvas.Canvas(os.path.join(save_folder, f'{relation_type}.pdf'), pagesize=landscape((2000, 1000)))
     page_width, page_height = landscape((2000, 1000))
 
     if cover_img_layout_id is not None:
@@ -44,7 +46,7 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             # Set font and draw the text
             c.setFont("Helvetica", 24)  # Set font and size
             c.setFillColor(colors.black)  # Set text color
-            c.drawString(text_x, text_y, f"{cover_img['image_orderInScene'].iloc[0]}")  # Customize the text as needed
+            #c.drawString(text_x, text_y, f"{cover_img['image_orderInScene'].iloc[0]}")  # Customize the text as needed
 
             box_aspect_ratio = w / h
             cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
@@ -135,8 +137,8 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
                     # Set font and draw the text
                     c.setFont("Helvetica", 24)  # Set font and size
                     c.setFillColor(colors.black)  # Set text color
-                    c.drawString(text_x, text_y,
-                                 f"{c_image_info['image_orderInScene'].iloc[0]}")  # Customize the text as needed
+                    #c.drawString(text_x, text_y,
+                                 #f"{c_image_info['image_orderInScene'].iloc[0]}")  # Customize the text as needed
 
 
                     box_aspect_ratio = w / h

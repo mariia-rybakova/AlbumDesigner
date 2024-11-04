@@ -28,12 +28,14 @@ def get_clusters_info(cluster_file, images_dict,logger=None):
         cluster_label = photo.clusterId
         cluster_class = photo.clusterClass
         image_ranking = photo.selectionOrder
+        image_order = photo.selectionScore
+
         if photo.photoId in images_dict:
             images_dict[photo.photoId].update(
                 {'image_class': image_class, "cluster_label": cluster_label, 'cluster_class': cluster_class,
-                 'ranking': image_ranking})
+                 'ranking': image_ranking, 'image_order': image_order})
         else:
             images_dict[photo.photoId] = {'image_class': image_class, "cluster_label": cluster_label,
-                                          'cluster_class': cluster_class, 'ranking': image_ranking}
+                                          'cluster_class': cluster_class, 'ranking': image_ranking,'image_order': image_order}
 
     return images_dict,None

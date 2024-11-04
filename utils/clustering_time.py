@@ -4,7 +4,8 @@ from sklearn.mixture import GaussianMixture
 
 def cluster_by_time(df):
     # Reshape the data since GMM expects a 2D array
-    X = df['edited_general_time'].values.reshape(-1, 1)
+    #X = df['edited_general_time'].values.reshape(-1, 1)
+    X = df['general_time'].values.reshape(-1, 1)
 
     # Determine the optimal number of clusters using Bayesian Information Criterion (BIC)
     n_components = np.arange(1, 10)

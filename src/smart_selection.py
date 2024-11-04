@@ -2,7 +2,8 @@ import os
 import time
 import shutil
 import random
-
+import csv
+from pathlib import Path
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from torch.nn.functional import embedding
@@ -260,14 +261,14 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
     persons_file = os.path.join(project_base_url, 'persons_info.pb')
     image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
-    segmentation_file = os.path.join(project_base_url, 'bg_segmentaion.pb')
+    segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
 
     # Get info from protobuf files server
     gallery_photos_info,errors = image_embeddings.get_image_embeddings(image_file,logger)
     if errors:
-        if logger is not None:
-            logger.error('Couldnt find embeddings for images file %s', image_file)
-        return None,None, errors
+         if logger is not None:
+             logger.error('Couldnt find embeddings for images file %s', image_file)
+         return None,None, errors
     gallery_photos_info,errors = image_faces.get_faces_info(faces_file, gallery_photos_info,logger)
     if errors:
         if logger is not None:
@@ -318,8 +319,25 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
     for tag in tags_selected:
         selected_tags_features[tag] = tags_features[tag]
 
-    return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,
-                         logger)
+    # return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,
+    #                      logger)
+    gal_id = 41657689
+    #directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gal_id}')
+    directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gal_id}')
+    images_selected = [int(f.stem) for f in directory_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.png'] and  '_' not in f.stem]
+
+    not_processed = [im for im in gallery_photos_info if len(gallery_photos_info[im]) < 19]
+    with open(f'{gal_id}_not_processed.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        for item in not_processed:
+            writer.writerow([item])
+
+
+    ai_images_selected = [im for im in gallery_photos_info if len(gallery_photos_info[im]) >= 19]
+
+    ai_images_selected = [im for im in ai_images_selected if im in images_selected]
+    error_message = None
+    return ai_images_selected, gallery_photos_info, error_message
 
 
 def copy_selected_folder(ai_images_selected, gal_path):

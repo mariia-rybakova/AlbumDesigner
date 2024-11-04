@@ -4,7 +4,7 @@ import numpy as np
 
 from itertools import combinations, product
 
-from .photos import Photo
+from utils.photos import Photo
 from config import DESIGN_PARAMS
 
 
@@ -270,9 +270,9 @@ def check_page(photo_set, photos):
         return [sameColor, sameClass]
 
 
-def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_penalty=0.5, color_mix=0.0001,
+def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_penalty=0.5, color_mix=0.000000001,
                        class_mix=0.01,
-                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.00000001):
+                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.000000000000000001):
     filtered_multi_spreads = []
     for i in range(len(multi_spreads)):
         spread_scores = np.ones(len(multi_spreads[i]))
@@ -344,7 +344,7 @@ def eval_single_comb(comb, photo_times, cluster_labels):
 
 def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
     layout_parts, weight_parts = selectPartitions(len(photos), spread_params)
-    logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
+    #logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
     combs = []
     comb_weights = np.array([])
@@ -358,7 +358,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
         single_combs = listSingleCombinations(photos, layout_parts[i])
 
         if len(single_combs) > maxCombs:
-            logger.info('combinations Found {}, sampled {} combinations foe evaluation'.format(len(single_combs), maxCombs))
+            #logger.info('combinations Found {}, sampled {} combinations foe evaluation'.format(len(single_combs), maxCombs))
             sample_idxs = random.sample(range(len(single_combs)), maxCombs)
             single_combs = [single_combs[sample_idx] for sample_idx in sample_idxs]
 
@@ -404,17 +404,23 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
 
 #
 # if __name__ == '__main__':
-#     from utils.layouts import load_layouts
+#     from utils.load_layouts import load_layouts
 #
-#     photos = [[9343321997, 1.499531396438613, True, 0.1180563190791846, 'other', 224, 649.55],
-#               [9343322004, 1.499531396438613, True, 0.0, 'other', 54, 650.4333333333333],
-#               [9343322008, 1.499531396438613, True, 0.079553271631674, 'other', 93, 652.2833333333333],
-#               [9343322026, 1.499531396438613, True, 0.08415017407639093, 'other', 35, 656.6333333333333],
-#               [9343322033, 1.499531396438613, True, 0.1736544203317863, 'other', 106, 659.05]]
+#     # photos = [[9343321997, 1.499531396438613, True, 0.1180563190791846, 'other', 224, 649.55],
+#     #           [9343322004, 1.499531396438613, True, 0.0, 'other', 54, 650.4333333333333],
+#     #           [9343322008, 1.499531396438613, True, 0.079553271631674, 'other', 93, 652.2833333333333],
+#     #           [9343322026, 1.499531396438613, True, 0.08415017407639093, 'other', 35, 656.6333333333333],
+#     #           [9343322033, 1.499531396438613, True, 0.1736544203317863, 'other', 106, 659.05]]
 #
 #     # photos = [['9343140830.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140831.jpg', 1.5023474178403755, True, 0.3695769766350085, 'dancing', 1, 0.0], ['9343140832.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140836.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140844.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140845.jpg', 1.5023474178403755, True, 0.4967730705598245, 'dancing', 1, 0.0], ['9343140846.jpg', 1.5023474178403755, True, 0.4025748576952515, ''nan''], ['9343140847.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140848.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140850.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140851.jpg', 1.5023474178403755, True, 0.486304249068718, 'dancing', 1, 0.0], ['9343140852.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140865.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140866.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140870.jpg', 1.5023474178403755, True, 0.2742981079633911, ''nan''], ['9343140903.jpg', 1.5023474178403755, True, 0.311074292831681, ''`nan`''], ['9343140911.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140934.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140935.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140936.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140939.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343140940.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0], ['9343141066.jpg', 1.5023474178403755, True, 0.5152995470735113, 'dancing', 1, 0.0], ['9343141067.jpg', 1.5023474178403755, True, 0, 'dancing', 1, 0.0]]
-#     _photos = [Photo.from_array(photos[idx]) for idx in range(len(photos))]
+#     nana = [[9939826860, 0.6661538481712341, False, 266, 'bride and groom_1_2_1_3_1_4_1_5', 23, 736.0],
+#              [9939826889, 1.5011547803878784, False, 264, 'bride and groom_1_2_1_3_1_4_1_5', 21, 674.0],
+#              [9939826890, 1.5011547803878784, True, 324, 'bride and groom_1_2_1_3_1_4_1_5', 21, 692.0],
+#              [9939827046, 1.5011547803878784, True, 132, 'bride and groom_1_2_1_3_1_4_1_5', 26, 683.0],
+#              [9939827112, 1.5011547803878784, True, 326, 'bride and groom_1_2_1_3_1_4_1_5', 24, 696.0]]
+#
+#     _photos = [Photo.from_array(nana[idx]) for idx in range(len(nana))]
 #
 #     _layouts_df = load_layouts(r'C:\Users\karmel\Desktop\PicTime\Projects\AlbumDesigner\results\layout_csv\output.csv')
-#     _spread_params = [16, 1.5]
-#     generate_filtered_multi_spreads(_photos, _layouts_df, _spread_params)
+#     _spread_params = [4, 0.5]
+#     generate_filtered_multi_spreads(_photos, _layouts_df, _spread_params,None)

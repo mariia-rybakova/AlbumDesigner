@@ -140,17 +140,27 @@ def smart_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000
         faces = faces[0]
         for face in faces:
             bbox = face.bbox
-            x1 = int(bbox.x1 * mask.shape[1])
-            y1 = int(bbox.y1 * mask.shape[0])
-            x2 = int(bbox.x2 * mask.shape[1])
-            y2 = int(bbox.y2 * mask.shape[0])
+            # x1 = int(bbox.x1 * face_mask.shape[1])
+            # y1 = int(bbox.y1 * face_mask.shape[0])
+            # x2 = int(bbox.x2 * face_mask.shape[1])
+            # y2 = int(bbox.y2 * face_mask.shape[0])
+
+            x1 = int(bbox.x1)
+            y1 = int(bbox.y1)
+            x2 = int(bbox.x2)
+            y2 = int(bbox.y2)
             bbox_w = (x2 - x1) * face_extension
             bbox_h = (y2 - y1) * face_extension
 
-            x1 = int(max(0, x1 - bbox_w / 2))
-            y1 = int(max(0, y1 - bbox_h / 2))
-            x2 = int(min(mask.shape[1], x2 + bbox_w / 2))
-            y2 = int(min(mask.shape[0], y2 + bbox_h / 2))
+            # x1 = int(max(0, x1 - bbox_w / 2))
+            # y1 = int(max(0, y1 - bbox_h / 2))
+            # x2 = int(min(mask.shape[1], x2 + bbox_w / 2))
+            # y2 = int(min(mask.shape[0], y2 + bbox_h / 2))
+
+            x1 = int(max(0, min(face_mask.shape[1] - 1, x1 - bbox_w / 2)))
+            y1 = int(max(0, min(face_mask.shape[0] - 1, y1 - bbox_h / 2)))
+            x2 = int(max(0, min(face_mask.shape[1] - 1, x2 + bbox_w / 2)))
+            y2 = int(max(0, min(face_mask.shape[0] - 1, y2 + bbox_h / 2)))
 
             # Access arrays as [rows, cols] = [y, x]
             face_mask[y1:y2, x1:x2] = 255

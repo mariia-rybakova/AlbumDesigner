@@ -41,9 +41,17 @@ def get_photos_from_db(data_db):
         aspect_ratio = row['image_as']
         rank_score = row['ranking']
 
+        # photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
+        #                     photo_class=class_contex, cluster_label=cluster_label,
+        #                     general_time=row['edited_general_time']))
+
         photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
                             photo_class=class_contex, cluster_label=cluster_label,
-                            general_time=row['edited_general_time']))
+                            general_time=row['general_time']))
+
+        # photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
+        #                     photo_class=class_contex, cluster_label=cluster_label,
+        #                     general_time=row['image_orderInScene']))
 
     photos = sorted(photos, key=lambda photo: photo.id)
 
