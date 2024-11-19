@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from schema import albumResponse
 from config import DEPLOY_CONFIGS
 from src.smart_selection import auto_selection
+#from utils.smart_selection_2 import auto_selection
 from src.album_processing import create_automatic_album
 from utils.generate_layout_file import genereate_layouts_path
 from utils.get_images_data import get_info_only_for_selected_images
@@ -71,13 +72,14 @@ async def create_album(project_base_url: str):
         data_dict = json.loads(data_str)
     else:
         data_dict = {
-            'ten_photos': [9863268098,9863268113,9863268134,9863268119,9863268156,9863268191,9863268267,9863268293,9863268343,9863268348],
-            'people_ids': [5,7,30,3,4],
-            'tags':  ['dancing', 'bride and groom','friends','speech'],
-            'user_relation': 'close_friends'  # or 'spouse' or 'children' # designs ids
+            'ten_photos': [9444433832,9444433747,9444433728,9444433723,9444433700,9444433624,9444433616,9444433608,9444433585,9372610440],
+            'people_ids': [2,65, 3, 69, 42, 78, 56, 23, 127, 77, 39, 154, 115, 25, 38,120, 2, 131, 128, 45, 27, 113, 129, 19, 32, 130, 121,21,56],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
         }
-
-    gallery_path = 'dataset\\40919535'
+    gallery_id = 38122574
+    gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
+    #gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gallery_id}'
     design_path = r'files\designs.json'
     desings_ids = [3444, 3415, 3417, 3418, 3419, 3420, 3421, 3423, 3424, 3425, 3426, 3427, 3428, 3429, 3430, 3431, 3432,
                    3433, 3434, 3435, 3436, 3437, 3438, 3439, 3440, 3441, 3442, 3443, 3445, 3449, 3450, 3451, 3452, 3453,
@@ -96,7 +98,7 @@ async def create_album(project_base_url: str):
                                                                   data_dict['user_relation'], queries_file_path,
                                                                   tags_features_file, logger=app.package['logger'])
 
-    logger.info(f"Number of Selected Images {len(images_selected)}")
+    logger.info(f"Number of Selected Images To Design an Album {len(images_selected)}")
     if errors:
         return {"error": True, 'error_description': str(errors), "result": None}
 
@@ -113,11 +115,13 @@ async def create_album(project_base_url: str):
     logger.info(f"CPU Usage Before creating an Album: {cpu_usage}%")
     logger.info(f"Memory Usage Before creating an Album: {memory_info.percent}%")
 
-    album_json_result, error = create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=logger)
+    album_json_result, error = create_automatic_album(images_data_dict, layouts_path,gallery_path,data_dict['user_relation'], logger=logger)
+
+
 
     if album_json_result:
         logger.info("Album created Successfully")
-        logger.info("Result {}".format(album_json_result))
+        # logger.info("Result {}".format(album_json_result))
         return {"error": False, 'error_description': None, "result": album_json_result}
     else:
         logger.error("The ADD process did not succeed")

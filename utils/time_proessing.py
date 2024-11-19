@@ -13,6 +13,7 @@ def convert_to_timestamp(time_integer):
 
 def process_image_time(data_df):
         timestamps = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
+        data_df['image_time_date']  = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
 
         #timestamps = [read_timestamp(timestamp_str) for timestamp_str in timestamps]
         image_ids = data_df['image_id']
@@ -26,17 +27,19 @@ def process_image_time(data_df):
         first_image_time = image_ids2timestamps[0][1]
         for image_id, cur_timestamp in image_ids2timestamps:
             #general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
-            if cur_timestamp.hour == 0:
-                general_time =int(24 * 60 + cur_timestamp.minute)
+            if 0 <= cur_timestamp.hour <= 4:
+                # Treat times between midnight and 4 AM as if they belong to the previous day
+                general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
             else:
-               general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+                general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
 
+                # Calculate difference in days and convert to minutes
             diff_from_first = cur_timestamp - first_image_time
             general_time += diff_from_first.days * 1440
 
             image_id2general_time[image_id] = int(general_time)
             data_df.loc[data_df['image_id'] == image_id, 'general_time'] = int(general_time)
 
-        sorted_by_time_df = data_df.sort_values(by="general_time", ascending=False)
+        sorted_by_time_df = data_df.sort_values(by="general_time", ascending=True)
 
         return sorted_by_time_df, image_id2general_time

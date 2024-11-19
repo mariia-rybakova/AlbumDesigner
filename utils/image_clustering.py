@@ -27,8 +27,8 @@ def get_clusters_info(cluster_file, images_dict,logger=None):
         image_class = photo.imageClass
         cluster_label = photo.clusterId
         cluster_class = photo.clusterClass
-        image_ranking = photo.selectionOrder
-        image_order = photo.selectionScore
+        image_ranking = photo.selectionScore
+        image_order =  photo.selectionOrder
 
         if photo.photoId in images_dict:
             images_dict[photo.photoId].update(

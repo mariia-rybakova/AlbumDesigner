@@ -133,3 +133,98 @@ bride brother: 4
 'people_ids': [5,7,30,3,4],
 'tags': ['dancing', 'bride and groom','friends','speech],
 'user_relation': 'close_friends'  # or 'spouse' or 'children' # designs ids
+----------------------------------------------------------------------
+
+Wedding testing more:
+Gallery id : 41299432
+ptstorage_32://pictures/41/299/41299432/tfxm78yweq554d63kw
+
+Bride  17
+Groom 2
+Groom friend 1
+Family: [2, 3, 5, 7, 13, 16, 17, 25, 27, 29, 34, 39, 40]
+Family: 1,9,7,25,39
+
+
+'ten_photos': [9939826850,9939826834,9939826886,9939826882,9939826897,9939826908,9939826940,9939827016,9939827049,9939827129],
+'people_ids': [1,2, 3, 5, 7, 13, 16, 17, 25, 27, 29, 34, 39, 40,1,9,25],
+'tags':  ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+
+
+Photos: [[9939826860, 0.6661538481712341, False, 266, 'bride and groom_1_2_1_3_1_4_1_5', 23, 736.0], [9939826889, 1.5011547803878784, False, 264, 'bride and groom_1_2_1_3_1_4_1_5', 21, 674.0], [9939826890, 1.5011547803878784, True, 324, 'bride and groom_1_2_1_3_1_4_1_5', 21, 692.0], [9939827046, 1.5011547803878784, True, 132, 'bride and groom_1_2_1_3_1_4_1_5', 26, 683.0], [9939827112, 1.5011547803878784, True, 326, 'bride and groom_1_2_1_3_1_4_1_5', 24, 696.0]]
+
+
+Problems so far : color and gray cause of options being elimnated and scores of the options where color being eleminated
+all scores are bad 
+
+gray images has same content at color for auto selection.
+
+-----------------------------
+Gallery id : 41299463
+ptstorage_32://pictures/41/299/41299463/f8a570juxxn13r5w8d
+
+bride: 2
+groom: 3
+family: [2, 3, 4,16, 10, 14, 15, 18,9,11]
+
+
+'ten_photos': [9939835181,9939835192,9939835198,9939835206,9939835217,9939835253,9939835281,9939835313,9939835324,9939835450],
+'people_ids': [2, 3, 4,16, 10, 14, 15, 18,9,11],
+'tags':  ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+
+-------------------------------
+Gallery id: 41299502
+ptstorage_32://pictures/41/299/41299502/j8tvyv7rzluzsm7twd
+
+bride 2
+groom 3
+bride friend 40
+[2, 3, 8, 40]
+groom mom 6
+[2, 3, 6, 7, 9, 12, 13, 15, 16, 32, 33, 34, 45, 46, 47]
+1 10 bridemaids
+4 7 
+
+'ten_photos': [9939846146,9939846199,9939846210,9939846233,9939846288,9939846331,9939846386,9939846507,9939846527],
+'people_ids': [1,2, 3,4, 6, 7, 9,10, 12, 13, 15, 16, 32, 33, 34, 45, 46, 47,8,40,],
+'tags':  ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+
+----------------------------
+GaL 41302395
+ptstorage_32://pictures/41/302/41302395/l4gdrb1ve26uqr4g7w
+9940431606,9940431625,9940431739,9940431750,9940431764,9940431763,9940431830,9940431841,9940431913,9940431985
+
+bride 1
+groom 3
+
+groommen : [3, 10, 12, 15, 48]
+[1, 31, 49, 50, 51, 52, 53, 54]
+[1, 3, 10, 11, 12, 13, 15, 16, 21, 61, 64]
+
+{
+            'ten_photos': [9940431606,9940431625,9940431739,9940431750,9940431764,9940431763,9940431830,9940431841,9940431913,9940431985],
+            'people_ids': [1, 3, 10, 11, 12, 13, 15, 16, 21, 61, 64,1, 31, 49, 50, 51, 52, 53, 54,3, 10, 12, 15, 48],
+            'tags':  ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        }
+
+------
+Gal : 41302516
+ptstorage_32://pictures/41/302/41302516/90di661tkddgtf6ltk
+
+9940452050,9940452094,9940452176,9940452242,9940452339,9940452361,9940452359, 9940452385,9940452393
+
+bride 1
+groom 7
+[1, 4, 2, 5, 8, 7, 18, 23]
+[1, 7, 9, 15, 16, 6, 20, 36, 28, 27, 62, 38]
+[1, 2, 5, 18]
+
+'ten_photos': [9940452050,9940452094,9940452176,9940452242,9940452339,9940452361,9940452359, 9940452385,9940452393],
+'people_ids': [1,7,4, 2, 5, 8, 7, 18, 23,9, 15, 16, 6, 20, 36, 28, 27, 62, 38,1, 2, 5, 18],
+'tags':  ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        

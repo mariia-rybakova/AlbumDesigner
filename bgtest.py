@@ -46,3 +46,4 @@ def get_photo_meta(file, images_dict, logger=None):
     return images_dict, None
 
 
+get_photo_meta(r'ptstorage_17://pictures/37/141/37141824/dmgb4onqc3hm/bg_segmentation.pb', {},None)

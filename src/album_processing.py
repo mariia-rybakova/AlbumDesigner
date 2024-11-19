@@ -60,7 +60,8 @@ def sort_sub_groups(sub_grouped, group_names):
 
         # Calculate the median instead of the mean
         #group_time_median = group["edited_general_time"].median()
-        group_time_median = group["image_orderInScene"].median()
+        group_time_median = group["general_time"].median()
+        #group_time_median = group["image_orderInScene"].median()
         time_group_dict[group_name] = group_time_median
 
     sorted_time_groups = dict(
@@ -77,8 +78,8 @@ def get_images_per_group(data_df):
     Return: dict group_name to list of images data
     """
     group2images_data_list = dict()
-    #grouped_by_content = data_df.groupby('time_cluster')
-    grouped_by_content = data_df.groupby('scene_order')
+    grouped_by_content = data_df.groupby('time_cluster')
+    #grouped_by_content = data_df.groupby('scene_order')
     for main_content_cluster, group_df in grouped_by_content:
         sub_grouped = group_df.groupby('cluster_context')
         for sub_cluster, sub_group_df in sub_grouped:
@@ -94,8 +95,8 @@ def gallery_processing(data_df, layouts_df, logger):
     ERROR = None
 
     group2images = get_images_per_group(data_df)
-    #sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
-    sub_grouped = data_df.groupby(['scene_order', 'cluster_context'])
+    sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
+    #sub_grouped = data_df.groupby(['scene_order', 'cluster_context'])
     start_time = time.time()
     updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
@@ -184,7 +185,7 @@ def map_cluster_label(cluster_label):
         return "Unknown"
 
 
-def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=None):
+def create_automatic_album(images_data_dict, layouts_path,gallery_path,relation_type, logger=None):
     # Start time
     logger.info("Start creating album...")
     layouts_df = load_layouts(layouts_path)
@@ -198,7 +199,7 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
     # Optionally reorder columns if you want 'image_id' to be the first column
     data_df = data_df[['image_id'] + [col for col in data_df.columns if col != 'image_id']]
     data_df.fillna(value='None', inplace=True)
-    sorted_ranking_df = data_df.sort_values(by="ranking", ascending=False)
+    sorted_ranking_df = data_df.sort_values(by="image_order", ascending=False)
     # convert cluster class number into text value and make copy when we need merging
     # apply the mapping function to create the new cluster_context column
     sorted_ranking_df["cluster_context"] = sorted_ranking_df["cluster_class"].apply(map_cluster_label)
@@ -223,8 +224,8 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
         logger.info(f"CPU Usage before gallery processing: {cpu_usage}%")
         logger.info(f"Memory Usage before gallery processing: {memory_info.percent}%")
 
-        df = handle_edited_time(sorted_by_time_df)
-        df = cluster_by_time(df)
+        #df = handle_edited_time(sorted_by_time_df)
+        df = cluster_by_time(sorted_by_time_df)
 
         group_name2chosen_combinations, sub_groups, error = gallery_processing(df, layouts_df, logger)
 
@@ -235,9 +236,9 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path, logger=N
         sorted_sub_groups = sort_sub_groups(sub_groups, sorted_group_name2chosen_combinations.keys())
 
         result = generate_json_response(cover_img, cover_img_layout,sub_groups, sorted_sub_groups, sorted_group_name2chosen_combinations, layouts_df, logger)
-        output_save_path = r'results'
+        output_save_path = r'results/new_galles'
         plot_album(cover_img, cover_img_layout, sub_groups, sorted_sub_groups, group_name2chosen_combinations,
-                   layouts_df, logger, gallery_path, output_save_path)
+                   layouts_df, logger, gallery_path, output_save_path,relation_type)
         # End time
         end_time = time.time()
         elapsed_time = (end_time - start_time) / 60

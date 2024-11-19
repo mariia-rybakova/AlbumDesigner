@@ -14,7 +14,7 @@ from utils.image_queries import generate_query
 from utils.image_selection_scores import map_cluster_label, calculate_scores
 from utils.read_files_types import read_pkl_file
 from utils.user_relation_percentage import relations
-
+from utils.similairty_thresholds import similarity_threshold
 """We will get 10 Photos examples
 relation to the bride and groom
 People selection
@@ -28,10 +28,54 @@ events_min_four_images ={
     'bride and groom',
     'bride',
     'groom',
+
 }
 
+def remove_similar_images_2_threshold(event, selected_images, gallery_photos_info, threshold=0.90):
+        if len(selected_images) == 1:
+            return selected_images
 
-def remove_similar_images(selected_images, gallery_photos_info, threshold=0.90):
+        # Extract embeddings
+        embeddings = [gallery_photos_info[image_id]['embedding'] for image_id in selected_images]
+        embeddings = np.array(embeddings)
+
+        # Compute cosine similarity
+        cosine_similarities = cosine_similarity(embeddings)
+
+        # Perform Agglomerative Clustering with the given threshold
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            linkage='ward',  # Use 'average' for cosine distances, 'ward' requires Euclidean distance
+            distance_threshold=similarity_threshold[event]  # Using similarity threshold for clustering
+        )
+        clustering.fit(cosine_similarities)
+
+        # Dictionary to hold images in each cluster
+        clusters = {}
+        for idx, label in enumerate(clustering.labels_):
+            clusters.setdefault(label, []).append(selected_images[idx])
+
+        unique_labels, counts = np.unique(clustering.labels_, return_counts=True)
+        #print(f"Cluster Labels: {unique_labels}")
+        #print(f"Counts per cluster: {counts}")
+
+
+        # Select the best image in each cluster based on 'order_score'
+        final_selected_images = []
+        for cluster_label, images_in_cluster in clusters.items():
+            # Select image with highest 'order_score' in the cluster
+            best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+            final_selected_images.append(best_image)
+
+            # Print out similar images for reference
+            if len(images_in_cluster) > 1:
+                similar_images = [img for img in images_in_cluster if img != best_image]
+                #print(f"Cluster {cluster_label}: Keeping '{best_image}', removing similar images: {similar_images}")
+
+        return final_selected_images
+
+
+def remove_similar_images(event, selected_images, gallery_photos_info, threshold=0.90):
     if len(selected_images) == 1:
         return selected_images
 
@@ -65,7 +109,7 @@ def remove_similar_images(selected_images, gallery_photos_info, threshold=0.90):
 
         if len(images_in_cluster) > 1:
             similar_images = images_in_cluster[1:]
-            print(f"Cluster {cluster_label}: Keeping '{selected_image}', removing similar images: {similar_images}")
+            #print(f"Cluster {cluster_label}: Keeping '{selected_image}', removing similar images: {similar_images}")
 
     return final_selected_images
 
@@ -142,9 +186,6 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
     ai_images_selected = []
     category_picked = {}
     for iteration, (event, imges) in enumerate(clusters_class_imgs.items()):
-        print("Starting with event:", event)
-        print("Number of images:", len(imges))
-        print("images:", imges)
         cluster_images_scores = {}
         for image in imges:
             image_score = calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags_features)
@@ -156,6 +197,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         # if all scores are zeros don't select anything
         if all(t[1] <= 0 for t in sorted_scores):
             continue
+
         # we don't want to select identical images of settings
         if event == 'settings':
             # filter setting images where have same cluster id and cluster label
@@ -171,7 +213,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             images_to_be_selected = []
             for cluser_id, indices in clusters_ids_indices.items():
                 images_same_cluster = [imges[index] for index in indices]
-                images_ranking = [(i, gallery_photos_info[image]['ranking']) for i, image in
+                images_ranking = [(i, gallery_photos_info[image]['image_order']) for i, image in
                                   enumerate(images_same_cluster)]
                 sorted_ranking = sorted(images_ranking, key=lambda item: item[1], reverse=True)
                 highest_ranking_index = sorted_ranking[0][0]
@@ -184,7 +226,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
                 continue
             selected_images = images_to_be_selected[:n]
             selected_images = [image_id for image_id, score in selected_images]
-            filtered_images = remove_similar_images(selected_images, gallery_photos_info, threshold=0.98)
+            filtered_images = remove_similar_images(event,selected_images, gallery_photos_info, threshold=0.98)
             ai_images_selected.extend(filtered_images)
         else:
             if event == 'None':
@@ -204,11 +246,11 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
 
             available_images = len(sorted_scores)
             n = round(available_images * select_percentage)
-            if n == 0:
+            if available_images < 3 or n == 0:
                 continue
 
             # Enforce a minimum of 4 images for specific events
-            if event in events_min_four_images and n < 4:
+            if n < 4:
                 n = min(4, available_images)
 
             # Ensure n does not exceed available images
@@ -217,15 +259,15 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             selected_images = filter_scores[:n]
             selected_images = [image_id for image_id, score in selected_images]
             if event != 'dancing':
-                filtered_images = remove_similar_images(selected_images, gallery_photos_info, threshold=0.94)
+                filtered_images = remove_similar_images(event,selected_images, gallery_photos_info, threshold=0.94)
             else:
                 filtered_images = selected_images
 
-            # if len(filtered_images) < 4:
-            #     number_needed = 4 - len(filtered_images)
-            #     max_n = min(len(filter_scores), (n+number_needed))
-            #     more_imgs = [img_id for img_id,score in filter_scores[n:max_n]]
-            #     filtered_images.extend(more_imgs)
+            if len(filtered_images) < 4:
+                number_needed = 4 - len(filtered_images)
+                max_n = min(len(filter_scores), (n+number_needed))
+                more_imgs = [img_id for img_id,score in filter_scores[n:max_n]]
+                filtered_images.extend(more_imgs)
 
             ai_images_selected.extend(filtered_images)
 
@@ -318,26 +360,39 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
     selected_tags_features = {}
     for tag in tags_selected:
         selected_tags_features[tag] = tags_features[tag]
+    #
+    # directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\41661791')
+    #
+    # images_selected = [int(f.stem) for f in directory_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.png'] and  '_' not in f.stem]
+    #
+    # return images_selected,gallery_photos_info, None
 
-    # return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,
-    #                      logger)
-    gal_id = 41657689
+
+    return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,
+                         logger)
+    #gal_id = 40570951
     #directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gal_id}')
-    directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gal_id}')
-    images_selected = [int(f.stem) for f in directory_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.png'] and  '_' not in f.stem]
+    #directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gal_id}')
+    #images_selected = [int(f.stem) for f in directory_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.png'] and  '_' not in f.stem]
 
-    not_processed = [im for im in gallery_photos_info if len(gallery_photos_info[im]) < 19]
-    with open(f'{gal_id}_not_processed.csv', mode='w', newline='') as file:
-        writer = csv.writer(file)
-        for item in not_processed:
-            writer.writerow([item])
+    #not_processed = [im for im in gallery_photos_info if len(gallery_photos_info[im]) < 19]
+    # with open(f'{gal_id}_not_processed.csv', mode='w', newline='') as file:
+    #     writer = csv.writer(file)
+    #     for item in not_processed:
+    #         writer.writerow([item])
 
 
-    ai_images_selected = [im for im in gallery_photos_info if len(gallery_photos_info[im]) >= 19]
+    #ai_images_selected = [im for im in gallery_photos_info if len(gallery_photos_info[im]) >= 19]
 
-    ai_images_selected = [im for im in ai_images_selected if im in images_selected]
-    error_message = None
-    return ai_images_selected, gallery_photos_info, error_message
+    #ai_images_selected = [im for im in ai_images_selected if im in images_selected]
+    # for im in ai_images_selected:
+    #     im_path = os.path.join(r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\40570951',
+    #                            str(im) + '.jpg')
+    #     shutil.copy(im_path,
+    #                 rf'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\40570951\{im}.jpg')
+
+    # error_message = None
+    # return ai_images_selected, gallery_photos_info, error_message
 
 
 def copy_selected_folder(ai_images_selected, gal_path):

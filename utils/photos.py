@@ -39,7 +39,7 @@ def get_photos_from_db(data_db):
         cluster_label = row['cluster_label']
         color = False if row['image_color'] == 0 else True
         aspect_ratio = row['image_as']
-        rank_score = row['ranking']
+        rank_score = row['image_order']
 
         # photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
         #                     photo_class=class_contex, cluster_label=cluster_label,

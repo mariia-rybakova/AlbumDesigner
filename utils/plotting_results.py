@@ -49,8 +49,9 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
             #c.drawString(text_x, text_y, f"{cover_img['image_orderInScene'].iloc[0]}")  # Customize the text as needed
 
             box_aspect_ratio = w / h
+            faces = np.copy(cover_img['faces_info'])
             cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
-                                                                        cover_img['faces_info'], centroid,
+                                                                        faces, centroid,
                                                                         float(cover_img['diameter'].iloc[0]),box_aspect_ratio)
             # Denormalize the coordinates based on the image dimensions
             im_x = int(cropped_x * np_img.shape[1])  # Multiply by image width
@@ -180,7 +181,8 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
 
                 # Add spread number as a label (optional)
                 c.setFont("Helvetica", 12)
-                c.drawString(30, 30, f"Cluster {group_name} - Spread {spread_index + 1}")
+                #c.drawString(30, 30, f"Cluster {group_name} - Spread {spread_index + 1}")
+
 
     # Save the PDF
     c.save()
