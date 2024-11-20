@@ -90,10 +90,10 @@ def remove_similar_images(event, selected_images, gallery_photos_info, threshold
         if len(selected_images) == 1:
             return selected_images
 
-        not_people_events = ['vehicle','settings','rings', 'bride and groom']
+        not_people_events = ['vehicle','settings','rings', 'bride and groom','entertainment', 'accessories','food','wedding dress','suit','pet']
         if event not in not_people_events:
             # Step 1: Extract and one-hot encode `persons_ids` for Jaccard-based clustering
-            persons_ids = [gallery_photos_info[image_id]['persons_ids'] for image_id in selected_images]
+            persons_ids = [gallery_photos_info[image_id]['persons_ids'] for image_id in selected_images if 'persons_ids' in gallery_photos_info[image_id] ]
             mlb = MultiLabelBinarizer()
             one_hot_persons_ids = mlb.fit_transform(persons_ids)
 
@@ -108,32 +108,57 @@ def remove_similar_images(event, selected_images, gallery_photos_info, threshold
             # Convert similarity to distance for clustering
             person_distance_matrix = 1 - person_similarity_matrix
 
-            # Perform Agglomerative Clustering based on person similarity
-            person_clustering = AgglomerativeClustering(
-                n_clusters=None,
-                linkage='average',
-                distance_threshold=0.3,  # Adjust this threshold as needed
-            )
-            person_clustering.fit(person_distance_matrix)
+            if len(person_distance_matrix) == 0 or  person_distance_matrix.shape[0] < 2:
+                # if no people found then select four
+                """Select 4 images"""
+                clusters_ids = {}
+                # image class
+                for image_id in selected_images:
+                    class_id = gallery_photos_info[image_id]['cluster_label']
+                    if class_id not in clusters_ids:
+                        clusters_ids[class_id] = []
 
-            # Dictionary to hold images in each person-based cluster
-            person_clusters = {}
-            for idx, label in enumerate(person_clustering.labels_):
-                person_clusters.setdefault(label, []).append(selected_images[idx])
+                    clusters_ids[class_id].append(image_id)
 
-            plot_groups_to_pdf(event, person_clusters, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\40570951', output_pdf='persons_clustering.pdf')
-            # Select the best image in each cluster based on 'order_score'
-            final_selected_images = []
-            for cluster_label, images_in_cluster in person_clusters.items():
-                # if i have 4 images i choose one of them if more then i choose more
-                if len(images_in_cluster) <= 4:
-                    # Select image with highest 'order_score' in the cluster
-                    best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
-                    final_selected_images.append(best_image)
-                else:
-                    n = round(len(images_in_cluster)/4)
-                    images_order = sorted(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
-                    final_selected_images.append(images_order[n])
+                final_selected_images = []
+                for cluster_label, images_in_cluster in clusters_ids.items():
+                    # if i have 4 images i choose one of them if more then i choose more
+                    if len(images_in_cluster) <= 3:
+                        # Select image with highest 'order_score' in the cluster
+                        best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                        final_selected_images.append(best_image)
+                    else:
+                        n = round(len(images_in_cluster) / 4)
+                        images_order = sorted(images_in_cluster,
+                                              key=lambda img: gallery_photos_info[img]['image_order'])
+                        final_selected_images.append(images_order[n])
+            else:
+                # Perform Agglomerative Clustering based on person similarity
+                person_clustering = AgglomerativeClustering(
+                    n_clusters=None,
+                    linkage='average',
+                    distance_threshold=0.3,  # Adjust this threshold as needed
+                )
+                person_clustering.fit(person_distance_matrix)
+
+                # Dictionary to hold images in each person-based cluster
+                person_clusters = {}
+                for idx, label in enumerate(person_clustering.labels_):
+                    person_clusters.setdefault(label, []).append(selected_images[idx])
+
+                #plot_groups_to_pdf(event, person_clusters, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\40570951', output_pdf='persons_clustering.pdf')
+                # Select the best image in each cluster based on 'order_score'
+                final_selected_images = []
+                for cluster_label, images_in_cluster in person_clusters.items():
+                    # if i have 4 images i choose one of them if more then i choose more
+                    if len(images_in_cluster) <= 4:
+                        # Select image with highest 'order_score' in the cluster
+                        best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                        final_selected_images.append(best_image)
+                    else:
+                        n = round(len(images_in_cluster)/4)
+                        images_order = sorted(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                        final_selected_images.append(images_order[n])
 
         elif event == 'bride and groom':
             """Select 4 images"""
@@ -213,8 +238,9 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
     category_picked = {}
 
     for iteration, (event, imges) in enumerate(clusters_class_imgs.items()):
+        print("Event in auto2 ", event)
         n_imges = len(imges)
-        not_allowed_small_events = ['None','other','settings','vehicle','rings']
+        not_allowed_small_events = ['None','other','settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing']
 
         if event not in category_picked:
             category_picked[event] = 0

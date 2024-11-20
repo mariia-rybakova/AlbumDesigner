@@ -227,6 +227,11 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             selected_images = images_to_be_selected[:n]
             selected_images = [image_id for image_id, score in selected_images]
             filtered_images = remove_similar_images(event,selected_images, gallery_photos_info, threshold=0.98)
+
+            if len(filtered_images) > 40:
+                print("Selected more than 40 for this event!")
+                filtered_images = filtered_images[:24]
+
             ai_images_selected.extend(filtered_images)
         else:
             if event == 'None':
@@ -269,12 +274,18 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
                 more_imgs = [img_id for img_id,score in filter_scores[n:max_n]]
                 filtered_images.extend(more_imgs)
 
+            if len(filtered_images) >= 40:
+                filtered_images = filtered_images[:24]
+
+
             ai_images_selected.extend(filtered_images)
 
         if event not in category_picked:
             category_picked[event] = 0
 
         category_picked[event] += len(filtered_images)
+
+
         total_selected_images = len(ai_images_selected)
         if logger is not None:
             logger.info(f"Iteration {iteration}:")
@@ -294,6 +305,10 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         error_message = 'No images were selected.'
         if logger is not None:
            logger.error("No images were selected.")
+    elif len(ai_images_selected) >= 150:
+        pass
+
+    print("Selected Category",category_picked)
 
     return ai_images_selected, gallery_photos_info, error_message
 

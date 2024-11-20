@@ -25,61 +25,64 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
         cover_layout_info = ast.literal_eval(layouts_df.loc[int(cover_img_layout_id)]['boxes_info'])
         cover_image_id = cover_img['image_id'].values[0]
         cover_img_path = os.path.join(gallery_path, str(cover_image_id) + '.jpg')
-        img = Image.open(cover_img_path)
-        np_img = np.array(img)
 
-        # Resize the image to fit the box
-        centroid = cover_img['background_centroid'].values[0]
-        for box in cover_layout_info:
-            x, y, w, h = box['x'], box['y'], box['width'], box['height']
+        if os.path.exists(cover_img_path):
 
-            # Adjust coordinates and dimensions to fit 1:2 aspect ratio
-            x = x * page_width
-            y = y * page_height
-            w = w * page_width
-            h = h * page_height
+            img = Image.open(cover_img_path)
+            np_img = np.array(img)
 
-            # Add text above the image
-            text_x = x
-            text_y = y + h + 20  # Adjust the 20 to move the text further above the image if needed
+            # Resize the image to fit the box
+            centroid = cover_img['background_centroid'].values[0]
+            for box in cover_layout_info:
+                x, y, w, h = box['x'], box['y'], box['width'], box['height']
 
-            # Set font and draw the text
-            c.setFont("Helvetica", 24)  # Set font and size
-            c.setFillColor(colors.black)  # Set text color
-            #c.drawString(text_x, text_y, f"{cover_img['image_orderInScene'].iloc[0]}")  # Customize the text as needed
+                # Adjust coordinates and dimensions to fit 1:2 aspect ratio
+                x = x * page_width
+                y = y * page_height
+                w = w * page_width
+                h = h * page_height
 
-            box_aspect_ratio = w / h
-            faces = np.copy(cover_img['faces_info'])
-            cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
-                                                                        faces, centroid,
-                                                                        float(cover_img['diameter'].iloc[0]),box_aspect_ratio)
-            # Denormalize the coordinates based on the image dimensions
-            im_x = int(cropped_x * np_img.shape[1])  # Multiply by image width
-            im_y = int(cropped_y * np_img.shape[0])  # Multiply by image height
-            im_w = int(cropped_w * np_img.shape[1])  # Multiply by image width
-            im_h = int(cropped_h * np_img.shape[0])  # Multiply by image height
+                # Add text above the image
+                text_x = x
+                text_y = y + h + 20  # Adjust the 20 to move the text further above the image if needed
 
-            # Ensure the coordinates are within image boundaries
-            im_x = max(0, min(im_x, np_img.shape[1] - 1))
-            im_y = max(0, min(im_y, np_img.shape[0] - 1))
-            im_w = max(0, min(im_w, np_img.shape[1] - im_x))
-            im_h = max(0, min(im_h, np_img.shape[0] - im_y))
+                # Set font and draw the text
+                c.setFont("Helvetica", 24)  # Set font and size
+                c.setFillColor(colors.black)  # Set text color
+                #c.drawString(text_x, text_y, f"{cover_img['image_orderInScene'].iloc[0]}")  # Customize the text as needed
 
-            # Crop the image using correct indexing
-            cropped_image = np_img[im_y:im_y + im_h, im_x:im_x + im_w]
+                box_aspect_ratio = w / h
+                faces = np.copy(cover_img['faces_info'])
+                cropped_x, cropped_y, cropped_w, cropped_h = smart_cropping(float(cover_img['image_as'].iloc[0]),
+                                                                            faces, centroid,
+                                                                            float(cover_img['diameter'].iloc[0]),box_aspect_ratio)
+                # Denormalize the coordinates based on the image dimensions
+                im_x = int(cropped_x * np_img.shape[1])  # Multiply by image width
+                im_y = int(cropped_y * np_img.shape[0])  # Multiply by image height
+                im_w = int(cropped_w * np_img.shape[1])  # Multiply by image width
+                im_h = int(cropped_h * np_img.shape[0])  # Multiply by image height
 
-            # Resize the cropped image
-            img = Image.fromarray(cropped_image)
+                # Ensure the coordinates are within image boundaries
+                im_x = max(0, min(im_x, np_img.shape[1] - 1))
+                im_y = max(0, min(im_y, np_img.shape[0] - 1))
+                im_w = max(0, min(im_w, np_img.shape[1] - im_x))
+                im_h = max(0, min(im_h, np_img.shape[0] - im_y))
 
-            # Save the resized image to a temporary file
-            temp_img_path = "cover_temp.jpg"
-            img.save(temp_img_path)
+                # Crop the image using correct indexing
+                cropped_image = np_img[im_y:im_y + im_h, im_x:im_x + im_w]
 
-            # Plot the cover image inside the box
-            c.drawImage(temp_img_path, x, y, w, h)
+                # Resize the cropped image
+                img = Image.fromarray(cropped_image)
 
-            # Clean up the temporary image file
-            os.remove(temp_img_path)
+                # Save the resized image to a temporary file
+                temp_img_path = "cover_temp.jpg"
+                img.save(temp_img_path)
+
+                # Plot the cover image inside the box
+                c.drawImage(temp_img_path, x, y, w, h)
+
+                # Clean up the temporary image file
+                os.remove(temp_img_path)
 
     for group_name in sorted_sub_groups_dict.keys():
             if group_name not in group_name2chosen_combinations.keys():
@@ -121,6 +124,8 @@ def plot_album(cover_img, cover_img_layout_id,sub_groups, sorted_sub_groups_dict
 
                     c_image_info = c_group[c_group['image_id'] == c_image_id]
                     img_path = os.path.join(gallery_path, str(cur_photo.id) + '.jpg')
+                    if not os.path.exists(img_path):
+                        continue
                     img = Image.open(img_path)
 
                     x, y, w, h = box['x'], box['y'], box['width'], box['height']

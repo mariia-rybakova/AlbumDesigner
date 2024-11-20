@@ -86,9 +86,10 @@ def merge_illegal_group(main_groups, illegal_group, intended_group_index):
     len_combine_group = len(selected_cluster) + len(illegal_group)
     # We dont want to split the 2 images or less group per spread
     while len(selected_cluster) != 44 and len(
-            selected_cluster) > 38 or len_combine_group > 38 and len_combine_group != 44:
+            selected_cluster) > 38 or len_combine_group > 38 and len_combine_group != 44 and len(main_groups) != 2:
         dist_to_illegal_group = np.delete(dist_to_illegal_group, min_distance_idx)
-
+        if len(dist_to_illegal_group) == 0:
+            break
         min_distance_idx = np.argmin(dist_to_illegal_group)
 
         # Identify the selected group corresponding to the second highest mean distance

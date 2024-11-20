@@ -13,6 +13,8 @@ from utils.plotting_results import  plot_album
 from utils.clustering_time import cluster_by_time
 from utils.time_outliers import handle_edited_time
 
+from utils.lookup_table import genreate_look_up,lookup_table
+
 def sort_groups_by_photo_time(data_dict,logger):
     def get_mean_time(sublist):
         # Extract all general_time values from the photos in the sublist
@@ -88,6 +90,18 @@ def get_images_per_group(data_df):
     return group2images_data_list
 
 
+def genreate_look_up(group2images):
+    for group_name, images in group2images.items():
+        parts = group_name.split('_')
+        group_id = parts[1]
+        if group_id in lookup_table:
+            # mean = calculate_flexible_mean(images,lookup_table[group_id][0] )
+            # lookup_table[group_name] = (mean,lookup_table[group_id][1])
+            continue
+        else:
+            lookup_table[group_name] = (5, 0.2)
+    return lookup_table
+
 def gallery_processing(data_df, layouts_df, logger):
     logger.info(f'============================')
     logger.info(f'Start Processing the Gallery')
@@ -98,6 +112,8 @@ def gallery_processing(data_df, layouts_df, logger):
     sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
     #sub_grouped = data_df.groupby(['scene_order', 'cluster_context'])
     start_time = time.time()
+    # updated_sub_grouped =sub_grouped
+    # lookup_table = genreate_look_up(group2images)
     updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
     illegal_time = (time.time() - start_time) / 60
     logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
