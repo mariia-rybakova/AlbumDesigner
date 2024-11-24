@@ -79,6 +79,10 @@ time is negative
     'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
 
 Not Done it has a negative time
+Doneee
+
+
+
 ============================================================================
 # 4 -Gallery : 38122574 Ready to process 
 service-message: https://pictime7eus1public.blob.core.windows.net/pictures/38/122/38122574/jn4cl65tg2gf/lowres
@@ -101,6 +105,12 @@ groom father 56
             'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
             'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
 
+
+
+Done
+
+
+
 =======================================
 # 5 -37036946 Ready to process
 service-message: https://pictime7eus1public.blob.core.windows.net/pictures/37/36/37036946/0j7cgl13spuo/lowres
@@ -108,40 +118,114 @@ ptstorage_18://pictures/37/36/37036946/0j7cgl13spuo
 
 downbnloaded
 
+9138811413,9138811416,9138811425,9138811474,9138811517,9138811536,9138989988,9138990071,9138990144,9138990356,9138990816
+bride 84 
+[86, 84, 3, 4]
+groom 13
+[84, 13, 170, 139]
+[13, 14, 28, 101, 32, 100, 107, 29, 26, 24]
+[86, 84, 13, 87, 88, 9, 103, 108, 89, 109, 27]
+
+data_dict = {
+            'ten_photos': [9138811413,9138811416,9138811425,9138811474,9138811517,9138811536,9138989988,9138990071,9138990144,9138990356,9138990816],
+            'people_ids': [13, 14, 28, 101, 32, 100, 107, 29, 26, 24,86, 84, 13, 87, 88, 9, 103, 108, 89, 109, 27,84, 13, 170, 139,86, 84, 3, 4],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        }
+    galler
+
+
+
+
 
 
 
 =========================================
+Danila
 # 6 -32900972 Ready to process 
 service-message: https://pictime7eus1public.blob.core.windows.net/pictures/32/900/32900972/1teshu0uhg8u/lowres
 ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u
 
+{
+            'ten_photos': [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913],
+            'people_ids': [1,9, 20, 10, 15, 14, 2, 6, 7, 16],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        }
+
+
+
+
+
+
 # downloaded
+8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913
+bride and grrom 1, 9
 
-
-
+[1, 20, 10, 15, 14, 2, 6, 7, 16]
 
 
 =============================================================================
-# 
-https://danilosiqueira.pic-time.com/professional#|client|prjsearch|prj_38122574
-service-message: https://pictime7eus1public.blob.core.windows.net/pictures/38/122/38122574/jn4cl65tg2gf/lowres
-# downbloaded
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 https://danilosiqueira.pic-time.com/professional#|client|prjsearch|prj_37036946
 service-message: https://pictime7eus1public.blob.core.windows.net/pictures/37/36/37036946/0j7cgl13spuo/lowres
 # downloaded
 
+
+
+
+
+
+
+
+
+
 https://danilosiqueira.pic-time.com/professional#|client|prjsearch|prj_32900972
 service-message: https://pictime7eus1public.blob.core.windows.net/pictures/32/900/32900972/1teshu0uhg8u/lowres
 # downloadedd
+
+ data_dict = {
+            'ten_photos': [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913],
+            'people_ids': [1,9, 20, 10, 15, 14, 2, 6, 7, 16],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        }
+
+
+
+
+
 
 =============================================================================
 https://laraonac.pic-time.com/professional#dash|prj_36048323
 service-message: https://pictime5neu1public.blob.core.windows.net/pictures/36/48/36048323/vxgigtmzwxsv/lowres
 ptstorage_16://pictures/36/48/36048323/vxgigtmzwxsv
 # downloaded
+
+8984820426,8984820442,8984820466,8984820990,8984821021,8984821334,8984822229,8984822389,8985235403,8985236016
+
+[5, 3, 8, 1, 12, 11, 13, 10, 9, 7, 2, 4, 14]
+
+
+
+
+
+
+
+
 
 https://laraonac.pic-time.com/professional#dash|prj_33937070
 ready to process
@@ -173,7 +257,21 @@ service-message: https://pictime6eus1public.blob.core.windows.net/pictures/32/56
 ptstorage_17://pictures/32/561/32561318/fac63vxsjl7o
 # downloaded the photos
 
+[2, 56, 110, 30, 21, 33, 88, 74, 14, 34, 19, 55, 3, 46, 53, 44, 107, 106, 108]
+[1, 22, 23, 29, 28, 49, 4, 59, 81]
 
+second auto didnt work just first auto
+
+data_dict = {
+            'ten_photos': [8379312833,8379312842,8477864823,8477864844,8477864854,8477864857,8477864860,9009679392,9009679419,9009679428],
+            'people_ids': [1, 22, 23, 29, 28, 49, 4, 59, 81,2, 56, 110, 30, 21, 33, 88, 74, 14, 34, 19, 55, 3, 46, 53, 44, 107, 106, 108],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        }
+
+
+remove 8477864858 8477864861 8477864863 8477864864 8477864868 8477864863 8477864865 8477864869 
+---------------------------------------
 https://meghanklein.pic-time.com/professional?#|client|prjsearch|prj_31871520
 ready to process
 service-message: https://pictime6eus1public.blob.core.windows.net/pictures/31/871/31871520/21b01frfyge3/lowres
@@ -183,7 +281,12 @@ ptstorage_17://pictures/31/871/31871520/21b01frfyge3
 [1, 24, 31, 9, 27, 29, 32, 30]
 1,2 
 
-
+{
+            'ten_photos': [8244577700,8244577703,8244577718,8404197297,8404197305,8404197320,8404197348,8404197352,8404197368,8404197378],
+            'people_ids': [1,2, 24, 31, 9, 27, 29, 32, 30,18, 10, 19, 140, 8, 20, 14, 15, 22],
+            'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
+            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+        }
 
 
 
@@ -314,32 +417,32 @@ potrait image [13, 3, 5, 4, 21, 11, 7, 134, 144, 106, 140, 141, 215, 176, 219]
 --------------------------
 
 Ready albums
-Amands:
+Amands: sent
 39772108 downloaded images done 
 36080830 downloaded images done
 
-Ben:
+Ben: sent
 28279437 downloaded images done
 33466254 done
 34802034 done 
 
-meghan
-31871520 downloaded images
-32561318 downloaded images
+meghan sent 
+31871520 downloaded images > Done
+32561318 downloaded images > Done
 
 
-**lara
+**lara second one is r4eady
+36048323 negative time
 33937070 Done** 
 
-Danilla
-32900972
-37036946
-38122574
-38978635 
+Danilla Sent
+32900972  done
+37036946 done
+38122574 done 
+38978635 done
 
-Rafa
+Rafa Sent
 37141824 done
 41661791 done
 
 
-36048323  ready

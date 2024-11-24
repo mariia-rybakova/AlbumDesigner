@@ -29,9 +29,11 @@ def split_illegal_group(illegal_group,count,logger):
 
     combined_features = np.column_stack((illegal_group_features, time_features_nor,cluster_labels_nor))
 
+    n_samples = len(combined_features)
+    size_min = max(1, n_samples // 4)
     clf = KMeansConstrained(
         n_clusters=2,
-        size_min=4,
+        size_min=size_min,
         size_max=len(combined_features),
         random_state=0)
     clf.fit_predict(combined_features)
