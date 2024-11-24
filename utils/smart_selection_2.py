@@ -2,24 +2,22 @@ import os
 import time
 import shutil
 import random
-import csv
-from pathlib import Path
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from torch.nn.functional import embedding
-from sklearn.cluster import AgglomerativeClustering
 
+from fpdf import FPDF
+from PIL import Image
 from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
 from utils.image_queries import generate_query
 from utils.image_selection_scores import map_cluster_label, calculate_scores
 from utils.read_files_types import read_pkl_file
-from utils.user_relation_percentage import relations
-from utils.similairty_thresholds import similarity_threshold
-import numpy as np
+#from utils.user_relation_percentage import relations
+from utils.user_relation_percentage import relations_2
 from sklearn.metrics import jaccard_score
 from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import AgglomerativeClustering
+
+
+
 """We will get 10 Photos examples
 relation to the bride and groom
 People selection
@@ -28,11 +26,6 @@ Tag cloud flowers hugs, food"""
 """Selection will be baised twoards the tags but not strict """
 
 """We dont know if the user will select average number of photos for each event, or even total number of images for album"""
-
-import matplotlib.pyplot as plt
-from fpdf import FPDF
-from PIL import Image
-
 
 def plot_groups_to_pdf(event,groups, images_path, output_pdf='persons_clustering.pdf'):
     """
@@ -227,6 +220,32 @@ def remove_similar_images(event, selected_images, gallery_photos_info, threshold
 
         return final_selected_images
 
+def images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags_features):
+    images_scores = {}
+    for image in imges:
+        image_score = calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags_features)
+        images_scores[image] = image_score
+
+    # pick images based on relations percentage
+    sorted_scores = sorted(images_scores.items(), key=lambda item: item[1], reverse=True)
+    return sorted_scores
+
+
+def calculate_selection(category,n_actual,lookup_table):
+    if category in lookup_table:
+        n_target, std_target = lookup_table[category]
+
+        # Calculate score using a Gaussian weighting function
+        weight = np.exp(-((n_actual - n_target) ** 2) / (2 * std_target ** 2))
+
+        number_selected = int(weight * n_target)
+    else:
+        # If category not in lookup, select 0 images
+        number_selected = 0
+
+    return number_selected
+
+
 def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,
                   logger=None):
     if logger is not None:
@@ -237,104 +256,64 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
     ai_images_selected = []
     category_picked = {}
 
-    for iteration, (event, imges) in enumerate(clusters_class_imgs.items()):
-        print("Event in auto2 ", event)
-        n_imges = len(imges)
-        not_allowed_small_events = ['None','other','settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing']
-
-        if event not in category_picked:
-            category_picked[event] = 0
+    for iteration, (category, imges) in enumerate(clusters_class_imgs.items()):
+        n_actual = len(imges)
+        not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing']
+        print(f"Categroy {category}, acutal number of images {n_actual}")
+        if category not in category_picked:
+            category_picked[category] = []
 
         # we don't select images from them
-        if event == 'None' or event == 'other':
+        if category == 'None' or category == 'other':
                     continue
         # if we have 4 images for event we choose them all
-        elif 3 <= n_imges <=5 and event not in not_allowed_small_events:
-            ai_images_selected.extend(imges)
-            category_picked[event] += len(imges)
-            if logger is not None:
-                logger.info(f"Event: {event}, Available images: {len(imges)}")
-                logger.info(f"Images selected this iteration without Scores: {len(imges)}")
-                logger.info(f"Total images selected so far without Scores: {len(ai_images_selected)}")
-                logger.info("*******************************************************")
-            else:
-                print(f"Event: {event}, Available images: {len(imges)}")
-                print(f"Images selected this iteration: {len(imges)}")
-                print(f"Total images selected so far without Scores: {len(ai_images_selected)}")
-                print("*******************************************************")
-
+        elif n_actual < 3 and n_actual not in not_allowed_small_events:
+            continue
         else:
             # Get scores for each image
-            images_scores = {}
-            for image in imges:
-                image_score = calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags_features)
-                images_scores[image] = image_score
-
-            # pick images based on relations percentage
-            sorted_scores = sorted(images_scores.items(), key=lambda item: item[1], reverse=True)
+            scores = images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags_features)
 
             # if all scores are zeros don't select anything
-            if all(t[1] <= 0 for t in sorted_scores):
+            if all(t[1] <= 0 for t in scores):
                 continue
             else:
                 # Get images that have people we want
-                available_images_scores = [score for score in sorted_scores if score[1] > 0]
+                available_images_scores = [score for score in scores if score[1] > 0]
                 available_img_ids = [image_id for image_id, score in available_images_scores]
 
                 # remove similar before choosing from them
-                if event != 'dancing':
-                      available_img_ids = remove_similar_images(event,available_img_ids , gallery_photos_info, threshold=0.94)
+                available_img_ids = remove_similar_images(category,available_img_ids , gallery_photos_info, threshold=0.94)
 
                 # we dont select one image for event
-                if len(available_img_ids) < 3:
-                    continue
-                # we select all 3 images
-                elif len(available_img_ids) == 3:
+                if len(available_img_ids) == 3:
                     ai_images_selected.extend(available_img_ids)
-                    category_picked[event] += len(available_img_ids)
-                    if logger is not None:
-                        logger.info(f"Event: {event}, Available images: {len(available_img_ids)}")
-                        logger.info(f"Images selected after removing similar: 3")
-                        logger.info(f"Total images selected : {len(ai_images_selected)}")
-                        logger.info("*******************************************************")
-                    else:
-                        print(f"Event: {event}, Available images: {available_img_ids}")
-                        print(f"Images selected after removing similar: 3")
-                        print(f"Total images selected so far: {len(ai_images_selected)}")
-                        print("*******************************************************")
+                    category_picked[category].extend(available_img_ids)
+                elif len(available_img_ids) < 3:
+                    continue
                 else:
-                    # Select N number based on relations
-                    if event not in relations[user_relation]:
-                        select_percentage = 1
-                    else:
-                        select_percentage = relations[user_relation][event]
-
-                    # selection_params = relations[user_relation][event]
-                    # select_weight =  np.prod(np.exp(-0.5 * np.power(((len(available_img_ids)  - selection_params[0]) / selection_params[1]), 2)))
-
-                    n = max(4,round(len(available_img_ids) * select_percentage))
+                    n_actual = len(available_img_ids)
+                    n = calculate_selection(category, n_actual, relations_2[user_relation])
+                    n = max(4,n)
 
                     selected_images = available_img_ids[:n]
                     ai_images_selected.extend(selected_images)
-                    category_picked[event] += len(selected_images)
-
-                    if logger is not None:
-                        logger.info(f"Event: {event}, Available images: {len(available_img_ids)}")
-                        logger.info(f"Images selected after removing similar with percent: {len(selected_images)}")
-                        logger.info(f"Total images selected so far: {len(ai_images_selected)}")
-                        logger.info("*******************************************************")
-                    else:
-                        print(f"Event: {event}, Available images: {len(available_img_ids)}")
-                        print(f"Images selected after removing similar with percent: {len(selected_images)}")
-                        print(f"Total images selected so far: {len(ai_images_selected)}")
-                        print("*******************************************************")
+                    category_picked[category].extend(selected_images)
 
     if len(ai_images_selected) == 0:
         error_message = 'No images were selected.'
         if logger is not None:
            logger.error("No images were selected.")
+    elif len(ai_images_selected) > 140 :
+        pass
 
-    print("category and thier images", category_picked)
+    if logger is not None:
+        logger.info(f"Total images: {len(ai_images_selected)}")
+        logger.info(f"Picked: {category_picked}")
+        logger.info("*******************************************************")
+    else:
+        print(f"Total images: {len(ai_images_selected)}")
+        print(f"Picked: {category_picked}")
+        print("*******************************************************")
 
     return ai_images_selected, gallery_photos_info, error_message
 
@@ -404,108 +383,23 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
 
     return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,
                          logger)
-    #gal_id = 40570951
-    #directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gal_id}')
-    #directory_path = Path(fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gal_id}')
-    #images_selected = [int(f.stem) for f in directory_path.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.png'] and  '_' not in f.stem]
 
-    #not_processed = [im for im in gallery_photos_info if len(gallery_photos_info[im]) < 19]
-    # with open(f'{gal_id}_not_processed.csv', mode='w', newline='') as file:
-    #     writer = csv.writer(file)
-    #     for item in not_processed:
-    #         writer.writerow([item])
-
-
-    #ai_images_selected = [im for im in gallery_photos_info if len(gallery_photos_info[im]) >= 19]
-
-    #ai_images_selected = [im for im in ai_images_selected if im in images_selected]
-    # for im in ai_images_selected:
-    #     im_path = os.path.join(r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\40570951',
-    #                            str(im) + '.jpg')
-    #     shutil.copy(im_path,
-    #                 rf'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\40570951\{im}.jpg')
-
-    # error_message = None
-    # return ai_images_selected, gallery_photos_info, error_message
-
-
-def copy_selected_folder(ai_images_selected, gal_path):
-    """
-    Copies selected images from the source directory to a new folder.
-
-    Parameters:
-    - ai_images_selected (list): List of image filenames to copy.
-    - gal_path (str): Source directory containing the images.
-
-    The function creates a folder named 'selected_images' in the current directory
-    and copies the specified images into it.
-    """
-    destination_folder = r'C:\Users\karmel\Desktop\AlbumDesigner\results\selected_images'
-
-    # Create the destination folder if it doesn't exist
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
-
-    # Iterate over the list of image IDs and copy each one
-    for image_id in ai_images_selected:
-        source_path = os.path.join(gal_path, str(image_id) +".jpg")
-        dest_path = os.path.join(destination_folder, str(image_id)+".jpg")
-
-        # Check if the source image exists
-        if os.path.exists(source_path):
-            shutil.copy2(source_path, dest_path)
-            print(f"Copied '{image_id}' to '{destination_folder}'.")
-        else:
-            print(f"Image '{image_id}' not found in '{gal_path}'.")
 
 
 if __name__ == '__main__':
-    ten_photos = [10010769563,10010769568,10010784903,10010784940,10010784958,10010784973,10015553832,10015553856,10015553882,10015553960,10015553971,10015553998,10015554008,10015597235,10015597239]
-    people_ids = [2,17,1,5,6,29,30,28,11,9,5,46,62,4,2, 1, 5, 6, 17, 29, 30, 28, 27,2, 4, 1, 10, 17, 36, 49]
-    user_relation = 'parents'
-    tags = ['settings','detail','very large group','food', 'bride and groom','parents','ceremony', 'portrait', 'group photos']
+    ten_photos = [9871230045,9871230067,9871231567,9871231577,9871231585,9871235650,9871253529,9871253582,9871253597,9871260706]
+    people_ids = [1,4,9,13,13, 32, 31, 17, 20, 23,35, 8,5,6,7]
+    user_relation = 'bride and groom'
+    tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
     #project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
-    gallery_id = 40570951
-    project_base_url = 'ptstorage_12://pictures/40/570/40570951/cct1r97452948lcinn'
+    gallery_id = 37141824
+    project_base_url = 'ptstorage_17://pictures/37/141/37141824/dmgb4onqc3hm'
     tags_features_file =r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
     gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
     start = time.time()
     ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation,r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',tags_features_file, logger=None)
 
-    copy_selected_folder(ai_images_selected,gal_path)
-
     end = time.time()
     elapsed_time = (end - start) / 60
     print(f"Elapsed time: {elapsed_time:.2f} minutes")
 
-
-#
-# elif event == 'settings':
-#     # filter setting images where have same cluster id and cluster label
-#     clusters_ids = [gallery_photos_info[image]['cluster_label'] for image in imges]
-#     # get indices of similar cluster ids
-#     clusters_ids_indices = {}
-#     for index, cluster_id in enumerate(clusters_ids):
-#         if cluster_id not in clusters_ids_indices:
-#             clusters_ids_indices[cluster_id] = []
-#         clusters_ids_indices[cluster_id].append(index)
-#
-#     # get one image with the highest rank from each cluster id
-#     images_to_be_selected = []
-#     for cluser_id, indices in clusters_ids_indices.items():
-#         images_same_cluster = [imges[index] for index in indices]
-#         images_ranking = [(i, gallery_photos_info[image]['image_order']) for i, image in
-#                           enumerate(images_same_cluster)]
-#         sorted_ranking = sorted(images_ranking, key=lambda item: item[1], reverse=True)
-#         highest_ranking_index = sorted_ranking[0][0]
-#         images_to_be_selected.append((images_same_cluster[highest_ranking_index], sorted_ranking[0][1]))
-#
-#     select_percentage = relations[user_relation].get(event, 0)
-#     available_images = len(images_to_be_selected)
-#     n = round(available_images * select_percentage)
-#     if n == 0:
-#         continue
-#     selected_images = images_to_be_selected[:n]
-#     selected_images = [image_id for image_id, score in selected_images]
-#     filtered_images = remove_similar_images(event, selected_images, gallery_photos_info, threshold=0.98)
-#     ai_images_selected.extend(filtered_images)
