@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from schema import albumResponse
 from config import DEPLOY_CONFIGS
 #from src.smart_selection import auto_selection
-from utils.smart_selection_2 import auto_selection
+from utils.smart_selection_3 import auto_selection
 from src.album_processing import create_automatic_album
 from utils.generate_layout_file import genereate_layouts_path
 from utils.get_images_data import get_info_only_for_selected_images
@@ -72,12 +72,12 @@ async def create_album(project_base_url: str):
         data_dict = json.loads(data_str)
     else:
         data_dict = {
-            'ten_photos': [8379312833,8379312842,8477864823,8477864844,8477864854,8477864857,8477864860,9009679392,9009679419,9009679428],
-            'people_ids': [1, 22, 23, 29, 28, 49, 4, 59, 81,2, 56, 110, 30, 21, 33, 88, 74, 14, 34, 19, 55, 3, 46, 53, 44, 107, 106, 108],
+            'ten_photos': [9871230045,9871230067,9871231567,9871231577,9871231585,9871235650,9871253529,9871253582,9871253597,9871260706],
+            'people_ids': [1,4,9,13,13, 32, 31, 17, 20, 23,35, 8,5,6,7],
             'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
-            'user_relation': 'bride_groom'  # or 'spouse' or 'children' # designs ids
+            'user_relation': 'bride and groom'  # or 'spouse' or 'children' # designs ids
         }
-    gallery_id = 32561318
+    gallery_id = 37141824
     gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
     #gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gallery_id}'
     design_path = r'files\designs.json'

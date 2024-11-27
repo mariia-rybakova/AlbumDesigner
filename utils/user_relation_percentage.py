@@ -123,10 +123,10 @@ relations = {'parents':{
 
 
 relations_2 = {'bride and groom':{
-    'bride and groom': (9, 0.5),
+    'bride and groom': (10, 0.2),
 
-    'bride': (7, 0.5),
-    'groom': (7, 0.5),
+    'bride': (7, 0.1),
+    'groom': (7, 0.1),
 
     'bride party': (8, 0.5),
     'groom party': (8, 0.5),
@@ -134,29 +134,30 @@ relations_2 = {'bride and groom':{
 
     'large_portrait': (4, 0.5),
     'small_portrait': (7, 0.5),
-    'portrait': (7, 0.5),
+    'portrait': (7, 0.1),
     'very large group': (8, 0.5),
-    'walking the aisle': (6, 0.5),
+    'walking the aisle': (6, 0.4),
 
     'bride getting dressed': (6, 0.5),
-    'first dance': (2, 0.5),
-    'cake cutting': (2, 0.5),
-    'ceremony': (10, 0.5),
+    'first dance': (2, 0.2),
+    'cake cutting': (2, 0.1),
+    'ceremony': (10, 0.2),
     'couple': (0, 0.5),
     'dancing': (24, 0.5),
 
-    'entertainment': (0, 0.5),
+    'entertainment': (0, 0.2),
 
-    'kiss': (2, 0.5),
+    'kiss': (2, 0.6),
     'pet': (0, 0.5),
 
     'accessories': (2, 0.5),
-    'settings': (5, 0.5),
+    'settings': (5, 0.1),
     'speech': (4, 0.5),
 
     'detail': (5, 0.5),
     'getting hair-makeup': (2, 0.5),
     'food': (5, 0.5),
     'other': (0, 0.5),
-    'invite': (1, 0.5)
+    'invite': (1, 0.5),
+    'wedding dress':(2,0.01)
 }}
