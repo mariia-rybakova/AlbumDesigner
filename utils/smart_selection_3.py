@@ -21,7 +21,8 @@ from PIL import Image
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from math import ceil
-
+from datetime import datetime
+from sklearn.cluster import KMeans
 """We will get 10 Photos examples
 relation to the bride and groom
 People selection
@@ -89,35 +90,172 @@ def select_by_cluster(clusters_ids,):
     return final_selected_images
 
 
-def select_items(event,clusters_ids,gallery_photos_info,needed_count):
+def select_non_similar_images(event,clusters_ids,gallery_photos_info,needed_count):
     not_people_events = ['vehicle', 'settings', 'rings', 'entertainment', 'accessories', 'food',
                          'wedding dress', 'suit', 'pet','speech', 'cake cutting']
     result = []
     generators = {k: iter(v) for k, v in clusters_ids.items()}  # Create generators for each list
 
+
     while needed_count > 0:
         for key in generators:
-            if needed_count == 0:
+            if needed_count <= 0:
                 break
-
+            if needed_count < len(clusters_ids):
+                items_to_take = 1
             # Check list size to determine how many to take
-            if len(clusters_ids[key]) <= 5 or event in not_people_events:  # Small list: take at most 1
+            elif len(clusters_ids[key]) <= 5 or event in not_people_events:  # Small list: take at most 1
                 items_to_take = min(1, needed_count)
             else:  # Large list: take up to the remaining needed count
                 list_size = len(clusters_ids[key])
                 items_to_take = round(list_size/ needed_count)
 
+
             images_ranked = sorted(clusters_ids[key], key=lambda img: gallery_photos_info[img]['image_order'])
 
             selected_items = images_ranked[:items_to_take]
-
+            clusters_ids[key] = [item for item in clusters_ids[key] if item not in selected_items]
             # Add the selected items to the result and update remaining needed count
             result.extend(selected_items)
             needed_count -= len(selected_items)
 
     return result
 
+def select_by_person(clusters_ids,images_list,gallery_photos_info):
+    result = []
+    persons_ids = []
+
+    for image_id in images_list:
+        if 'persons_ids' in gallery_photos_info[image_id]:
+            persons_ids.append(gallery_photos_info[image_id]['persons_ids'])
+        else:
+            persons_ids.append([])
+
+    if len(set(item for sublist in persons_ids for item in sublist)) > 1:
+        mlb = MultiLabelBinarizer()
+        binary_matrix = mlb.fit_transform(persons_ids)  # Binary matrix
+
+        # Compute pairwise distances
+        dist_matrix = squareform(pdist(binary_matrix, metric=jaccard_distance))
+
+        if len(dist_matrix) == 0 or dist_matrix.shape[0] < 2:
+            # if no people found then select four
+            """Select 4 images"""
+            result = select_by_cluster(clusters_ids)
+        else:
+            # Perform Agglomerative Clustering based on person similarity
+            person_clustering = AgglomerativeClustering(
+                n_clusters=None,
+                metric='precomputed',
+                linkage='complete',
+                distance_threshold=0.3,  # Adjust this threshold as needed
+            )
+            person_clustering.fit(dist_matrix)
+
+            # Dictionary to hold images in each person-based cluster
+            person_clusters = {}
+            for idx, label in enumerate(person_clustering.labels_):
+                person_clusters.setdefault(label, []).append(images_list[idx])
+
+            # plot_groups_to_pdf(event, person_clusters, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\40570951', output_pdf='persons_clustering.pdf')
+            # Select the best image in each cluster based on 'order_score'
+            for cluster_label, images_in_cluster in person_clusters.items():
+                # if i have 4 images i choose one of them if more then i choose more
+                if len(images_in_cluster) <= 4:
+                    # Select image with highest 'order_score' in the cluster
+                    best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                    result.append(best_image)
+                else:
+                    n = round(len(images_in_cluster) / 4)
+                    images_order = sorted(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                    result.extend(images_order[:n])
+
+    return result
+
+def process_time(images_time):
+    general_times = list()
+    first_image_time = images_time[0]
+    for cur_timestamp in images_time:
+        # general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
+        if 0 <= cur_timestamp.hour <= 4:
+            # Treat times between midnight and 4 AM as if they belong to the previous day
+            general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
+        else:
+            general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+
+            # Calculate difference in days and convert to minutes
+        diff_from_first = cur_timestamp - first_image_time
+        general_time += diff_from_first.days * 1440
+        general_times.append(general_time)
+
+    return general_times
+
+
+def select_by_time(needed_count, selected_images, gallery_photos_info):
+    image_id_time_mapping = []
+    for image_id in selected_images:
+        time_integer = gallery_photos_info[image_id]['image_time']
+        correct_time =  datetime.fromtimestamp(time_integer)
+        image_id_time_mapping.append((image_id, correct_time))
+
+    images_time = [time_image  for _, time_image in image_id_time_mapping]
+    general_times = process_time(images_time)
+    kmeans_3 = KMeans(n_clusters=3, random_state=42)
+    kmeans_3.fit(np.array(general_times).reshape(-1, 1))
+
+    labels = kmeans_3.labels_
+    cluster_mapping = {image_id: label for (image_id, _), label in zip(image_id_time_mapping, labels)}
+    clustered_images = {label: [] for label in range(kmeans_3.n_clusters)}
+    for image_id, label in cluster_mapping.items():
+        clustered_images[label].append(image_id)
+
+    result = []
+    min_per_cluster = 3
+
+    clusters_time_id = {}
+    for key in list(clustered_images.keys()):
+        if key not in clusters_time_id:
+            clusters_time_id[key] = {}
+
+        for im_id in clustered_images[key]:
+            cluster_id = gallery_photos_info[im_id]['cluster_label']
+            if cluster_id not in clusters_time_id[key]:
+                clusters_time_id[key][cluster_id] = []
+            clusters_time_id[key][cluster_id].append(im_id)
+
+
+    # Ensure at least 3 images from each cluster
+    result = []
+
+    # Step 2: Ensure at least 3 images from each time cluster
+    while len(result) < needed_count:
+        min_take = min(3, needed_count - len(result))
+        for time_key, content_clusters in clusters_time_id.items():
+            selected_images = []
+            while len(selected_images) < min_take and len(result) < needed_count:
+                for content_key, images in content_clusters.items():
+                    # Sort images within the content sub-cluster based on 'image_order'
+                    images_sorted = sorted(images, key=lambda img: gallery_photos_info[img]['image_order'])
+                    # Take the highest-ranked image from this sub-cluster
+                    if images_sorted:
+                        selected_images.append(images_sorted.pop(0))  # Take the highest-ranking image
+                        clusters_time_id[time_key][content_key] = images_sorted  # Update the remaining images
+                        if len(selected_images) == min_take:
+                            break
+            result.extend(selected_images)
+            min_take = min_take + 1
+            if len(result) == needed_count:
+                break
+
+        if len(result) == needed_count:
+            break
+
+    return result
+
+
 def remove_similar_images(category, selected_images, gallery_photos_info,user_relation, threshold=0.90):
+        persons_categories = ['portrait','very large group','speech', 'walking the aisle' ]
+        time_categories = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
         if len(selected_images) == 1:
             return selected_images
 
@@ -132,12 +270,16 @@ def remove_similar_images(category, selected_images, gallery_photos_info,user_re
         if num_grayscale > 1:
             selected_image = random.choice(grayscale_images)
             selected_images = [image for image in selected_images if image not in grayscale_images]
-            selected_images.append(selected_image)
             # Remove other grayscale images except the selected one
             final_selected_images.append(selected_image)
 
         needed_count =  calculate_selection(category, len(selected_images), relations_2[user_relation])
-        chosen_images = select_items(category,clusters_ids,gallery_photos_info, needed_count)
+        if category in persons_categories :
+            chosen_images = select_by_person(clusters_ids,selected_images,gallery_photos_info)
+        elif category in time_categories:
+            chosen_images = select_by_time(needed_count, selected_images, gallery_photos_info)
+        else:
+            chosen_images = select_non_similar_images(category,clusters_ids,gallery_photos_info, needed_count)
         final_selected_images.extend(chosen_images)
         #best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
 
@@ -157,17 +299,11 @@ def images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags
 def calculate_selection(category,n_actual,lookup_table):
     if category in lookup_table:
         n_target, std_target = lookup_table[category]
-
-        # Calculate score using a Gaussian weighting function
-        # weight = np.exp(-((n_actual - n_target) ** 2) / (2 * std_target ** 2))
-        #
-        # number_selected = int(weight * n_target)
         selection = n_actual - n_target / std_target
         selection = max(4, round(selection))
 
     else:
-        # If category not in lookup, select 0 images
-        selection = 0
+        selection = 4
 
     return min(selection, n_actual)
 
@@ -193,7 +329,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         if category == 'None' or category == 'other':
                     continue
         # if we have 4 images for event we choose them all
-        elif n_actual < 3 and n_actual not in not_allowed_small_events:
+        elif n_actual < 3 and category not in not_allowed_small_events:
             continue
         else:
             # Get scores for each image
