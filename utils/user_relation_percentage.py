@@ -126,7 +126,7 @@ relations_2 = {'bride and groom':{
     'bride and groom': (10, 0.2),
 
     'bride': (7, 0.1),
-    'groom': (7, 0.1),
+    'groom': (10, 0.001),
 
     'bride party': (8, 0.5),
     'groom party': (8, 0.5),
@@ -155,7 +155,7 @@ relations_2 = {'bride and groom':{
     'speech': (4, 0.5),
 
     'detail': (5, 0.5),
-    'getting hair-makeup': (2, 0.5),
+    'getting hair-makeup': (4, 0.1),
     'food': (5, 0.5),
     'other': (0, 0.5),
     'invite': (1, 0.5),

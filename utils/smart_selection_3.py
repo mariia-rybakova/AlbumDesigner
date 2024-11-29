@@ -23,6 +23,7 @@ from reportlab.lib.pagesizes import letter
 from math import ceil
 from datetime import datetime
 from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
 """We will get 10 Photos examples
 relation to the bride and groom
 People selection
@@ -191,6 +192,38 @@ def process_time(images_time):
     return general_times
 
 
+def calculate_proportional_allocation(group_sizes, needed_count, min_per_group=3):
+    num_groups = len(group_sizes)
+    minimums = [min_per_group] * num_groups
+
+    while sum(minimums) > needed_count:
+        min_per_group = min_per_group - 1
+        if min_per_group == 0:
+            # Distribute the needed_count between the first two groups
+            minimums = [needed_count // 2, needed_count // 2] + [0] * (num_groups - 2)
+
+            # Adjust for any rounding error
+            if sum(minimums) < needed_count:
+                minimums[0] += needed_count - sum(minimums)  # Add the leftover to the first group
+            break  # Exit the loop since allocation is complete
+        minimums = [min_per_group] * num_groups
+
+
+    remaining_slots = needed_count - sum(minimums)
+    weights = [size / sum(group_sizes) for size in group_sizes]
+    extra_images = [int(weight * remaining_slots) for weight in weights]
+
+    while sum(extra_images) < remaining_slots:
+        for i in sorted(range(num_groups), key=lambda x: -weights[x]):
+            if sum(extra_images) < remaining_slots:
+                extra_images[i] += 1
+            else:
+                break
+
+    final_selection = [min_val + extra for min_val, extra in zip(minimums, extra_images)]
+    return final_selection
+
+
 def select_by_time(needed_count, selected_images, gallery_photos_info):
     image_id_time_mapping = []
     for image_id in selected_images:
@@ -200,17 +233,25 @@ def select_by_time(needed_count, selected_images, gallery_photos_info):
 
     images_time = [time_image  for _, time_image in image_id_time_mapping]
     general_times = process_time(images_time)
-    kmeans_3 = KMeans(n_clusters=3, random_state=42)
-    kmeans_3.fit(np.array(general_times).reshape(-1, 1))
 
-    labels = kmeans_3.labels_
+    db = DBSCAN(eps=50, min_samples=2).fit(np.array(general_times).reshape(-1, 1))
+
+    labels = db.labels_
     cluster_mapping = {image_id: label for (image_id, _), label in zip(image_id_time_mapping, labels)}
-    clustered_images = {label: [] for label in range(kmeans_3.n_clusters)}
+
+    n_clusters = len(set(labels) - {-1})
+    clustered_images = {label: [] for label in range(n_clusters)}
+
     for image_id, label in cluster_mapping.items():
+        if label == -1:
+            continue
         clustered_images[label].append(image_id)
 
-    result = []
-    min_per_cluster = 3
+    for cluster_id, images in clustered_images.items():
+        os.makedirs(rf'C:\Users\karmel\Desktop\AlbumDesigner\time_grouping\{cluster_id}', exist_ok=True)
+        for image in images:
+            image_path = os.path.join(gal_path,  f'{image}.jpg')
+            shutil.copy(image_path, os.path.join(rf'C:\Users\karmel\Desktop\AlbumDesigner\time_grouping\{str(cluster_id)}', str(image) + '.jpg'))
 
     clusters_time_id = {}
     for key in list(clustered_images.keys()):
@@ -223,30 +264,27 @@ def select_by_time(needed_count, selected_images, gallery_photos_info):
                 clusters_time_id[key][cluster_id] = []
             clusters_time_id[key][cluster_id].append(im_id)
 
+    group_sizes = [sum(len(images) for images in content_clusters.values()) for content_clusters in
+                   clusters_time_id.values()]
 
-    # Ensure at least 3 images from each cluster
-    result = []
+    allocation = calculate_proportional_allocation(group_sizes, needed_count)
 
     # Step 2: Ensure at least 3 images from each time cluster
-    while len(result) < needed_count:
-        min_take = min(3, needed_count - len(result))
-        for time_key, content_clusters in clusters_time_id.items():
-            selected_images = []
-            while len(selected_images) < min_take and len(result) < needed_count:
-                for content_key, images in content_clusters.items():
-                    # Sort images within the content sub-cluster based on 'image_order'
-                    images_sorted = sorted(images, key=lambda img: gallery_photos_info[img]['image_order'])
-                    # Take the highest-ranked image from this sub-cluster
-                    if images_sorted:
-                        selected_images.append(images_sorted.pop(0))  # Take the highest-ranking image
-                        clusters_time_id[time_key][content_key] = images_sorted  # Update the remaining images
-                        if len(selected_images) == min_take:
-                            break
-            result.extend(selected_images)
-            min_take = min_take + 1
-            if len(result) == needed_count:
-                break
+    result = []
+    for (time_key, content_clusters), max_take in zip(clusters_time_id.items(), allocation):
+        selected_images = []
 
+        # Select up to `max_take` images from this time cluster
+        while len(selected_images) < max_take and len(result) < needed_count:
+            for content_key, images in content_clusters.items():
+                images_sorted = sorted(images, key=lambda img: gallery_photos_info[img]['image_order'])
+                if images_sorted:
+                    selected_images.append(images_sorted.pop(0))
+                    clusters_time_id[time_key][content_key] = images_sorted
+                    if len(selected_images) == max_take:
+                        break
+
+        result.extend(selected_images)
         if len(result) == needed_count:
             break
 
@@ -319,8 +357,9 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
     category_picked = {}
 
     for iteration, (category, imges) in enumerate(clusters_class_imgs.items()):
+
         n_actual = len(imges)
-        not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing']
+        not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing', 'wedding dress']
 
         if category not in category_picked:
             category_picked[category] = []
@@ -346,7 +385,10 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
                 # remove similar before choosing from them
                 available_img_ids = remove_similar_images(category,available_img_ids , gallery_photos_info,user_relation, threshold=0.94)
 
-                if len(available_img_ids) < 3:
+                if category == 'wedding dress':
+                    ai_images_selected.extend(available_img_ids[:1])
+                    category_picked[category].extend(available_img_ids[:1])
+                elif len(available_img_ids) < 3:
                     continue
                 else:
                     ai_images_selected.extend(available_img_ids)
