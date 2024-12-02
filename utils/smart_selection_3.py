@@ -351,12 +351,15 @@ def remove_similar_images(category, selected_images, gallery_photos_info,user_re
 
         needed_count =  calculate_selection(category, len(selected_images), relations_2[user_relation])
 
-        if category in persons_categories :
+        if needed_count == len(selected_images):
+            chosen_images = selected_images
+        elif category in persons_categories :
             chosen_images = select_by_person(clusters_ids,selected_images,gallery_photos_info)
         elif category in time_categories:
             chosen_images = select_by_time(needed_count, selected_images, gallery_photos_info)
         else:
             chosen_images = select_non_similar_images(category,clusters_ids,gallery_photos_info, needed_count)
+
         final_selected_images.extend(chosen_images)
         #best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
 
@@ -422,11 +425,17 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
             category_picked[category] = []
 
         # we don't select images from them
-        if category == 'None' or category == 'other':
+        if category == 'None' or category == 'other' or category == 'couple':
                     continue
         # if we have 4 images for event we choose them all
         elif n_actual < 3 and category not in not_allowed_small_events:
             continue
+        elif category == 'accessories':
+            clusters_ids = get_clusters(imges, gallery_photos_info)
+            chosen_images = select_non_similar_images(category, clusters_ids, gallery_photos_info, 2)
+            ai_images_selected.extend(chosen_images)
+            category_picked[category].extend(chosen_images)
+
         else:
             # Get scores for each image
             scores = images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags_features)
@@ -542,13 +551,13 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
 
 
 if __name__ == '__main__':
-    ten_photos = [9444433832,9444433747,9444433728,9444433723,9444433700,9444433624,9444433616,9444433608,9444433585,9372610440]
-    people_ids = [2,65, 3, 69, 42, 78, 56, 23, 127, 77, 39, 154, 115, 25, 38,120, 2, 131, 128, 45, 27, 113, 129, 19, 32, 130, 121,21,56]
+    ten_photos = [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913]
+    people_ids = [1,9, 20, 10, 15, 14, 2, 6, 7, 16]
     user_relation = 'bride and groom'
     tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
     # project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
-    gallery_id = 38122574
-    project_base_url = 'ptstorage_18://pictures/38/122/38122574/jn4cl65tg2gf'
+    gallery_id = 32900972
+    project_base_url = 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u'
     tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
     gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
     start = time.time()
