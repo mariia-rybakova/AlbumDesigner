@@ -142,7 +142,7 @@ relations_2 = {'bride and groom':{
     'first dance': (2, 0.2),
     'cake cutting': (2, 0.1),
     'ceremony': (10, 0.2),
-    'couple': (0, 0.5),
+    'couple': (0, 0),
     'dancing': (24, 0.5),
 
     'entertainment': (0, 0.2),
@@ -150,7 +150,7 @@ relations_2 = {'bride and groom':{
     'kiss': (2, 0.6),
     'pet': (0, 0.5),
 
-    'accessories': (2, 0.5),
+    'accessories': (1, 0.01),
     'settings': (5, 0.1),
     'speech': (4, 0.5),
 

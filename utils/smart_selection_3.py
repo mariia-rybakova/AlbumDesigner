@@ -194,25 +194,22 @@ def process_time(images_time):
 
 def calculate_proportional_allocation(group_sizes, needed_count, min_per_group=3):
     num_groups = len(group_sizes)
-    minimums = [min_per_group] * num_groups
+    minimums = [1 if size <= 3 else min_per_group for size in group_sizes]  # Apply the rule for small groups
 
-    while sum(minimums) > needed_count:
-        min_per_group = min_per_group - 1
-        if min_per_group == 0:
-            # Distribute the needed_count between the first two groups
-            minimums = [needed_count // 2, needed_count // 2] + [0] * (num_groups - 2)
+    # Reduce the needed count by the mandatory minimums
+    needed_count -= sum(minimums)
 
-            # Adjust for any rounding error
-            if sum(minimums) < needed_count:
-                minimums[0] += needed_count - sum(minimums)  # Add the leftover to the first group
-            break  # Exit the loop since allocation is complete
-        minimums = [min_per_group] * num_groups
+    # Adjust for cases where the needed count becomes zero or negative
+    if needed_count <= 0:
+        final_selection = [min(size, min_val) for size, min_val in zip(group_sizes, minimums)]
+        return final_selection, sum(final_selection)
 
-
-    remaining_slots = needed_count - sum(minimums)
+    # Calculate proportional allocation for the remaining slots
+    remaining_slots = needed_count
     weights = [size / sum(group_sizes) for size in group_sizes]
     extra_images = [int(weight * remaining_slots) for weight in weights]
 
+    # Distribute remaining slots to ensure the total matches
     while sum(extra_images) < remaining_slots:
         for i in sorted(range(num_groups), key=lambda x: -weights[x]):
             if sum(extra_images) < remaining_slots:
@@ -220,8 +217,49 @@ def calculate_proportional_allocation(group_sizes, needed_count, min_per_group=3
             else:
                 break
 
-    final_selection = [min_val + extra for min_val, extra in zip(minimums, extra_images)]
-    return final_selection
+    # Combine minimums and extra images, ensuring the final selection doesn't exceed group sizes
+    final_selection = [
+        min(size, min_val + extra)
+        for size, min_val, extra in zip(group_sizes, minimums, extra_images)
+    ]
+
+    return final_selection, sum(final_selection)
+
+
+# def calculate_proportional_allocation(group_sizes, needed_count, min_per_group=3):
+#     num_groups = len(group_sizes)
+#     minimums = [min_per_group] * num_groups
+#     if num_groups == 1:
+#         if group_sizes[0] < needed_count:
+#             needed_count = group_sizes[0]
+#
+#     while sum(minimums) > needed_count:
+#         min_per_group = min_per_group - 1
+#         if min_per_group == 0:
+#             # Distribute the needed_count between the first two groups
+#             minimums = [needed_count // 2, needed_count // 2] + [0] * (num_groups - 2)
+#
+#             # Adjust for any rounding error
+#             if sum(minimums) < needed_count:
+#                 minimums[0] += needed_count - sum(minimums)  # Add the leftover to the first group
+#             break  # Exit the loop since allocation is complete
+#         minimums = [min_per_group] * num_groups
+#
+#
+#     remaining_slots = needed_count - sum(minimums)
+#     weights = [size / sum(group_sizes) for size in group_sizes]
+#     extra_images = [int(weight * remaining_slots) for weight in weights]
+#
+#     while sum(extra_images) < remaining_slots:
+#         for i in sorted(range(num_groups), key=lambda x: -weights[x]):
+#             if sum(extra_images) < remaining_slots:
+#                 extra_images[i] += 1
+#             else:
+#                 break
+#
+#     final_selection = [min_val + extra for min_val, extra in zip(minimums, extra_images)]
+#
+#     return final_selection,needed_count
 
 
 def select_by_time(needed_count, selected_images, gallery_photos_info):
@@ -267,7 +305,7 @@ def select_by_time(needed_count, selected_images, gallery_photos_info):
     group_sizes = [sum(len(images) for images in content_clusters.values()) for content_clusters in
                    clusters_time_id.values()]
 
-    allocation = calculate_proportional_allocation(group_sizes, needed_count)
+    allocation, needed_count = calculate_proportional_allocation(group_sizes, needed_count)
 
     # Step 2: Ensure at least 3 images from each time cluster
     result = []
@@ -312,6 +350,7 @@ def remove_similar_images(category, selected_images, gallery_photos_info,user_re
             final_selected_images.append(selected_image)
 
         needed_count =  calculate_selection(category, len(selected_images), relations_2[user_relation])
+
         if category in persons_categories :
             chosen_images = select_by_person(clusters_ids,selected_images,gallery_photos_info)
         elif category in time_categories:
@@ -334,16 +373,34 @@ def images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags
     return sorted_scores
 
 
-def calculate_selection(category,n_actual,lookup_table):
+# def calculate_selection(category,n_actual,lookup_table):
+#     if category in lookup_table:
+#         n_target, std_target = lookup_table[category]
+#         selection = n_actual - n_target / std_target
+#         selection = max(4, round(selection))
+#
+#     else:
+#         selection = 4
+#
+#     return min(selection, n_actual)
+
+def calculate_selection(category, n_actual, lookup_table):
     if category in lookup_table:
         n_target, std_target = lookup_table[category]
-        selection = n_actual - n_target / std_target
-        selection = max(4, round(selection))
 
+        # Scale selection proportionally with a weighted adjustment
+        proportional_factor = min(1, n_target / n_actual)
+        deviation_adjustment = (n_actual - n_target) / (std_target + 1e-6)
+        selection = n_target + deviation_adjustment * proportional_factor
+
+        # Ensure selection stays within reasonable bounds
+        selection = max(4, min(selection, n_target * 1.5))
     else:
+        # Default selection for unrecognized categories
         selection = 4
 
-    return min(selection, n_actual)
+    # Selection can't exceed actual images
+    return min(round(selection), n_actual)
 
 
 def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,
@@ -357,9 +414,9 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
     category_picked = {}
 
     for iteration, (category, imges) in enumerate(clusters_class_imgs.items()):
-
+        print(f"Starting with {category} and acutal number {len(imges)}")
         n_actual = len(imges)
-        not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing', 'wedding dress']
+        not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing', 'wedding dress', 'kiss']
 
         if category not in category_picked:
             category_picked[category] = []
@@ -385,7 +442,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
                 # remove similar before choosing from them
                 available_img_ids = remove_similar_images(category,available_img_ids , gallery_photos_info,user_relation, threshold=0.94)
 
-                if category == 'wedding dress':
+                if category == 'wedding dress' or category == 'rings':
                     ai_images_selected.extend(available_img_ids[:1])
                     category_picked[category].extend(available_img_ids[:1])
                 elif len(available_img_ids) < 3:
@@ -485,19 +542,21 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
 
 
 if __name__ == '__main__':
-    ten_photos = [9871230045,9871230067,9871231567,9871231577,9871231585,9871235650,9871253529,9871253582,9871253597,9871260706]
-    people_ids = [1,4,9,13,13, 32, 31, 17, 20, 23,35, 8,5,6,7]
+    ten_photos = [9444433832,9444433747,9444433728,9444433723,9444433700,9444433624,9444433616,9444433608,9444433585,9372610440]
+    people_ids = [2,65, 3, 69, 42, 78, 56, 23, 127, 77, 39, 154, 115, 25, 38,120, 2, 131, 128, 45, 27, 113, 129, 19, 32, 130, 121,21,56]
     user_relation = 'bride and groom'
     tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
-    #project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
-    gallery_id = 37141824
-    project_base_url = 'ptstorage_17://pictures/37/141/37141824/dmgb4onqc3hm'
-    tags_features_file =r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
+    # project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
+    gallery_id = 38122574
+    project_base_url = 'ptstorage_18://pictures/38/122/38122574/jn4cl65tg2gf'
+    tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
     gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
     start = time.time()
-    ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags, people_ids, user_relation,r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',tags_features_file, logger=None)
+    ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags,
+                                                                            people_ids, user_relation,
+                                                                            r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
+                                                                            tags_features_file, logger=None)
 
     end = time.time()
     elapsed_time = (end - start) / 60
     print(f"Elapsed time: {elapsed_time:.2f} minutes")
-
