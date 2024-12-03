@@ -1,0 +1,31 @@
+limit_imgs = {
+    'bride and groom': 24,
+
+    'bride': 12,
+    'groom': 12,
+
+    'bride party': 7,
+    'groom party': 7,
+    'full party': 7,
+    'portrait': 15,
+    'very large group': 15,
+    'walking the aisle': 15,
+    'bride getting dressed': 10,
+    'first dance': 5,
+    'cake cutting': 5,
+    'ceremony': 14,
+    'couple': 0,
+    'dancing': 30,
+    'entertainment': 7,
+    'kiss': 6,
+    'pet': 2,
+    'accessories': 2,
+    'settings': 10,
+    'speech': 10,
+    'detail': 10,
+    'getting hair-makeup': 8,
+    'food': 10,
+    'other':0,
+    'invite': 2,
+    'wedding dress': 1
+}

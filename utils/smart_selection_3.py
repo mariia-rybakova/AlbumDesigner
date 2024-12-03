@@ -7,6 +7,8 @@ from itertools import islice
 
 from fpdf import FPDF
 from PIL import Image
+from networkx import reverse
+
 from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
 from utils.image_queries import generate_query
 from utils.image_selection_scores import map_cluster_label, calculate_scores
@@ -24,6 +26,7 @@ from math import ceil
 from datetime import datetime
 from sklearn.cluster import KMeans
 from sklearn.cluster import DBSCAN
+from .selection_limintation import limit_imgs
 """We will get 10 Photos examples
 relation to the bride and groom
 People selection
@@ -74,18 +77,18 @@ def get_clusters(selected_images,gallery_photos_info):
     return clusters_ids
 
 
-def select_by_cluster(clusters_ids,):
+def select_by_cluster(clusters_ids,gallery_photos_info):
     final_selected_images = []
     for cluster_label, images_in_cluster in clusters_ids.items():
         # if i have 4 images i choose one of them if more then i choose more
         if len(images_in_cluster) <= 3:
             # Select image with highest 'order_score' in the cluster
-            best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+            best_image = min(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
             final_selected_images.append(best_image)
         else:
             n = round(len(images_in_cluster) / 4)
             images_order = sorted(images_in_cluster,
-                                  key=lambda img: gallery_photos_info[img]['image_order'])
+                                  key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
             final_selected_images.append(images_order[n])
 
     return final_selected_images
@@ -164,11 +167,11 @@ def select_by_person(clusters_ids,images_list,gallery_photos_info):
                 # if i have 4 images i choose one of them if more then i choose more
                 if len(images_in_cluster) <= 4:
                     # Select image with highest 'order_score' in the cluster
-                    best_image = max(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                    best_image = min(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
                     result.append(best_image)
                 else:
                     n = round(len(images_in_cluster) / 4)
-                    images_order = sorted(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'])
+                    images_order = sorted(images_in_cluster, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
                     result.extend(images_order[:n])
 
     return result
@@ -285,11 +288,11 @@ def select_by_time(needed_count, selected_images, gallery_photos_info):
             continue
         clustered_images[label].append(image_id)
 
-    for cluster_id, images in clustered_images.items():
-        os.makedirs(rf'C:\Users\karmel\Desktop\AlbumDesigner\time_grouping\{cluster_id}', exist_ok=True)
-        for image in images:
-            image_path = os.path.join(gal_path,  f'{image}.jpg')
-            shutil.copy(image_path, os.path.join(rf'C:\Users\karmel\Desktop\AlbumDesigner\time_grouping\{str(cluster_id)}', str(image) + '.jpg'))
+    # for cluster_id, images in clustered_images.items():
+    #     os.makedirs(rf'C:\Users\karmel\Desktop\AlbumDesigner\time_grouping\{cluster_id}', exist_ok=True)
+    #     for image in images:
+    #         image_path = os.path.join(gal_path,  f'{image}.jpg')
+    #         shutil.copy(image_path, os.path.join(rf'C:\Users\karmel\Desktop\AlbumDesigner\time_grouping\{str(cluster_id)}', str(image) + '.jpg'))
 
     clusters_time_id = {}
     for key in list(clustered_images.keys()):
@@ -315,7 +318,7 @@ def select_by_time(needed_count, selected_images, gallery_photos_info):
         # Select up to `max_take` images from this time cluster
         while len(selected_images) < max_take and len(result) < needed_count:
             for content_key, images in content_clusters.items():
-                images_sorted = sorted(images, key=lambda img: gallery_photos_info[img]['image_order'])
+                images_sorted = sorted(images, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
                 if images_sorted:
                     selected_images.append(images_sorted.pop(0))
                     clusters_time_id[time_key][content_key] = images_sorted
@@ -433,8 +436,10 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         elif category == 'accessories':
             clusters_ids = get_clusters(imges, gallery_photos_info)
             chosen_images = select_non_similar_images(category, clusters_ids, gallery_photos_info, 2)
-            ai_images_selected.extend(chosen_images)
-            category_picked[category].extend(chosen_images)
+            images_ranked = sorted(chosen_images, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
+
+            ai_images_selected.extend(images_ranked)
+            category_picked[category].extend(images_ranked)
 
         else:
             # Get scores for each image
@@ -457,15 +462,34 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
                 elif len(available_img_ids) < 3:
                     continue
                 else:
-                    ai_images_selected.extend(available_img_ids)
-                    category_picked[category].extend(available_img_ids)
-
+                    images_ranked = sorted(available_img_ids, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
+                    ai_images_selected.extend(images_ranked)
+                    category_picked[category].extend(images_ranked)
+    limit = 130
     if len(ai_images_selected) == 0:
         error_message = 'No images were selected.'
         if logger is not None:
            logger.error("No images were selected.")
-    elif len(ai_images_selected) > 140 :
-        pass
+    elif len(ai_images_selected) > limit :
+        deleted_images = []
+        total_to_reduce = len(ai_images_selected) - limit
+
+        for group, images in category_picked.items():
+            if len(images) == 0:
+                continue
+            if len(images) > limit_imgs[group]:
+                to_reduce = len(images) - limit_imgs[group]
+                category_picked[group] = images[:-to_reduce]
+                deleted_images.extend(images[-to_reduce:])
+                total_to_reduce -= to_reduce
+
+        if total_to_reduce != 0:
+             largest_group = max(category_picked.keys(), key=lambda x: len(category_picked[x]))
+             if len(category_picked[largest_group]) - total_to_reduce > 5 :
+                 category_picked[largest_group] = category_picked[largest_group][:-total_to_reduce]
+                 deleted_images.extend(category_picked[largest_group][-total_to_reduce:])
+
+        ai_images_selected = list(filter(lambda img: img not in deleted_images, ai_images_selected))
 
     for category, images in category_picked.items():
         print("category", category, 'Number of selected images', len(images))
@@ -477,7 +501,7 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
         print(f"Total images: {len(ai_images_selected)}")
         print("*******************************************************")
 
-    generate_event_pdfs(category_picked, gal_path, "event_pdfs")
+    # generate_event_pdfs(category_picked, gal_path, "event_pdfs")
 
     return ai_images_selected, gallery_photos_info, error_message
 
@@ -549,23 +573,23 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
                          logger)
 
 
-
-if __name__ == '__main__':
-    ten_photos = [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913]
-    people_ids = [1,9, 20, 10, 15, 14, 2, 6, 7, 16]
-    user_relation = 'bride and groom'
-    tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
-    # project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
-    gallery_id = 32900972
-    project_base_url = 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u'
-    tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
-    gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
-    start = time.time()
-    ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags,
-                                                                            people_ids, user_relation,
-                                                                            r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
-                                                                            tags_features_file, logger=None)
-
-    end = time.time()
-    elapsed_time = (end - start) / 60
-    print(f"Elapsed time: {elapsed_time:.2f} minutes")
+#
+# if __name__ == '__main__':
+#     ten_photos = [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913]
+#     people_ids = [1,9, 20, 10, 15, 14, 2, 6, 7, 16]
+#     user_relation = 'bride and groom'
+#     tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
+#     # project_base_url = "ptstorage_32://pictures/40/332/40332857/ag14z4rwh9dbeaz0wn"
+#     gallery_id = 32900972
+#     project_base_url = 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u'
+#     tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
+#     gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
+#     start = time.time()
+#     ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags,
+#                                                                             people_ids, user_relation,
+#                                                                             r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
+#                                                                             tags_features_file, logger=None)
+#
+#     end = time.time()
+#     elapsed_time = (end - start) / 60
+#     print(f"Elapsed time: {elapsed_time:.2f} minutes")

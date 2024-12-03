@@ -12,6 +12,7 @@ from utils.time_proessing import process_image_time
 from utils.plotting_results import  plot_album
 from utils.clustering_time import cluster_by_time
 from utils.time_outliers import handle_edited_time
+from utils.process_auto_groups   import process_auto_groups
 
 from utils.lookup_table import genreate_look_up,lookup_table
 
@@ -102,7 +103,7 @@ def genreate_look_up(group2images):
             lookup_table[group_name] = (5, 0.2)
     return lookup_table
 
-def gallery_processing(data_df, layouts_df, logger):
+def gallery_processing(data_df, layouts_df,is_auto, logger):
     logger.info(f'============================')
     logger.info(f'Start Processing the Gallery')
 
@@ -114,7 +115,14 @@ def gallery_processing(data_df, layouts_df, logger):
     start_time = time.time()
     # updated_sub_grouped =sub_grouped
     # lookup_table = genreate_look_up(group2images)
-    updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
+    if is_auto:
+        updated_sub_grouped, group2images, lookup_table = process_auto_groups(sub_grouped)
+    else:
+        updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
+
+
+
+
     illegal_time = (time.time() - start_time) / 60
     logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 
@@ -201,7 +209,7 @@ def map_cluster_label(cluster_label):
         return "Unknown"
 
 
-def create_automatic_album(images_data_dict, layouts_path,gallery_path,relation_type, logger=None):
+def create_automatic_album(images_data_dict, layouts_path,gallery_path,relation_type,is_auto, logger=None):
     # Start time
     logger.info("Start creating album...")
     layouts_df = load_layouts(layouts_path)
@@ -243,7 +251,7 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path,relation_
         #df = handle_edited_time(sorted_by_time_df)
         df = cluster_by_time(sorted_by_time_df)
 
-        group_name2chosen_combinations, sub_groups, error = gallery_processing(df, layouts_df, logger)
+        group_name2chosen_combinations, sub_groups, error = gallery_processing(df, layouts_df,is_auto, logger)
 
         comb_generation_time = (time.time() - start_time) / 60
         logger.info(f'Combination generation time: {comb_generation_time:.2f} minutes')

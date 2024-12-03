@@ -91,6 +91,7 @@ async def create_album(project_base_url: str):
     save_path = r'files'
     queries_file_path = r'files\queries_features.pkl'
     tags_features_file = r'files\tags.pkl'
+    is_auto = True
 
     # Select images for creating an album
     images_selected, gallery_photos_info, errors = auto_selection(project_base_url, data_dict['ten_photos'],
@@ -115,9 +116,7 @@ async def create_album(project_base_url: str):
     logger.info(f"CPU Usage Before creating an Album: {cpu_usage}%")
     logger.info(f"Memory Usage Before creating an Album: {memory_info.percent}%")
 
-    album_json_result, error = create_automatic_album(images_data_dict, layouts_path,gallery_path,data_dict['user_relation'], logger=logger)
-
-
+    album_json_result, error = create_automatic_album(images_data_dict, layouts_path,gallery_path,data_dict['user_relation'],is_auto, logger=logger)
 
     if album_json_result:
         logger.info("Album created Successfully")
