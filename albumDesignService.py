@@ -72,12 +72,12 @@ async def create_album(project_base_url: str):
         data_dict = json.loads(data_str)
     else:
         data_dict = {
-            'ten_photos': [9871230045,9871230067,9871231567,9871231577,9871231585,9871235650,9871253529,9871253582,9871253597,9871260706],
-            'people_ids': [1,4,9,13,13, 32, 31, 17, 20, 23,35, 8,5,6,7],
+            'ten_photos': [10013206010,10013206029,10013206051,10013206065,10013206068,10013216419,10013216422,10013216499,10013227391,10013227410,10013227418,10013227454],
+            'people_ids': [2, 6, 18, 19,7,15,1,16,29, 20, 21, 26, 28, 30, 31, 32, 33, 34, 44, 45, 54,7,15,2, 6, 21, 29,],
             'tags': ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss'],
             'user_relation': 'bride and groom'  # or 'spouse' or 'children' # designs ids
         }
-    gallery_id = 37141824
+    gallery_id = 41661791
     gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
     #gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gallery_id}'
     design_path = r'files\designs.json'
