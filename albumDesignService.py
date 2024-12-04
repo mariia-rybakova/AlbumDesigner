@@ -9,8 +9,7 @@ from contextlib import asynccontextmanager
 
 from schema import albumResponse
 from config import DEPLOY_CONFIGS
-#from src.smart_selection import auto_selection
-from utils.smart_selection_3 import auto_selection
+from src.smart_selection import auto_selection
 from src.album_processing import create_automatic_album
 from utils.generate_layout_file import genereate_layouts_path
 from utils.get_images_data import get_info_only_for_selected_images
