@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     # add model to app state
     app.package = {"image_query": 1,
                    'design_id': DEPLOY_CONFIGS['design_id'],
+                   'debug':DEPLOY_CONFIGS['DEBUG'],
                    'logger': logger}
 
     print("App is starting up...")
@@ -62,6 +63,7 @@ async def root():
 async def create_album(project_base_url: str):
     #data: bytes = await request.body()
     logger = app.package['logger']
+    debug = app.package['debug']
 
     # Convert bytes to string (assuming UTF-8 encoding)
     #data_str = data.decode("utf-8")
@@ -77,8 +79,7 @@ async def create_album(project_base_url: str):
             'user_relation': 'bride and groom'  # or 'spouse' or 'children' # designs ids
         }
     gallery_id = 41661791
-    gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
-    #gallery_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\myselection\{gallery_id}'
+    gallery_path = fr'dataset\newest_wedding_galleries\{gallery_id}'
     design_path = r'files\designs.json'
     desings_ids = [3444, 3415, 3417, 3418, 3419, 3420, 3421, 3423, 3424, 3425, 3426, 3427, 3428, 3429, 3430, 3431, 3432,
                    3433, 3434, 3435, 3436, 3437, 3438, 3439, 3440, 3441, 3442, 3443, 3445, 3449, 3450, 3451, 3452, 3453,
@@ -96,7 +97,7 @@ async def create_album(project_base_url: str):
     images_selected, gallery_photos_info, errors = auto_selection(project_base_url, data_dict['ten_photos'],
                                                                   data_dict['tags'], data_dict['people_ids'],
                                                                   data_dict['user_relation'], queries_file_path,
-                                                                  tags_features_file, logger=app.package['logger'])
+                                                                  tags_features_file,debug, logger=logger)
 
     logger.info(f"Number of Selected Images To Design an Album {len(images_selected)}")
     if errors:

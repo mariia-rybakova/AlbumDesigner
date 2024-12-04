@@ -234,6 +234,8 @@ def select_by_time(needed_count, selected_images, gallery_photos_info,DEBUG):
         clustered_images[label].append(image_id)
 
     if DEBUG:
+        gallery_id = 41661791
+        gal_path = fr'dataset\newest_wedding_galleries\{gallery_id}'
         for cluster_id, images in clustered_images.items():
             os.makedirs(rf'\time_grouping\{cluster_id}', exist_ok=True)
             for image in images:
@@ -525,21 +527,21 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
 
 
 
-if __name__ == '__main__':
-    ten_photos = [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913]
-    people_ids = [1,9, 20, 10, 15, 14, 2, 6, 7, 16]
-    user_relation = 'bride and groom'
-    tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
-    gallery_id = 32900972
-    project_base_url = 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u'
-    tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
-    gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
-    start = time.time()
-    ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags,
-                                                                            people_ids, user_relation,
-                                                                            r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
-                                                                            tags_features_file,DEBUG=True, logger=None)
-
-    end = time.time()
-    elapsed_time = (end - start) / 60
-    print(f"Elapsed time: {elapsed_time:.2f} minutes")
+# if __name__ == '__main__':
+#     ten_photos = [8442389670,8442389689,8442389693,8442389725,8442389764,8442390760,8442390772,8442391947,8442392083,8442393338,8442393343,8442393913]
+#     people_ids = [1,9, 20, 10, 15, 14, 2, 6, 7, 16]
+#     user_relation = 'bride and groom'
+#     tags = ['ceremony', 'dancing', 'bride and groom', 'walking the aisle', 'parents', 'first dance', 'kiss']
+#     gallery_id = 32900972
+#     project_base_url = 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u'
+#     tags_features_file = r'C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl'
+#     gal_path = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries\{gallery_id}'
+#     start = time.time()
+#     ai_images_selected, gallery_photos_info, error_message = auto_selection(project_base_url, ten_photos, tags,
+#                                                                             people_ids, user_relation,
+#                                                                             r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
+#                                                                             tags_features_file,DEBUG=True, logger=None)
+#
+#     end = time.time()
+#     elapsed_time = (end - start) / 60
+#     print(f"Elapsed time: {elapsed_time:.2f} minutes")

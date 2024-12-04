@@ -111,17 +111,13 @@ def gallery_processing(data_df, layouts_df,is_auto, logger):
 
     group2images = get_images_per_group(data_df)
     sub_grouped = data_df.groupby(['time_cluster', 'cluster_context'])
-    #sub_grouped = data_df.groupby(['scene_order', 'cluster_context'])
+
     start_time = time.time()
-    # updated_sub_grouped =sub_grouped
-    # lookup_table = genreate_look_up(group2images)
+
     if is_auto:
         updated_sub_grouped, group2images, lookup_table = process_auto_groups(sub_grouped)
     else:
         updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, sub_grouped, logger)
-
-
-
 
     illegal_time = (time.time() - start_time) / 60
     logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
@@ -269,6 +265,7 @@ def create_automatic_album(images_data_dict, layouts_path,gallery_path,relation_
         logger.info(f"Elapsed time: {elapsed_time:.2f} minutes")
         return result, error
     else:
+        logger.error(f"Cant process the album without cover image")
         print("Cant process the album without cover image of bride and groom")
         return None,"No Cover image found"
 

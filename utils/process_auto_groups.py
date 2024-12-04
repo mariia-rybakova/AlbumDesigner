@@ -13,11 +13,14 @@ def get_images_per_group(groups):
 
 def update_group(group):
     to_merge_groups = ["bride getting dressed", "getting hair-makeup", 'accessories']
+
     if group.name in  to_merge_groups:
         group.loc[:, 'cluster_context'] = "merged_bride getting dressed"
-        return group
-    else:
-        return group
+    elif group.name == 'food' or group.name == 'settings':
+        group.loc[:, 'time_cluster'] = 1
+        group.loc[:, 'cluster_context'] = "merged_" + group.loc[:, 'cluster_context'].values[0]
+
+    return group
 
 def process_auto_groups(sub_grouped):
     sub_grouped = sub_grouped.apply(
