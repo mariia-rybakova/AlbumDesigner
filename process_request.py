@@ -14,12 +14,15 @@ from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, QWriter, MessageQueue, MemoryQueue, Message, RoundRobinReader
 from ptinfra.config import get_variable
 
-from src.Remover import Remover
 from utils.background_scores import get_background_scores
 from utils.parser import CONFIGS
 from utils.request_processing import read_messages, organize_one_message_results
 from process_images import image_metrics
+
 from utils.protobufs_processing import get_info_protobufs
+from utils.load_layouts import load_layouts
+from utils.cover_image import process_non_wedding_cover_image,process_wedding_cover_image,get_cover_layout
+
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -111,42 +114,58 @@ class ProcessStage(Stage):
                  logger=None):
         super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=2,
                          batch_wait_time=5)
-        bg_model_path = CONFIGS['bg_model_path']
-        bg_model_name = CONFIGS['bg_model_name']
-        input_size = CONFIGS['input_size']
-        save_size = CONFIGS['save_size']
-        self.batch_size = CONFIGS['batch_size']
-        self.bg_remover = Remover(mode='fast', model_path=bg_model_path, model_name=bg_model_name,
-                                  base_size=input_size, save_size=save_size)
         self.logger = logger
 
     def process_message(self, msgs: Union[Message, List[Message]]):
+        # Load layout file (or data) as needed for each gallery
+        self.layouts_df = load_layouts(msgs.content['layout_file'])
+
+        # Check if the message is a single message or a list of messages
         if isinstance(msgs, Message):
             images = [(msgs.image, -1)] if msgs.image is not None else []
         elif isinstance(msgs, list):
             images = [(one_msg.image, idx) for idx, one_msg in enumerate(msgs) if one_msg.image is not None]
         else:
-            self.logger.error('Unrecognized type of messages: {}'.format(msgs))  # what to do if msgs are not Message or list of Message?
+            self.logger.error('Unrecognized type of messages: {}'.format(msgs))
             return msgs
 
-        photo_ids = msgs.content['photoId'] if isinstance(msgs, Message) else [msg.content["photoId"] for msg in msgs]
+        for message in msgs:
+            df = message.content['gallery_photos_info'] if isinstance(message, Message) else [msg.content["photoId"] for
+                                                                                              msg in msgs]
+            # Sorting the DataFrame by "image_order" column
+            sorted_df = df.sort_values(by="image_order", ascending=False)
 
-        try:
-            start = datetime.now()
-            background_masks = self.bg_remover.process_all(images, batch_size=self.batch_size)
-            for cur_bg_mask, cur_resized_image, general_msg_id in background_masks:
-                if general_msg_id == -1:
-                    msgs.bg_mask = cur_bg_mask
-                    msgs.resized_image = cur_resized_image
-                else:
-                    msgs[general_msg_id].bg_mask = cur_bg_mask
-                    msgs[general_msg_id].resized_image = cur_resized_image
-            processing_time = (datetime.now() - start) / max(len(images), 1)
-            processing_time_list.append(processing_time)
-            # photo_ids = msgs.content['photoId'] if isinstance(msgs, Message) else [msg.content["photoId"] for msg in msgs]
-            # self.logger.debug('Average processing time: {}. Processed photos: {}'.format(processing_time, photo_ids))
-        except Exception as ex:
-            self.logger.error('Exception while processing messages: {}. Photo ids: {}.'.format(ex, photo_ids))
+            # Check if it's a wedding gallery or not and call appropriate method
+            if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
+                df,cover_img_id,cover_img_df = process_wedding_cover_image(sorted_df,self.logger)
+            else:
+
+                df,cover_img_id,cover_img_df = process_non_wedding_cover_image(sorted_df,self.logger)
+
+            cover_img_layout = get_cover_layout(self.layouts_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+            # Handle the processing time logging
+            try:
+                start = datetime.now()
+                processing_time = (datetime.now() - start) / max(len(images), 1)
+                self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
+                                                                                             [msg.content.get('photoId')
+                                                                                              for msg in msgs]))
+            except Exception as ex:
+                self.logger.error('Exception while processing messages: {}.'.format(ex))
+
         return msgs
 
 
