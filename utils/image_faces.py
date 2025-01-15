@@ -1,8 +1,9 @@
+import pandas as pd
 from ptinfra.azure.pt_file import PTFile
 from utils.protos import FaceVector_pb2 as face_vector
 
 
-def get_faces_info(faces_file, images_dict,logger=None):
+def get_faces_info(faces_file, df,logger=None):
     try:
         faces_info_bytes = PTFile(faces_file)  # load file
         if not faces_info_bytes.exists():
@@ -26,45 +27,30 @@ def get_faces_info(faces_file, images_dict,logger=None):
 
     images_photos = message_data.photos
 
+    # Prepare lists for new DataFrame columns
+    photo_ids = []
+    num_faces_list = []
+    faces_info_list = []
+
+    # Extract faces information and prepare for DataFrame update
     for photo in images_photos:
         number_faces = len(photo.faces)
         faces = list(photo.faces)
-        if photo.photoId in images_dict:
-            images_dict[photo.photoId].update({'n_faces': number_faces, 'faces_info': faces})
+        photo_ids.append(photo.photoId)
+        num_faces_list.append(number_faces)
+        faces_info_list.append(faces)
 
-    return images_dict,None
+    # Create a temporary DataFrame with the new face information
+    face_info_df = pd.DataFrame({
+        'photo_id': photo_ids,
+        'n_faces': num_faces_list,
+        'faces_info': faces_info_list
+    })
 
-def load_face_data_from_proto(file, emb_size=512):
-    # loading from server
-    face_data_bytes = PTFile(file)  # load file
-    face_data_bytes = face_data_bytes.read_blob()
+    # Merge the original DataFrame with the new face information DataFrame
+    df = df.merge(face_info_df, how='left', left_on='image_id', right_on='photo_id')
 
-    face_descriptor = face_vector.FaceVectorMessageWrapper()
-    face_descriptor.ParseFromString(face_data_bytes)
+    # Drop the redundant photo_id column if necessary
+    df.drop(columns=['photo_id'], inplace=True)
 
-    # face_descriptor = face_vector.FaceVectorMessageWrapper()
-    # with open(file, 'rb') as f:
-    #     face_descriptor.ParseFromString(f.read())
-
-    if face_descriptor.WhichOneof("versions") == 'v1':
-        message_data = face_descriptor.v1
-    else:
-        raise ValueError('There is no appropriate version of face vector message.')
-
-    photo_id2faces_list = dict()
-    face_data = message_data.photos
-
-    for photo_info in face_data:
-
-        faces = list()
-        for face_info in photo_info.faces:
-            faces.append((face_info.id, [face_info.bbox.x1, face_info.bbox.y1,
-                                         face_info.bbox.x2, face_info.bbox.y2]))
-        photo_id2faces_list[photo_info.photoId] = faces
-    return photo_id2faces_list, message_data
-
-# sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-# parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
-#
-# load_face_data_from_proto('ptstorage_32://pictures/40/607/40607142/tydzj68uum3cpmy9mb/ai_face_vectors.pb')
+    return df

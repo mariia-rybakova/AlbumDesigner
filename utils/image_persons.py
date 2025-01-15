@@ -1,8 +1,8 @@
+import pandas as pd
 from ptinfra.azure.pt_file import PTFile
 from utils.protos import PersonInfo_pb2 as person_vector
 
-
-def get_persons_ids(persons_file, images_dict={},logger=None):
+def get_persons_ids(persons_file, df,logger=None):
     try:
         person_info_bytes = PTFile(persons_file)  # load file
         if not person_info_bytes.exists():
@@ -13,7 +13,7 @@ def get_persons_ids(persons_file, images_dict={},logger=None):
 
     except Exception as e:
         logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
-        print('Cant load cluster data from server: {}. will Load it from local directory.'.format(e))
+        return None
 
     if person_descriptor.WhichOneof("versions") == 'v1':
         message_data = person_descriptor.v1
@@ -23,16 +23,29 @@ def get_persons_ids(persons_file, images_dict={},logger=None):
 
     identity_info = message_data.identities
 
+    # Prepare lists for DataFrame columns
+    photo_ids = []
+    persons_ids_list = []
+
+    # Extract persons information and prepare for DataFrame update
     for iden in identity_info:
         id = iden.identityNumeralId
         infos = iden.personInfo
         for im in infos.imagesInfo:
-            if im.photoId not in images_dict:
-                images_dict[im.photoId] = {"embedding": [], "persons_ids": []}
+            photo_ids.append(im.photoId)
+            persons_ids_list.append(id)
 
-            if "persons_ids" not in images_dict[im.photoId]:
-                images_dict[im.photoId].update({"persons_ids": []})
+    # Create a temporary DataFrame with the new person information
+    persons_info_df = pd.DataFrame({
+        'image_id': photo_ids,
+        'persons_ids': persons_ids_list
+    })
 
-            images_dict[im.photoId]['persons_ids'].append(id)
+    # Aggregate persons_ids for each image_id
+    persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
 
-    return images_dict,None
+    # Merge the original DataFrame with the new person information DataFrame
+    df = df.merge(persons_info_df, how='left', on='image_id')
+
+    return df
+
