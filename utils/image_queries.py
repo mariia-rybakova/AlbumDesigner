@@ -10,7 +10,6 @@ def generate_query(tags_file, df, logger=None):
 
     # Iterate over each row in the DataFrame
     for idx, row in df.iterrows():
-        image_id = row['image_id']
         image_features = row['embedding']
 
         if isinstance(image_features, list):

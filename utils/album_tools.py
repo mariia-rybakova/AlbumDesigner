@@ -64,3 +64,19 @@ def get_general_times(data_db):
 
         image_id2general_time[image_id] = general_time
     return image_id2general_time
+
+
+def  get_wedding_groups(df):
+    return df.groupby(['time_cluster', 'cluster_context'])
+
+
+def get_none_wedding_groups(df):
+    return df.groupby(['cluster_people'])
+
+
+def get_images_per_groups(original_groups):
+    group2images_data_list = dict()
+    for name_group, group_df in original_groups:
+        num_images = len(group_df)
+        group2images_data_list[f'{name_group}'] = num_images
+    return group2images_data_list

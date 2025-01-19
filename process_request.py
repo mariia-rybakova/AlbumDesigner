@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 import warnings
 import numpy as np
+from multiprocessing import Pool
 from typing import List, Union
 
 from datetime import datetime
@@ -14,15 +15,16 @@ from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, QWriter, MessageQueue, MemoryQueue, Message, RoundRobinReader
 from ptinfra.config import get_variable
 
-from utils.background_scores import get_background_scores
 from utils.parser import CONFIGS
 from utils.request_processing import read_messages, organize_one_message_results
-from process_images import image_metrics
 
+from utils.clustering_time import  cluster_by_time
 from utils.protobufs_processing import get_info_protobufs
 from utils.load_layouts import load_layouts
 from utils.cover_image import process_non_wedding_cover_image,process_wedding_cover_image,get_cover_layout
-
+from utils.time_proessing import process_image_time
+from utils.load_layouts import get_layouts_data
+from src.album_processing import create_automatic_album
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -62,6 +64,7 @@ class ReadStage(Stage):
         super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=2)
         self.logger = logger
         self.image_loading_timeout = CONFIGS['image_loading_timeout']
+        self.queries_file = CONFIGS['queries_file']
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):
@@ -91,8 +94,8 @@ class ReadStage(Stage):
                     continue
 
                 df = pd.DataFrame(images, columns='image_id')
-
-                gallery_info_df = get_info_protobufs(project_base_url=project_url,df=df,logger=self.logger )
+                # check if its wedding here! and added to the message
+                gallery_info_df = get_info_protobufs(project_base_url=project_url,df=df,queries_file=queries_file,logger=self.logger )
 
                 if not gallery_info_df.empty:
                         message.content['gallery_photos_info'] = gallery_info_df
@@ -118,7 +121,8 @@ class ProcessStage(Stage):
 
     def process_message(self, msgs: Union[Message, List[Message]]):
         # Load layout file (or data) as needed for each gallery
-        self.layouts_df = load_layouts(msgs.content['layout_file'])
+        layouts_df = load_layouts(msgs.content['layout_file'])
+        layout_id2data = get_layouts_data(layouts_df)
 
         # Check if the message is a single message or a list of messages
         if isinstance(msgs, Message):
@@ -142,23 +146,18 @@ class ProcessStage(Stage):
 
                 df,cover_img_id,cover_img_df = process_non_wedding_cover_image(sorted_df,self.logger)
 
-            cover_img_layout = get_cover_layout(self.layouts_df)
+            cover_img_layout = get_cover_layout(layouts_df)
 
-
-
-
-
-
-
-
-
-
-
-
+            sorted_by_time_df, image_id2general_time = process_image_time(df)
+            df_time = cluster_by_time(sorted_by_time_df)
 
             # Handle the processing time logging
             try:
                 start = datetime.now()
+                album_designer = create_automatic_album(df_time,layouts_df,layout_id2data,message.content['is_wedding'], logger=self.logger)
+                album_result = album_designer.start_processing_album()
+                # Format result in required way with cover image and end spread image with thier layouts
+                message.content['album'] = album_result
                 processing_time = (datetime.now() - start) / max(len(images), 1)
                 self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
                                                                                              [msg.content.get('photoId')
@@ -166,59 +165,6 @@ class ProcessStage(Stage):
             except Exception as ex:
                 self.logger.error('Exception while processing messages: {}.'.format(ex))
 
-        return msgs
-
-
-class ProcessScoresStage(Stage):
-    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
-                 logger=None):
-        super().__init__('ProcessingScoresStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=1,
-                         batch_wait_time=5)
-        self.blob_input_size = CONFIGS['blob_input_size']
-        self.logger = logger
-
-    def process_message(self, msgs: Union[Message, List[Message]]):
-        if isinstance(msgs, Message):
-            images = [(msgs.image, -1)] if msgs.image is not None else []
-            background_masks = [(msgs.bg_mask, msgs.resized_image, -1)] if msgs.image is not None else []
-        elif isinstance(msgs, list):
-            images = [(one_msg.image, idx) for idx, one_msg in enumerate(msgs) if one_msg.image is not None]
-            background_masks = [(one_msg.bg_mask, one_msg.resized_image, idx) for idx, one_msg in enumerate(msgs) if one_msg.image is not None]
-        else:
-            self.logger.error('Unrecognized type of messages: {}'.format(msgs))  # what to do if msgs are not Message or list of Message?
-            return msgs
-
-        photo_ids = msgs.content['photoId'] if isinstance(msgs, Message) else [msg.content["photoId"] for msg in msgs]
-
-        try:
-            start = datetime.now()
-            for image in images:
-                image_id = image[1]
-                image_obj = image[0]
-                color, ar = image_metrics(image_obj)
-                if image_id == -1:
-                    msgs.ar = ar
-                    msgs.color = color
-                else:
-                    msgs[image_id].ar = ar
-                    msgs[image_id].color = color
-            ar_color_time = (datetime.now() - start) / max(len(images), 1)
-
-            scores_start = datetime.now()
-            background_data = get_background_scores(background_masks, self.blob_input_size, self.logger)
-
-            for cur_bg_data, general_msg_id in background_data:
-                if general_msg_id == -1:
-                    msgs.bg_data = cur_bg_data
-                else:
-                    msgs[general_msg_id].bg_data = cur_bg_data
-            scores_processing_time = (datetime.now() - scores_start) / max(len(images), 1)
-            processing_time = (datetime.now() - start) / max(len(images), 1)
-
-            processing_scores_time_list.append(processing_time)
-            # self.logger.debug('Average ar-color time/score processing time: {}/{}. Processed photos: {}'.format(ar_color_time, scores_processing_time, photo_ids))
-        except Exception as ex:
-            self.logger.error('Exception while scores processing: {}. Photo ids: {}'.format(ex, photo_ids))
         return msgs
 
 
@@ -364,19 +310,16 @@ class MessageProcessor:
         get_q = MemoryQueue(8)
         read_q = MemoryQueue(8)
         process_q = MemoryQueue(8)
-        process_scores_q = MemoryQueue(8)
         report_q = MemoryQueue(8)
 
         get_stage = GetStage(azure_input_q, get_q, report_q, logger=self.logger)
         read_stage = ReadStage(get_q, read_q, report_q, logger=self.logger)
         process_stage = ProcessStage(read_q, process_q, report_q, logger=self.logger)
-        process_scores_stage = ProcessScoresStage(process_q, process_scores_q, report_q, logger=self.logger)
-        store_stage = StoreStage(process_scores_q, report_q, report_q, logger=self.logger)
+        store_stage = StoreStage(process_q, report_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()
         store_stage.start()
-        process_scores_stage.start()
         process_stage.start()
         read_stage.start()
         get_stage.start()

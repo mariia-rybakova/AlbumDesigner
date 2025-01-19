@@ -1,6 +1,6 @@
 import pandas as pd
 from .illegal_group_splitting_merging import merge_illegal_group, split_illegal_group
-from .lookup_table import genreate_look_up
+from .lookup_table_tools import genreate_look_up
 
 
 def get_images_per_group(groups):

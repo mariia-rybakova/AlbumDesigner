@@ -2,7 +2,7 @@ import os
 from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
 from utils.image_queries import generate_query
 
-def get_info_protobufs(project_base_url, df, logger):
+def get_info_protobufs(project_base_url,df,queries_file, logger):
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
     persons_file = os.path.join(project_base_url, 'persons_info.pb')
@@ -36,7 +36,6 @@ def get_info_protobufs(project_base_url, df, logger):
         return None
 
     # Get Query Content of each image
-    queries_file = ''
     gallery_info_df = generate_query(queries_file, gallery_info_df,logger)
 
     return gallery_info_df

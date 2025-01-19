@@ -1,4 +1,4 @@
-from .lookup_table import genreate_look_up
+from .lookup_table_tools import genreate_look_up
 
 def get_images_per_group(groups):
     """

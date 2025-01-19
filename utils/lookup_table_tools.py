@@ -2,7 +2,7 @@
 import math
 
 
-lookup_table = {
+wedding_lookup_table = {
     'bride and groom': (4, 0.5),
 
     'bride': (4, 0.5),
@@ -41,6 +41,19 @@ lookup_table = {
     'invite': (12, 1.5)
 }
 
+non_wedding_lookup_table = {
+    '1_person':(1,0.5),
+    '2_person':(1,0.5),
+    '3_person':(1,0.5),
+    '4_person':(1,0.5),
+    '5_person':(1,0.5),
+    '6_person':(2,0.5),
+    '7_person':(2,0.5),
+    '8_person':(2,0.5),
+    '9_person':(2,0.5),
+    '10_person':(2,0.5),
+}
+
 
 def calculate_flexible_mean(total_images,group_original_mean, max_per_spread=24):
     if (total_images / group_original_mean) <= 4:
@@ -58,18 +71,16 @@ def calculate_flexible_mean(total_images,group_original_mean, max_per_spread=24)
         return int(mean)
 
 
-def genreate_look_up(group2images):
-    for group_name, images in group2images.items():
+def get_lookup_table(group2images,is_wedding):
+    if is_wedding:
+        lookup_table = wedding_lookup_table
+    else:
+        lookup_table = non_wedding_lookup_table
+
+    for group_name, num_images in group2images.items():
         parts = group_name.split('_')
         group_id = parts[1]
-        if group_id in lookup_table:
-            # mean = calculate_flexible_mean(images,lookup_table[group_id][0] )
-            # lookup_table[group_name] = (mean,lookup_table[group_id][1])
-            continue
-        else:
-            lookup_table[group_name] = (5, 0.2)
-    return lookup_table
+        if group_id not in lookup_table:
+                lookup_table[group_name] = (1, 0.02)
 
-
-def get_lookup_table():
     return lookup_table

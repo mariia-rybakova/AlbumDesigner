@@ -1,4 +1,7 @@
+import pandas as pd
 from datetime import datetime
+from multiprocessing import Pool
+
 
 def read_timestamp(timestamp_str):
     try:
@@ -11,35 +14,43 @@ def read_timestamp(timestamp_str):
 def convert_to_timestamp(time_integer):
    return datetime.fromtimestamp(time_integer)
 
+def process_image_time_row(row):
+    """Processes a single row to compute the general time."""
+    cur_timestamp = convert_to_timestamp(row['image_time'])
+
+    if 0 <= cur_timestamp.hour <= 4:
+        general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
+    else:
+        general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+
+    # Assuming `first_image_time` is passed or globally available
+    global first_image_time
+    diff_from_first = cur_timestamp - first_image_time
+    general_time += diff_from_first.days * 1440
+
+    row['general_time'] = int(general_time)
+    return row
+
 def process_image_time(data_df):
-        timestamps = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
-        data_df['image_time_date']  = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
+    # Convert image_time to timestamp
+    data_df['image_time_date'] = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
 
-        #timestamps = [read_timestamp(timestamp_str) for timestamp_str in timestamps]
-        image_ids = data_df['image_id']
+    # Sort by timestamp to find the first image time
+    data_df = data_df.sort_values(by='image_time_date')
+    global first_image_time
+    first_image_time = data_df.iloc[0]['image_time_date']
 
-        image_ids2timestamps = [(image_id, timestamp) for image_id, timestamp in zip(image_ids, timestamps)]
-        image_ids2timestamps = sorted(image_ids2timestamps, key=lambda x: x[1])
-        if len(image_ids2timestamps) == 0:
-            return None, dict()
+    # Using Pool to process each row in parallel
+    with Pool(processes=4) as pool:
+        processed_rows = pool.map(process_image_time_row, [row for _, row in data_df.iterrows()])
 
-        image_id2general_time = dict()
-        first_image_time = image_ids2timestamps[0][1]
-        for image_id, cur_timestamp in image_ids2timestamps:
-            #general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
-            if 0 <= cur_timestamp.hour <= 4:
-                # Treat times between midnight and 4 AM as if they belong to the previous day
-                general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
-            else:
-                general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+    # Create a new DataFrame from processed rows
+    processed_df = pd.DataFrame(processed_rows)
 
-                # Calculate difference in days and convert to minutes
-            diff_from_first = cur_timestamp - first_image_time
-            general_time += diff_from_first.days * 1440
+    # Sort the DataFrame by general time
+    sorted_by_time_df = processed_df.sort_values(by="general_time", ascending=True)
 
-            image_id2general_time[image_id] = int(general_time)
-            data_df.loc[data_df['image_id'] == image_id, 'general_time'] = int(general_time)
+    # Create a dictionary for image_id to general time
+    image_id2general_time = dict(zip(processed_df['image_id'], processed_df['general_time']))
 
-        sorted_by_time_df = data_df.sort_values(by="general_time", ascending=True)
-
-        return sorted_by_time_df, image_id2general_time
+    return sorted_by_time_df, image_id2general_time

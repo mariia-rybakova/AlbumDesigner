@@ -1,9 +1,5 @@
 import random
 
-
-
-
-
 def get_cover_img(data_df, important_imgs):
     cover_img_id = random.choice(important_imgs)
     cover_image_df = data_df[data_df['image_id'] == cover_img_id]
