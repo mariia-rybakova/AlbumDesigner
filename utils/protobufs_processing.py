@@ -28,6 +28,22 @@ def generate_people_clustering(df):
     df['people_cluster'] = df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
     return df
 
+def check_gallery_type(df):
+    count = 0
+    for row in df.iterrows():
+        content_class = row['image_class']
+        if content_class == -1:
+            count +=1
+
+    number_images = len(df)
+
+    if number_images /count > 0.6:
+        return False
+    else:
+        return True
+
+
+
 
 def get_info_protobufs(project_base_url,df,queries_file, logger):
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
@@ -67,4 +83,6 @@ def get_info_protobufs(project_base_url,df,queries_file, logger):
     # cluster people by number of people inside the image
     gallery_info_df = generate_people_clustering(gallery_info_df)
 
-    return gallery_info_df
+    is_wedding = check_gallery_type(gallery_info_df)
+
+    return gallery_info_df,is_wedding

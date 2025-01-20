@@ -95,10 +95,11 @@ class ReadStage(Stage):
 
                 df = pd.DataFrame(images, columns='image_id')
                 # check if its wedding here! and added to the message
-                gallery_info_df = get_info_protobufs(project_base_url=project_url,df=df,queries_file=queries_file,logger=self.logger )
+                gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url,df=df,queries_file=queries_file,logger=self.logger )
 
-                if not gallery_info_df.empty:
+                if not gallery_info_df.empty and is_wedding:
                         message.content['gallery_photos_info'] = gallery_info_df
+                        message.content['is_wedding'] = is_wedding
                         enriched_messages.append(message)
                 else:
                    self.logger.error(f"Failed to enrich image data for message: {message.content}")
