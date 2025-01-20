@@ -1,4 +1,4 @@
-from .lookup_table_tools import genreate_look_up
+from utils.lookup_table_tools import get_lookup_table
 
 def get_images_per_group(groups):
     """
@@ -30,6 +30,6 @@ def process_auto_groups(sub_grouped):
 
     group2images = get_images_per_group(sub_grouped)
 
-    lookup_table = genreate_look_up(group2images)
+    lookup_table = get_lookup_table(group2images,None)
 
     return sub_grouped,group2images,lookup_table

@@ -88,7 +88,8 @@ class create_automatic_album:
 
     def group_processing(self,group2images):
         start_time = time.time()
-        updated_sub_grouped, group2images, lookup_table = process_illegal_groups(group2images, self.original_groups, self.logger)
+        if self.is_wedding:
+            self.updated_groups, group2images = process_illegal_groups(group2images, self.original_groups, self.logger)
         illegal_time = (time.time() - start_time) / 60
         self.logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 

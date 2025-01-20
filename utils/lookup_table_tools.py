@@ -42,16 +42,16 @@ wedding_lookup_table = {
 }
 
 non_wedding_lookup_table = {
-    '1_person':(1,0.5),
-    '2_person':(1,0.5),
-    '3_person':(1,0.5),
-    '4_person':(1,0.5),
-    '5_person':(1,0.5),
-    '6_person':(2,0.5),
-    '7_person':(2,0.5),
-    '8_person':(2,0.5),
-    '9_person':(2,0.5),
-    '10_person':(2,0.5),
+    '1':(1,0.9),
+    '2':(1,0.9),
+    '3':(1,0.5),
+    '4':(2,0.5),
+    '5':(2,0.5),
+    '6':(2,0.5),
+    '7':(2,0.5),
+    '8':(2,0.5),
+    '9':(2,0.5),
+    '10':(2,0.5),
 }
 
 
@@ -78,9 +78,12 @@ def get_lookup_table(group2images,is_wedding):
         lookup_table = non_wedding_lookup_table
 
     for group_name, num_images in group2images.items():
-        parts = group_name.split('_')
-        group_id = parts[1]
+        if is_wedding:
+            group_id = group_name[1]
+        else:
+            group_id = group_name[0].split('_')[0]
+
         if group_id not in lookup_table:
-                lookup_table[group_name] = (1, 0.02)
+                lookup_table[group_id] = (1, 0.02)
 
     return lookup_table
