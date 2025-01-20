@@ -25,15 +25,10 @@ class create_automatic_album:
 
     def process_groups(self,group_name):
         self.logger.info("Starting with group_name {}".format(group_name))
-
-        parts = group_name.split('_')
-        group_id = (float(parts[0]), '_'.join(parts[1:]))
         try:
-            group_images_df =  self.updated_groups.get_group(group_id)
-
+            group_images_df =  self.updated_groups.get_group(group_name)
             cur_group_photos = get_photos_from_db(group_images_df)
-
-            spread_params = list(self.look_up_table.get(parts[1], (10, 1.5)))
+            spread_params = list(self.look_up_table.get(group_name[1], (10, 1.5)))
 
             cur_group_photos_list = list()
             if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or

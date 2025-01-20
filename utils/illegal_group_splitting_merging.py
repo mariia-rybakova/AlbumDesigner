@@ -71,14 +71,13 @@ def parse_embedding(embedding_str):
 
 
 def merge_illegal_group(main_groups, illegal_group):
-    intended_group_index = 0
     clusters_features = [group['embedding'] for group in main_groups]
 
     # Aggregate features within each group
     group_features = [np.mean(group, axis=0) for group in clusters_features]
     group_features_np = np.array(group_features)
 
-    illegal_group_features = parse_embedding(illegal_group['embedding'].values).tolist()
+    illegal_group_features = illegal_group['embedding'].values.tolist()
     illegal_group_features_np = np.array(illegal_group_features)
 
     if len(illegal_group_features_np.shape) == 1:
