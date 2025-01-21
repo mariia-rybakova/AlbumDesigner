@@ -23,7 +23,7 @@ class create_automatic_album:
              self.layouts_df =layouts_df
              self.layout_id2data = layout_id2data
 
-    def process_groups(self,group_name):
+    def process_group(self,group_name):
         self.logger.info("Starting with group_name {}".format(group_name))
         try:
             group_images_df =  self.updated_groups.get_group(group_name)
@@ -81,7 +81,7 @@ class create_automatic_album:
 
         return self.group_name2chosen_combinations
 
-    def group_processing(self,group2images):
+    def groups_processing(self,group2images):
         start_time = time.time()
         if self.is_wedding:
             self.updated_groups, group2images = process_illegal_groups(group2images, self.original_groups, self.logger)
@@ -90,11 +90,12 @@ class create_automatic_album:
 
         with Pool(processes=4) as pool:
             # Process the groups in parallel
-            results = pool.map(self.process_groups, [group_name for group_name, _ in group2images.keys()])
-
+            # add parameter list of tuple (groupname, groupdf) and pass it to the process function.
+            result = pool.map(self.process_group, [group_name for group_name, _ in group2images.keys()])
+         #result = [(),()] => dict
         self.logger.info("Album Generation Finished ^_^")
 
-        return results
+        return result
 
     def start_processing_album(self):
         if self.is_wedding:
@@ -105,7 +106,7 @@ class create_automatic_album:
         group2images = get_images_per_groups(self.original_groups)
         self.look_up_table = get_lookup_table(group2images, self.is_wedding)
 
-        return self.group_processing(group2images)
+        return self.groups_processing(group2images)
 
 
 

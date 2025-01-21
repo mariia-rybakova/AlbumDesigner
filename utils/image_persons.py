@@ -47,5 +47,8 @@ def get_persons_ids(persons_file, df,logger=None):
     # Merge the original DataFrame with the new person information DataFrame
     df = df.merge(persons_info_df, how='left', on='image_id')
 
+
+    df['persons_ids'].fillna(0, inplace=True)
+
     return df
 

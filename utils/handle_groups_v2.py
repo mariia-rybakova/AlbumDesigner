@@ -176,16 +176,16 @@ def get_images_per_groups(original_groups):
         group2images_data_list[name_group] = num_images
     return group2images_data_list
 
-if __name__ == "__main__":
-    is_wedding= True
-    df  = pd.read_excel(r'C:\Users\karmel\Desktop\AlbumDesigner\rightWedding.xlsx')
-    #df = pd.read_excel(r'C:\Users\karmel\Desktop\AlbumDesigner\nonWeddingg.xlsx')
-    if is_wedding:
-        groups = df.groupby(['time_cluster', 'cluster_context'])
-    else:
-        df = generate_people_clustering(df)
-        groups = df.groupby(['people_cluster'])
-
-    group2images = get_images_per_groups(groups)
-    look_up_table = get_lookup_table(group2images, is_wedding)
-    process_illegal_groups(group2images, groups, look_up_table, is_wedding, None)
+# if __name__ == "__main__":
+#     is_wedding= True
+#     df  = pd.read_excel(r'C:\Users\karmel\Desktop\AlbumDesigner\rightWedding.xlsx')
+#     #df = pd.read_excel(r'C:\Users\karmel\Desktop\AlbumDesigner\nonWeddingg.xlsx')
+#     if is_wedding:
+#         groups = df.groupby(['time_cluster', 'cluster_context'])
+#     else:
+#         df = generate_people_clustering(df)
+#         groups = df.groupby(['people_cluster'])
+#
+#     group2images = get_images_per_groups(groups)
+#     look_up_table = get_lookup_table(group2images, is_wedding)
+#     process_illegal_groups(group2images, groups, look_up_table, is_wedding, None)

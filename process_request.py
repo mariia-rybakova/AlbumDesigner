@@ -1,9 +1,8 @@
 import os
-
-import pandas as pd
 import torch
 import warnings
 import numpy as np
+import pandas as pd
 from multiprocessing import Pool
 from typing import List, Union
 
@@ -15,20 +14,20 @@ from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, QWriter, MessageQueue, MemoryQueue, Message, RoundRobinReader
 from ptinfra.config import get_variable
 
+from testlocally import Message
 from utils.parser import CONFIGS
 from utils.request_processing import read_messages, organize_one_message_results
+from utils.clustering_time import cluster_by_time
 
-from utils.clustering_time import  cluster_by_time
-from utils.protobufs_processing import get_info_protobufs
 from utils.load_layouts import load_layouts
-from utils.cover_image import process_non_wedding_cover_image,process_wedding_cover_image,get_cover_layout
+from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_image, get_cover_layout
 from utils.time_proessing import process_image_time
 from utils.load_layouts import get_layouts_data
+from utils.process_content_df import process_content
 from src.album_processing import create_automatic_album
 
-if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
-    os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
-
+# if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
+#     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
 
 
 warnings.filterwarnings('ignore')
@@ -39,7 +38,6 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 torch.set_num_threads(1)
-
 
 read_time_list = list()
 processing_time_list = list()
@@ -61,9 +59,8 @@ class GetStage(Stage):
 class ReadStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
-        super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=2)
+        #super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=2)
         self.logger = logger
-        self.image_loading_timeout = CONFIGS['image_loading_timeout']
         self.queries_file = CONFIGS['queries_file']
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
@@ -71,81 +68,68 @@ class ReadStage(Stage):
             self.logger.info("Abort requested")
             return []
 
-        messages = msgs if isinstance(msgs, list) else [msgs]
-
+        # messages = msgs if isinstance(msgs, list) else [msgs]
+        messages = msgs
         start = datetime.now()
-
         #Read messages using a helper function
         try:
-            messages = read_messages(messages, self.image_loading_timeout,self.logger)
+            messages = read_messages(messages, self.queries_file, self.logger)
         except Exception as e:
             self.logger.error(f"Error reading messages: {e}")
             return []
 
-        enriched_messages = []
-        for message in messages:
-            try:
-                # extract necessary fields from the message
-                images = message.content.get('images', [])
-                project_url = message.content.get('project_url', '')
-
-                if not project_url or not images:
-                    self.logger.warning(f"Incomplete message content: {message.content}")
-                    continue
-
-                df = pd.DataFrame(images, columns='image_id')
-                # check if its wedding here! and added to the message
-                gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url,df=df,queries_file=queries_file,logger=self.logger )
-
-                if not gallery_info_df.empty and is_wedding:
-                        message.content['gallery_photos_info'] = gallery_info_df
-                        message.content['is_wedding'] = is_wedding
-                        enriched_messages.append(message)
-                else:
-                   self.logger.error(f"Failed to enrich image data for message: {message.content}")
-
-            except Exception as e:
-                self.logger.error(f"Error reading messages at reading stage: {e}")
-
         handling_time = (datetime.now() - start) / len(messages) if messages else 0
-        self.logger.debug(f"Processed {len(enriched_messages)} messages. Average time: {handling_time}")
-
-        return enriched_messages
+        self.logger.debug(f"READING {len(messages)} messages. Average time: {handling_time}")
+        return messages
 
 
 class ProcessStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
-        super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=2,
-                         batch_wait_time=5)
+        #super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=2,
+                         #batch_wait_time=5)
         self.logger = logger
 
     def process_message(self, msgs: Union[Message, List[Message]]):
-        # Load layout file (or data) as needed for each gallery
-        layouts_df = load_layouts(msgs.content['layout_file'])
-        layout_id2data = get_layouts_data(layouts_df)
-
         # Check if the message is a single message or a list of messages
-        if isinstance(msgs, Message):
-            images = [(msgs.image, -1)] if msgs.image is not None else []
-        elif isinstance(msgs, list):
-            images = [(one_msg.image, idx) for idx, one_msg in enumerate(msgs) if one_msg.image is not None]
-        else:
-            self.logger.error('Unrecognized type of messages: {}'.format(msgs))
-            return msgs
+        # if isinstance(msgs, Message):
+        #     images = [(msgs.image, -1)] if msgs.image is not None else []
+        # elif isinstance(msgs, list):
+        #     images = [(one_msg.image, idx) for idx, one_msg in enumerate(msgs) if one_msg.image is not None]
+        # else:
+        #     self.logger.error('Unrecognized type of messages: {}'.format(msgs))
+        #     return msgs
 
         for message in msgs:
+            # Load layout file (or data) as needed for each gallery
+            layouts_df = load_layouts(message.content['layoutsCSV'])
+            # generate the dataframe
+            layout_id2data = get_layouts_data(layouts_df)
+
             df = message.content['gallery_photos_info'] if isinstance(message, Message) else [msg.content["photoId"] for
                                                                                               msg in msgs]
             # Sorting the DataFrame by "image_order" column
             sorted_df = df.sort_values(by="image_order", ascending=False)
 
+            # make it later pool
+            sorted_df = sorted_df.apply(process_content, axis=1)
+
+            rows = sorted_df.to_dict('records')
+
+            with Pool(processes=4) as pool:
+                processed_rows = pool.map(process_content, rows)
+
+            # Convert the processed rows back to a DataFrame
+            df = pd.DataFrame(processed_rows)
+
+            # Ensure column order and types are preserved if needed
+            df = df.astype(sorted_df.dtypes.to_dict())
+
             # Check if it's a wedding gallery or not and call appropriate method
             if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
-                df,cover_img_id,cover_img_df = process_wedding_cover_image(sorted_df,self.logger)
+                df, cover_img_id, cover_img_df = process_wedding_cover_image(sorted_df, self.logger)
             else:
-
-                df,cover_img_id,cover_img_df = process_non_wedding_cover_image(sorted_df,self.logger)
+                df, cover_img_id, cover_img_df = process_non_wedding_cover_image(sorted_df, self.logger)
 
             cover_img_layout = get_cover_layout(layouts_df)
 
@@ -155,11 +139,12 @@ class ProcessStage(Stage):
             # Handle the processing time logging
             try:
                 start = datetime.now()
-                album_designer = create_automatic_album(df_time,layouts_df,layout_id2data,message.content['is_wedding'], logger=self.logger)
+                album_designer = create_automatic_album(df_time, layouts_df, layout_id2data,
+                                                        message.content['is_wedding'], logger=self.logger)
                 album_result = album_designer.start_processing_album()
                 # Format result in required way with cover image and end spread image with thier layouts
                 message.content['album'] = album_result
-                processing_time = (datetime.now() - start) / max(len(images), 1)
+                processing_time = datetime.now() - start
                 self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
                                                                                              [msg.content.get('photoId')
                                                                                               for msg in msgs]))
@@ -243,8 +228,9 @@ class ReportStage(Stage):
                           'Reporting average time: {}. '
                           'General average time: {}. '
                           '**********.'.format(self.global_number_of_msgs, avg_time(read_time_list),
-                                    avg_time(processing_time_list), avg_time(processing_scores_time_list),
-                                    avg_time(storing_time_list), avg_time(retorting_time_list), global_average))
+                                               avg_time(processing_time_list), avg_time(processing_scores_time_list),
+                                               avg_time(storing_time_list), avg_time(retorting_time_list),
+                                               global_average))
 
     def report_one_message(self, one_msg):
         if one_msg.error:
@@ -296,17 +282,21 @@ class MessageProcessor:
         input_queue = CONFIGS['collection_name']
         print(prefix + input_queue)
         if prefix == 'dev':
-            dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'], max_dequeue_allowed=100)
-            test_queue = MessageQueue('test' + input_queue, def_visibility=CONFIGS['visibility_timeout'], max_dequeue_allowed=100)
-            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'], max_dequeue_allowed=100)
+            dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                     max_dequeue_allowed=100)
+            test_queue = MessageQueue('test' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                      max_dequeue_allowed=100)
+            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                    max_dequeue_allowed=100)
             azure_input_q = RoundRobinReader([dev_queue, test_queue, ep_queue])
         elif prefix == 'production':
-            self.logger.info('PRODUCTION environment set, queue name: '+input_queue)
-            azure_input_q = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'], max_dequeue_allowed=100)
+            self.logger.info('PRODUCTION environment set, queue name: ' + input_queue)
+            azure_input_q = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                         max_dequeue_allowed=100)
         else:
             self.logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
-            azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'], max_dequeue_allowed=100)
-
+            azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                         max_dequeue_allowed=100)
 
         get_q = MemoryQueue(8)
         read_q = MemoryQueue(8)
@@ -332,4 +322,150 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    import logging
+
+    logger = logging.getLogger('ReadStageTest')
+
+    read_stage = ReadStage(logger=logger)
+
+    # Sample message for testing
+    test_message = Message(content={
+        'photosIds': [
+            9871358316,
+            9871358323,
+            9871358325,
+            9871358324,
+            9871358327,
+            9871358335,
+            9871358334,
+            9871358332,
+            9871357196,
+            9871357195,
+            9871357194,
+            9871235647,
+            9871357197,
+            9871235654,
+            9871357231,
+            9871357237,
+            9871357239,
+            9871357241,
+            9871235659,
+            9871357247,
+            9871357248,
+            9871235697,
+            9871235695,
+            9871235701,
+            9871235705,
+            9871260660,
+            9871260674,
+            9871260678,
+            9871260676,
+            9871260682,
+            9871260681,
+            9871260683,
+            9871260684,
+            9871260685,
+            9871260704,
+            9871260710,
+            9871260711,
+            9871260717,
+            9871260720,
+            9871260723,
+            9871260724,
+            9871260738,
+            9871260734,
+            9871440524,
+            9871440523,
+            9871251425,
+            9871251424,
+            9871251433,
+            9871251452,
+            9871251455,
+            9871251454,
+            9871251453,
+            9871251471,
+            9871260186,
+            9871260211,
+            9871260195,
+            9871268394,
+            9871268418,
+            9871268417,
+            9871268410,
+            9871269359,
+            9871269374,
+            9871269369,
+            9871269376,
+            9871269373,
+            9871269386,
+            9871272557,
+            9871272567,
+            9871272580,
+            9871272576,
+            9871272585,
+            9871278314,
+            9871278315,
+            9871230080,
+            9871230079,
+            9871230099,
+            9871230101,
+            9871253523,
+            9871253570,
+            9871253571,
+            9871253569,
+            9871253597,
+            9871253598,
+            9871253599,
+            9871359882,
+            9871359886,
+            9871359893,
+            9871359894,
+            9871359900,
+            9871359903,
+            9871359906,
+            9871359922,
+            9871359931,
+            9871360599,
+            9871360609,
+            9871360605,
+            9871369320,
+            9871369321,
+            9871369340,
+            9871369352,
+            9871372057,
+            9871372091,
+            9871373925,
+            9871373959,
+            9871380672,
+            9871380661,
+            9871380663,
+            9871380667,
+            9871380670,
+            9871380695,
+            9871380710,
+            9871380711,
+            9871388915,
+            9871388926,
+            9871388927,
+            9871388941,
+            9871388945,
+            9871388946,
+            9871388937,
+            9871388955,
+            9871388959,
+            9871388973,
+            9871388974,
+            9871388990,
+            9871389001],
+        'projectURL': 'ptstorage_17://pictures/37/141/37141824/dmgb4onqc3hm',
+        'storeId': 000,
+        'layoutsCSV': r'C:\Users\karmel\Desktop\AlbumDesigner\files\layouts.csv',
+        'sendTime': 'now'
+
+    })
+
+    # Call the read_messages method
+    result = read_stage.read_messages([test_message])
+
+    processing = ProcessStage()
+    processing.process_message(result)
