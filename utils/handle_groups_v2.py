@@ -123,7 +123,7 @@ def handle_illegal(group_key,score,content_cluster_id,illegal_group,imgs_number,
 
 
 
-def update_needed(groups,lookup_table):
+def update_needed(groups,is_wedding,lookup_table):
     global groups_to_change
 
     groups_to_change = dict()
@@ -155,7 +155,7 @@ def update_needed(groups,lookup_table):
 
 def process_illegal_groups(group2images,groups,look_up_table,is_wedding, logger=None):
     count = 2
-    while update_needed(group2images, look_up_table):
+    while update_needed(group2images,is_wedding, look_up_table):
         for key_to_change,score in groups_to_change.items():
             content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
             illegal_group = groups.get_group(key_to_change)

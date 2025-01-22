@@ -81,10 +81,10 @@ class create_automatic_album:
 
         return self.group_name2chosen_combinations
 
-    def groups_processing(self,group2images):
+    def groups_processing(self,group2images,look_up_table):
         start_time = time.time()
         if self.is_wedding:
-            self.updated_groups, group2images = process_illegal_groups(group2images, self.original_groups, self.logger)
+            self.updated_groups, group2images = process_illegal_groups(group2images, self.original_groups,look_up_table,self.is_wedding, self.logger)
         illegal_time = (time.time() - start_time) / 60
         self.logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 
@@ -104,9 +104,9 @@ class create_automatic_album:
             self.original_groups = get_none_wedding_groups(self.df)
 
         group2images = get_images_per_groups(self.original_groups)
-        self.look_up_table = get_lookup_table(group2images, self.is_wedding)
+        look_up_table = get_lookup_table(group2images, self.is_wedding)
 
-        return self.groups_processing(group2images)
+        return self.groups_processing(group2images,look_up_table)
 
 
 
