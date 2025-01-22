@@ -78,5 +78,5 @@ def get_images_per_groups(original_groups):
     group2images_data_list = dict()
     for name_group, group_df in original_groups:
         num_images = len(group_df)
-        group2images_data_list[f'{name_group}'] = num_images
+        group2images_data_list[name_group] = num_images
     return group2images_data_list

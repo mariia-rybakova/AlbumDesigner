@@ -124,11 +124,13 @@ class ProcessStage(Stage):
 
             sorted_by_time_df, image_id2general_time = process_image_time(df)
             df_time = cluster_by_time(sorted_by_time_df)
+            # to ignore the read only memory
+            df = pd.DataFrame(df_time.to_dict())
 
             # Handle the processing time logging
             try:
                 start = datetime.now()
-                album_designer = create_automatic_album(df_time, layouts_df, layout_id2data,
+                album_designer = create_automatic_album(df, layouts_df, layout_id2data,
                                                         message.content['is_wedding'], logger=self.logger)
                 album_result = album_designer.start_processing_album()
                 # Format result in required way with cover image and end spread image with thier layouts
