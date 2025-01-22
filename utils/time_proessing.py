@@ -13,8 +13,8 @@ def convert_to_timestamp(time_integer):
 
 def process_image_time_row(args):
     """Processes a single row to compute the general time."""
-    row, first_image_time = args
-    cur_timestamp = convert_to_timestamp(row['image_time'])
+    row_time, first_image_time = args
+    cur_timestamp = convert_to_timestamp(row_time['image_time'])
 
     if 0 <= cur_timestamp.hour <= 4:
         general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
@@ -24,8 +24,8 @@ def process_image_time_row(args):
     diff_from_first = cur_timestamp - first_image_time
     general_time += diff_from_first.days * 1440
 
-    row['general_time'] = int(general_time)
-    return row
+    row_time['general_time'] = int(general_time)
+    return row_time
 
 def process_image_time(data_df):
     # Convert image_time to timestamp
@@ -35,12 +35,18 @@ def process_image_time(data_df):
     data_df = data_df.sort_values(by='image_time_date')
     first_image_time = data_df.iloc[0]['image_time_date']
 
+    time_data_dict = data_df[['image_id', 'image_time']].to_dict('records')
+
+    args_list = [(row, first_image_time) for row in time_data_dict]
+
     # Using Pool to process each row in parallel
     with Pool(processes=4) as pool:
-        processed_rows = pool.map(process_image_time_row, [(row, first_image_time) for _, row in data_df.iterrows()])
+        processed_rows = pool.map(process_image_time_row,  args_list)
 
     # Create a new DataFrame from processed rows
     processed_df = pd.DataFrame(processed_rows)
+
+    processed_df = data_df.merge(processed_df[['image_id', 'general_time']], how='left', on='image_id')
 
     # Sort the DataFrame by general time
     sorted_by_time_df = processed_df.sort_values(by="general_time", ascending=True)
