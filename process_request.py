@@ -23,9 +23,8 @@ from utils.load_layouts import load_layouts
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_image, get_cover_layout
 from utils.time_proessing import process_image_time
 from utils.load_layouts import get_layouts_data
-from utils.process_content_df import process_content
 from src.album_processing import create_automatic_album
-
+from utils.parallel_methods import parallel_content_processing
 # if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
 #     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
 
@@ -111,25 +110,15 @@ class ProcessStage(Stage):
             # Sorting the DataFrame by "image_order" column
             sorted_df = df.sort_values(by="image_order", ascending=False)
 
-            # make it later pool
-            sorted_df = sorted_df.apply(process_content, axis=1)
+            processed_content_df = parallel_content_processing(sorted_df)
+            processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']], how='left', on='image_id')
 
-            rows = sorted_df.to_dict('records')
-
-            with Pool(processes=4) as pool:
-                processed_rows = pool.map(process_content, rows)
-
-            # Convert the processed rows back to a DataFrame
-            df = pd.DataFrame(processed_rows)
-
-            # Ensure column order and types are preserved if needed
-            df = df.astype(sorted_df.dtypes.to_dict())
 
             # Check if it's a wedding gallery or not and call appropriate method
             if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
-                df, cover_img_id, cover_img_df = process_wedding_cover_image(sorted_df, self.logger)
+                df, cover_img_id, cover_img_df = process_wedding_cover_image(processed_df, self.logger)
             else:
-                df, cover_img_id, cover_img_df = process_non_wedding_cover_image(sorted_df, self.logger)
+                df, cover_img_id, cover_img_df = process_non_wedding_cover_image(processed_df, self.logger)
 
             cover_img_layout = get_cover_layout(layouts_df)
 
