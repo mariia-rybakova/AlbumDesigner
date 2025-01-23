@@ -71,7 +71,7 @@ def parse_embedding(embedding_str):
 
 
 def merge_illegal_group(main_groups, illegal_group):
-    clusters_features = [group['embedding'].values for group in main_groups]
+    clusters_features = [group['embedding'].values.copy() for group in main_groups]
 
     # Aggregate features within each group
     group_features = [np.mean(group, axis=0) for group in clusters_features]

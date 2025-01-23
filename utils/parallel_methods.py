@@ -11,5 +11,4 @@ def parallel_content_processing(sorted_df):
     with Pool(processes=4) as pool:
         processed_rows = pool.map(process_content, rows)
 
-    # Convert the processed rows back to a DataFrame
     return pd.DataFrame(processed_rows)

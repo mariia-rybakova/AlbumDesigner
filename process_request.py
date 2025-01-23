@@ -124,6 +124,7 @@ class ProcessStage(Stage):
 
             sorted_by_time_df, image_id2general_time = process_image_time(df)
             df_time = cluster_by_time(sorted_by_time_df)
+
             # to ignore the read only memory
             df = pd.DataFrame(df_time.to_dict())
 
