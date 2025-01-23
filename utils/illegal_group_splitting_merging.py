@@ -60,30 +60,24 @@ def split_illegal_group(illegal_group):
 
     return illegal_group, label_counts
 
-def parse_embedding(embedding_str):
-    try:
-        # Ensure the string has proper commas and brackets
-        cleaned_str = embedding_str.replace(' ', ', ').replace('[,', '[').replace(',]', ']')
-        return ast.literal_eval(cleaned_str)
-    except Exception as e:
-        print(f"Error parsing: {embedding_str} - {e}")
-        return None
-
 
 def merge_illegal_group(main_groups, illegal_group):
     clusters_features = [group['embedding'].values.copy() for group in main_groups]
 
     # Aggregate features within each group
-    group_features = [np.mean(group, axis=0) for group in clusters_features]
+    group_features = [group.mean() if group.shape[0] > 1 else group[0] for group in clusters_features]
     group_features_np = np.array(group_features)
 
-    illegal_group_features = illegal_group['embedding'].values.tolist()
-    illegal_group_features_np = np.array(illegal_group_features)
 
-    if len(illegal_group_features_np.shape) == 1:
-        intded_group_fe = illegal_group_features_np.reshape(1, -1)
+    if illegal_group['embedding'].values.shape[0] > 1 :
+        illegal_group_features = illegal_group['embedding'].values.mean()
     else:
-        intded_group_fe = illegal_group_features_np
+        illegal_group_features = illegal_group['embedding'].values[0]
+
+    if len(illegal_group_features.shape) == 1:
+        intded_group_fe = illegal_group_features.reshape(1, -1)
+    else:
+        intded_group_fe = illegal_group_features
 
     inteded_group_time = illegal_group['general_time'].values.mean()
     intded_group_fe_with_time = np.column_stack((intded_group_fe, inteded_group_time))
