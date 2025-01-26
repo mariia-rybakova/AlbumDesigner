@@ -57,8 +57,8 @@ def merging_process(group_key,groups,illegal_group):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def splitting_process(groups,group_key,illegal_group):
-    updated_group, labels_count = split_illegal_group(illegal_group)
+def splitting_process(groups,group_key,illegal_group,count):
+    updated_group, labels_count = split_illegal_group(illegal_group,count)
 
     if updated_group is None:
         # we cant split this group
@@ -70,47 +70,56 @@ def splitting_process(groups,group_key,illegal_group):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-
-def handle_illegal(group_key,score,content_cluster_id,illegal_group,imgs_number,groups):
-    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= 3:
-        """Wont change a group for first dance and cake cutting"""
-        illegal_group.loc[:, 'cluster_context'] = illegal_group["cluster_context"] + "_cant_merge"
-        groups = groups.apply(
-            lambda x: update_not_processed(x, not_processed=illegal_group, illegal_group_key=group_key))
-        groups = groups.reset_index(drop=True)
-        groups = groups.groupby(['time_cluster', 'cluster_context'])
+def handle_wedding_dress(illegal_group,groups,group_key):
+    selected_cluster = [group for group_id, group in groups if
+                        "bride getting dressed" == group_id[1] or "bride" == group_id[1] or 'getting dressed' ==
+                        group_id[1] or 'getting hair-makeup' == group_id[1]]
+    if len(selected_cluster) == 0:
+        print("Couldnt find a good group for wedding dress!")
         return groups
+    else:
+        selected_cluster = selected_cluster[0]
 
+    illegal_group.loc[:, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
+    value_to_assign = selected_cluster['time_cluster'].iloc[0]
+    illegal_group.loc[:, 'time_cluster'] = value_to_assign
+    updated_group = pd.concat([selected_cluster, illegal_group], ignore_index=False)
+    groups = groups.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
+        value_to_assign, "bride getting dressed"), illegal_group_key=group_key))
+    groups = groups.reset_index(drop=True)
+    groups = groups.groupby(['time_cluster', 'cluster_context'])
+    return groups
+
+def do_not_change_group(illegal_group, groups,group_key):
+    """Wont change a group for first dance and cake cutting"""
+    illegal_group.loc[:, 'cluster_context'] = illegal_group["cluster_context"] + "_cant_merge"
+    groups = groups.apply(
+        lambda x: update_not_processed(x, not_processed=illegal_group, illegal_group_key=group_key))
+    groups = groups.reset_index(drop=True)
+    groups = groups.groupby(['time_cluster', 'cluster_context'])
+    return groups
+
+def handle_illegal(group_key,score,content_cluster_id,illegal_group,imgs_number,groups,count):
+    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= 3:
+        return do_not_change_group(illegal_group, groups,group_key)
     elif "wedding dress" in group_key and imgs_number <= 3:
         """Merge wedding dress into group related to bride"""
-        selected_cluster = [group for group_id, group in groups if
-                            "bride getting dressed" == group_id[1] or "bride" == group_id[1] or 'getting dressed' ==
-                            group_id[1] or 'getting hair-makeup' == group_id[1]]
-        if len(selected_cluster) == 0:
-            print("Couldnt find a good group for wedding dress!")
-            return groups
-        else:
-            selected_cluster = selected_cluster[0]
-
-        illegal_group.loc[:, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
-        value_to_assign = selected_cluster['time_cluster'].iloc[0]
-        illegal_group.loc[:, 'time_cluster'] = value_to_assign
-        updated_group = pd.concat([selected_cluster, illegal_group], ignore_index=False)
-        groups = groups.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
-            value_to_assign, "bride getting dressed"), illegal_group_key=group_key))
-        groups = groups.reset_index(drop=True)
-        groups = groups.groupby(['time_cluster', 'cluster_context'])
-        return groups
-
+        return handle_wedding_dress(illegal_group,groups,group_key)
     elif imgs_number < 3:
         return merging_process(group_key,groups,illegal_group)
-
     elif score >= 4:
-        return splitting_process(groups,group_key,illegal_group)
+        return splitting_process(groups,group_key,illegal_group,count)
+    else:
+        return do_not_change_group(illegal_group, groups,group_key)
+
 
 def get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding):
     if is_wedding:
-        group_value = lookup_table.get(group_key[1], [0])[0]
+        if "_" in  group_key[1]:
+            content_key = group_key[1].split("_")[0]
+        else:
+            content_key = group_key[1]
+        group_value = lookup_table.get(content_key, [0])[0]
     else:
         group_value = lookup_table.get(group_key[0].split("_")[0])[0]
 
@@ -130,7 +139,7 @@ def update_needed(groups,is_wedding,lookup_table):
     for group_key, imgs_number in groups.items():
         limited_splitting = get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding)
 
-        if (imgs_number < 3 or (limited_splitting >= 4 and 'cant_split' not in group_key)) and 'cant_merge' not in group_key:
+        if (imgs_number < 3 or (limited_splitting >= 4 and 'cant_split' not in group_key[1])) and 'cant_merge' not in group_key[1]:
             if group_key not in groups_to_change:
                 groups_to_change[group_key] = limited_splitting
         else:
@@ -151,12 +160,15 @@ def process_illegal_groups(group2images,groups,look_up_table,is_wedding, logger=
             illegal_group = groups.get_group(key_to_change)
             imgs_number = group2images[key_to_change]
             score = get_merge_split_score(key_to_change,look_up_table,imgs_number,is_wedding)
-            groups = handle_illegal(key_to_change,score,content_cluster_id,illegal_group,imgs_number,groups)
-            group2images = get_images_per_groups(groups)
-
+            groups = handle_illegal(key_to_change,score,content_cluster_id,illegal_group,imgs_number,groups,count)
+            if groups is not None:
+               group2images = get_images_per_groups(groups)
+            else:
+                continue
+        print("HERE")
         count += 1
     print(f"Final number of groups for the album {len(groups)}")
-    return groups, group2images
+    return groups, group2images, look_up_table
 
 
 # if __name__ == "__main__":

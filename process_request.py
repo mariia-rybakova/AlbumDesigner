@@ -23,7 +23,7 @@ from utils.load_layouts import load_layouts
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_image, get_cover_layout
 from utils.time_proessing import process_image_time
 from utils.load_layouts import get_layouts_data
-from src.album_processing import create_automatic_album
+from src.album_processing import AutomaticAlbum
 from utils.parallel_methods import parallel_content_processing
 # if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
 #     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -131,7 +131,7 @@ class ProcessStage(Stage):
             # Handle the processing time logging
             try:
                 start = datetime.now()
-                album_designer = create_automatic_album(df, layouts_df, layout_id2data,
+                album_designer = AutomaticAlbum(df, layouts_df, layout_id2data,
                                                         message.content['is_wedding'], logger=self.logger)
                 album_result = album_designer.start_processing_album()
                 # Format result in required way with cover image and end spread image with thier layouts
@@ -141,7 +141,8 @@ class ProcessStage(Stage):
                                                                                              [msg.content.get('photoId')
                                                                                               for msg in msgs]))
             except Exception as ex:
-                self.logger.error('Exception while processing messages: {}.'.format(ex))
+                print('Exception while processing messages: {}.'.format(ex))
+                #self.logger.error('Exception while processing messages: {}.'.format(ex))
 
         return msgs
 

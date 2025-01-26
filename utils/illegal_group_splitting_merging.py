@@ -7,8 +7,8 @@ from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.metrics import silhouette_score
 
-def split_illegal_group(illegal_group):
-    count= "NA"
+
+def split_illegal_group(illegal_group,count):
     illegal_group_features = illegal_group['embedding'].values.tolist()
     illegal_time_features = [time for time in illegal_group["general_time"]]
 
@@ -43,13 +43,8 @@ def split_illegal_group(illegal_group):
     labels = clf.labels_
     silhouette_avg = silhouette_score(combined_features, labels)
 
-    if silhouette_avg > 0.15:
-        #logger.info("Clustering is good for gallery group.", )
-        print("Clustering is good for gallery group.", )
-    else:
-        #logger.info("Clustering is bad.so we wont split it")
-        print("Clustering is good for gallery group.", )
-        return None, None
+    if silhouette_avg < 0.15:
+        return None,None
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
     labels = [f'{content_cluster_origin}_{label}_{count}' for label in labels]
