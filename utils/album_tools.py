@@ -1,4 +1,5 @@
 import random
+import statistics
 from datetime import datetime
 
 
@@ -80,3 +81,69 @@ def get_images_per_groups(original_groups):
         num_images = len(group_df)
         group2images_data_list[name_group] = num_images
     return group2images_data_list
+
+
+def sort_groups_by_photo_time(data_list):
+    result = {}
+    def get_mean_time(sublist):
+        # Extract all general_time values from the photos in the sublist
+        total_spread_time = []
+        for page in sublist[1:3]:
+            time = [photo.general_time for photo in page]
+            total_spread_time.extend(time)
+
+        if total_spread_time:
+            #logger.info(f"layout id {sublist[0]}, average time, {statistics.mean(total_spread_time)}")
+            return statistics.median(total_spread_time)
+        else:
+            return float('inf')
+
+    # Iterate over each group in the dictionary
+    for data_dict in data_list:
+        for group_key, group_data in data_dict.items():
+            if group_key not in result:
+                result[group_key] = []
+
+            # Ensure group_data is a list and contains elements
+            if isinstance(group_data, list) and len(group_data) > 0:
+                # Sort the group data by get_mean_time and extend the result
+                sorted_group = sorted(group_data[0], key=get_mean_time)
+                result[group_key].extend(sorted_group)
+
+    return result
+
+def sort_groups(list_of_groups,group2images):
+    group2images
+    for list_of_group in list_of_groups:
+        group_name = list_of_group.keys()[0]
+
+
+
+
+def sort_sub_groups(sub_grouped, group_names):
+    # Define the priority list for secondary sorting
+    priority_list = ["bride getting dressed", "getting hair-makeup", "bride", "groom getting dress", "groom",
+                     "portrait",
+                     "bride and groom", "walking the aisle", "ceremony", "settings", "dancing"]
+
+    # Create a dictionary to map group names to their priority
+    if priority_list:
+         priority_dict = {name: i for i, name in enumerate(priority_list)}
+
+    time_group_dict = {}
+    for group_name in group_names:
+        orig_group_name = group_name.split('*')
+        group_id =orig_group_name[0].split('_')
+        group = sub_grouped.get_group(group_id)
+
+        # Calculate the median instead of the mean
+        group_time_median = group["general_time"].median()
+        time_group_dict[group_name] = group_time_median
+
+    sorted_time_groups = dict(
+        sorted(time_group_dict.items(),
+               key=lambda item: (item[1],
+                                 priority_dict.get(item[0].split('_')[1].split('*')[0], float('inf'))))
+    )
+
+    return sorted_time_groups

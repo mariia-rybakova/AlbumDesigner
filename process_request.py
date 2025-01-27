@@ -135,6 +135,7 @@ class ProcessStage(Stage):
                                                         message.content['is_wedding'], logger=self.logger)
                 album_result = album_designer.start_processing_album()
                 # Format result in required way with cover image and end spread image with thier layouts
+                #format to json
                 message.content['album'] = album_result
                 processing_time = datetime.now() - start
                 self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
