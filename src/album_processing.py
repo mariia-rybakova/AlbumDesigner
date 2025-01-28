@@ -1,16 +1,21 @@
 import math
 import time
 import copy
+import dill
 import pickle
 from gc import collect
 import traceback
-from multiprocessing import Pool
+from multiprocessing import Pool, Lock, Manager
 
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, get_layouts_data, \
     get_important_imgs, get_cover_img, get_cover_layout, generate_json_response, process_illegal_groups, update_group
 from utils.lookup_table_tools import get_lookup_table
 from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,sort_groups,sort_sub_groups
 from src.smart_cropping import crop_processing
+
+
+
+
 
 class AutomaticAlbum:
     def __init__(self,df,layouts_df,layout_id2data,is_wedding, logger):
@@ -24,8 +29,9 @@ class AutomaticAlbum:
              self.layouts_df =layouts_df
              self.layout_id2data = layout_id2data
 
+
     def process_group(self,args):
-        group_name, group_images_df, spread_params, layouts_df, layout_id2data, logger = args
+        group_name, group_images_df, spread_params, layouts_df, layout_id2data, logger = dill.loads(args)
         try:
             cur_group_photos = get_photos_from_db(group_images_df)
             cur_group_photos_list = copy.deepcopy(list())
@@ -43,7 +49,7 @@ class AutomaticAlbum:
             else:
                 cur_group_photos_list.append(cur_group_photos)
 
-            group_result = {}
+            local_result = {}
             for idx, group_photos in enumerate(cur_group_photos_list):
                 filter_start = time.time()
 
@@ -67,18 +73,20 @@ class AutomaticAlbum:
                     best_spread[0][spread_id][1] = set([group_photos[photo_id] for photo_id in spread[1]])
                     best_spread[0][spread_id][2] = set([group_photos[photo_id] for photo_id in spread[2]])
 
-                group_result[group_name[1] + '*' + str(idx)] = best_spread
+                local_result[group_name[1] + '*' + str(idx)] = best_spread
                 print(f"group name and index and result {group_name[1] + '*' + str(idx)}",
-                      group_result[group_name[1] + '*' + str(idx)])
+                      local_result[group_name[1] + '*' + str(idx)])
 
                 del cur_group_photos, filtered_spreads
 
             del cur_group_photos_list
             collect()
             print("############################################################")
-            result = pickle.dumps(group_result)
-            del group_result
-            return result
+            # Critical section: update the shared result dictionary
+            with lock:
+                if group_name not in shared_result:
+                    shared_result[group_name] = []
+                shared_result[group_name].append(local_result[group_name])
 
         except Exception as e:
             print(f"Error with group_name {group_name}: {e}")
@@ -94,17 +102,16 @@ class AutomaticAlbum:
         print(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 
         args = [
-            copy.deepcopy((
-                group_name,
+            (group_name,
                 self.updated_groups.get_group(group_name),
                 list(self.look_up_table.get(group_name[1].split('_')[0], (10, 1.5))),
                 self.layouts_df,
                 self.layout_id2data,
-                self.logger
-            )) for group_name in group2images.keys()
+                self.logger)
+         for group_name in group2images.keys()
         ]
 
-        with Pool(processes=4,maxtasksperchild=1) as pool:
+        with Pool(processes=4,maxtasksperchild=10) as pool:
             # Process the groups in parallel
             # add parameter list of tuple (groupname, groupdf) and pass it to the process function.
             results = pool.map(self.process_group, args)
@@ -134,6 +141,16 @@ class AutomaticAlbum:
 
         #cropping & formatting
         # crop_processing(sorted_result_dict)
+
+
+
+if __name__ == '__main__':
+    # Initialize a lock object
+    lock = Lock()
+
+    # Shared dictionary using Manager
+    manager = Manager()
+    shared_result = manager.dict()
 
 
 

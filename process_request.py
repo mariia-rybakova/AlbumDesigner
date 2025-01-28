@@ -8,6 +8,7 @@ from typing import List, Union
 
 from datetime import datetime
 from pymongo import MongoClient
+from multiprocessing import Pool, Lock, Manager
 
 from ptinfra import intialize, get_logger, AbortRequested
 from ptinfra.stage import Stage
