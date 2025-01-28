@@ -1,19 +1,14 @@
 import math
 import time
 import copy
-import dill
-import pickle
-from gc import collect
+import queue
 import traceback
-from multiprocessing import Pool, Lock, Manager
+import threading
+from gc import collect
 
-from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, get_layouts_data, \
-    get_important_imgs, get_cover_img, get_cover_layout, generate_json_response, process_illegal_groups, update_group
+from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
-from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,sort_groups,sort_sub_groups
-from src.smart_cropping import crop_processing
-
-
+from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_and_sort_groups
 
 
 
@@ -29,11 +24,13 @@ class AutomaticAlbum:
              self.layouts_df =layouts_df
              self.layout_id2data = layout_id2data
 
-
     def process_group(self,args):
-        group_name, group_images_df, spread_params, layouts_df, layout_id2data, logger = dill.loads(args)
+        group_name, group_images_df, spread_params, layouts_df, layout_id2data = args
+        print("group name", group_name, "number of imgs", len(group_images_df))
+        print("1")
         try:
             cur_group_photos = get_photos_from_db(group_images_df)
+            print("2")
             cur_group_photos_list = copy.deepcopy(list())
             if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
                     # len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
@@ -48,7 +45,7 @@ class AutomaticAlbum:
                                                                              len(cur_group_photos))])
             else:
                 cur_group_photos_list.append(cur_group_photos)
-
+            print("3")
             local_result = {}
             for idx, group_photos in enumerate(cur_group_photos_list):
                 filter_start = time.time()
@@ -56,7 +53,7 @@ class AutomaticAlbum:
                 # print('Photos: {}'.format(
                 #     [[item.id, item.ar, item.color, item.rank, item.photo_class, item.cluster_label, item.general_time]
                 #      for item in group_photos]))
-                filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params, logger)
+                filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,None)
                 if filtered_spreads is None:
                     continue
                 print('Filtered spreads size: {}'.format(len(filtered_spreads)))
@@ -72,10 +69,8 @@ class AutomaticAlbum:
                 for spread_id, spread in enumerate(cur_spreads):
                     best_spread[0][spread_id][1] = set([group_photos[photo_id] for photo_id in spread[1]])
                     best_spread[0][spread_id][2] = set([group_photos[photo_id] for photo_id in spread[2]])
-
-                local_result[group_name[1] + '*' + str(idx)] = best_spread
-                print(f"group name and index and result {group_name[1] + '*' + str(idx)}",
-                      local_result[group_name[1] + '*' + str(idx)])
+                print("4")
+                local_result[str(group_name[0]) +'_' + group_name[1] + '*' + str(idx)] = best_spread
 
                 del cur_group_photos, filtered_spreads
 
@@ -83,16 +78,36 @@ class AutomaticAlbum:
             collect()
             print("############################################################")
             # Critical section: update the shared result dictionary
-            with lock:
-                if group_name not in shared_result:
-                    shared_result[group_name] = []
-                shared_result[group_name].append(local_result[group_name])
+
+            print("5")
+            return local_result
 
         except Exception as e:
             print(f"Error with group_name {group_name}: {e}")
             print(traceback.format_exc())
 
             return None
+
+    def process_all_groups_parallel(self,args):
+        jobs = []
+        q = queue.Queue()  # thread safe queue to store results
+
+        def worker(arg):
+            result = self.process_group(arg)
+            q.put(result)  # put the result in queue
+
+        for arg in args:
+            thread = threading.Thread(target=worker, args=(arg,))
+            jobs.append(thread)
+
+        for j in jobs:
+            j.start()
+
+        for j in jobs:
+            j.join()
+
+        results = [q.get() for _ in range(len(args))]  # retrieve results from the queue
+        return results
 
     def groups_processing(self,group2images,look_up_table):
         start_time = time.time()
@@ -103,24 +118,15 @@ class AutomaticAlbum:
 
         args = [
             (group_name,
-                self.updated_groups.get_group(group_name),
-                list(self.look_up_table.get(group_name[1].split('_')[0], (10, 1.5))),
-                self.layouts_df,
-                self.layout_id2data,
-                self.logger)
+                copy.deepcopy(self.updated_groups.get_group(group_name)),
+                copy.deepcopy(list(self.look_up_table.get(group_name[1].split('_')[0], (10, 1.5)))),
+                copy.deepcopy(self.layouts_df),
+                copy.deepcopy(self.layout_id2data))
          for group_name in group2images.keys()
         ]
+        all_results = self.process_all_groups_parallel(args)
 
-        with Pool(processes=4,maxtasksperchild=10) as pool:
-            # Process the groups in parallel
-            # add parameter list of tuple (groupname, groupdf) and pass it to the process function.
-            results = pool.map(self.process_group, args)
-
-            # Serialize results in the main process
-        serialized_results = [
-            pickle.loads(result) for result in results if result is not None
-        ]
-        return serialized_results
+        return all_results
 
     def start_processing_album(self):
         if self.is_wedding:
@@ -133,24 +139,11 @@ class AutomaticAlbum:
 
         result_list = self.groups_processing(group2images,look_up_table)
 
-        #sorintg & formating
-        result = sort_groups(result_list,group2images)
+        #sorintg & formating & cropping
+        result = organize_and_sort_groups(result_list,self.layouts_df,self.updated_groups, self.is_wedding)
 
-        # if self.is_wedding:
-        #     sorted_result_dict = sort_sub_groups(sorted_result_dict)
+        return result
 
-        #cropping & formatting
-        # crop_processing(sorted_result_dict)
-
-
-
-if __name__ == '__main__':
-    # Initialize a lock object
-    lock = Lock()
-
-    # Shared dictionary using Manager
-    manager = Manager()
-    shared_result = manager.dict()
 
 
 

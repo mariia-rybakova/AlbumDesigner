@@ -135,8 +135,8 @@ class ProcessStage(Stage):
                 album_designer = AutomaticAlbum(df, layouts_df, layout_id2data,
                                                         message.content['is_wedding'], logger=self.logger)
                 album_result = album_designer.start_processing_album()
-                # Format result in required way with cover image and end spread image with thier layouts
-                #format to json
+                # Combine cover image and end image cover to result
+
                 message.content['album'] = album_result
                 processing_time = datetime.now() - start
                 self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
@@ -145,6 +145,7 @@ class ProcessStage(Stage):
             except Exception as ex:
                 print('Exception while processing messages: {}.'.format(ex))
                 #self.logger.error('Exception while processing messages: {}.'.format(ex))
+                message.content['error'] = ex
 
         return msgs
 

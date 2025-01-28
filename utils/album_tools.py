@@ -1,7 +1,9 @@
 import random
+import ast
 import statistics
 from datetime import datetime
 
+from src.smart_cropping import process_cropping
 
 def get_important_imgs(data_df, top=5):
     selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment','groom and brides dancing together solo', 'bride and groom cutting cake', ]
@@ -82,68 +84,106 @@ def get_images_per_groups(original_groups):
         group2images_data_list[name_group] = num_images
     return group2images_data_list
 
+def calculate_median_time(spread):
+    all_times = []
+    for page in spread[1:3]:  # Left and right pages
+        for photo in page:
+            if hasattr(photo, 'general_time') and photo.general_time is not None:
+                all_times.append(photo.general_time)
 
-def sort_groups_by_photo_time(data_list):
-    result = {}
-    def get_mean_time(sublist):
-        # Extract all general_time values from the photos in the sublist
-        total_spread_time = []
-        for page in sublist[1:3]:
-            time = [photo.general_time for photo in page]
-            total_spread_time.extend(time)
+    if all_times:
+        return statistics.median(all_times)
+    else:
+        return float('inf')  # Handle spreads with no valid times
 
-        if total_spread_time:
-            #logger.info(f"layout id {sublist[0]}, average time, {statistics.mean(total_spread_time)}")
-            return statistics.median(total_spread_time)
-        else:
-            return float('inf')
+def organize_and_sort_groups(data_list,layouts_df,groups_df, is_wedding):  # Add smart_cropping function as argument
+    priority_list = ["bride getting dressed", "getting hair-makeup", "groom getting dress","bride", "groom","bride party", "groom party",
+                     "kiss","portrait","bride and groom", "walking the aisle", "ceremony", "settings",'speech',"first dance",'food', "cake cutting", "dancing"]
 
-    # Iterate over each group in the dictionary
-    for data_dict in data_list:
-        for group_key, group_data in data_dict.items():
-            if group_key not in result:
-                result[group_key] = []
+    organized_groups = {}
 
-            # Ensure group_data is a list and contains elements
-            if isinstance(group_data, list) and len(group_data) > 0:
-                # Sort the group data by get_mean_time and extend the result
-                sorted_group = sorted(group_data[0], key=get_mean_time)
-                result[group_key].extend(sorted_group)
+    priority_dict = {name: i for i, name in enumerate(priority_list)}
 
-    return result
+    if is_wedding:
+        sorted_data_list = sorted(data_list,
+                                  key=lambda group_data: priority_dict.get(list(group_data.keys())[0].split("*")[0].split('_')[1],
+                                                                           float('inf')))  # sort by priority
+    else:
+        sorted_data_list = data_list
 
-def sort_groups(list_of_groups,group2images):
-    group2images
-    for list_of_group in list_of_groups:
-        group_name = list_of_group.keys()[0]
+    for group_data in sorted_data_list:
+        group_name = list(group_data.keys())[0]
+        spreads_and_other_info = group_data[group_name]
+        spreads = spreads_and_other_info[0]
 
+        spreads.sort(key=lambda spread: calculate_median_time(spread))  # Use median time
+        organized_groups[group_name] = {}  # Initialize list to store spreads with cropping info
 
+        for spread_index, spread in enumerate(spreads): #added spread index
+            if spread_index not in organized_groups[group_name]:
+                organized_groups[group_name][spread_index] = {}
 
+            layout_index = spread[0]
+            layout_id = layouts_df.loc[layout_index]['id']
+            cur_layout_info = ast.literal_eval(layouts_df.loc[layout_index]['boxes_info'])
+            left_box_ids = ast.literal_eval(layouts_df.loc[layout_index]['left_box_ids'])
+            right_box_ids = ast.literal_eval(layouts_df.loc[layout_index]['right_box_ids'])
 
-def sort_sub_groups(sub_grouped, group_names):
-    # Define the priority list for secondary sorting
-    priority_list = ["bride getting dressed", "getting hair-makeup", "bride", "groom getting dress", "groom",
-                     "portrait",
-                     "bride and groom", "walking the aisle", "ceremony", "settings", "dancing"]
+            left_page_photos = list(spread[1])
+            right_page_photos = list(spread[2])
 
-    # Create a dictionary to map group names to their priority
-    if priority_list:
-         priority_dict = {name: i for i, name in enumerate(priority_list)}
+            all_box_ids = left_box_ids + right_box_ids
+            all_photos = left_page_photos + right_page_photos
 
-    time_group_dict = {}
-    for group_name in group_names:
-        orig_group_name = group_name.split('*')
-        group_id =orig_group_name[0].split('_')
-        group = sub_grouped.get_group(group_id)
+            orig_group_name = group_name.split('*')
+            if is_wedding:
+                parts = orig_group_name[0].split('_')
+                group_id = (int(parts[0]), '_'.join(parts[1:]))
+            else:
+                group_id = orig_group_name[0]
 
-        # Calculate the median instead of the mean
-        group_time_median = group["general_time"].median()
-        time_group_dict[group_name] = group_time_median
+            c_group = groups_df.get_group(group_id)
 
-    sorted_time_groups = dict(
-        sorted(time_group_dict.items(),
-               key=lambda item: (item[1],
-                                 priority_dict.get(item[0].split('_')[1].split('*')[0], float('inf'))))
-    )
+            spread_with_cropping_info = []  # List to hold spread data with cropping info
+            for i, box in enumerate(cur_layout_info):
+                box_id = box['id']
+                if box_id not in all_box_ids:
+                    print('Some error, cant find box with id: {}'.format(box_id))
+                    continue  # Skip to the next box if there's an error
 
-    return sorted_time_groups
+                element_index = all_box_ids.index(box_id)
+                cur_photo = all_photos[element_index]
+                c_image_id = cur_photo.id
+
+                c_image_info = c_group[c_group['image_id'] == c_image_id]
+
+                x, y, w, h = box['x'], box['y'], box['width'], box['height']
+                box_aspect_ratio = w / h #calculate box aspect ratio
+
+                try:
+                    cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
+                        float(c_image_info['image_as'].iloc[0]),
+                        c_image_info['faces_info'],
+                        c_image_info['background_centroid'].values[0],
+                        float(c_image_info['diameter'].iloc[0]),
+                        box_aspect_ratio
+                    )
+
+                    spread_with_cropping_info.append({
+                        "box_number": i, #add box number
+                        "image_id": c_image_id,
+                        "image_x": cropped_x,
+                        "image_y": cropped_y,
+                        "image_w": cropped_w,
+                        "image_h": cropped_h,
+                    })
+
+                except Exception as e:  # Catch and handle exceptions during cropping
+                    print(f"Error during cropping for image {c_image_id}: {e}")
+                    # You might want to add default values for cropped dimensions or handle the error differently
+
+            organized_groups[group_name][spread_index]['id'] = layout_id
+            organized_groups[group_name][spread_index]['images'] =spread_with_cropping_info  #append the list of dicts
+
+    return organized_groups
+
