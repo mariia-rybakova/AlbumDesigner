@@ -96,7 +96,7 @@ def calculate_median_time(spread):
     else:
         return float('inf')  # Handle spreads with no valid times
 
-def organize_and_sort_groups(data_list,layouts_df,groups_df, is_wedding):  # Add smart_cropping function as argument
+def organize_and_sort_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add smart_cropping function as argument
     priority_list = ["bride getting dressed", "getting hair-makeup", "groom getting dress","bride", "groom","bride party", "groom party",
                      "kiss","portrait","bride and groom", "walking the aisle", "ceremony", "settings",'speech',"first dance",'food', "cake cutting", "dancing"]
 

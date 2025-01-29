@@ -149,7 +149,7 @@ class ProcessStage(Stage):
                     continue
 
                 try:
-                    cover_end_imgs_layouts = get_cover_end_layout(layouts_df)
+                    cover_end_imgs_layouts = get_cover_end_layout(layouts_df,logger)
                     if not cover_end_imgs_layouts:
                         logger.error(f"No cover-end layouts found for message {message}")
                         continue

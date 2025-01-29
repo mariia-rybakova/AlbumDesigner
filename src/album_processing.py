@@ -26,11 +26,9 @@ class AutomaticAlbum:
 
     def process_group(self,args):
         group_name, group_images_df, spread_params, layouts_df, layout_id2data = args
-        print("group name", group_name, "number of imgs", len(group_images_df))
-        print("1")
+        self.logger(f"Processing group name {group_name}")
         try:
             cur_group_photos = get_photos_from_db(group_images_df)
-            print("2")
             cur_group_photos_list = copy.deepcopy(list())
             if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
                     # len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
@@ -38,54 +36,46 @@ class AutomaticAlbum:
                         cur_group_photos) > 24):
                 split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
                 number_of_splits = math.ceil(len(cur_group_photos) / split_size)
-                print('Using splitting to {} parts'.format(number_of_splits))
+                self.logger.info('Using splitting to {} parts'.format(number_of_splits))
                 for split_num in range(number_of_splits):
                     cur_group_photos_list.append(cur_group_photos[
                                                  split_num * split_size: min((split_num + 1) * split_size,
                                                                              len(cur_group_photos))])
             else:
                 cur_group_photos_list.append(cur_group_photos)
-            print("3")
+
             local_result = {}
             for idx, group_photos in enumerate(cur_group_photos_list):
                 filter_start = time.time()
-
-                # print('Photos: {}'.format(
-                #     [[item.id, item.ar, item.color, item.rank, item.photo_class, item.cluster_label, item.general_time]
-                #      for item in group_photos]))
                 filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,None)
                 if filtered_spreads is None:
                     continue
-                print('Filtered spreads size: {}'.format(len(filtered_spreads)))
-                print('Filtered spreads time: {}'.format(time.time() - filter_start))
+                self.logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
+                self.logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
                 ranking_start = time.time()
                 filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
                 filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-                print('Ranking time: {}'.format(time.time() - ranking_start))
+                self.logger.info('Ranking time: {}'.format(time.time() - ranking_start))
 
                 best_spread = filtered_spreads[0]
                 cur_spreads = best_spread[0]
                 for spread_id, spread in enumerate(cur_spreads):
                     best_spread[0][spread_id][1] = set([group_photos[photo_id] for photo_id in spread[1]])
                     best_spread[0][spread_id][2] = set([group_photos[photo_id] for photo_id in spread[2]])
-                print("4")
+
                 local_result[str(group_name[0]) +'_' + group_name[1] + '*' + str(idx)] = best_spread
 
                 del cur_group_photos, filtered_spreads
 
             del cur_group_photos_list
             collect()
-            print("############################################################")
-            # Critical section: update the shared result dictionary
 
-            print("5")
             return local_result
 
         except Exception as e:
-            print(f"Error with group_name {group_name}: {e}")
+            self.logger.error(f"Error with group_name {group_name}: {e}")
             print(traceback.format_exc())
-
             return None
 
     def process_all_groups_parallel(self,args):
@@ -114,7 +104,7 @@ class AutomaticAlbum:
         if self.is_wedding:
             self.updated_groups, group2images,self.look_up_table = process_illegal_groups(group2images, self.original_groups,look_up_table,self.is_wedding, self.logger)
         illegal_time = (time.time() - start_time) / 60
-        print(f'Illegal groups processing time: {illegal_time:.2f} minutes')
+        self.logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 
         args = [
             (group_name,
@@ -140,7 +130,7 @@ class AutomaticAlbum:
         result_list = self.groups_processing(group2images,look_up_table)
 
         #sorintg & formating & cropping
-        result = organize_and_sort_groups(result_list,self.layouts_df,self.updated_groups, self.is_wedding)
+        result = organize_and_sort_groups(result_list,self.layouts_df,self.updated_groups, self.is_wedding,self.logger)
 
         return result
 
