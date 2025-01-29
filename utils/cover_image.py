@@ -2,13 +2,21 @@ import random
 from utils.cover_processing import get_cover_img,get_important_imgs
 
 
-def get_cover_layout(layout_df):
+def get_cover_end_layout(layout_df):
+    # Get all layout keys where "number of boxes" == 1
     one_img_layouts = [key for key, layout in layout_df.iterrows() if layout["number of boxes"] == 1]
-    chosen_layout = random.choice(one_img_layouts)
-    return chosen_layout
+
+    # Ensure there are at least 2 valid layouts
+    if len(one_img_layouts) < 2:
+        raise ValueError("Not enough layouts with one image to select two distinct ones.")
+
+    # Select two distinct layouts
+    chosen_layouts = random.sample(one_img_layouts, 2)
+
+    return chosen_layouts
 
 
-def process_wedding_cover_image(df,logger):
+def process_wedding_cover_end_image(df,logger):
     bride_groom_highest_images = get_important_imgs(df, top=50)
     # if we didn't find the highest ranking images then we won't be able to get cover image
     if len(bride_groom_highest_images) > 0:

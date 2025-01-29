@@ -21,7 +21,7 @@ from utils.request_processing import read_messages, organize_one_message_results
 from utils.clustering_time import cluster_by_time
 
 from utils.load_layouts import load_layouts
-from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_image, get_cover_layout
+from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_end_image, get_cover_end_layout
 from utils.time_proessing import process_image_time
 from utils.load_layouts import get_layouts_data
 from src.album_processing import AutomaticAlbum
@@ -117,11 +117,11 @@ class ProcessStage(Stage):
 
             # Check if it's a wedding gallery or not and call appropriate method
             if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
-                df, cover_img_id, cover_img_df = process_wedding_cover_image(processed_df, self.logger)
+                df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df, self.logger)
             else:
-                df, cover_img_id, cover_img_df = process_non_wedding_cover_image(processed_df, self.logger)
+                df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(processed_df, self.logger)
 
-            cover_img_layout = get_cover_layout(layouts_df)
+            cover_end_imgs_layouts = get_cover_end_layout(layouts_df)
 
             sorted_by_time_df, image_id2general_time = process_image_time(df)
             df_time = cluster_by_time(sorted_by_time_df)
