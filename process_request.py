@@ -91,61 +91,106 @@ class ProcessStage(Stage):
         self.logger = logger
 
     def process_message(self, msgs: Union[Message, List[Message]]):
-        # Check if the message is a single message or a list of messages
-        # if isinstance(msgs, Message):
-        #     images = [(msgs.image, -1)] if msgs.image is not None else []
-        # elif isinstance(msgs, list):
-        #     images = [(one_msg.image, idx) for idx, one_msg in enumerate(msgs) if one_msg.image is not None]
-        # else:
-        #     self.logger.error('Unrecognized type of messages: {}'.format(msgs))
-        #     return msgs
-
         for message in msgs:
-            # Load layout file (or data) as needed for each gallery
-            layouts_df = load_layouts(message.content['layoutsCSV'])
-            # generate the dataframe
-            layout_id2data = get_layouts_data(layouts_df)
-
-            df = message.content['gallery_photos_info'] if isinstance(message, Message) else [msg.content["photoId"] for
-                                                                                              msg in msgs]
-            # Sorting the DataFrame by "image_order" column
-            sorted_df = df.sort_values(by="image_order", ascending=False)
-
-            processed_content_df = parallel_content_processing(sorted_df)
-            processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']], how='left', on='image_id')
-
-
-            # Check if it's a wedding gallery or not and call appropriate method
-            if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
-                df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df, self.logger)
-            else:
-                df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(processed_df, self.logger)
-
-            cover_end_imgs_layouts = get_cover_end_layout(layouts_df)
-
-            sorted_by_time_df, image_id2general_time = process_image_time(df)
-            df_time = cluster_by_time(sorted_by_time_df)
-
-            # to ignore the read only memory
-            df = pd.DataFrame(df_time.to_dict())
-
-            # Handle the processing time logging
             try:
-                start = datetime.now()
-                album_designer = AutomaticAlbum(df, layouts_df, layout_id2data,
-                                                        message.content['is_wedding'], logger=self.logger)
-                album_result = album_designer.start_processing_album()
-                # Combine cover image and end image cover to result
+                try:
+                   # Load layout file (or data) as needed for each gallery
+                   layouts_df = load_layouts(message.content['layoutsCSV'])
+                   if layouts_df.empty():
+                       logger.error(f"Layouts DataFrame is empty for message {message}")
+                       continue
 
-                message.content['album'] = album_result
-                processing_time = datetime.now() - start
-                self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
-                                                                                             [msg.content.get('photoId')
-                                                                                              for msg in msgs]))
-            except Exception as ex:
-                print('Exception while processing messages: {}.'.format(ex))
-                #self.logger.error('Exception while processing messages: {}.'.format(ex))
-                message.content['error'] = ex
+                except Exception as e:
+                    logger.error(f"Error loading layouts: {e}")
+                    continue
+
+                try:
+                    layout_id2data = get_layouts_data(layouts_df)
+                except Exception as e:
+                    logger.error(f"Error generating layout data: {e}")
+                    continue
+
+                    # Extract gallery photo info safely
+                try:
+                    if isinstance(message, Message):
+                        df = message.content.get('gallery_photos_info', pd.DataFrame())
+                    else:
+                        df = pd.DataFrame([msg.content.get("photoId") for msg in msgs], columns=['image_id'])
+
+                    if df.empty:
+                        logger.error(f"Gallery photos info DataFrame is empty for message {message}")
+                        continue
+                except Exception as e:
+                    logger.error(f"Error extracting gallery photo info: {e}")
+                    continue
+
+                if "image_order" not in df.columns:
+                    logger.error(f"Missing 'image_order' column in DataFrame for message {message}")
+                    continue
+
+                # Sorting the DataFrame by "image_order" column
+                sorted_df = df.sort_values(by="image_order", ascending=False)
+
+                try:
+                    processed_content_df = parallel_content_processing(sorted_df)
+                    processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']], how='left', on='image_id')
+                except Exception as e:
+                    logger.error(f"Error in parallel content processing: {e}")
+                    continue
+
+                try:
+                    # Check if it's a wedding gallery or not and call appropriate method
+                    if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
+                        df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df, self.logger)
+                    else:
+                        df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(processed_df, self.logger)
+                except Exception as e:
+                    logger.error(f"Error processing cover images: {e}")
+                    continue
+
+                try:
+                    cover_end_imgs_layouts = get_cover_end_layout(layouts_df)
+                    if not cover_end_imgs_layouts:
+                        logger.error(f"No cover-end layouts found for message {message}")
+                        continue
+                except Exception as e:
+                    logger.error(f"Error retrieving cover-end layouts: {e}")
+                    continue
+
+                # Process image time safely
+                try:
+                    sorted_by_time_df, image_id2general_time = process_image_time(df)
+                    df_time = cluster_by_time(sorted_by_time_df)
+                except Exception as e:
+                    logger.error(f"Error processing image time: {e}")
+                    continue
+
+                # to ignore the read only memory
+                df = pd.DataFrame(df_time.to_dict())
+
+                # Handle the processing time logging
+                try:
+                    start = datetime.now()
+                    album_designer = AutomaticAlbum(df, layouts_df, layout_id2data,
+                                                            message.content['is_wedding'], logger=self.logger)
+                    album_result = album_designer.start_processing_album()
+                    # Combine cover image and end image cover to result
+
+                    message.content['album'] = album_result
+                    processing_time = datetime.now() - start
+                    self.logger.debug('Average processing time: {}. Processed images: {}'.format(processing_time,
+                                                                                                 [msg.content.get('photoId')
+                                                                                                  for msg in msgs]))
+                except Exception as ex:
+                    print('Exception while processing messages: {}.'.format(ex))
+                    #self.logger.error('Exception while processing messages: {}.'.format(ex))
+                    message.content['error'] = ex
+                    continue
+
+            except Exception as e:
+                logger.error(f"Unexpected error in message processing: {e}")
+                message.content['error'] = f"Unexpected error in message processing: {e}"
+                continue
 
         return msgs
 

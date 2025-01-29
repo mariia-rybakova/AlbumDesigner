@@ -28,6 +28,7 @@ def read_messages(messages,queries_file, logger):
 
             if not project_url or not images:
                 logger.warning(f"Incomplete message content: {_msg.content}")
+                _msg.error = 'Incomplete message content Project URL: {}. Skipping.'.format(json_content)
                 continue
 
             df = pd.DataFrame(images, columns=['image_id'])
@@ -41,6 +42,8 @@ def read_messages(messages,queries_file, logger):
                 enriched_messages.append(_msg)
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
+                _msg.error = 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
+                continue
 
         except Exception as e:
             logger.error(f"Error reading messages at reading stage: {e}")
