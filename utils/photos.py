@@ -31,27 +31,21 @@ def get_int_photo_id(photo_id):
     return int(photo_id)
 
 
-def get_photos_from_db(data_db):
+def get_photos_from_db(data_db, is_wedding):
     photos = list()
     for index, row in data_db.iterrows():
         image_id = row['image_id']
-        class_contex = row['cluster_context']
+        class_contex = row['cluster_context'] if is_wedding else None
         cluster_label = row['cluster_label']
         color = False if row['image_color'] == 0 else True
         aspect_ratio = row['image_as']
         rank_score = row['image_order']
 
-        # photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
-        #                     photo_class=class_contex, cluster_label=cluster_label,
-        #                     general_time=row['edited_general_time']))
 
         photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
                             photo_class=class_contex, cluster_label=cluster_label,
                             general_time=row['general_time']))
 
-        # photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
-        #                     photo_class=class_contex, cluster_label=cluster_label,
-        #                     general_time=row['image_orderInScene']))
 
     photos = sorted(photos, key=lambda photo: photo.id)
 

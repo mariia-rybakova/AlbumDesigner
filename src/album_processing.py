@@ -6,6 +6,8 @@ import traceback
 import threading
 from gc import collect
 
+from networkx import is_weighted
+
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
 from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_groups,sort_groups_by_name
@@ -26,9 +28,9 @@ class AutomaticAlbum:
 
     def process_group(self,args):
         group_name, group_images_df, spread_params, layouts_df, layout_id2data = args
-        self.logger.info(f"Processing group name {group_name}")
+        self.logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
         try:
-            cur_group_photos = get_photos_from_db(group_images_df)
+            cur_group_photos = get_photos_from_db(group_images_df,self.is_wedding)
             cur_group_photos_list = copy.deepcopy(list())
             if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
                     # len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
@@ -64,7 +66,11 @@ class AutomaticAlbum:
                     best_spread[0][spread_id][1] = set([group_photos[photo_id] for photo_id in spread[1]])
                     best_spread[0][spread_id][2] = set([group_photos[photo_id] for photo_id in spread[2]])
 
-                local_result[str(group_name[0]) +'_' + group_name[1] + '*' + str(idx)] = best_spread
+                if self.is_wedding:
+                    local_result[str(group_name[0]) + '_' + group_name[1] + '*' + str(idx)] = best_spread
+                else:
+                    local_result[str(group_name[0]) + '*' + str(idx)] = best_spread
+
 
                 del cur_group_photos, filtered_spreads
 
@@ -103,17 +109,18 @@ class AutomaticAlbum:
         start_time = time.time()
         if self.is_wedding:
             self.updated_groups, group2images,self.look_up_table = process_illegal_groups(group2images, self.original_groups,look_up_table,self.is_wedding, self.logger)
-
-        if self.updated_groups is None:
-            return 'Error: couldn\'t process illegal groups'
-
-        illegal_time = (time.time() - start_time) / 60
-        self.logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
+            if self.updated_groups is None:
+                 return 'Error: couldn\'t process illegal groups'
+            illegal_time = (time.time() - start_time) / 60
+            self.logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
+        else:
+            self.look_up_table = look_up_table
+            self.updated_groups = self.original_groups
 
         args = [
             (group_name,
                 copy.deepcopy(self.updated_groups.get_group(group_name)),
-                copy.deepcopy(list(self.look_up_table.get(group_name[1].split('_')[0], (10, 1.5)))),
+                copy.deepcopy(list(self.look_up_table.get(group_name[1].split('_')[0], (10, 1.5)))) if self.is_wedding else copy.deepcopy(list(self.look_up_table.get(group_name[0].split('_')[0], (1, 2)))),
                 copy.deepcopy(self.layouts_df),
                 copy.deepcopy(self.layout_id2data))
          for group_name in group2images.keys()
@@ -147,9 +154,11 @@ class AutomaticAlbum:
             return result_list
 
         #sorintg & formating & cropping
-        sorted_result_list = sort_groups_by_name(result_list,self.is_wedding)
-        result = organize_groups(sorted_result_list,self.layouts_df,self.updated_groups, self.is_wedding,self.logger)
-
+        if self.is_wedding:
+            sorted_result_list = sort_groups_by_name(result_list,self.is_wedding)
+            result = organize_groups(sorted_result_list,self.layouts_df,self.updated_groups, self.is_wedding,self.logger)
+        else:
+            result = "^_^"
         return result
 
 

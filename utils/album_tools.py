@@ -103,7 +103,7 @@ def get_none_wedding_groups(df, logger=None):
         return "Error: Input must be a Pandas DataFrame."
 
     # Check if required column exists
-    required_column = 'cluster_people'
+    required_column = 'people_cluster'
 
     if required_column not in df.columns:
         logger.error(f"Missing required column: {required_column}")
@@ -115,7 +115,7 @@ def get_none_wedding_groups(df, logger=None):
         return "Error: DataFrame is empty."
 
     try:
-        return df.groupby(['cluster_people'])
+        return df.groupby(['people_cluster'])
     except Exception as e:
         logger.error(f"Unexpected error during grouping: {e}")
         return f"Error: Unexpected error during grouping: {str(e)}"

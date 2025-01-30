@@ -128,30 +128,22 @@ class ProcessStage(Stage):
                 sorted_df = df.sort_values(by="image_order", ascending=False)
 
                 try:
-                    processed_content_df = parallel_content_processing(sorted_df)
-                    processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']], how='left', on='image_id')
+                    if message.content.get('is_wedding', True):
+                        processed_content_df = parallel_content_processing(sorted_df)
+                        processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']], how='left', on='image_id')
+                        df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df,
+                                                                                                      self.logger)
+                    else:
+                        df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(sorted_df,
+                                                                                                      self.logger)
                 except Exception as e:
                     logger.error(f"Error in parallel content processing: {e}")
                     continue
 
-                try:
-                    # Check if it's a wedding gallery or not and call appropriate method
-                    if message.content.get('is_wedding', False):  # Assuming there’s a key 'is_wedding'
-                        df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df, self.logger)
-                    else:
-                        df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(processed_df, self.logger)
-                except Exception as e:
-                    logger.error(f"Error processing cover images: {e}")
-                    continue
-
-                try:
-                    cover_end_imgs_layouts = get_cover_end_layout(layouts_df,logger)
-                    if not cover_end_imgs_layouts:
+                cover_end_imgs_layouts = get_cover_end_layout(layouts_df,logger)
+                if not cover_end_imgs_layouts:
                         logger.error(f"No cover-end layouts found for message {message}")
                         continue
-                except Exception as e:
-                    logger.error(f"Error retrieving cover-end layouts: {e}")
-                    continue
 
                 # Process image time safely
                 try:
@@ -364,13 +356,25 @@ def main():
 if __name__ == '__main__':
     # main()
     import logging
-
+    # Create a logger instance
     logger = logging.getLogger('ReadStageTest')
+    logger.setLevel(logging.DEBUG)  # Set logging level (DEBUG, INFO, WARNING, ERROR)
+
+    # Create a console handler and set level to debug
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)  # This ensures all log messages are shown
+
+    # Create a formatter for log messages
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+
+    # Add the handler to the logger
+    logger.addHandler(console_handler)
 
     read_stage = ReadStage(logger=logger)
 
     # Sample message for testing
-    test_message = Message(content={
+    wedding_test_message = Message(content={
         'photosIds': [
             9871358316,
             9871358323,
@@ -504,8 +508,17 @@ if __name__ == '__main__':
 
     })
 
-    # Call the read_messages method
-    result = read_stage.read_messages([test_message])
+    non_wedding_test_message = Message(content={
+        'photosIds': [10166866900,10166866901,10166866902,10166866903,10166866904,10166866905,10166866906,10166866907,10166866908,10166866909,10166866910,10166866911,10166866912,10166866913,10166866914,10166866915,10166866916,10166866917,10166866918,10166866919,10166866920],
+        'projectURL': 'ptstorage_16://pictures/42/681/42681010/0y6hho9zt8y7dw5zmb',
+        'storeId': 000,
+        'layoutsCSV': r'C:\Users\karmel\Desktop\AlbumDesigner\files\layouts.csv',
+        'sendTime': 'now'
 
-    processing = ProcessStage()
+    })
+
+    # Call the read_messages method
+    result = read_stage.read_messages([non_wedding_test_message])
+
+    processing = ProcessStage(logger=logger)
     processing.process_message(result)
