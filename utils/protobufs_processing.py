@@ -88,4 +88,6 @@ def get_info_protobufs(project_base_url,df,queries_file, logger):
     gallery_info_df = generate_people_clustering(gallery_info_df)
     is_wedding = check_gallery_type(gallery_info_df)
 
+    logger.info("Reading from protopuf files has been finished successfully!")
+
     return gallery_info_df,is_wedding

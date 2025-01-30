@@ -96,10 +96,6 @@ class ProcessStage(Stage):
                 try:
                    # Load layout file (or data) as needed for each gallery
                    layouts_df = load_layouts(message.content['layoutsCSV'])
-                   if layouts_df.empty():
-                       logger.error(f"Layouts DataFrame is empty for message {message}")
-                       continue
-
                 except Exception as e:
                     logger.error(f"Error loading layouts: {e}")
                     continue
