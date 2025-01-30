@@ -150,25 +150,70 @@ def update_needed(groups,is_wedding,lookup_table):
     else:
         return False
 
+def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None):
+    # Validate input types
+    if not isinstance(group2images, dict):
+        logger.error("Error: group2images must be a dictionary.")
+        return None, None, None
 
+    if not isinstance(groups, pd.core.groupby.generic.DataFrameGroupBy):
+        logger.error("Error: groups must be a Pandas GroupBy object.")
+        return None, None, None
 
-def process_illegal_groups(group2images,groups,look_up_table,is_wedding, logger=None):
+    if not isinstance(look_up_table, dict):
+        logger.error("Error: look_up_table must be a dictionary.")
+        return None, None, None
+
     count = 2
-    while update_needed(group2images,is_wedding, look_up_table):
-        for key_to_change,score in groups_to_change.items():
-            content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
-            illegal_group = groups.get_group(key_to_change)
-            imgs_number = group2images[key_to_change]
-            score = get_merge_split_score(key_to_change,look_up_table,imgs_number,is_wedding)
-            groups = handle_illegal(key_to_change,score,content_cluster_id,illegal_group,imgs_number,groups,count)
-            if groups is not None:
-               group2images = get_images_per_groups(groups)
-            else:
-                continue
-        print("HERE")
-        count += 1
-    print(f"Final number of groups for the album {len(groups)}")
-    return groups, group2images, look_up_table
+
+    try:
+        while update_needed(group2images, is_wedding, look_up_table):
+            if 'groups_to_change' not in globals():
+                logger.error("Error: groups_to_change is not defined.")
+                return None, None, None
+
+            for key_to_change, score in groups_to_change.items():
+                try:
+                    # Extract content_cluster_id
+                    content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
+
+                    # Get the illegal group, handling missing keys
+                    if key_to_change not in groups.groups:
+                        logger.warning(f"Warning: Key {key_to_change} not found in groups.")
+                        continue
+
+                    illegal_group = groups.get_group(key_to_change)
+                    imgs_number = group2images.get(key_to_change, 0)
+
+                    # Compute merge-split score
+                    score = get_merge_split_score(key_to_change, look_up_table, imgs_number, is_wedding)
+
+                    # Handle illegal groups
+                    new_groups = handle_illegal(key_to_change, score, content_cluster_id, illegal_group, imgs_number, groups, count)
+
+                    if new_groups is not None:
+                        group2images = get_images_per_groups(new_groups, logger)  # Ensure logger is passed
+                        if isinstance(group2images, str):  # Check for error messages
+                            logger.error(group2images)
+                            return None, None, None
+                        groups = new_groups
+                    else:
+                        logger.warning(f"Warning: handle_illegal returned None for key {key_to_change}.")
+                        continue
+
+                except Exception as e:
+                    logger.error(f"Error processing key {key_to_change}: {str(e)}")
+                    continue
+
+            logger.info("Iteration completed")
+            count += 1
+
+        logger.info(f"Final number of groups for the album: {len(groups)}")
+        return groups, group2images, look_up_table
+
+    except Exception as e:
+        logger.error(f"Unexpected error in process_illegal_groups: {str(e)}")
+        return None, None, None
 
 
 # if __name__ == "__main__":

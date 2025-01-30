@@ -8,7 +8,7 @@ from gc import collect
 
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
-from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_and_sort_groups
+from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_groups,sort_groups_by_name
 
 
 
@@ -26,7 +26,7 @@ class AutomaticAlbum:
 
     def process_group(self,args):
         group_name, group_images_df, spread_params, layouts_df, layout_id2data = args
-        self.logger(f"Processing group name {group_name}")
+        self.logger.info(f"Processing group name {group_name}")
         try:
             cur_group_photos = get_photos_from_db(group_images_df)
             cur_group_photos_list = copy.deepcopy(list())
@@ -103,6 +103,10 @@ class AutomaticAlbum:
         start_time = time.time()
         if self.is_wedding:
             self.updated_groups, group2images,self.look_up_table = process_illegal_groups(group2images, self.original_groups,look_up_table,self.is_wedding, self.logger)
+
+        if self.updated_groups is None:
+            return 'Error: couldn\'t process illegal groups'
+
         illegal_time = (time.time() - start_time) / 60
         self.logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
 
@@ -120,17 +124,31 @@ class AutomaticAlbum:
 
     def start_processing_album(self):
         if self.is_wedding:
-            self.original_groups = get_wedding_groups(self.df)
+            self.original_groups = get_wedding_groups(self.df,self.logger)
         else:
-            self.original_groups = get_none_wedding_groups(self.df)
+            self.original_groups = get_none_wedding_groups(self.df,self.logger)
 
-        group2images = get_images_per_groups(self.original_groups)
-        look_up_table = get_lookup_table(group2images, self.is_wedding)
+        if isinstance(self.original_groups, str):  # Check if it's an error message, report it
+            return self.original_groups
+
+        group2images = get_images_per_groups(self.original_groups,self.logger)
+
+        if isinstance(group2images, str):  # Check if it's an error message, report it
+            return group2images
+
+        look_up_table = get_lookup_table(group2images, self.is_wedding,self.logger)
+
+        if isinstance(look_up_table, str):  # Check if it's an error message, report it
+            return look_up_table
 
         result_list = self.groups_processing(group2images,look_up_table)
 
+        if isinstance(result_list, str):  # Check if it's an error message, report it
+            return result_list
+
         #sorintg & formating & cropping
-        result = organize_and_sort_groups(result_list,self.layouts_df,self.updated_groups, self.is_wedding,self.logger)
+        sorted_result_list = sort_groups_by_name(result_list,self.is_wedding)
+        result = organize_groups(sorted_result_list,self.layouts_df,self.updated_groups, self.is_wedding,self.logger)
 
         return result
 

@@ -1,4 +1,5 @@
 import random
+import pandas as pd
 import ast
 import statistics
 from datetime import datetime
@@ -69,20 +70,79 @@ def get_general_times(data_db):
     return image_id2general_time
 
 
-def  get_wedding_groups(df):
-    return df.groupby(['time_cluster', 'cluster_context'])
+def get_wedding_groups(df,logger):
+    # Ensure df is a DataFrame
+    if not isinstance(df, pd.DataFrame):
+        return "Error: Input must be a Pandas DataFrame."
+
+    # Required columns
+    required_columns = {'time_cluster', 'cluster_context'}
+
+    # Check if required columns exist
+    if not required_columns.issubset(df.columns):
+        missing = required_columns - set(df.columns)
+        logger.error(f"Missing required columns: {missing}")
+        return f"Error: Missing required columns: {missing}"
+
+    # Handle empty DataFrame case
+    if df.empty:
+        logger.error('empty dataframe cant get the groups!')
+        return "Error: DataFrame is empty."
+
+    try:
+        return df.groupby(['time_cluster', 'cluster_context'])
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error during grouping: {str(e)}"
 
 
-def get_none_wedding_groups(df):
-    return df.groupby(['cluster_people'])
+def get_none_wedding_groups(df, logger=None):
+    # Ensure df is a DataFrame
+    if not isinstance(df, pd.DataFrame):
+        logger.error("Input must be a Pandas DataFrame.")
+        return "Error: Input must be a Pandas DataFrame."
+
+    # Check if required column exists
+    required_column = 'cluster_people'
+
+    if required_column not in df.columns:
+        logger.error(f"Missing required column: {required_column}")
+        return f"Error: Missing required column: {required_column}"
+
+    # Handle empty DataFrame case
+    if df.empty:
+        logger.error('empty dataframe cant get the groups!')
+        return "Error: DataFrame is empty."
+
+    try:
+        return df.groupby(['cluster_people'])
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error during grouping: {str(e)}"
 
 
-def get_images_per_groups(original_groups):
+def get_images_per_groups(original_groups, logger=None):
+    # Check if original_groups is a Pandas GroupBy object
+    if not isinstance(original_groups, pd.core.groupby.generic.DataFrameGroupBy):
+        logger.error("Input must be a Pandas DataFrame.")
+        return "Error: Input must be a Pandas GroupBy object."
+
+    # Handle empty groups
+    if not original_groups.groups:
+        logger.error("Input must have at least one group.")
+        return "Error: No groups found in the input."
+
     group2images_data_list = dict()
-    for name_group, group_df in original_groups:
-        num_images = len(group_df)
-        group2images_data_list[name_group] = num_images
-    return group2images_data_list
+
+    try:
+        for name_group, group_df in original_groups:
+            num_images = len(group_df)
+            group2images_data_list[name_group] = num_images
+        return group2images_data_list
+
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error while processing groups: {str(e)}"
 
 def calculate_median_time(spread):
     all_times = []
@@ -96,22 +156,28 @@ def calculate_median_time(spread):
     else:
         return float('inf')  # Handle spreads with no valid times
 
-def organize_and_sort_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add smart_cropping function as argument
-    priority_list = ["bride getting dressed", "getting hair-makeup", "groom getting dress","bride", "groom","bride party", "groom party",
-                     "kiss","portrait","bride and groom", "walking the aisle", "ceremony", "settings",'speech',"first dance",'food', "cake cutting", "dancing"]
 
-    organized_groups = {}
+def sort_groups_by_name(data_list,is_wedding):
+    priority_list = ["bride getting dressed", "getting hair-makeup", "groom getting dress", "bride", "groom",
+                     "bride party", "groom party",
+                     "kiss", "portrait", "bride and groom", "walking the aisle", "ceremony", "settings", 'speech',
+                     "first dance", 'food', "cake cutting", "dancing"]
 
     priority_dict = {name: i for i, name in enumerate(priority_list)}
 
     if is_wedding:
         sorted_data_list = sorted(data_list,
-                                  key=lambda group_data: priority_dict.get(list(group_data.keys())[0].split("*")[0].split('_')[1],
-                                                                           float('inf')))  # sort by priority
+                                  key=lambda group_data: priority_dict.get(
+                                      list(group_data.keys())[0].split("*")[0].split('_')[1],
+                                      float('inf')))  # sort by priority
     else:
         sorted_data_list = data_list
 
-    for group_data in sorted_data_list:
+    return sorted_data_list
+
+def organize_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add smart_cropping function as argument
+    organized_groups = {}
+    for group_data in data_list:
         group_name = list(group_data.keys())[0]
         spreads_and_other_info = group_data[group_name]
         spreads = spreads_and_other_info[0]
@@ -148,7 +214,7 @@ def organize_and_sort_groups(data_list,layouts_df,groups_df, is_wedding,logger):
             for i, box in enumerate(cur_layout_info):
                 box_id = box['id']
                 if box_id not in all_box_ids:
-                    print('Some error, cant find box with id: {}'.format(box_id))
+                    logger.error('Some error, cant find box with id: {}'.format(box_id))
                     continue  # Skip to the next box if there's an error
 
                 element_index = all_box_ids.index(box_id)
@@ -180,7 +246,6 @@ def organize_and_sort_groups(data_list,layouts_df,groups_df, is_wedding,logger):
 
                 except Exception as e:  # Catch and handle exceptions during cropping
                     print(f"Error during cropping for image {c_image_id}: {e}")
-                    # You might want to add default values for cropped dimensions or handle the error differently
 
             organized_groups[group_name][spread_index]['id'] = layout_id
             organized_groups[group_name][spread_index]['images'] =spread_with_cropping_info  #append the list of dicts

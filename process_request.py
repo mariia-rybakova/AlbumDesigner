@@ -174,7 +174,10 @@ class ProcessStage(Stage):
                     album_designer = AutomaticAlbum(df, layouts_df, layout_id2data,
                                                             message.content['is_wedding'], logger=self.logger)
                     album_result = album_designer.start_processing_album()
-                    # Combine cover image and end image cover to result
+
+                    if isinstance(album_result, str):  # Check if it's an error message, report it
+                        message.content['error'] = album_result
+                        continue
 
                     message.content['album'] = album_result
                     processing_time = datetime.now() - start
