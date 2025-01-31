@@ -24,7 +24,7 @@ from utils.load_layouts import load_layouts
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_end_image, get_cover_end_layout
 from utils.time_proessing import process_image_time
 from utils.load_layouts import get_layouts_data
-from src.album_processing import AutomaticAlbum
+from src.album_processing import start_processing_album
 from utils.parallel_methods import parallel_content_processing
 # if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
 #     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -138,9 +138,8 @@ class ProcessStage(Stage):
                 # Handle the processing time logging
                 try:
                     start = datetime.now()
-                    album_designer = AutomaticAlbum(df, message.content['layouts_df'], message.content['layout_id2data'],
+                    album_result = start_processing_album(df, message.content['layouts_df'], message.content['layout_id2data'],
                                                             message.content['is_wedding'], logger=self.logger)
-                    album_result = album_designer.start_processing_album()
 
                     if isinstance(album_result, str):  # Check if it's an error message, report it
                         message.content['error'] = album_result
