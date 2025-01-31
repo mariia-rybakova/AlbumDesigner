@@ -142,7 +142,7 @@ def start_processing_album(df, layouts_df, layout_id2data, is_wedding, logger):
 
         #sorintg & formating & cropping
         if is_wedding:
-            sorted_result_list = sort_groups_by_name(result_list,is_wedding)
+            sorted_result_list = sort_groups_by_name(result_list)
             result = organize_groups(sorted_result_list,layouts_df,updated_groups, is_wedding,logger)
         else:
             result = "^_^"

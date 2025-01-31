@@ -157,7 +157,7 @@ def calculate_median_time(spread):
         return float('inf')  # Handle spreads with no valid times
 
 
-def sort_groups_by_name(data_list,is_wedding):
+def sort_groups_by_name(data_list):
     priority_list = ["bride getting dressed", "getting hair-makeup", "groom getting dress", "bride", "groom",
                      "bride party", "groom party",
                      "kiss", "portrait", "bride and groom", "walking the aisle", "ceremony", "settings", 'speech',
@@ -165,13 +165,10 @@ def sort_groups_by_name(data_list,is_wedding):
 
     priority_dict = {name: i for i, name in enumerate(priority_list)}
 
-    if is_wedding:
-        sorted_data_list = sorted(data_list,
-                                  key=lambda group_data: priority_dict.get(
-                                      list(group_data.keys())[0].split("*")[0].split('_')[1],
-                                      float('inf')))  # sort by priority
-    else:
-        sorted_data_list = data_list
+    sorted_data_list = sorted(data_list,
+                              key=lambda group_data: priority_dict.get(
+                                  list(group_data.keys())[0].split("*")[0].split('_')[1],
+                                  float('inf')))  # sort by priority
 
     return sorted_data_list
 

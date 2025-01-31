@@ -37,7 +37,7 @@ def read_messages(messages,queries_file, logger):
             # check if its wedding here! and added to the message
             gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df,
                                                              queries_file=queries_file, logger=logger)
-            is_wedding = False
+            is_wedding = True
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding

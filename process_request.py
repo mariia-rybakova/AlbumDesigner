@@ -495,7 +495,7 @@ if __name__ == '__main__':
     })
 
     # Call the read_messages method
-    result = read_stage.read_messages([non_wedding_test_message])
+    result = read_stage.read_messages([wedding_test_message])
 
     processing = ProcessStage(logger=logger)
     processing.process_message(result)
