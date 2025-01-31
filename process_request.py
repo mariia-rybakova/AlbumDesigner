@@ -68,8 +68,7 @@ class ReadStage(Stage):
             self.logger.info("Abort requested")
             return []
 
-        # messages = msgs if isinstance(msgs, list) else [msgs]
-        messages = msgs
+        messages = msgs if isinstance(msgs, list) else [msgs]
         start = datetime.now()
         #Read messages using a helper function
         try:
@@ -91,37 +90,20 @@ class ProcessStage(Stage):
         self.logger = logger
 
     def process_message(self, msgs: Union[Message, List[Message]]):
-        for message in msgs:
+        # check if its single message or list
+        messages = msgs if isinstance(msgs, list) else [msgs]
+        for message in messages:
             try:
-                try:
-                   # Load layout file (or data) as needed for each gallery
-                   layouts_df = load_layouts(message.content['layoutsCSV'])
-                except Exception as e:
-                    logger.error(f"Error loading layouts: {e}")
-                    continue
-
-                try:
-                    layout_id2data = get_layouts_data(layouts_df)
-                except Exception as e:
-                    logger.error(f"Error generating layout data: {e}")
-                    continue
-
-                    # Extract gallery photo info safely
-                try:
-                    if isinstance(message, Message):
-                        df = message.content.get('gallery_photos_info', pd.DataFrame())
-                    else:
-                        df = pd.DataFrame([msg.content.get("photoId") for msg in msgs], columns=['image_id'])
-
-                    if df.empty:
-                        logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-                        continue
-                except Exception as e:
-                    logger.error(f"Error extracting gallery photo info: {e}")
+                # Extract gallery photo info safely
+                df = message.content.get('gallery_photos_info', pd.DataFrame())
+                if df.empty:
+                    self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
+                    message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
                     continue
 
                 if "image_order" not in df.columns:
-                    logger.error(f"Missing 'image_order' column in DataFrame for message {message}")
+                    self.logger.error(f"Missing 'image_order' column in DataFrame for message {message}")
+                    message.content['error'] = f"Missing 'image_order' column in DataFrame for message {message}"
                     continue
 
                 # Sorting the DataFrame by "image_order" column
@@ -137,21 +119,18 @@ class ProcessStage(Stage):
                         df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(sorted_df,
                                                                                                       self.logger)
                 except Exception as e:
-                    logger.error(f"Error in parallel content processing: {e}")
+                    self.logger.error(f"Error in parallel content processing: {e}")
+                    message.content['error'] = f"Error in parallel content processing: {e}"
                     continue
 
-                cover_end_imgs_layouts = get_cover_end_layout(layouts_df,logger)
+                cover_end_imgs_layouts = get_cover_end_layout(message.content['layouts_df'],logger)
                 if not cover_end_imgs_layouts:
-                        logger.error(f"No cover-end layouts found for message {message}")
+                        self.logger.error(f"No cover-end layouts found for message {message}")
+                        message.content['error'] = f"No cover-end layouts found for message {message}"
                         continue
 
-                # Process image time safely
-                try:
-                    sorted_by_time_df, image_id2general_time = process_image_time(df)
-                    df_time = cluster_by_time(sorted_by_time_df)
-                except Exception as e:
-                    logger.error(f"Error processing image time: {e}")
-                    continue
+                sorted_by_time_df, image_id2general_time = process_image_time(df)
+                df_time = cluster_by_time(sorted_by_time_df)
 
                 # to ignore the read only memory
                 df = pd.DataFrame(df_time.to_dict())
@@ -159,7 +138,7 @@ class ProcessStage(Stage):
                 # Handle the processing time logging
                 try:
                     start = datetime.now()
-                    album_designer = AutomaticAlbum(df, layouts_df, layout_id2data,
+                    album_designer = AutomaticAlbum(df, message.content['layouts_df'], message.content['layout_id2data'],
                                                             message.content['is_wedding'], logger=self.logger)
                     album_result = album_designer.start_processing_album()
 
@@ -173,13 +152,12 @@ class ProcessStage(Stage):
                                                                                                  [msg.content.get('photoId')
                                                                                                   for msg in msgs]))
                 except Exception as ex:
-                    print('Exception while processing messages: {}.'.format(ex))
-                    #self.logger.error('Exception while processing messages: {}.'.format(ex))
+                    self.logger.error('Exception while processing messages: {}.'.format(ex))
                     message.content['error'] = ex
                     continue
 
             except Exception as e:
-                logger.error(f"Unexpected error in message processing: {e}")
+                self.logger.error(f"Unexpected error in message processing: {e}")
                 message.content['error'] = f"Unexpected error in message processing: {e}"
                 continue
 
@@ -357,7 +335,7 @@ if __name__ == '__main__':
     # main()
     import logging
     # Create a logger instance
-    logger = logging.getLogger('ReadStageTest')
+    logger = get_logger(__name__, 'DEBUG')
     logger.setLevel(logging.DEBUG)  # Set logging level (DEBUG, INFO, WARNING, ERROR)
 
     # Create a console handler and set level to debug

@@ -4,6 +4,8 @@ from bson.int64 import Int64
 from datetime import datetime
 
 from utils.protobufs_processing import get_info_protobufs
+from utils.load_layouts import get_layouts_data
+from utils.load_layouts import load_layouts
 
 def read_messages(messages,queries_file, logger):
     enriched_messages = []
@@ -43,6 +45,17 @@ def read_messages(messages,queries_file, logger):
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
                 _msg.error = 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
+                continue
+
+            try:
+                # Load layout file (or data) as needed for each gallery
+                layouts_df = load_layouts(_msg.content['layoutsCSV'])
+                layout_id2data = get_layouts_data(layouts_df)
+                _msg.content['layouts_df'] = layouts_df
+                _msg.content['layout_id2data'] = layout_id2data
+            except Exception as e:
+                logger.error(f"Error loading layouts: {e}")
+                _msg.error = f"Error loading layouts: {e}"
                 continue
 
         except Exception as e:

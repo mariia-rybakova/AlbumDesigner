@@ -1,6 +1,8 @@
+import copy
 import pandas as pd
+
 from datetime import datetime
-from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor
 
 def read_timestamp(timestamp_str):
     try:
@@ -14,6 +16,7 @@ def convert_to_timestamp(time_integer):
 def process_image_time_row(args):
     """Processes a single row to compute the general time."""
     row_time, first_image_time = args
+    row_time = copy.deepcopy(row_time)
     cur_timestamp = convert_to_timestamp(row_time['image_time'])
 
     if 0 <= cur_timestamp.hour <= 4:
@@ -40,8 +43,8 @@ def process_image_time(data_df):
     args_list = [(row, first_image_time) for row in time_data_dict]
 
     # Using Pool to process each row in parallel
-    with Pool(processes=4) as pool:
-        processed_rows = pool.map(process_image_time_row,  args_list)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        processed_rows = list(executor.map(process_image_time_row, args_list))
 
     # Create a new DataFrame from processed rows
     processed_df = pd.DataFrame(processed_rows)
