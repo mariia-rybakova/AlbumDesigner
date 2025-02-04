@@ -37,13 +37,13 @@ def process_group(args):
             filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,None)
             if filtered_spreads is None:
                 continue
-            logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
-            logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
+            #logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
+            #logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
             ranking_start = time.time()
             filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
             filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-            logger.info('Ranking time: {}'.format(time.time() - ranking_start))
+            #logger.info('Ranking time: {}'.format(time.time() - ranking_start))
 
             best_spread = filtered_spreads[0]
             cur_spreads = best_spread[0]
@@ -96,8 +96,8 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
         updated_groups, group2images,look_up_table = process_illegal_groups(group2images, original_groups,look_up_table,is_wedding, logger)
         if updated_groups is None:
              return 'Error: couldn\'t process illegal groups'
-        illegal_time = (time.time() - start_time) / 60
-        logger.info(f'Illegal groups processing time: {illegal_time:.2f} minutes')
+        illegal_time = (time.time() - start_time)
+        logger.info(f'Illegal groups processing time: {illegal_time:.2f} seconds')
     else:
         look_up_table = look_up_table
         updated_groups = original_groups
@@ -143,7 +143,8 @@ def start_processing_album(df, layouts_df, layout_id2data, is_wedding, logger):
         #sorintg & formating & cropping
         if is_wedding:
             sorted_result_list = sort_groups_by_name(result_list)
-            result = organize_groups(sorted_result_list,layouts_df,updated_groups, is_wedding,logger)
+            result = sorted_result_list
+            #result = organize_groups(sorted_result_list,layouts_df,updated_groups, is_wedding,logger)
         else:
             result = "^_^"
 

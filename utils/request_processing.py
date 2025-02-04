@@ -53,14 +53,20 @@ def read_messages(messages,queries_file, logger):
                 _msg.error = 'Incomplete message content Project URL: {}. Skipping.'.format(json_content)
                 continue
 
+            proto_start = datetime.now()
             df = pd.DataFrame(images, columns=['image_id'])
             # check if its wedding here! and added to the message
             gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df,
                                                              queries_file=queries_file, logger=logger)
 
+            logger.debug(f"reading time for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
+
+            start = datetime.now()
+
             with ThreadPoolExecutor(max_workers=4) as executor:
                 results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
 
+            logger.debug(f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - start} secs.")
             cropped_df = pd.DataFrame(results)
 
             # Merge the cropped data back into the original DataFrame

@@ -49,8 +49,16 @@ def merging_process(group_key,groups,illegal_group):
     #     return groups
     #
     # else:
+    if len(main_groups) == 1:
+        selected_cluster = main_groups[0]
+        selected_cluster_content_index = list(main_groups[0]['cluster_context'])[0]
+        illegal_group.loc[:, 'cluster_context'] = selected_cluster_content_index
+        illegal_group.loc[:, 'cluster_context_2nd'] = 'merged'
+        updated_group = pd.concat([selected_cluster, illegal_group], ignore_index=False)
+    else:
+        illegal_group, updated_group, selected_cluster_content_index = merge_illegal_group(main_groups,illegal_group)
 
-    illegal_group, updated_group, selected_cluster_content_index = merge_illegal_group(main_groups,illegal_group)
+
     groups = groups.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(
         time_cluster_id, selected_cluster_content_index), illegal_group_key=group_key))
     groups = groups.reset_index(drop=True)
