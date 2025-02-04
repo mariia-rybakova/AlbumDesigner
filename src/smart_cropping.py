@@ -137,7 +137,6 @@ def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=10
         if not isinstance(faces, list):
             faces = list(faces)
 
-        faces = faces[0]
         for face in faces:
             bbox = face.bbox
             # x1 = int(bbox.x1 * face_mask.shape[1])

@@ -3,9 +3,29 @@ import numpy as np
 from bson.int64 import Int64
 from datetime import datetime
 
+from concurrent.futures import ThreadPoolExecutor
 from utils.protobufs_processing import get_info_protobufs
 from utils.load_layouts import get_layouts_data
 from utils.load_layouts import load_layouts
+from src.smart_cropping import process_cropping
+
+
+def process_cropping_for_row(row):
+    cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
+        float(row['image_as']),
+        row['faces_info'],
+        row['background_centroid'],
+        float(row['diameter']),
+        1
+    )
+    # Store the results in a dictionary to update the DataFrame later
+    return {
+        'image_id': row['image_id'],
+        'cropped_x': cropped_x,
+        'cropped_y': cropped_y,
+        'cropped_w': cropped_w,
+        'cropped_h': cropped_h
+    }
 
 def read_messages(messages,queries_file, logger):
     enriched_messages = []
@@ -37,6 +57,16 @@ def read_messages(messages,queries_file, logger):
             # check if its wedding here! and added to the message
             gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df,
                                                              queries_file=queries_file, logger=logger)
+
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
+
+            cropped_df = pd.DataFrame(results)
+
+            # Merge the cropped data back into the original DataFrame
+            gallery_info_df = gallery_info_df.merge(cropped_df, how='left', on='image_id')
+
+
             is_wedding = True
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
