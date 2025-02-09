@@ -4,6 +4,7 @@ import copy
 import queue
 import traceback
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from gc import collect
 
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
@@ -35,16 +36,18 @@ def process_group(args):
         for idx, group_photos in enumerate(cur_group_photos_list):
             filter_start = time.time()
             filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,None)
+
             if filtered_spreads is None:
                 continue
-            #logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
-            #logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
+            logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
+            logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
             ranking_start = time.time()
             filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
             filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-            #logger.info('Ranking time: {}'.format(time.time() - ranking_start))
-
+            logger.info('Ranking time: {}'.format(time.time() - ranking_start))
+            if len(filtered_spreads) == 0:
+                continue
             best_spread = filtered_spreads[0]
             cur_spreads = best_spread[0]
             for spread_id, spread in enumerate(cur_spreads):
@@ -69,7 +72,67 @@ def process_group(args):
         print(traceback.format_exc())
         return None
 
-def process_all_groups_parallel(args):
+
+def update_lookup_table(group2images, lookup_table, is_wedding):
+    for key, number_images in group2images.items():
+        # Extract the correct lookup key
+        content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else \
+        key[0].split("_")[0]
+
+        # Get group value, default to 0 if not found
+        group_value = lookup_table.get(content_key, (0,))[0]
+
+        # Calculate spreads safely
+        spreads = round(number_images / group_value) if group_value else 0
+
+        # Cap spreads at 3 but ensure at least 1 if necessary
+        spreads = max(1, min(spreads, 3))
+
+        # Update the lookup table with the new spreads while keeping the second tuple value unchanged
+        lookup_table[key] = (spreads, lookup_table[key][1])
+
+    return lookup_table
+
+def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_spreads=50,max_group_spread=2):
+    total_spreads = 0
+    groups_with_three_spreads = []
+
+    # First pass: Compute initial spreads and track groups with 3 spreads
+    for key, number_images in group2images.items():
+        # Extract the correct lookup key
+        content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else key[0].split("_")[0]
+
+        # Get group value, default to 0 if not found
+        group_value = lookup_table.get(content_key, (0,))[0]
+
+        # Calculate spreads safely
+        spreads = 1 if round(number_images / group_value) == 0 else round(number_images / group_value)
+
+        if spreads >= max_group_spread :
+            # Update lookup table
+            lookup_table[key[1]] = (number_images , lookup_table[key[1]][1])
+            spreads = 1
+        total_spreads += spreads
+
+        # Track groups with 3 spreads for later reduction
+        if spreads > 1 :
+            groups_with_three_spreads.append(key)
+
+    # If total spreads exceed limit, reduce spreads in groups with 3 spreads
+    excess_spreads = total_spreads - max_spreads
+
+    if excess_spreads > 0:
+        for key in groups_with_three_spreads:
+            if excess_spreads <= 0:
+                break  # Stop once the total spreads is within limit
+
+            current_max_imges , extra_value = lookup_table[key]
+            lookup_table[key[1]] = (round(current_max_imges / 1), extra_value)
+            excess_spreads -= 1  # Reduce excess count
+
+    return lookup_table
+
+def process_all_groups_parallel(args,max_workers=4):
     jobs = []
     q = queue.Queue()  # thread safe queue to store results
 
@@ -77,15 +140,8 @@ def process_all_groups_parallel(args):
         result = process_group(arg)
         q.put(result)  # put the result in queue
 
-    for arg in args:
-        thread = threading.Thread(target=worker, args=(arg,))
-        jobs.append(thread)
-
-    for j in jobs:
-        j.start()
-
-    for j in jobs:
-        j.join()
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        executor.map(worker, args)
 
     results = [q.get() for _ in range(len(args))]  # retrieve results from the queue
     return results
@@ -102,6 +158,10 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
         look_up_table = look_up_table
         updated_groups = original_groups
 
+    # make sure that each group has no more than 3 spreads
+    look_up_table = update_lookup_table_with_limit(group2images,is_wedding,look_up_table)
+
+
     args = [
         (group_name,
             copy.deepcopy(updated_groups.get_group(group_name)),
@@ -112,7 +172,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
             copy.deepcopy(logger))
      for group_name in group2images.keys()
     ]
-    all_results = process_all_groups_parallel(args)
+    all_results = process_all_groups_parallel(args,12)
 
     return all_results,updated_groups
 

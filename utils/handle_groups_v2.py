@@ -39,16 +39,14 @@ def merging_process(group_key,groups,illegal_group):
     main_groups = [group for cluster_key, group in groups if
                    time_cluster_id == cluster_key[0] and cluster_key != group_key]
 
-    # if len(main_groups) == 1:
-    #     illegal_group.loc[:, 'cluster_context'] = illegal_group["cluster_context"] + "_cant_merge"
-    #     groups = groups.apply(
-    #         lambda x: update_not_processed(x, not_processed=illegal_group,
-    #                                       illegal_group_key=group_key))
-    #     groups = groups.reset_index(drop=True)
-    #     groups = groups.groupby(['time_cluster', 'cluster_context'])
-    #     return groups
-    #
-    # else:
+    if len(main_groups) == 0 and len(illegal_group) == 1:
+        time_cluster_id = time_cluster_id - 1
+        illegal_group.loc[:, 'time_cluster'] = time_cluster_id
+        main_groups = [group for cluster_key, group in groups if
+                       time_cluster_id == cluster_key[0] and cluster_key != group_key]
+    elif len(main_groups) == 0 and len(illegal_group) > 1:
+        return do_not_change_group(illegal_group, groups,group_key)
+
     if len(main_groups) == 1:
         selected_cluster = main_groups[0]
         selected_cluster_content_index = list(main_groups[0]['cluster_context'])[0]
@@ -147,7 +145,7 @@ def update_needed(groups,is_wedding,lookup_table):
     for group_key, imgs_number in groups.items():
         limited_splitting = get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding)
 
-        if (imgs_number < 3 or (limited_splitting >= 4 and 'cant_split' not in group_key[1])) and 'cant_merge' not in group_key[1]:
+        if (imgs_number < 3 or (limited_splitting >= 4 and 'cant_split' not in group_key[1])) and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
             if group_key not in groups_to_change:
                 groups_to_change[group_key] = limited_splitting
         else:
