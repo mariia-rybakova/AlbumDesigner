@@ -79,7 +79,7 @@ class ReadStage(Stage):
             return []
 
         handling_time = (datetime.now() - start) / len(messages) if messages else 0
-        self.logger.debug(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
+        self.logger.info(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
         return messages
 
 

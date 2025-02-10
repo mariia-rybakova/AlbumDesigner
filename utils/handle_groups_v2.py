@@ -105,16 +105,20 @@ def do_not_change_group(illegal_group, groups,group_key):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def handle_illegal(group_key,score,content_cluster_id,illegal_group,imgs_number,groups,count):
+def handle_illegal(group_key,change_tuple,content_cluster_id,illegal_group,imgs_number,groups,look_up_table,is_wedding,count):
     if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['merge_images_number']:
         return do_not_change_group(illegal_group, groups,group_key)
     elif "wedding dress" in group_key and imgs_number <= CONFIGS['merge_images_number']:
         """Merge wedding dress into group related to bride"""
         return handle_wedding_dress(illegal_group,groups,group_key)
-    elif imgs_number < CONFIGS['merge_images_number']:
+    elif change_tuple[0] == 'merge':
         return merging_process(group_key,groups,illegal_group)
-    elif score >= CONFIGS['min_split_score']:
-        return splitting_process(groups,group_key,illegal_group,count)
+    elif change_tuple[0] == 'split':
+        score = get_merge_split_score(group_key, look_up_table, imgs_number, is_wedding)
+        if score >= CONFIGS['min_split_score']:
+            return splitting_process(groups,group_key,illegal_group,count)
+        else:
+            return do_not_change_group(illegal_group, groups, group_key)
     else:
         return do_not_change_group(illegal_group, groups,group_key)
 
@@ -143,13 +147,16 @@ def update_needed(groups,is_wedding,lookup_table):
     groups_to_change = dict()
     # Check if there is any group with value 1 and its key prefix doesn't have more than one key
     for group_key, imgs_number in groups.items():
-        limited_splitting = get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding)
-
-        if (imgs_number < CONFIGS['max_img_split'] or (limited_splitting >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1])) and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
+        if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
             if group_key not in groups_to_change:
-                groups_to_change[group_key] = limited_splitting
+                groups_to_change[group_key] = ('merge',0)
         else:
-            continue
+          splitting_score = get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding)
+          if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1] and 'None' not in group_key[1]:
+             if group_key not in groups_to_change:
+                groups_to_change[group_key] = ('split', splitting_score)
+          else:
+             continue
 
     if  len(groups_to_change) > 0:
         return True
@@ -178,7 +185,7 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                 logger.error("Error: groups_to_change is not defined.")
                 return None, None, None
 
-            for key_to_change, score in groups_to_change.items():
+            for key_to_change, change_tuple in groups_to_change.items():
                 try:
                     # Extract content_cluster_id
                     content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
@@ -190,12 +197,8 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
 
                     illegal_group = groups.get_group(key_to_change)
                     imgs_number = group2images.get(key_to_change, 0)
-
-                    # Compute merge-split score
-                    score = get_merge_split_score(key_to_change, look_up_table, imgs_number, is_wedding)
-
                     # Handle illegal groups
-                    new_groups = handle_illegal(key_to_change, score, content_cluster_id, illegal_group, imgs_number, groups, count)
+                    new_groups = handle_illegal(key_to_change, change_tuple, content_cluster_id, illegal_group, imgs_number, groups,look_up_table,is_wedding, count)
 
                     if new_groups is not None:
                         group2images = get_images_per_groups(new_groups, logger)  # Ensure logger is passed

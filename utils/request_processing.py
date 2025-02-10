@@ -4,6 +4,8 @@ from bson.int64 import Int64
 from datetime import datetime
 
 from concurrent.futures import ThreadPoolExecutor
+
+from utils.parser import CONFIGS
 from utils.protobufs_processing import get_info_protobufs
 from utils.load_layouts import get_layouts_data
 from utils.load_layouts import load_layouts
@@ -30,6 +32,7 @@ def process_cropping_for_row(row):
 def read_messages(messages,queries_file, logger):
     enriched_messages = []
     for _msg in messages:
+        reading_message_time = datetime.now()
         json_content = _msg.content
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
@@ -53,24 +56,23 @@ def read_messages(messages,queries_file, logger):
                 _msg.error = 'Incomplete message content Project URL: {}. Skipping.'.format(json_content)
                 continue
 
-            proto_start = datetime.now()
             df = pd.DataFrame(images, columns=['image_id'])
+            proto_start = datetime.now()
             # check if its wedding here! and added to the message
             gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df,
                                                              queries_file=queries_file, logger=logger)
 
-            logger.debug(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
+            logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
             cropping_start = datetime.now()
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=CONFIGS['cropping_workers']) as executor:
                 results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
 
-            logger.debug(f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - cropping_start} secs.")
             cropped_df = pd.DataFrame(results)
-
             # Merge the cropped data back into the original DataFrame
             gallery_info_df = gallery_info_df.merge(cropped_df, how='left', on='image_id')
-
+            logger.info(
+                f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - cropping_start} secs.")
 
             is_wedding = True
             if not gallery_info_df.empty:
@@ -92,6 +94,9 @@ def read_messages(messages,queries_file, logger):
                 logger.error(f"Error loading layouts: {e}")
                 _msg.error = f"Error loading layouts: {e}"
                 continue
+
+            logger.info(
+                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs.")
 
         except Exception as e:
             logger.error(f"Error reading messages at reading stage: {e}")
