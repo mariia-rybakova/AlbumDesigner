@@ -4,6 +4,7 @@ from utils.protos import BGSegmentation_pb2 as meta_vector
 
 
 def get_photo_meta(file, df, logger=None):
+    required_ids = set(df['image_id'].tolist())
     try:
         meta_info_bytes = PTFile(file)  # load file
         if not meta_info_bytes.exists():
@@ -38,15 +39,16 @@ def get_photo_meta(file, df, logger=None):
 
     # Loop through each photo and collect the required information
     for photo in images_photos:
-        photo_ids.append(photo.photoId)
-        image_times.append(photo.dateTaken)
-        scene_orders.append(photo.sceneOrder)
-        image_aspects.append(photo.aspectRatio)
-        image_colors.append(photo.colorEnum)
-        image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
-        image_orderInScenes.append(photo.orderInScene)
-        background_centroids.append(photo.blobCentroid)
-        blob_diameters.append(photo.blobDiameter)
+        if photo.photoId in required_ids:
+            photo_ids.append(photo.photoId)
+            image_times.append(photo.dateTaken)
+            scene_orders.append(photo.sceneOrder)
+            image_aspects.append(photo.aspectRatio)
+            image_colors.append(photo.colorEnum)
+            image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
+            image_orderInScenes.append(photo.orderInScene)
+            background_centroids.append(photo.blobCentroid)
+            blob_diameters.append(photo.blobDiameter)
 
     # Create a DataFrame from the collected data
     additional_image_info_df = pd.DataFrame({

@@ -62,7 +62,6 @@ def read_messages(messages,queries_file, logger):
             logger.debug(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
             cropping_start = datetime.now()
-
             with ThreadPoolExecutor(max_workers=4) as executor:
                 results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
 

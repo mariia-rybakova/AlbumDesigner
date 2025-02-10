@@ -2,7 +2,7 @@ import pandas as pd
 
 from utils.illegal_group_splitting_merging import merge_illegal_group, split_illegal_group
 from utils.album_tools import get_images_per_groups
-
+from utils.parser import CONFIGS
 
 def update_groups(group, merged, merge_group_key, illegal_group_key):
     if merge_group_key == group.name:
@@ -106,14 +106,14 @@ def do_not_change_group(illegal_group, groups,group_key):
     return groups
 
 def handle_illegal(group_key,score,content_cluster_id,illegal_group,imgs_number,groups,count):
-    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= 3:
+    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['merge_images_number']:
         return do_not_change_group(illegal_group, groups,group_key)
-    elif "wedding dress" in group_key and imgs_number <= 3:
+    elif "wedding dress" in group_key and imgs_number <= CONFIGS['merge_images_number']:
         """Merge wedding dress into group related to bride"""
         return handle_wedding_dress(illegal_group,groups,group_key)
-    elif imgs_number < 3:
+    elif imgs_number < CONFIGS['merge_images_number']:
         return merging_process(group_key,groups,illegal_group)
-    elif score >= 4:
+    elif score >= CONFIGS['min_split_score']:
         return splitting_process(groups,group_key,illegal_group,count)
     else:
         return do_not_change_group(illegal_group, groups,group_key)
@@ -145,7 +145,7 @@ def update_needed(groups,is_wedding,lookup_table):
     for group_key, imgs_number in groups.items():
         limited_splitting = get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding)
 
-        if (imgs_number < 3 or (limited_splitting >= 4 and 'cant_split' not in group_key[1])) and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
+        if (imgs_number < CONFIGS['max_img_split'] or (limited_splitting >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1])) and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
             if group_key not in groups_to_change:
                 groups_to_change[group_key] = limited_splitting
         else:

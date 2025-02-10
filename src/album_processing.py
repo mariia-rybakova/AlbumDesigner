@@ -10,7 +10,7 @@ from gc import collect
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
 from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_groups,sort_groups_by_name
-
+from utils.parser import CONFIGS
 
 def process_group(args):
     group_name, group_images_df, spread_params, layouts_df, layout_id2data ,is_wedding,logger= args
@@ -21,7 +21,7 @@ def process_group(args):
         if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
                 # len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
                 len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
-                    cur_group_photos) > 24):
+                    cur_group_photos) > CONFIGS['max_imges_per_spread']):
             split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
             number_of_splits = math.ceil(len(cur_group_photos) / split_size)
             logger.info('Using splitting to {} parts'.format(number_of_splits))
@@ -93,7 +93,7 @@ def update_lookup_table(group2images, lookup_table, is_wedding):
 
     return lookup_table
 
-def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_spreads=50,max_group_spread=2):
+def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
     total_spreads = 0
     groups_with_three_spreads = []
 
@@ -108,7 +108,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_s
         # Calculate spreads safely
         spreads = 1 if round(number_images / group_value) == 0 else round(number_images / group_value)
 
-        if spreads >= max_group_spread :
+        if spreads >= CONFIGS['max_group_spread'] :
             # Update lookup table
             lookup_table[key[1]] = (number_images , lookup_table[key[1]][1])
             spreads = 1
@@ -119,7 +119,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_s
             groups_with_three_spreads.append(key)
 
     # If total spreads exceed limit, reduce spreads in groups with 3 spreads
-    excess_spreads = total_spreads - max_spreads
+    excess_spreads = total_spreads - CONFIGS['max_spreads']
 
     if excess_spreads > 0:
         for key in groups_with_three_spreads:
@@ -132,7 +132,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_s
 
     return lookup_table
 
-def process_all_groups_parallel(args,max_workers=4):
+def process_all_groups_parallel(args):
     jobs = []
     q = queue.Queue()  # thread safe queue to store results
 
@@ -140,7 +140,7 @@ def process_all_groups_parallel(args,max_workers=4):
         result = process_group(arg)
         q.put(result)  # put the result in queue
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(max_workers=CONFIGS['max_workers']) as executor:
         executor.map(worker, args)
 
     results = [q.get() for _ in range(len(args))]  # retrieve results from the queue
@@ -172,7 +172,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
             copy.deepcopy(logger))
      for group_name in group2images.keys()
     ]
-    all_results = process_all_groups_parallel(args,12)
+    all_results = process_all_groups_parallel(args)
 
     return all_results,updated_groups
 

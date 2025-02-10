@@ -21,7 +21,8 @@ def comp_tag_features(tag: str) -> np.array:
     text_features /= text_features.norm(dim=1, keepdim=True)
     return text_features.cpu().numpy()
 
-tags = [ 'bride and groom',
+tags = \
+    [ 'bride and groom',
     'bride',
     'groom',
     'wedding dress',

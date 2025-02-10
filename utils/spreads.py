@@ -1,11 +1,8 @@
-import time
 import random
 import numpy as np
 
 from itertools import combinations, product
-
-from utils.photos import Photo
-from config import DESIGN_PARAMS
+from utils.parser import CONFIGS
 
 
 def classWeight(nPhotos, classSpredParams):
@@ -90,7 +87,7 @@ def selectPartitions(nPhotos, classSpreadParams):
     else:
         weights /= np.max(weights)
 
-    aboveThresh = np.where(weights > np.max(weights) / DESIGN_PARAMS['partition_score_threshold'])[0]
+    aboveThresh = np.where(weights > np.max(weights) / CONFIGS['partition_score_threshold'])[0]
     if len(weights) > 2:
         args = np.argsort(weights)[::-1]
         if len(aboveThresh) > 2:
@@ -172,9 +169,9 @@ def layoutSingleCombination(singleClassComb, layout_df, photos):
             rem_landscapes = []
             rem_portraits = []
 
-            if len(oriented_combs) > DESIGN_PARAMS['MaxOrientedCombs']:
+            if len(oriented_combs) > CONFIGS['MaxOrientedCombs']:
                 # print('MaxOrientedCombs crossed sampling oriented combinations instead of full listing')
-                sample_idxs = random.sample(range(len(oriented_combs)), DESIGN_PARAMS['MaxOrientedCombs'])
+                sample_idxs = random.sample(range(len(oriented_combs)), CONFIGS['MaxOrientedCombs'])
                 oriented_combs = [oriented_combs[i] for i in sample_idxs]
 
             for comb in oriented_combs:
@@ -353,7 +350,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
     cluster_labels = [item.cluster_label for item in photos]
 
     for i in range(len(layout_parts)):
-        maxCombsParam = DESIGN_PARAMS['MaxCombs'] if len(photos) <= 12 else DESIGN_PARAMS['MaxCombsLargeGroups']
+        maxCombsParam = CONFIGS['MaxCombs'] if len(photos) <= 12 else CONFIGS['MaxCombsLargeGroups']
         maxCombs = int(maxCombsParam / np.power(2, i))
         single_combs = listSingleCombinations(photos, layout_parts[i])
 
@@ -373,8 +370,8 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
         multi_spreads = layoutSingleCombination(comb, layouts_df, photos)
         if multi_spreads is not None:
             single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx],
-                                                               crop_penalty=DESIGN_PARAMS['crop_penalty'], color_mix=DESIGN_PARAMS['color_mix'], class_mix=DESIGN_PARAMS['class_mix'],
-                                                               orientation_mix=DESIGN_PARAMS['orientation_mix'], score_threshold=DESIGN_PARAMS['spread_score_threshold'], double_mix_color=DESIGN_PARAMS['double_page_color_mix'])
+                                                               crop_penalty=CONFIGS['crop_penalty'], color_mix=CONFIGS['color_mix'], class_mix=CONFIGS['class_mix'],
+                                                               orientation_mix=CONFIGS['orientation_mix'], score_threshold=CONFIGS['spread_score_threshold'], double_mix_color=CONFIGS['double_page_color_mix'])
             filtered_multi_spreads += list_multi_spreads(single_filtered_multi_spreads)
 
         if len(filtered_multi_spreads) > 10000:

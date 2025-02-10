@@ -3,6 +3,8 @@ from ptinfra.azure.pt_file import PTFile
 from utils.protos  import ContentCluster_pb2 as cluster_vector
 
 def get_clusters_info(cluster_file, df,logger=None):
+    required_ids = set(df['image_id'].tolist())
+
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file
         if not cluster_info_bytes.exists():
@@ -33,12 +35,13 @@ def get_clusters_info(cluster_file, df,logger=None):
 
     # Loop through each photo and collect the required information
     for photo in images_photos:
-        photo_ids.append(photo.photoId)
-        image_classes.append(photo.imageClass)
-        cluster_labels.append(photo.clusterId)
-        cluster_classes.append(photo.clusterClass)
-        image_rankings.append(photo.selectionScore)
-        image_orders.append(photo.selectionOrder)
+        if photo.photoId in required_ids:
+            photo_ids.append(photo.photoId)
+            image_classes.append(photo.imageClass)
+            cluster_labels.append(photo.clusterId)
+            cluster_classes.append(photo.clusterClass)
+            image_rankings.append(photo.selectionScore)
+            image_orders.append(photo.selectionOrder)
 
     # Create a DataFrame from the collected data
     new_image_info_df = pd.DataFrame({

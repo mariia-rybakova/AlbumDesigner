@@ -1,6 +1,7 @@
 import pandas as pd
 import random
 from utils.cover_processing import get_cover_img,get_important_imgs
+from utils.parser import CONFIGS
 
 
 def get_cover_end_layout(layout_df,logger):
@@ -19,7 +20,7 @@ def get_cover_end_layout(layout_df,logger):
 
 
 def process_wedding_cover_end_image(df,logger):
-    bride_groom_highest_images = get_important_imgs(df, top=50)
+    bride_groom_highest_images = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
     # if we didn't find the highest ranking images then we won't be able to get cover image
     if len(bride_groom_highest_images) > 0:
         # get cover image and remove it from dataframe

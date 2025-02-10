@@ -3,6 +3,7 @@ from ptinfra.azure.pt_file import PTFile
 from .protos import PersonVector_pb2 as person_vector
 
 def get_person_vectors(persons_file, df, logger=None):
+    required_ids = set(df['image_id'].tolist())
     try:
         person_info_bytes = PTFile(persons_file)  # Load file
         if not person_info_bytes.exists():
@@ -27,9 +28,8 @@ def get_person_vectors(persons_file, df, logger=None):
     # Create a DataFrame for the photos
     photo_data = []
     for image in images:
-        image_id = image.photoId
-        number_bodies = len(image.bodies)
-        photo_data.append({'image_id': image_id, 'number_bodies': number_bodies})
+        if image.photoId in required_ids:
+            photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
 
     photo_df = pd.DataFrame(photo_data)
 

@@ -3,6 +3,8 @@ from ptinfra.azure.pt_file import PTFile
 from utils.protos import PersonInfo_pb2 as person_vector
 
 def get_persons_ids(persons_file, df,logger=None):
+    required_ids = set(df['image_id'].tolist())
+
     try:
         person_info_bytes = PTFile(persons_file)  # load file
         if not person_info_bytes.exists():
@@ -32,8 +34,10 @@ def get_persons_ids(persons_file, df,logger=None):
         id = iden.identityNumeralId
         infos = iden.personInfo
         for im in infos.imagesInfo:
-            photo_ids.append(im.photoId)
-            persons_ids_list.append(id)
+            if im.photoId in required_ids:
+                photo_ids.append(im.photoId)
+                persons_ids_list.append(id)
+
 
     # Create a temporary DataFrame with the new person information
     persons_info_df = pd.DataFrame({
