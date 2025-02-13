@@ -12,62 +12,91 @@ from utils.lookup_table_tools import get_lookup_table
 from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_groups,sort_groups_by_name
 from utils.parser import CONFIGS
 
+
+def get_group_photos_list(cur_group_photos, spread_params, logger):
+    cur_group_photos_list = copy.deepcopy(list())
+    if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
+            round(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11 or
+            len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
+                cur_group_photos) > CONFIGS['max_imges_per_spread']):
+        split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
+        number_of_splits = math.ceil(len(cur_group_photos) / split_size)
+        logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
+        for split_num in range(number_of_splits):
+            cur_group_photos_list.append(cur_group_photos[
+                                         split_num * split_size: min((split_num + 1) * split_size,
+                                                                     len(cur_group_photos))])
+    else:
+        cur_group_photos_list.append(cur_group_photos)
+
+    return cur_group_photos_list
+
+
 def process_group(args):
     group_name, group_images_df, spread_params, layouts_df, layout_id2data ,is_wedding,logger= args
     logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
         logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
-        cur_group_photos_list = copy.deepcopy(list())
-        if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
-                round(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11 or
-                len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
-                    cur_group_photos) > CONFIGS['max_imges_per_spread']):
-            split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
-            number_of_splits = math.ceil(len(cur_group_photos) / split_size)
-            logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
-            for split_num in range(number_of_splits):
-                cur_group_photos_list.append(cur_group_photos[
-                                             split_num * split_size: min((split_num + 1) * split_size,
-                                                                         len(cur_group_photos))])
-        else:
-           cur_group_photos_list.append(cur_group_photos)
+        cur_group_photos_list = get_group_photos_list(cur_group_photos, spread_params, logger)
 
         local_result = {}
-        for idx, group_photos in enumerate(cur_group_photos_list):
+        group_idx = 0
+        for group_photos in cur_group_photos_list:
             filter_start = time.time()
             filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,logger)
 
+            final_groups_and_spreads = None
             if filtered_spreads is None:
-                print("Filtered spreads not found we try again by different params")
-                # filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df,
-                #                                                    [spread_params[0] / 2, spread_params[1]], logger)
-                continue
+                print("Filtered spreads not found we try again with different params")
+                for divider in [2, 3, 4]:
+                    new_group_photos_list = get_group_photos_list(group_photos, spread_params, logger)
+                    groups_filtered_spreads_list = list()
+                    for cur_sub_group_photos in new_group_photos_list:
+                        cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df,
+                                                                           [spread_params[0] / divider, spread_params[1]], logger)
+                        if cur_filtered_spreads is None:
+                            groups_filtered_spreads_list = None
+                            break
+                        else:
+                            groups_filtered_spreads_list.append((cur_sub_group_photos, cur_filtered_spreads))
 
+                    if groups_filtered_spreads_list is None:
+                        continue
+                    else:
+                        final_groups_and_spreads = groups_filtered_spreads_list
+                        break
+                if final_groups_and_spreads is None:
+                    logger.info('It is hopeless. Skipping group: {}'.format(group_name))
+                    continue
+            else:
+                final_groups_and_spreads = [(group_photos, filtered_spreads)]
 
-            logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
+            logger.info('Number of filtered spreads: {}. Their sizes: {}'.format(len(final_groups_and_spreads), [len(spr) for _, spr in final_groups_and_spreads]))
             logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
-            ranking_start = time.time()
-            filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
-            filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-            logger.info(f"Number of filtered spreads after ranking sorted {len(filtered_spreads)}")
-            logger.info('Ranking time: {}'.format(time.time() - ranking_start))
-            if len(filtered_spreads) == 0:
-                continue
-            best_spread = filtered_spreads[0]
-            cur_spreads = best_spread[0]
-            for spread_id, spread in enumerate(cur_spreads):
-                best_spread[0][spread_id][1] = set([group_photos[photo_id] for photo_id in spread[1]])
-                best_spread[0][spread_id][2] = set([group_photos[photo_id] for photo_id in spread[2]])
+            for sub_group_photos, filtered_spreads in final_groups_and_spreads:
+                ranking_start = time.time()
+                filtered_spreads = add_ranking_score(filtered_spreads, sub_group_photos, layout_id2data)
+                filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
+                logger.info(f"Number of filtered spreads after ranking sorted {len(filtered_spreads)}")
+                logger.info('Ranking time: {}'.format(time.time() - ranking_start))
+                if len(filtered_spreads) == 0:
+                    continue
+                best_spread = filtered_spreads[0]
+                cur_spreads = best_spread[0]
+                for spread_id, spread in enumerate(cur_spreads):
+                    best_spread[0][spread_id][1] = set([sub_group_photos[photo_id] for photo_id in spread[1]])
+                    best_spread[0][spread_id][2] = set([sub_group_photos[photo_id] for photo_id in spread[2]])
 
-            if is_wedding:
-                local_result[str(group_name[0]) + '_' + group_name[1] + '*' + str(idx)] = best_spread
-            else:
-                local_result[str(group_name[0]) + '*' + str(idx)] = best_spread
+                if is_wedding:
+                    local_result[str(group_name[0]) + '_' + group_name[1] + '*' + str(group_idx)] = best_spread
+                else:
+                    local_result[str(group_name[0]) + '*' + str(group_idx)] = best_spread
+                group_idx += 1
 
 
-            del filtered_spreads
+                # del filtered_spreads
 
         logger.info("Finished with cur photos {} for group name {}".format(len(cur_group_photos), group_name))
 
