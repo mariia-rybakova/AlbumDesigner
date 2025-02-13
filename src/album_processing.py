@@ -20,33 +20,38 @@ def process_group(args):
         logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
         cur_group_photos_list = copy.deepcopy(list())
         if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
-                # len(cur_group_photos) / spread_params[0] >= 3 and len(cur_group_photos) > 11 or
+                round(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11 or
                 len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
                     cur_group_photos) > CONFIGS['max_imges_per_spread']):
             split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
             number_of_splits = math.ceil(len(cur_group_photos) / split_size)
-            logger.info('Using splitting to {} parts'.format(number_of_splits))
+            logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
             for split_num in range(number_of_splits):
                 cur_group_photos_list.append(cur_group_photos[
                                              split_num * split_size: min((split_num + 1) * split_size,
                                                                          len(cur_group_photos))])
         else:
-            cur_group_photos_list.append(cur_group_photos)
+           cur_group_photos_list.append(cur_group_photos)
 
         local_result = {}
         for idx, group_photos in enumerate(cur_group_photos_list):
             filter_start = time.time()
-            filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,None)
+            filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,logger)
 
             if filtered_spreads is None:
-                print("Filtered spreads not found")
+                print("Filtered spreads not found we try again by different params")
+                # filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df,
+                #                                                    [spread_params[0] / 2, spread_params[1]], logger)
                 continue
+
+
             logger.info('Filtered spreads size: {}'.format(len(filtered_spreads)))
             logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
             ranking_start = time.time()
             filtered_spreads = add_ranking_score(filtered_spreads, group_photos, layout_id2data)
             filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
+            logger.info(f"Number of filtered spreads after ranking sorted {len(filtered_spreads)}")
             logger.info('Ranking time: {}'.format(time.time() - ranking_start))
             if len(filtered_spreads) == 0:
                 continue
@@ -63,6 +68,8 @@ def process_group(args):
 
 
             del filtered_spreads
+
+        logger.info("Finished with cur photos {} for group name {}".format(len(cur_group_photos), group_name))
 
         del cur_group_photos_list
         collect()
@@ -144,7 +151,7 @@ def process_all_groups_parallel(args):
     def worker(arg):
         result = process_group(arg)
         q.put(result)  # put the result in queue
-
+    #("Process with layout workers ", CONFIGS['max_lay_workers'])
     with ThreadPoolExecutor(max_workers=CONFIGS['max_lay_workers']) as executor:
         executor.map(worker, args)
 
@@ -163,6 +170,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
         look_up_table = look_up_table
         updated_groups = original_groups
 
+    print("Groups", group2images)
     # make sure that each group has no more than 3 spreads
     look_up_table = update_lookup_table_with_limit(group2images,is_wedding,look_up_table)
 

@@ -165,10 +165,12 @@ def sort_groups_by_name(data_list):
 
     priority_dict = {name: i for i, name in enumerate(priority_list)}
 
-    sorted_data_list = sorted(data_list,
-                              key=lambda group_data: priority_dict.get(
-                                  list(group_data.keys())[0].split("*")[0].split('_')[1],
-                                  float('inf')))  # sort by priority
+    sorted_data_list = sorted(
+    [group_data for group_data in data_list if group_data],  # Remove empty dicts
+    key=lambda group_data: priority_dict.get(
+        list(group_data.keys())[0].split("*")[0].split('_')[1],
+        float('inf')
+    )) # sort by priority
 
     return sorted_data_list
 
