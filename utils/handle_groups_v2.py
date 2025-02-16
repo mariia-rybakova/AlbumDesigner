@@ -129,9 +129,9 @@ def get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding):
             content_key = group_key[1].split("_")[0]
         else:
             content_key = group_key[1]
-        group_value = lookup_table.get(content_key, [0])[0]
+        group_value = lookup_table.get(content_key, [10])[0]
     else:
-        group_value = lookup_table.get(group_key[0].split("_")[0])[0]
+        group_value = lookup_table.get(group_key[0].split("_")[0], [10])[0]
 
     if group_value == 0:
         # Handle the zero case, e.g., set limited_splitting to a default value or raise an error

@@ -352,7 +352,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,logger):
     #print("inside the genereatge filtered multi spreads")
     #print(f"The MaxCombs is {CONFIGS['MaxCombs']} and MaxCombsLargeGroups {CONFIGS['MaxCombsLargeGroups']}")
     for i in range(len(layout_parts)):
-        maxCombsParam = CONFIGS['MaxCombs'] if len(photos) <= 12 else CONFIGS['MaxCombsLargeGroups']
+        maxCombsParam = CONFIGS['MaxCombs'] if len(photos) <= CONFIGS['max_photos_group'] else CONFIGS['MaxCombsLargeGroups']
         maxCombs = int(maxCombsParam / np.power(2, i))
         single_combs = listSingleCombinations(photos, layout_parts[i])
         #print(f"Single Combinations {len(single_combs)} and maxCombs {maxCombs}")

@@ -39,7 +39,8 @@ wedding_lookup_table = {
     'food': (10, 1.5),
     'other': (16, 1.5),
     'invite': (12, 1.5),
-    'None':(10,1.5)
+    'None':(10,1.5),
+    'wedding dress': (4,1.5)
 }
 
 non_wedding_lookup_table = {
