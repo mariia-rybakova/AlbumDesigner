@@ -22,12 +22,13 @@ CONFIGS = {'DEBUG': True,
            'spread_score_threshold': 0.01,
            'partition_score_threshold': 100,
            'MaxCombs': 1000,
-           'MaxCombsLargeGroups': 1,
+           'MaxCombsLargeGroups': 100,
            'MaxOrientedCombs': 300,
            'top_imges_for_cover' : 50,
            'max_reading_workers':2,
            'cropping_workers':2,
            'max_lay_workers': 1,
+           "max_photos_group":5
 }
 
 merge_content_priority = {

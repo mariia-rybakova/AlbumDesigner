@@ -460,47 +460,10 @@ def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_i
 
 
 def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, relation, queries_file,tags_features_file,DEBUG, logger):
-    faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
-    cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
-    persons_file = os.path.join(project_base_url, 'persons_info.pb')
-    image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
-    segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
-
-    # Get info from protobuf files server
-    gallery_photos_info,errors = image_embeddings.get_image_embeddings(image_file,logger)
-    if errors:
-         if logger is not None:
-             logger.error('Couldnt find embeddings for images file %s', image_file)
-         return None,None, errors
-    gallery_photos_info,errors = image_faces.get_faces_info(faces_file, gallery_photos_info,logger)
-    if errors:
-        if logger is not None:
-            logger.error('Couldnt find faces info for images file %s', image_file)
-        return None,None, errors
-    gallery_photos_info,errors = image_persons.get_persons_ids(persons_file, gallery_photos_info,logger)
-
-    if errors:
-        if logger is not None:
-             logger.error('Couldnt find persons info for images file %s', image_file)
-        return None,None, errors
-    gallery_photos_info,errors = image_clustering.get_clusters_info(cluster_file, gallery_photos_info,logger)
-    if errors:
-        if logger is not None:
-            logger.error('Couldnt find clusters info for images file %s', image_file)
-        return None,None, errors
-    gallery_photos_info,errors = image_meta.get_photo_meta(segmentation_file, gallery_photos_info,logger)
-    if errors:
-        if logger is not None:
-            logger.error('Couldnt find photo meta for images file %s', image_file)
-        return None,None, errors
-
-    # Get Query Content of each image
-    gallery_photos_info = generate_query(queries_file, gallery_photos_info,logger)
-
     if gallery_photos_info is None:
         if logger is not None:
             logger.error('the gallery images dict is empty ')
-        return None, None, 'Could not generate query'
+        return None, None
 
     # Group images by cluster class labels
     clusters_class_imgs = {}

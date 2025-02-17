@@ -40,3 +40,4 @@ def get_person_vectors(persons_file, df, logger=None):
     df['number_bodies'].fillna(0, inplace=True)
 
     return df
+
