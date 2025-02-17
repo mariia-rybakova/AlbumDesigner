@@ -1,14 +1,14 @@
 import uvicorn
 import os
 import sys
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from schema.image_selection_schema import AlbumResponse,AlbumRequest
-from config import DEPLOY_CONFIGS
-from src.smart_selection import auto_selection
-from ptinfra import intialize, get_logger, AbortRequested
+from src.image_selection import auto_selection
+from protos.get_data_protos import get_info_protobufs
+from ptinfra import intialize, get_logger
 
 #from ptinfra.config import get_variable
 
@@ -23,10 +23,7 @@ async def lifespan(app: FastAPI):
     logger = get_logger(__name__, 'DEBUG')
 
     # add model to app state
-    app.package = {"image_query": 1,
-                   'design_id': DEPLOY_CONFIGS['design_id'],
-                   'debug':DEPLOY_CONFIGS['DEBUG'],
-                   'logger': logger}
+    app.package = {'logger': logger}
 
     print("App is starting up...")
     yield
@@ -64,6 +61,8 @@ async def select_images(request: AlbumRequest):
     tags_features_file = r'files/tags.pkl'
 
     # Call image selection function (assuming it's defined elsewhere)
+    gallery_info_df, is_wedding = get_info_protobufs(project_base_url= request.base_url, logger=logger)
+
     images_selected, errors = auto_selection(
         request.base_url,
         request.photoId,  # Adjusted parameter name

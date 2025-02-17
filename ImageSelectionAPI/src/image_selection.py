@@ -11,7 +11,8 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
 
-from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
+from utils import image_meta, image_faces, image_persons, image_embeddings
+from AlbumDesignQueue.utils import image_clustering
 from utils.image_queries import generate_query
 from utils.image_selection_scores import map_cluster_label, calculate_scores
 from utils.read_files_types import read_pkl_file
@@ -483,7 +484,7 @@ def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, rela
         if logger is not None:
              logger.error('Couldnt find persons info for images file %s', image_file)
         return None,None, errors
-    gallery_photos_info,errors = image_clustering.get_clusters_info(cluster_file, gallery_photos_info,logger)
+    gallery_photos_info,errors = image_clustering.get_clusters_info(cluster_file, gallery_photos_info, logger)
     if errors:
         if logger is not None:
             logger.error('Couldnt find clusters info for images file %s', image_file)

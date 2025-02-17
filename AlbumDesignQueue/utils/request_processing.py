@@ -5,11 +5,11 @@ from datetime import datetime
 
 from concurrent.futures import ThreadPoolExecutor
 
-from utils.parser import CONFIGS
-from utils.protobufs_processing import get_info_protobufs
-from utils.load_layouts import get_layouts_data
-from utils.load_layouts import load_layouts
-from src.smart_cropping import process_cropping
+from AlbumDesignQueue.utils.parser import CONFIGS
+from AlbumDesignQueue.utils.protobufs_processing import get_info_protobufs
+from AlbumDesignQueue.utils.load_layouts import get_layouts_data
+from AlbumDesignQueue.utils.load_layouts import load_layouts
+from AlbumDesignQueue.src.smart_cropping import process_cropping
 
 
 def process_cropping_for_row(row):

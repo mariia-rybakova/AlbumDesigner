@@ -8,7 +8,7 @@ CLIP_MODEL = 'ViT-B/32'
 
 model, preprocess = clip.load(CLIP_MODEL, device, jit=False)
 
-clip_path = r'C:\Users\karmel\Desktop\AlbumDesigner\models\clip_model_v1.pt'
+clip_path = r'/AlbumDesignQueue/models\clip_model_v1.pt'
 if clip_path:
     checkpoint = torch.load(clip_path)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -59,7 +59,7 @@ for tag in tags:
     features = comp_tag_features(tag)
     result[tag] = features
 
-with open(r"C:\Users\karmel\Desktop\AlbumDesigner\files\tags.pkl", "wb") as file:
+with open(r"/AlbumDesignQueue/files\tags.pkl", "wb") as file:
     pickle.dump(result, file)
 
 print("Saved the tags features in  files folder tags.pkl")

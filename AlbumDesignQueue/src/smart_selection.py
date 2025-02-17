@@ -11,8 +11,7 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
 
-from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
-from utils.image_queries import generate_query
+from AlbumDesignQueue.utils import image_clustering
 from utils.image_selection_scores import map_cluster_label, calculate_scores
 from utils.read_files_types import read_pkl_file
 from utils.user_relation_percentage import relations_2

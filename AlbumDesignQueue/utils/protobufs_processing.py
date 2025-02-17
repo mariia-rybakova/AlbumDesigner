@@ -2,7 +2,8 @@ import os
 import concurrent.futures
 from functools import partial
 
-from utils import image_meta, image_faces, image_persons, image_embeddings, image_clustering
+from utils import image_meta, image_faces, image_persons, image_embeddings
+from AlbumDesignQueue.utils import image_clustering
 from utils.image_queries import generate_query
 from utils.person_vectors import get_person_vectors
 from utils.parser import CONFIGS
