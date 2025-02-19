@@ -11,14 +11,9 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
 
-from utils import image_meta, image_faces, image_persons, image_embeddings
-from AlbumDesignQueue.utils import image_clustering
-from utils.image_queries import generate_query
-from utils.image_selection_scores import map_cluster_label, calculate_scores
-from utils.read_files_types import read_pkl_file
-from utils.user_relation_percentage import relations_2
-from utils.selection_limintation import limit_imgs
 
+from ImageSelectionAPI.utils.calcuate_scores_Wselection import calculate_scores
+from ImageSelectionAPI.utils.wedding_relations_table import relations,limit_imgs
 
 
 def generate_event_pdfs(events_dict, gal_path, output_folder):
@@ -302,7 +297,7 @@ def remove_similar_images(category, selected_images, gallery_photos_info,user_re
             # Remove other grayscale images except the selected one
             final_selected_images.append(selected_gray_image)
 
-        needed_count =  calculate_selection(category, len(selected_images), relations_2[user_relation])
+        needed_count =  calculate_selection(category, len(selected_images), relations[user_relation])
 
         if needed_count == len(selected_images):
             chosen_images = selected_images
@@ -351,179 +346,114 @@ def calculate_selection(category, n_actual, lookup_table):
     return min(round(selection), n_actual)
 
 
-def select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, tags_features, user_relation,DEBUG,
+def smart_wedding_selection(df,ten_photos, people_ids,user_relation, tags_features,DEBUG,
                   logger=None):
-    if logger is not None:
-        logger.info("====================================")
-        logger.info("Starting Image selection Process....")
-
-    error_message = None
-    ai_images_selected = []
-    category_picked = {}
-
-    for iteration, (category, imges) in enumerate(clusters_class_imgs.items()):
-        n_actual = len(imges)
-        not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing', 'wedding dress', 'kiss']
 
         if logger is not None:
             logger.info("====================================")
-            logger.info(f"Starting with {category} and actual number  of images {n_actual}")
-        else:
-            print(f"Starting with {category} and actual number of images  {n_actual}")
+            logger.info("Starting Image selection Process....")
 
+        error_message = None
+        ai_images_selected = []
+        category_picked = {}
 
-        if category not in category_picked:
-            category_picked[category] = []
+        for iteration, (category, imges) in enumerate(df.groupby('cluster_class')):
+            n_actual = len(imges)
+            not_allowed_small_events = ['settings','vehicle','rings','food', 'accessories', 'entertainment', 'dancing', 'wedding dress', 'kiss']
 
-        # we don't select images from them
-        if category == 'None' or category == 'other' or category == 'couple':
-                    continue
-        # if we have 4 images for event we choose them all
-        elif n_actual < 3 and category not in not_allowed_small_events:
-            continue
-        elif category == 'accessories':
-            # we select none similar accessories through clusters ids with no need to calculate the scores
-            clusters_ids = get_clusters(imges, gallery_photos_info)
-            chosen_images = select_non_similar_images(category, clusters_ids, gallery_photos_info, 2)
-            images_ranked = sorted(chosen_images, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
-
-            ai_images_selected.extend(images_ranked)
-            category_picked[category].extend(images_ranked)
-
-        else:
-            # Get scores for each image
-            scores = images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags_features)
-
-            # if all scores are zeros don't select anything
-            if all(t[1] <= 0 for t in scores):
-                continue
+            if logger is not None:
+                logger.info("====================================")
+                logger.info(f"Starting with {category} and actual number  of images {n_actual}")
             else:
-                # Get images that have people we want and ignore images with 0 score
-                available_images_scores = [score for score in scores if score[1] > 0]
-                available_img_ids = [image_id for image_id, score in available_images_scores]
+                print(f"Starting with {category} and actual number of images  {n_actual}")
 
-                # remove similar before choosing from them
-                available_img_ids = remove_similar_images(category,available_img_ids , gallery_photos_info,user_relation,DEBUG)
 
-                if category == 'wedding dress' or category == 'rings':
-                    ai_images_selected.extend(available_img_ids[:1])
-                    category_picked[category].extend(available_img_ids[:1])
-                elif len(available_img_ids) < 3:
-                    # No less than 3 images for any event
+            if category not in category_picked:
+                category_picked[category] = []
+
+            # we don't select images from them
+            if category == 'None' or category == 'other' or category == 'couple':
+                        continue
+            # if we have 4 images for event we choose them all
+            elif n_actual < 3 and category not in not_allowed_small_events:
+                continue
+            elif category == 'accessories':
+                # we select none similar accessories through clusters ids with no need to calculate the scores
+                clusters_ids = get_clusters(imges, gallery_photos_info)
+                chosen_images = select_non_similar_images(category, clusters_ids, gallery_photos_info, 2)
+                images_ranked = sorted(chosen_images, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
+
+                ai_images_selected.extend(images_ranked)
+                category_picked[category].extend(images_ranked)
+
+            else:
+                # Get scores for each image
+                scores = images_scores_sorted(imges,gallery_photos_info, ten_photos, people_ids, tags_features)
+
+                # if all scores are zeros don't select anything
+                if all(t[1] <= 0 for t in scores):
                     continue
                 else:
-                    images_ranked = sorted(available_img_ids, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
-                    ai_images_selected.extend(images_ranked)
-                    category_picked[category].extend(images_ranked)
+                    # Get images that have people we want and ignore images with 0 score
+                    available_images_scores = [score for score in scores if score[1] > 0]
+                    available_img_ids = [image_id for image_id, score in available_images_scores]
 
-    # limit total number of images
-    LIMIT = 130
-    if len(ai_images_selected) == 0:
-        error_message = 'No images were selected.'
-        if logger is not None:
-           logger.error("No images were selected.")
-    elif len(ai_images_selected) > LIMIT :
-        deleted_images = []
-        total_to_reduce = len(ai_images_selected) - LIMIT
+                    # remove similar before choosing from them
+                    available_img_ids = remove_similar_images(category,available_img_ids , gallery_photos_info,user_relation,DEBUG)
 
-        for group, images in category_picked.items():
-            if len(images) == 0:
-                continue
-            if len(images) > limit_imgs[group]:
-                to_reduce = len(images) - limit_imgs[group]
-                category_picked[group] = images[:-to_reduce]
-                deleted_images.extend(images[-to_reduce:])
-                total_to_reduce -= to_reduce
+                    if category == 'wedding dress' or category == 'rings':
+                        ai_images_selected.extend(available_img_ids[:1])
+                        category_picked[category].extend(available_img_ids[:1])
+                    elif len(available_img_ids) < 3:
+                        # No less than 3 images for any event
+                        continue
+                    else:
+                        images_ranked = sorted(available_img_ids, key=lambda img: gallery_photos_info[img]['image_order'], reverse=True)
+                        ai_images_selected.extend(images_ranked)
+                        category_picked[category].extend(images_ranked)
 
-        if total_to_reduce != 0:
-             # if we still need to cut more images then we take the largest group and cut from it
-             largest_group = max(category_picked.keys(), key=lambda x: len(category_picked[x]))
-             if len(category_picked[largest_group]) - total_to_reduce > 5 :
-                 category_picked[largest_group] = category_picked[largest_group][:-total_to_reduce]
-                 deleted_images.extend(category_picked[largest_group][-total_to_reduce:])
-
-        # remove the images from chosen images
-        ai_images_selected = list(filter(lambda img: img not in deleted_images, ai_images_selected))
-
-    if logger is not None:
-        logger.info(f"Total images: {len(ai_images_selected)}")
-        logger.info("*******************************************************")
-        for category, images in category_picked.items():
-            logger.info("category", category, 'Number of selected images', len(images))
-
-    else:
-        print(f"Total images: {len(ai_images_selected)}")
-        print("*******************************************************")
-        for category, images in category_picked.items():
-            print("category", category, 'Number of selected images', len(images))
-
-    return ai_images_selected, gallery_photos_info, error_message
-
-
-def auto_selection(project_base_url, ten_photos, tags_selected, people_ids, relation, queries_file,tags_features_file,DEBUG, logger):
-    faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
-    cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
-    persons_file = os.path.join(project_base_url, 'persons_info.pb')
-    image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
-    segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
-
-    # Get info from protobuf files server
-    gallery_photos_info,errors = image_embeddings.get_image_embeddings(image_file,logger)
-    if errors:
-         if logger is not None:
-             logger.error('Couldnt find embeddings for images file %s', image_file)
-         return None,None, errors
-    gallery_photos_info,errors = image_faces.get_faces_info(faces_file, gallery_photos_info,logger)
-    if errors:
-        if logger is not None:
-            logger.error('Couldnt find faces info for images file %s', image_file)
-        return None,None, errors
-    gallery_photos_info,errors = image_persons.get_persons_ids(persons_file, gallery_photos_info,logger)
-
-    if errors:
-        if logger is not None:
-             logger.error('Couldnt find persons info for images file %s', image_file)
-        return None,None, errors
-    gallery_photos_info,errors = image_clustering.get_clusters_info(cluster_file, gallery_photos_info, logger)
-    if errors:
-        if logger is not None:
-            logger.error('Couldnt find clusters info for images file %s', image_file)
-        return None,None, errors
-    gallery_photos_info,errors = image_meta.get_photo_meta(segmentation_file, gallery_photos_info,logger)
-    if errors:
-        if logger is not None:
-            logger.error('Couldnt find photo meta for images file %s', image_file)
-        return None,None, errors
-
-    # Get Query Content of each image
-    gallery_photos_info = generate_query(queries_file, gallery_photos_info,logger)
-
-    if gallery_photos_info is None:
-        if logger is not None:
-            logger.error('the gallery images dict is empty ')
-        return None, None, 'Could not generate query'
-
-    # Group images by cluster class labels
-    clusters_class_imgs = {}
-    # Get images group clusters class labels
-    for im_id, img_info in gallery_photos_info.items():
-        if 'cluster_class' not in img_info:
+        # limit total number of images
+        LIMIT = 130
+        if len(ai_images_selected) == 0:
+            error_message = 'No images were selected.'
             if logger is not None:
-                logger.warning("image id {} has no cluster_class we will ignore it! in auto selection".format(im_id))
-            continue
-        cluster_class = img_info['cluster_class']
-        cluster_class_label = map_cluster_label(cluster_class)
-        if cluster_class_label not in clusters_class_imgs:
-            clusters_class_imgs[cluster_class_label] = []
-        clusters_class_imgs[cluster_class_label].append(im_id)
+               logger.error("No images were selected.")
+        elif len(ai_images_selected) > LIMIT :
+            deleted_images = []
+            total_to_reduce = len(ai_images_selected) - LIMIT
 
-    tags_features = read_pkl_file(tags_features_file)
+            for group, images in category_picked.items():
+                if len(images) == 0:
+                    continue
+                if len(images) > limit_imgs[group]:
+                    to_reduce = len(images) - limit_imgs[group]
+                    category_picked[group] = images[:-to_reduce]
+                    deleted_images.extend(images[-to_reduce:])
+                    total_to_reduce -= to_reduce
 
-    selected_tags_features = {}
-    for tag in tags_selected:
-        selected_tags_features[tag] = tags_features[tag]
+            if total_to_reduce != 0:
+                 # if we still need to cut more images then we take the largest group and cut from it
+                 largest_group = max(category_picked.keys(), key=lambda x: len(category_picked[x]))
+                 if len(category_picked[largest_group]) - total_to_reduce > 5 :
+                     category_picked[largest_group] = category_picked[largest_group][:-total_to_reduce]
+                     deleted_images.extend(category_picked[largest_group][-total_to_reduce:])
 
-    return select_images(clusters_class_imgs, gallery_photos_info, ten_photos, people_ids, selected_tags_features, relation,DEBUG,
-                         logger)
+            # remove the images from chosen images
+            ai_images_selected = list(filter(lambda img: img not in deleted_images, ai_images_selected))
+
+        if logger is not None:
+            logger.info(f"Total images: {len(ai_images_selected)}")
+            logger.info("*******************************************************")
+            for category, images in category_picked.items():
+                logger.info("category", category, 'Number of selected images', len(images))
+
+        else:
+            print(f"Total images: {len(ai_images_selected)}")
+            print("*******************************************************")
+            for category, images in category_picked.items():
+                print("category", category, 'Number of selected images', len(images))
+
+        return ai_images_selected, error_message
+
 
 

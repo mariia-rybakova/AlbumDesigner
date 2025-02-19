@@ -6,10 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from schema.image_selection_schema import AlbumResponse,AlbumRequest
-from src.image_selection import auto_selection
+from src.main_auto import auto_images_selection
 from protos.get_data_protos import get_info_protobufs
 from ptinfra import intialize, get_logger
-
+from utils.tags_embeddings import  get_tags_bins
 #from ptinfra.config import get_variable
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
@@ -53,24 +53,22 @@ async def root():
 
 @app.post("/selectPhotos/", response_model=AlbumResponse)
 async def select_images(request: AlbumRequest):
-    logger = app.get('logger', None)
-    debug = app.get('debug', False)
+    logger = app.get('logger')
+    debug = app.get('debug')
 
-    # File paths
-    queries_file_path = r'files/queries_features.pkl'
     tags_features_file = r'files/tags.pkl'
 
     # Call image selection function (assuming it's defined elsewhere)
-    gallery_info_df, is_wedding = get_info_protobufs(project_base_url= request.base_url, logger=logger)
+    gallery_info_df = get_info_protobufs(project_base_url= request.base_url,category=request.category, logger=logger)
+    tags_features = get_tags_bins(request.base_url, request.tags)
 
-    images_selected, errors = auto_selection(
-        request.base_url,
+    images_selected, errors = auto_images_selection(
+        gallery_info_df,
         request.photoId,  # Adjusted parameter name
-        request.tags,
         request.peopleIds,
         request.relation,
-        queries_file_path,
-        tags_features_file,
+        request.category,
+        tags_features,
         debug,
         logger=logger
     )

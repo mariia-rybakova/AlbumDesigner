@@ -1,12 +1,12 @@
 import io
+import pandas as pd
 import numpy as np
 
 from ptinfra.azure.pt_file import PTFile
 
 
-def get_image_embeddings(file, df, logger=None):
+def get_image_embeddings(file, logger=None):
     embed = {}
-    required_ids = set(df['image_id'].tolist())
 
     try:
         fb = PTFile(file)
@@ -27,14 +27,17 @@ def get_image_embeddings(file, df, logger=None):
             embedding_b = fileBytes.read1(4 * emb_size)
             embedding = np.frombuffer(embedding_b, dtype='float32').reshape((emb_size,))
 
-            if photo_id in required_ids:
-                embed[photo_id] = {'embedding': embedding}
+            embed[photo_id] = {'embedding': embedding}
 
     except Exception as e:
         if logger:
             logger.error(f"Error reading embeddings from file: {e}")
         return None
 
-    df['embedding'] = df['image_id'].map(lambda x: embed.get(x, {}).get('embedding', np.nan))
+    df = pd.DataFrame([
+        {"image_id": photo_id, "embedding": data["embedding"]}
+        for photo_id, data in embed.items()
+    ])
+
     return df
 

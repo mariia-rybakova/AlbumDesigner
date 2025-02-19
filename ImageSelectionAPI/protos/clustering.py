@@ -1,10 +1,8 @@
 import pandas as pd
 from ptinfra.azure.pt_file import PTFile
-from files  import ContentCluster_pb2 as cluster_vector
+from .files  import ContentCluster_pb2 as cluster_vector
 
-def get_clusters_info(cluster_file, df,logger=None):
-    required_ids = set(df['image_id'].tolist())
-
+def get_clusters_info(cluster_file,logger=None):
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file
         if not cluster_info_bytes.exists():
@@ -35,7 +33,6 @@ def get_clusters_info(cluster_file, df,logger=None):
 
     # Loop through each photo and collect the required information
     for photo in images_photos:
-        if photo.photoId in required_ids:
             photo_ids.append(photo.photoId)
             image_classes.append(photo.imageClass)
             cluster_labels.append(photo.clusterId)
@@ -53,7 +50,4 @@ def get_clusters_info(cluster_file, df,logger=None):
         'image_order': image_orders
     })
 
-    # Merge the original DataFrame with the new information
-    df = df.merge(new_image_info_df, how='left', on='image_id')
-
-    return df
+    return new_image_info_df

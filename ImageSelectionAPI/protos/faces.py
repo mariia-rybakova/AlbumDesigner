@@ -1,11 +1,9 @@
 import pandas as pd
 from ptinfra.azure.pt_file import PTFile
-from files import FaceVector_pb2 as face_vector
+from .files import FaceVector_pb2 as face_vector
 
 
-def get_faces_info(faces_file, df, logger=None):
-    required_ids = set(df['image_id'].tolist())
-
+def get_faces_info(faces_file, logger=None):
     try:
         faces_info_bytes = PTFile(faces_file)  # load file
         if not faces_info_bytes.exists():
@@ -34,18 +32,13 @@ def get_faces_info(faces_file, df, logger=None):
 
 
     for photo in images_photos:
-        if photo.photoId in required_ids:
             number_faces = len(photo.faces)
             photo_ids.append(photo.photoId)
             num_faces_list.append(number_faces)
 
 
     face_info_df = pd.DataFrame({
-        'photo_id': photo_ids,
+        'image_id': photo_ids,
         'n_faces': num_faces_list,
     })
-
-    df = df.merge(face_info_df, how='left', left_on='image_id', right_on='photo_id')
-    df.drop(columns=['photo_id'], inplace=True)
-
-    return df
+    return face_info_df

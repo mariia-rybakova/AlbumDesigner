@@ -1,10 +1,9 @@
 import pandas as pd
 from ptinfra.azure.pt_file import PTFile
-from files import BGSegmentation_pb2 as meta_vector
+from .files import BGSegmentation_pb2 as meta_vector
 
 
-def get_photo_meta(file, df, logger=None):
-    required_ids = set(df['image_id'].tolist())
+def get_photo_meta(file,logger=None):
     try:
         meta_info_bytes = PTFile(file)  # load file
         if not meta_info_bytes.exists():
@@ -39,7 +38,6 @@ def get_photo_meta(file, df, logger=None):
 
     # Loop through each photo and collect the required information
     for photo in images_photos:
-        if photo.photoId in required_ids:
             photo_ids.append(photo.photoId)
             image_times.append(photo.dateTaken)
             scene_orders.append(photo.sceneOrder)
@@ -63,7 +61,4 @@ def get_photo_meta(file, df, logger=None):
         'diameter': blob_diameters
     })
 
-    # Merge the original DataFrame with the new information
-    df = df.merge(additional_image_info_df, how='left', on='image_id')
-
-    return df
+    return additional_image_info_df

@@ -3,27 +3,16 @@ import concurrent.futures
 import pandas as pd
 from functools import partial
 
-from faces import get_faces_info
-from photo_meta import get_photo_meta
-from embedding import get_image_embeddings
-from clustering import get_clusters_info
-from persons import get_persons_ids,get_person_vectors
+from sympy.integrals.meijerint_doc import category
+
+from .faces import get_faces_info
+from .photo_meta import get_photo_meta
+from .embedding import get_image_embeddings
+from .clustering import get_clusters_info
+from .persons import get_persons_ids,get_person_vectors
 from ImageSelectionAPI.utils.parser import CONFIGS
+from ImageSelectionAPI.utils.parallel_methods import parallel_content_processing
 
-
-def check_gallery_type(df):
-    count = 0
-    for idx, row in df.iterrows():  # Unpack the tuple into idx (index) and row (data)
-        content_class = row['image_class']
-        if content_class == -1:
-            count += 1
-
-    number_images = len(df)
-
-    if number_images > 0 and count / number_images > 0.6:  # Ensure no division by zero
-        return False
-    else:
-        return True
 
 def generate_dict_key(numbers, n_bodies):
     if numbers == 0 and n_bodies == 0 or not numbers:
@@ -51,10 +40,7 @@ def generate_people_clustering(df):
     return df
 
 
-def get_info_protobufs(project_base_url, logger):
-    # Initialize an empty DataFrame
-    df = pd.DataFrame()
-
+def get_info_protobufs(project_base_url,category, logger):
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
     persons_file = os.path.join(project_base_url, 'persons_info.pb')
@@ -74,29 +60,36 @@ def get_info_protobufs(project_base_url, logger):
 
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
-        future_to_function = {executor.submit(func, df, logger): func for func in functions}
+        future_to_function = {executor.submit(func, logger): func for func in functions}
 
         for future in concurrent.futures.as_completed(future_to_function):
             func = future_to_function[future]
             try:
                 result = future.result()
                 if result is None:
-                    logger.error("Error in function: %s", func)
+                    print("Error in function: %s", func)
+                    #logger.error("Error in function: %s", func)
                     return None
                 results.append(result)
             except Exception as e:
-                logger.error("Exception in function %s: %s", func, e)
+                print("Exception in function %s: %s", func, e)
+                #logger.error("Exception in function %s: %s", func, e)
                 return None
 
     # Merge results (assuming they return modified df)
     gallery_info_df = results[0]
+
     for res in results[1:]:
-        gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
+        gallery_info_df = pd.merge(gallery_info_df, res, on="image_id", how="outer")
+
+    gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(lambda x: x if isinstance(x, list) else [])
+
+    if category == 1:
+        # make Cluster column
+        gallery_info_df = parallel_content_processing(gallery_info_df)
 
     # Cluster people by number of people inside the image
     gallery_info_df = generate_people_clustering(gallery_info_df)
-    is_wedding = check_gallery_type(gallery_info_df)
+    #logger.info("Reading from protobuf files has been finished successfully!")
 
-    logger.info("Reading from protobuf files has been finished successfully!")
-
-    return gallery_info_df, is_wedding
+    return gallery_info_df
