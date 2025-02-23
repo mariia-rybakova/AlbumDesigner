@@ -3,7 +3,6 @@
 dataset/
 files/
 models/
-photographers_processing.md
 results/
 test.py
 testlocally.py
