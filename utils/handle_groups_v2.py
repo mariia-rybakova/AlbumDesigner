@@ -108,7 +108,7 @@ def do_not_change_group(illegal_group, groups,group_key):
 def handle_illegal(group_key,change_tuple,content_cluster_id,illegal_group,imgs_number,groups,look_up_table,is_wedding,count):
     if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['merge_images_number']:
         return do_not_change_group(illegal_group, groups,group_key)
-    elif "wedding dress" in group_key and imgs_number <= CONFIGS['merge_images_number']:
+    elif "wedding dress" in group_key and imgs_number <= CONFIGS['wedding_merge_images_number']:
         """Merge wedding dress into group related to bride"""
         return handle_wedding_dress(illegal_group,groups,group_key)
     elif change_tuple[0] == 'merge':

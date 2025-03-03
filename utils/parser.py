@@ -29,7 +29,8 @@ CONFIGS = {'DEBUG': True,
            'max_reading_workers':2,
            'cropping_workers':2,
            'max_lay_workers': 1,
-           "max_photos_group":12
+           "max_photos_group":12,
+           'wedding_merge_images_number':2
 }
 
 merge_content_priority = {
