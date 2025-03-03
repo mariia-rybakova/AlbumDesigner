@@ -1,0 +1,144 @@
+[{
+  "accountId": 9092,
+  "alerts": null,
+  "bundle": null,
+  "compositionPackageId": -1,
+  "compositions": [
+    {
+      "compositionId": 1,
+      "compositionPackageId": -1,
+      "designId": 1,
+      "styleId": -1,
+      "revisionCounter": 0,
+      "copies": 1,
+      "boxes": [
+        {
+          "id": 11840,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 1.0,
+          "layer": -1,
+          "layerOrder": 0,
+          "type": 1
+        }
+      ],
+      "logicalSelectionsState": [
+        "5x7",
+        "df-3x3",
+        "white",
+        "d-portrait",
+        "d-15450"
+      ]
+    },
+    {
+      "compositionId": 2,
+      "compositionPackageId": -1,
+      "designId": 45,
+      "styleId": -1,
+      "revisionCounter": 0,
+      "copies": 1,
+      "boxes": [
+        {
+          "id": 13164,
+          "x": 0.07861635220125786,
+          "y": 0.2823920265780731,
+          "width": 0.33260764392839864,
+          "height": 0.4390128144280968,
+          "layer": -1,
+          "layerOrder": 0,
+          "type": 1
+        }
+      ],
+      "logicalSelectionsState": [
+        "5x7",
+        "df-3x3",
+        "white",
+        "d-portrait",
+        "d-15450"
+      ]
+    },
+    {
+      "compositionId": 2,
+      "compositionPackageId": -1,
+      "designId": 45,
+      "styleId": -1,
+      "revisionCounter": 0,
+      "copies": 1,
+      "boxes": [
+        {
+          "id": 13165,
+          "x": 0.5416061925495887,
+          "y": 0.2233032747982914,
+          "width": 0.20379777455249154,
+          "height": 0.26767916468913144,
+          "layer": -1,
+          "layerOrder": 0,
+          "type": 1
+        }
+      ],
+      "logicalSelectionsState": [
+        "5x7",
+        "df-3x3",
+        "white",
+        "d-portrait",
+        "d-15450"
+      ]
+    }
+
+  ],
+  "copies": 1,
+  "countCompositions": 1,
+  "engagementId": null,
+  "externalReference": null,
+  "fulfillerId": 0,
+  "guserId": 17498886,
+  "logicalSelectionsState": [],
+  "packageDesignId": null,
+  "packageFinishingId": 0,
+  "packageStyleId": 0,
+  "packageTypeId": 0,
+  "placementsImg": [
+    {
+      "placementImgId": 1,
+      "compositionPackageId": -1,
+      "compositionId": 1,
+      "boxId": 11840,
+      "photoId": 9800170409,
+      "cropX": 0.125,
+      "cropY": 0.25,
+      "cropWidth": 0.4996668887408394,
+      "cropHeight": 0.75,
+      "rotate": 0,
+      "projectId": 3441383,
+      "photoFilter": 0,
+      "photo": null
+    },
+    {
+      "placementImgId": 0,
+      "compositionPackageId": -1,
+      "compositionId": 2,
+      "boxId": 13164,
+      "photoId": 9800170418,
+      "cropX": 0.125,
+      "cropY": 0.25,
+      "cropWidth": 0.4996668887408394,
+      "cropHeight": 0.75,
+      "rotate": 0,
+      "projectId": 3441383,
+      "photoFilter": 0,
+      "photo": null
+    }
+
+  ],
+  "placementsTxt": [],
+  "productId": 1154,
+  "projectId": 3441383,
+  "revisionCounter": 0,
+  "specialOptions": null,
+  "status": 0,
+  "storeId": 32,
+  "userId": 306800045,
+  "userJobId": 560618661,
+  "__type": "some_type"
+}]
