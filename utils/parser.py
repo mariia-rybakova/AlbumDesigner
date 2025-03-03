@@ -1,6 +1,7 @@
 CONFIGS = {'DEBUG': True,
+           'queries_file': r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
+           'designs_json_file_path': r'C:\Users\karmel\Desktop\AlbumDesigner\files\designs.json',
            'image_loading_timeout': 30,
-           'queries_file':r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
            'min_split_score':4,
            'max_img_split':3,
            'max_total_spreads':50,
@@ -28,7 +29,7 @@ CONFIGS = {'DEBUG': True,
            'max_reading_workers':2,
            'cropping_workers':2,
            'max_lay_workers': 1,
-           "max_photos_group":5
+           "max_photos_group":12
 }
 
 merge_content_priority = {

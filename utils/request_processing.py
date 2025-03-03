@@ -5,12 +5,14 @@ from datetime import datetime
 
 from concurrent.futures import ThreadPoolExecutor
 
-from AlbumDesignQueue.utils.parser import CONFIGS
-from AlbumDesignQueue.utils.protobufs_processing import get_info_protobufs
-from AlbumDesignQueue.utils.load_layouts import get_layouts_data
-from AlbumDesignQueue.utils.load_layouts import load_layouts
-from AlbumDesignQueue.src.smart_cropping import process_cropping
+from utils import get_layouts_data
+from utils.parser import CONFIGS
+from utils.protobufs_processing import get_info_protobufs
+from utils.layouts_file import generate_layouts_df
+from src.smart_cropping import process_cropping
 
+cached_design_ids = None
+cached_layouts_df = None
 
 def process_cropping_for_row(row):
     cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
@@ -31,6 +33,9 @@ def process_cropping_for_row(row):
 
 def read_messages(messages,queries_file, logger):
     enriched_messages = []
+
+    global cached_design_ids, cached_layouts_df
+
     for _msg in messages:
         reading_message_time = datetime.now()
         json_content = _msg.content
@@ -40,8 +45,7 @@ def read_messages(messages,queries_file, logger):
         if 'photosIds' not in json_content or \
                 'projectURL' not in json_content or \
                 'storeId' not in json_content or\
-                'layoutsCSV' not in json_content or\
-                'sendTime' not in json_content:
+                'sendTime' not in json_content or 'designIds' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
@@ -50,6 +54,12 @@ def read_messages(messages,queries_file, logger):
         try:
             images = json_content['photosIds']
             project_url = json_content.get('projectURL', '')
+
+            design_ids = json_content.get('designIds', [])
+
+            if cached_design_ids is None or cached_design_ids != design_ids:
+                cached_design_ids = design_ids  # Update cache
+                cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
 
             if not project_url or not images:
                 logger.warning(f"Incomplete message content: {_msg.content}")
@@ -75,24 +85,15 @@ def read_messages(messages,queries_file, logger):
                 f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - cropping_start} secs.")
 
             is_wedding = True
-            if not gallery_info_df.empty:
+            if not gallery_info_df.empty and not cached_layouts_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
+                _msg.content['layouts_df'] = cached_layouts_df
+                _msg.content['layout_id2data'] = get_layouts_data(cached_layouts_df)
                 enriched_messages.append(_msg)
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
                 _msg.error = 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
-                continue
-
-            try:
-                # Load layout file (or data) as needed for each gallery
-                layouts_df = load_layouts(_msg.content['layoutsCSV'])
-                layout_id2data = get_layouts_data(layouts_df)
-                _msg.content['layouts_df'] = layouts_df
-                _msg.content['layout_id2data'] = layout_id2data
-            except Exception as e:
-                logger.error(f"Error loading layouts: {e}")
-                _msg.error = f"Error loading layouts: {e}"
                 continue
 
             logger.info(

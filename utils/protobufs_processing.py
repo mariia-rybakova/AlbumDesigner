@@ -1,9 +1,10 @@
 import os
 import concurrent.futures
 from functools import partial
+from datetime import datetime
 
 from utils import image_meta, image_faces, image_persons, image_embeddings
-from AlbumDesignQueue.utils import image_clustering
+from utils import image_clustering
 from utils.image_queries import generate_query
 from utils.person_vectors import get_person_vectors
 from utils.parser import CONFIGS
@@ -48,6 +49,7 @@ def check_gallery_type(df):
         return True
 
 def get_info_protobufs(project_base_url, df, queries_file, logger):
+    start = datetime.now()
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
     persons_file = os.path.join(project_base_url, 'persons_info.pb')
@@ -83,9 +85,15 @@ def get_info_protobufs(project_base_url, df, queries_file, logger):
 
     # Merge results (assuming they return modified df)
     gallery_info_df = results[0]
+    print("Time for getting from files", datetime.now() - start)
+
+    merge_start = datetime.now()
     for res in results[1:]:
         gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
 
+    print("Mering all dataframe time", datetime.now() - merge_start)
+
+    other_start = datetime.now()
     # Get Query Content of each image
     gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
 
@@ -94,5 +102,5 @@ def get_info_protobufs(project_base_url, df, queries_file, logger):
     is_wedding = check_gallery_type(gallery_info_df)
 
     logger.info("Reading from protobuf files has been finished successfully!")
-
+    print("other processing ", datetime.now() - other_start)
     return gallery_info_df, is_wedding
