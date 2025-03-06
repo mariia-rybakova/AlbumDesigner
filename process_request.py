@@ -46,7 +46,7 @@ general_time_list = list()
 
 class GetStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None, logger=None):
-        super().__init__('GetStage', self.get_message, in_q, out_q, err_q, batch_size=1, max_threads=1)
+        #super().__init__('GetStage', self.get_message, in_q, out_q, err_q, batch_size=1, max_threads=1)
         self.logger = logger
 
     def get_message(self, msgs: Union[List[Message], AbortRequested]):
@@ -82,8 +82,8 @@ class ReadStage(Stage):
 class ProcessStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
-        #super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=2,
-        #batch_wait_time=5)
+        # super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=2,
+        # batch_wait_time=5)
         self.logger = logger
 
     def process_message(self, msgs: Union[Message, List[Message]]):
@@ -337,6 +337,7 @@ class MessageProcessor:
 def main():
     message_processor = MessageProcessor()
     message_processor.run()
+
 
 
 if __name__ == '__main__':
@@ -950,33 +951,7 @@ if __name__ == '__main__':
     10013216438,
     10013216439,
     10013216440,
-    10013216405,
-    10013216406,
-    10013216407,
-    10013216408,
-    10013216409,
-    10013216416,
-    10013216418,
-    10013216419,
-    10013216417,
-    10013216420,
-    10013216421,
-    10013216422,
-    10013216423,
-    10013216424,
-    10013216425,
-    10013216426,
-    10013216427,
-    10013216428,
-    10013216432,
-    10013216431,
-    10013216434,
-    10013216433,
-    10013216436,
-    10013216437,
-    10013216438,
-    10013216439,
-    10013216440],
+    ],
         'projectURL': 'ptstorage_17://pictures/41/661/41661791/vjg4ekc180wegk0rq0',
         'storeId': 000,
         'layoutsCSV': r'C:\Users\karmel\Desktop\AlbumDesigner\files\layouts.csv',
@@ -1272,7 +1247,7 @@ if __name__ == '__main__':
 
     # wedding_2_test_message_200 # wedding_3_test_message wedding_4_test_message  wedding_5_test_message_300 wedding_2_test_message_setting
     # non_wedding_test_message
-    result = read_stage.read_messages([time_testing])
+    result = read_stage.read_messages([wedding_2_test_message_setting])
 
     processing = ProcessStage(logger=logger)
     processing.process_message(result)

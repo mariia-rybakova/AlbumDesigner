@@ -217,6 +217,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
      for group_name in group2images.keys()
     ]
     all_results = process_all_groups_parallel(args)
+    print("Results", all_results)
 
     return all_results,updated_groups
 

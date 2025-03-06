@@ -106,6 +106,8 @@ def get_info_protobufs(project_base_url, df, logger):
     columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
     gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
     print("Number of images after cleaning the nan values", len(gallery_info_df.index))
+    # make sure it has list values not float nan
+    gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
     # Cluster people by number of people inside the image
     gallery_info_df = generate_people_clustering(gallery_info_df)

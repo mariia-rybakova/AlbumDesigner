@@ -45,6 +45,10 @@ def get_persons_ids(persons_file, df,logger=None):
         'persons_ids': persons_ids_list
     })
 
+    if not photo_ids and not persons_ids_list:
+        df['persons_ids'] = [[] for _ in range(len(df))]
+        return df
+
     # Aggregate persons_ids for each image_id
     persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
 
@@ -52,7 +56,7 @@ def get_persons_ids(persons_file, df,logger=None):
     df = df.merge(persons_info_df, how='inner', on='image_id')
 
 
-    df['persons_ids'].fillna(0, inplace=True)
+    df['persons_ids'].fillna([], inplace=True)
 
     return df
 
