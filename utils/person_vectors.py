@@ -34,7 +34,7 @@ def get_person_vectors(persons_file, df, logger=None):
     photo_df = pd.DataFrame(photo_data)
 
     # Merge the new data with the existing DataFrame
-    df = df.merge(photo_df, how='left', on='image_id')
+    df = df.merge(photo_df, how='inner', on='image_id')
 
     # Fill missing 'number_bodies' with 0 if not provided in the photos data
     df['number_bodies'].fillna(0, inplace=True)
