@@ -69,8 +69,7 @@ def read_messages(messages,queries_file, logger):
             df = pd.DataFrame(images, columns=['image_id'])
             proto_start = datetime.now()
             # check if its wedding here! and added to the message
-            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df,
-                                                             queries_file=queries_file, logger=logger)
+            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df, logger=logger)
 
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
@@ -80,7 +79,9 @@ def read_messages(messages,queries_file, logger):
 
             cropped_df = pd.DataFrame(results)
             # Merge the cropped data back into the original DataFrame
-            gallery_info_df = gallery_info_df.merge(cropped_df, how='left', on='image_id')
+            gallery_info_df = gallery_info_df.merge(cropped_df, how='inner', on='image_id')
+
+
             logger.info(
                 f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - cropping_start} secs.")
 

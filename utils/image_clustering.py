@@ -37,11 +37,11 @@ def get_clusters_info(cluster_file, df,logger=None):
     for photo in images_photos:
         if photo.photoId in required_ids:
             photo_ids.append(photo.photoId)
-            image_classes.append(photo.imageClass)
-            cluster_labels.append(photo.clusterId)
-            cluster_classes.append(photo.clusterClass)
+            image_classes.append(int(photo.imageClass))
+            cluster_labels.append(int(photo.clusterId))
+            cluster_classes.append(int(photo.clusterClass))
             image_rankings.append(photo.selectionScore)
-            image_orders.append(photo.selectionOrder)
+            image_orders.append(int(photo.selectionOrder))
 
     # Create a DataFrame from the collected data
     new_image_info_df = pd.DataFrame({
@@ -54,6 +54,6 @@ def get_clusters_info(cluster_file, df,logger=None):
     })
 
     # Merge the original DataFrame with the new information
-    df = df.merge(new_image_info_df, how='left', on='image_id')
+    df = df.merge(new_image_info_df, how='inner', on='image_id')
 
     return df

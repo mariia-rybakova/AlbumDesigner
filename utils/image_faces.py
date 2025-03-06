@@ -47,7 +47,7 @@ def get_faces_info(faces_file, df, logger=None):
         'faces_info': faces_info_list
     })
 
-    df = df.merge(face_info_df, how='left', left_on='image_id', right_on='photo_id')
+    df = df.merge(face_info_df, how='inner', left_on='image_id', right_on='photo_id')
     df.drop(columns=['photo_id'], inplace=True)
 
     return df

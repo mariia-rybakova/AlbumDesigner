@@ -48,7 +48,7 @@ def check_gallery_type(df):
     else:
         return True
 
-def get_info_protobufs(project_base_url, df, queries_file, logger):
+def get_info_protobufs(project_base_url, df, logger):
     start = datetime.now()
     faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
     cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
@@ -91,11 +91,21 @@ def get_info_protobufs(project_base_url, df, queries_file, logger):
     for res in results[1:]:
         gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
 
+    columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
+
+    # Convert only the specified columns to 'Int64' (nullable integer type)
+    gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
+
     print("Mering all dataframe time", datetime.now() - merge_start)
+    print("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
     other_start = datetime.now()
     # Get Query Content of each image
     gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+
+    columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
+    gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
+    print("Number of images after cleaning the nan values", len(gallery_info_df.index))
 
     # Cluster people by number of people inside the image
     gallery_info_df = generate_people_clustering(gallery_info_df)

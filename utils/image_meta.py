@@ -64,6 +64,6 @@ def get_photo_meta(file, df, logger=None):
     })
 
     # Merge the original DataFrame with the new information
-    df = df.merge(additional_image_info_df, how='left', on='image_id')
+    df = df.merge(additional_image_info_df, how='inner', on='image_id')
 
     return df

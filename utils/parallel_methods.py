@@ -1,5 +1,5 @@
 import pandas as pd
-from multiprocessing import Pool
+from concurrent.futures import ThreadPoolExecutor
 
 from utils.process_content_df import process_content
 
@@ -7,8 +7,8 @@ from utils.process_content_df import process_content
 def parallel_content_processing(sorted_df):
     rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
 
-    # make process content in parallel to get content cluster
-    with Pool(processes=4) as pool:
-        processed_rows = pool.map(process_content, rows)
+    # Use threads instead of multiprocessing pool
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        processed_rows = list(executor.map(process_content, rows))
 
     return pd.DataFrame(processed_rows)
