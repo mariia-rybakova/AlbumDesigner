@@ -116,7 +116,8 @@ def crop_find(foregroundMask, faceMask=None, aspectRatio=1, steps=10):
 
     return s_min, [s_min[0] + w, s_min[1] + h], int(w), int(h)
 
-def smart_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000, face_extension=2):
+def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000, face_extension=2):
+    #print("ar",ar, faces, centroid, diameter, box_aspect_ratio, min_dim, face_extension)
     if ar > 1:
         mask = np.zeros((min_dim, int(ar * min_dim)), dtype=np.uint8)
     else:
@@ -137,7 +138,6 @@ def smart_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000
         if not isinstance(faces, list):
             faces = list(faces)
 
-        faces = faces[0]
         for face in faces:
             bbox = face.bbox
             # x1 = int(bbox.x1 * face_mask.shape[1])

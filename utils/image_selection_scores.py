@@ -84,6 +84,6 @@ def calculate_scores(image, gallery_photos_info, ten_photos, people_ids, tags):
     tags_score = calcuate_tags_score(tags, gallery_photos_info[image]['embedding'])
 
     total_score = class_matching_score * similarity_score * person_score * gallery_photos_info[image][
-        'ranking'] * tags_score
+        'image_order'] * tags_score
 
     return total_score

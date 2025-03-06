@@ -1,6 +1,12 @@
-.idea/
-venv
-servicelog.log
-__pycache__/
+.idea
 .secrets.yml
-models
+dataset/
+models/
+results/
+test.py
+testlocally.py
+__pycache__/
+servicelog.log
+src/__pycache__/
+utils/__pycache__/
+

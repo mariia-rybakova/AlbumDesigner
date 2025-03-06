@@ -1,9 +1,13 @@
 import random
+import pandas as pd
+import ast
+import statistics
 from datetime import datetime
 
+from src.smart_cropping import process_cropping
 
 def get_important_imgs(data_df, top=5):
-    selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment']
+    selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment','groom and brides dancing together solo', 'bride and groom cutting cake', ]
     # Step 1: Filter based on the conditions
     filtered_df = data_df[
         (data_df["cluster_context"] == "bride and groom") &
@@ -19,7 +23,7 @@ def get_important_imgs(data_df, top=5):
     if len(image_id_list) == 0:
         # let's pick another images
         image_id_list = data_df[
-            (data_df["image_query_content"] == "groom")].head(top)['image_id'].tolist()
+            (data_df["image_query_content"] == "bride")].head(top)['image_id'].tolist()
 
     return image_id_list
 
@@ -64,3 +68,186 @@ def get_general_times(data_db):
 
         image_id2general_time[image_id] = general_time
     return image_id2general_time
+
+
+def get_wedding_groups(df,logger):
+    # Ensure df is a DataFrame
+    if not isinstance(df, pd.DataFrame):
+        return "Error: Input must be a Pandas DataFrame."
+
+    # Required columns
+    required_columns = {'time_cluster', 'cluster_context'}
+
+    # Check if required columns exist
+    if not required_columns.issubset(df.columns):
+        missing = required_columns - set(df.columns)
+        logger.error(f"Missing required columns: {missing}")
+        return f"Error: Missing required columns: {missing}"
+
+    # Handle empty DataFrame case
+    if df.empty:
+        logger.error('empty dataframe cant get the groups!')
+        return "Error: DataFrame is empty."
+
+    try:
+        return df.groupby(['time_cluster', 'cluster_context'])
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error during grouping: {str(e)}"
+
+
+def get_none_wedding_groups(df, logger=None):
+    # Ensure df is a DataFrame
+    if not isinstance(df, pd.DataFrame):
+        logger.error("Input must be a Pandas DataFrame.")
+        return "Error: Input must be a Pandas DataFrame."
+
+    # Check if required column exists
+    required_column = 'people_cluster'
+
+    if required_column not in df.columns:
+        logger.error(f"Missing required column: {required_column}")
+        return f"Error: Missing required column: {required_column}"
+
+    # Handle empty DataFrame case
+    if df.empty:
+        logger.error('empty dataframe cant get the groups!')
+        return "Error: DataFrame is empty."
+
+    try:
+        return df.groupby(['people_cluster'])
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error during grouping: {str(e)}"
+
+
+def get_images_per_groups(original_groups, logger=None):
+    # Check if original_groups is a Pandas GroupBy object
+    if not isinstance(original_groups, pd.core.groupby.generic.DataFrameGroupBy):
+        logger.error("Input must be a Pandas DataFrame.")
+        return "Error: Input must be a Pandas GroupBy object."
+
+    # Handle empty groups
+    if not original_groups.groups:
+        logger.error("Input must have at least one group.")
+        return "Error: No groups found in the input."
+
+    group2images_data_list = dict()
+
+    try:
+        for name_group, group_df in original_groups:
+            num_images = len(group_df)
+            group2images_data_list[name_group] = num_images
+        return group2images_data_list
+
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error while processing groups: {str(e)}"
+
+def calculate_median_time(spread):
+    all_times = []
+    for page in spread[1:3]:  # Left and right pages
+        for photo in page:
+            if hasattr(photo, 'general_time') and photo.general_time is not None:
+                all_times.append(photo.general_time)
+
+    if all_times:
+        return statistics.median(all_times)
+    else:
+        return float('inf')  # Handle spreads with no valid times
+
+
+def sort_groups_by_name(data_list):
+    priority_list = ["bride getting dressed", "getting hair-makeup", "groom getting dress", "bride", "groom",
+                     "bride party", "groom party",
+                     "kiss", "portrait", "bride and groom", "walking the aisle", "ceremony", "settings", 'speech',
+                     "first dance", 'food', "cake cutting", "dancing"]
+
+    priority_dict = {name: i for i, name in enumerate(priority_list)}
+
+    sorted_data_list = sorted(
+    [group_data for group_data in data_list if group_data],  # Remove empty dicts
+    key=lambda group_data: priority_dict.get(
+        list(group_data.keys())[0].split("*")[0].split('_')[1],
+        float('inf')
+    )) # sort by priority
+
+    return sorted_data_list
+
+def organize_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add smart_cropping function as argument
+    organized_groups = {}
+    for group_data in data_list:
+        group_name = list(group_data.keys())[0]
+        spreads_and_other_info = group_data[group_name]
+        spreads = spreads_and_other_info[0]
+
+        spreads.sort(key=lambda spread: calculate_median_time(spread))  # Use median time
+        organized_groups[group_name] = {}  # Initialize list to store spreads with cropping info
+
+        for spread_index, spread in enumerate(spreads): #added spread index
+            if spread_index not in organized_groups[group_name]:
+                organized_groups[group_name][spread_index] = {}
+
+            layout_index = spread[0]
+            layout_id = layouts_df.loc[layout_index]['id']
+            cur_layout_info = ast.literal_eval(layouts_df.loc[layout_index]['boxes_info'])
+            left_box_ids = ast.literal_eval(layouts_df.loc[layout_index]['left_box_ids'])
+            right_box_ids = ast.literal_eval(layouts_df.loc[layout_index]['right_box_ids'])
+
+            left_page_photos = list(spread[1])
+            right_page_photos = list(spread[2])
+
+            all_box_ids = left_box_ids + right_box_ids
+            all_photos = left_page_photos + right_page_photos
+
+            orig_group_name = group_name.split('*')
+            if is_wedding:
+                parts = orig_group_name[0].split('_')
+                group_id = (int(parts[0]), '_'.join(parts[1:]))
+            else:
+                group_id = orig_group_name[0]
+
+            c_group = groups_df.get_group(group_id)
+
+            spread_with_cropping_info = []  # List to hold spread data with cropping info
+            for i, box in enumerate(cur_layout_info):
+                box_id = box['id']
+                if box_id not in all_box_ids:
+                    logger.error('Some error, cant find box with id: {}'.format(box_id))
+                    continue  # Skip to the next box if there's an error
+
+                element_index = all_box_ids.index(box_id)
+                cur_photo = all_photos[element_index]
+                c_image_id = cur_photo.id
+
+                c_image_info = c_group[c_group['image_id'] == c_image_id]
+
+                x, y, w, h = box['x'], box['y'], box['width'], box['height']
+                box_aspect_ratio = w / h #calculate box aspect ratio
+
+                try:
+                    cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
+                        float(c_image_info['image_as'].iloc[0]),
+                        c_image_info['faces_info'],
+                        c_image_info['background_centroid'].values[0],
+                        float(c_image_info['diameter'].iloc[0]),
+                        box_aspect_ratio
+                    )
+
+                    spread_with_cropping_info.append({
+                        "box_number": i, #add box number
+                        "image_id": c_image_id,
+                        "image_x": cropped_x,
+                        "image_y": cropped_y,
+                        "image_w": cropped_w,
+                        "image_h": cropped_h,
+                    })
+
+                except Exception as e:  # Catch and handle exceptions during cropping
+                    print(f"Error during cropping for image {c_image_id}: {e}")
+
+            organized_groups[group_name][spread_index]['id'] = layout_id
+            organized_groups[group_name][spread_index]['images'] =spread_with_cropping_info  #append the list of dicts
+
+    return organized_groups
+

@@ -1,12 +1,14 @@
 import numpy as np
 import pandas as pd
+import ast
 
 from collections import Counter
 from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.metrics import silhouette_score
 
-def split_illegal_group(illegal_group,count,logger):
+
+def split_illegal_group(illegal_group,count):
     illegal_group_features = illegal_group['embedding'].values.tolist()
     illegal_time_features = [time for time in illegal_group["general_time"]]
 
@@ -29,9 +31,11 @@ def split_illegal_group(illegal_group,count,logger):
 
     combined_features = np.column_stack((illegal_group_features, time_features_nor,cluster_labels_nor))
 
+    n_samples = len(combined_features)
+    size_min = max(1, n_samples // 4)
     clf = KMeansConstrained(
         n_clusters=2,
-        size_min=4,
+        size_min=size_min,
         size_max=len(combined_features),
         random_state=0)
     clf.fit_predict(combined_features)
@@ -39,11 +43,8 @@ def split_illegal_group(illegal_group,count,logger):
     labels = clf.labels_
     silhouette_avg = silhouette_score(combined_features, labels)
 
-    if silhouette_avg > 0.15:
-        logger.info("Clustering is good for gallery group.", )
-    else:
-        logger.info("Clustering is bad.so we wont split it")
-        return None, None
+    if silhouette_avg < 0.15:
+        return None,None
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
     labels = [f'{content_cluster_origin}_{label}_{count}' for label in labels]
@@ -55,40 +56,44 @@ def split_illegal_group(illegal_group,count,logger):
     return illegal_group, label_counts
 
 
-def merge_illegal_group(main_groups, illegal_group, intended_group_index):
-    clusters_features = [group['embedding'] for group in main_groups]
+def merge_illegal_group(main_groups, illegal_group):
+    clusters_features = [group['embedding'].values.copy() for group in main_groups]
 
     # Aggregate features within each group
-    group_features = [np.mean(group, axis=0) for group in clusters_features]
+    group_features = [group.mean() if group.shape[0] > 1 else group[0] for group in clusters_features]
     group_features_np = np.array(group_features)
-    all_groups_except_illegal_mask = np.arange(group_features_np.shape[0]) != intended_group_index
 
-    if len(group_features_np[intended_group_index].shape) == 1:
-        intded_group_fe = group_features_np[intended_group_index].reshape(1, -1)
+
+    if illegal_group['embedding'].values.shape[0] > 1 :
+        illegal_group_features = illegal_group['embedding'].values.mean()
     else:
-        intded_group_fe = group_features_np[intended_group_index]
+        illegal_group_features = illegal_group['embedding'].values[0]
 
-    main_groups_time_without_illegal = [group['general_time'].values.mean() for i, group in enumerate(main_groups) if i != intended_group_index]
-    groups_combined_features = np.column_stack((group_features_np[all_groups_except_illegal_mask], main_groups_time_without_illegal))
+    if len(illegal_group_features.shape) == 1:
+        intded_group_fe = illegal_group_features.reshape(1, -1)
+    else:
+        intded_group_fe = illegal_group_features
 
-    inteded_group_time = main_groups[intended_group_index]['general_time'].values.mean()
-    intded_group_fe_with_time = np.column_stack((intded_group_fe,inteded_group_time))
+    inteded_group_time = illegal_group['general_time'].values.mean()
+    intded_group_fe_with_time = np.column_stack((intded_group_fe, inteded_group_time))
+
+    main_groups_time_without_illegal = [group['general_time'].values.mean() for i, group in enumerate(main_groups)]
+    groups_combined_features = np.column_stack((group_features_np, main_groups_time_without_illegal))
 
     dist_to_illegal_group = pairwise_distances(intded_group_fe_with_time,groups_combined_features,
                                                metric='cosine')
 
     # Find the index of the group with the minimum distance to illegal_group
     min_distance_idx = np.argmin(dist_to_illegal_group)
+    selected_cluster = main_groups[min_distance_idx]
 
-    # Identify the selected group corresponding to the highest mean distance
-    main_groups_without_illegal = main_groups[:intended_group_index] + main_groups[intended_group_index + 1:]
-    selected_cluster = main_groups_without_illegal[min_distance_idx]
     len_combine_group = len(selected_cluster) + len(illegal_group)
     # We dont want to split the 2 images or less group per spread
     while len(selected_cluster) != 44 and len(
-            selected_cluster) > 38 or len_combine_group > 38 and len_combine_group != 44:
+            selected_cluster) > 38 or len_combine_group > 38 and len_combine_group != 44 and len(main_groups) != 2:
         dist_to_illegal_group = np.delete(dist_to_illegal_group, min_distance_idx)
-
+        if len(dist_to_illegal_group) == 0:
+            break
         min_distance_idx = np.argmin(dist_to_illegal_group)
 
         # Identify the selected group corresponding to the second highest mean distance

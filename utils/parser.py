@@ -1,37 +1,36 @@
-# All prject parameters
-
-MIAN_PARAMS = {
-    # FOR MAIN FILE
-    'time_cluster_n': 4,
-    'GET_QUERIES': True,
-    'VIT_CLASSIFIER': True,
-    'VIT_EMBEDDINGS': True,
-}
-
-DESIGN_PARAMS = {
-    'num_spreads': 26,
-    'gal_num': 38257613,
-    'classifier': True,
-    'min_per_spread': 4,
-    'max_per_spread': 38,
-    'album_type': 'everyday_album',
-    'distance_weight': 10,
-    'size_weight': 0.9,
-    'split_group_penalty': 0.01,
-    'max_size_for_normalize': 44,
-    'min_size_for_normalize': 2,
-    'split_homogenous_group_penalty': 0.1,
-    'DEBUG': True,
-    'crop_penalty': 0.01,
-    'color_mix': 0.0001,
-    'double_page_color_mix': 0.00000001,
-    'class_mix': 0.09,
-    'orientation_mix': 0.1,
-    'spread_score_threshold': 0.01,
-    'partition_score_threshold': 100,
-    'MaxCombs': 1000,
-    'MaxCombsLargeGroups': 100,
-    'MaxOrientedCombs': 300,
+CONFIGS = {'DEBUG': True,
+           'queries_file': r'C:\Users\karmel\Desktop\AlbumDesigner\files\queries_features.pkl',
+           'designs_json_file_path': r'C:\Users\karmel\Desktop\AlbumDesigner\files\designs.json',
+           'image_loading_timeout': 30,
+           'min_split_score':4,
+           'max_img_split':3,
+           'max_total_spreads':50,
+           'max_group_spread':3,
+           'max_imges_per_spread':24,
+           'min_per_spread': 4,
+           'max_per_spread': 38,
+           'distance_weight': 10,
+           'size_weight': 0.9,
+           'split_group_penalty': 0.01,
+           'max_size_for_normalize': 44,
+           'min_size_for_normalize': 2,
+           'split_homogenous_group_penalty': 0.1,
+           'crop_penalty': 0.01,
+           'color_mix': 0.0001,
+           'double_page_color_mix': 0.00000001,
+           'class_mix': 0.09,
+           'orientation_mix': 0.1,
+           'spread_score_threshold': 0.01,
+           'partition_score_threshold': 100,
+           'MaxCombs': 1000,
+           'MaxCombsLargeGroups': 100,
+           'MaxOrientedCombs': 300,
+           'top_imges_for_cover' : 50,
+           'max_reading_workers':2,
+           'cropping_workers':2,
+           'max_lay_workers': 1,
+           "max_photos_group":12,
+           'wedding_merge_images_number':2
 }
 
 merge_content_priority = {
@@ -104,18 +103,3 @@ split_content_priority = {
     'nan': 0.00001,
 }
 
-
-DEPLOY_CONFIGS = {
-    'DEBUG': True,
-    'crop_penalty': 0.01,
-    'color_mix': 0.0001,
-    'double_page_color_mix': 0.00000001,
-    'class_mix': 0.09,
-    'orientation_mix': 0.1,
-    'spread_score_threshold': 0.01,
-    'partition_score_threshold': 100,
-    'MaxCombs': 2000,
-    'MaxOrientedCombs': 300,
-    'design_id':1
-
-}

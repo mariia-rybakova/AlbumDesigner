@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
     cropped_x,cropped_y,cropped_w,cropped_h = smart_cropping(ar, faces, centroid, diameter, min_dim=1000, face_extenssion=2)
 
-    image = Image.open(r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\40850524\9850153891.jpg').convert('RGB')
+    image = Image.open(r'/AlbumDesignQueue/dataset\40850524\9850153891.jpg').convert('RGB')
 
     np_img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 

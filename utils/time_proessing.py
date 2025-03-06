@@ -1,38 +1,60 @@
+import copy
+import pandas as pd
+
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 def read_timestamp(timestamp_str):
     try:
-        # Try parsing with milliseconds
         return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S.%f")
     except ValueError:
-        # If it fails, try parsing without milliseconds
         return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
 
 def convert_to_timestamp(time_integer):
-   return datetime.fromtimestamp(time_integer)
+    return datetime.fromtimestamp(time_integer)
+
+def process_image_time_row(args):
+    """Processes a single row to compute the general time."""
+    row_time, first_image_time = args
+    row_time = copy.deepcopy(row_time)
+    cur_timestamp = convert_to_timestamp(row_time['image_time'])
+
+    if 0 <= cur_timestamp.hour <= 4:
+        general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
+    else:
+        general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
+
+    diff_from_first = cur_timestamp - first_image_time
+    general_time += diff_from_first.days * 1440
+
+    row_time['general_time'] = int(general_time)
+    return row_time
 
 def process_image_time(data_df):
-        timestamps = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
+    # Convert image_time to timestamp
+    data_df['image_time_date'] = data_df['image_time'].apply(lambda x: convert_to_timestamp(x))
 
-        #timestamps = [read_timestamp(timestamp_str) for timestamp_str in timestamps]
-        image_ids = data_df['image_id']
+    # Sort by timestamp to find the first image time
+    data_df = data_df.sort_values(by='image_time_date')
+    first_image_time = data_df.iloc[0]['image_time_date']
 
-        image_ids2timestamps = [(image_id, timestamp) for image_id, timestamp in zip(image_ids, timestamps)]
-        image_ids2timestamps = sorted(image_ids2timestamps, key=lambda x: x[1])
-        if len(image_ids2timestamps) == 0:
-            return None, dict()
+    time_data_dict = data_df[['image_id', 'image_time']].to_dict('records')
 
-        image_id2general_time = dict()
-        first_image_time = image_ids2timestamps[0][1]
-        for image_id, cur_timestamp in image_ids2timestamps:
-            #general_time = cur_timestamp.hour * 60 + cur_timestamp.minute + cur_timestamp.second / 60
-            general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
-            diff_from_first = cur_timestamp - first_image_time
-            general_time += diff_from_first.days * 1440
+    args_list = [(row, first_image_time) for row in time_data_dict]
 
-            image_id2general_time[image_id] = int(general_time)
-            data_df.loc[data_df['image_id'] == image_id, 'general_time'] = int(general_time)
+    # Using Pool to process each row in parallel
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        processed_rows = list(executor.map(process_image_time_row, args_list))
 
-        sorted_by_time_df = data_df.sort_values(by="general_time", ascending=False)
+    # Create a new DataFrame from processed rows
+    processed_df = pd.DataFrame(processed_rows)
 
-        return sorted_by_time_df, image_id2general_time
+    processed_df = data_df.merge(processed_df[['image_id', 'general_time']], how='left', on='image_id')
+
+    # Sort the DataFrame by general time
+    sorted_by_time_df = processed_df.sort_values(by="general_time", ascending=True)
+
+    # Create a dictionary for image_id to general time
+    image_id2general_time = dict(zip(processed_df['image_id'], processed_df['general_time']))
+
+    return sorted_by_time_df, image_id2general_time
