@@ -40,7 +40,9 @@ wedding_lookup_table = {
     'other': (16, 1.5),
     'invite': (12, 1.5),
     'None':(10,1.5),
-    'wedding dress': (4,1.5)
+    'wedding dress': (4,1.5),
+    'vehicle':(10,1.5),
+    'inside vehicle':(15,0.5)
 }
 
 non_wedding_lookup_table = {
