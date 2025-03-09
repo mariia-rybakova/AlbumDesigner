@@ -31,7 +31,8 @@ CONFIGS = {'DEBUG': True,
            'max_lay_workers': 1,
            "max_photos_group":12,
            'wedding_merge_images_number':2,
-           'collection_name': 'aigeneratealbumdto'
+           'collection_name': 'aigeneratealbumdto',
+           'visibility_timeout':120
 }
 
 merge_content_priority = {

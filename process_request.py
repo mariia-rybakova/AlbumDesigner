@@ -296,7 +296,6 @@ class MessageProcessor:
         except:
             prefix = 'dev'
 
-        # input_queue = 'devvisualembeddto'
         input_queue = CONFIGS['collection_name']
         print(prefix + input_queue)
         if prefix == 'dev':
@@ -324,11 +323,11 @@ class MessageProcessor:
         get_stage = GetStage(azure_input_q, get_q, report_q, logger=self.logger)
         read_stage = ReadStage(get_q, read_q, report_q, logger=self.logger)
         process_stage = ProcessStage(read_q, process_q, report_q, logger=self.logger)
-        store_stage = StoreStage(process_q, report_q, report_q, logger=self.logger)
+        #store_stage = StoreStage(process_q, report_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()
-        store_stage.start()
+        #store_stage.start()
         process_stage.start()
         read_stage.start()
         get_stage.start()
