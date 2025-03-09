@@ -149,7 +149,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
         if spreads > CONFIGS['max_group_spread'] :
             # Update lookup table
             max_images_per_spread = math.ceil(number_images / CONFIGS['max_group_spread'])
-            lookup_table[key[1]] = (max_images_per_spread , lookup_table[key[1]][1])
+            lookup_table[content_key] = (max_images_per_spread , lookup_table[content_key][1])
             spreads = round(number_images / max_images_per_spread)
 
         total_spreads += spreads
@@ -166,9 +166,11 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
             if excess_spreads <= 0:
                 break  # Stop once the total spreads is within limit
 
-            current_max_imges , extra_value = lookup_table[key]
-            spread = round(group2images[key] / current_max_imges) - 1
-            lookup_table[key[1]] = (round(group2images[key] / spread), extra_value)
+            content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else \
+            key[0].split("_")[0]
+            current_max_imges , extra_value = lookup_table[content_key]
+            spread = 1 if round(group2images[key] / current_max_imges) - 1 == 0 else round(group2images[key] / current_max_imges)
+            lookup_table[content_key] = (round(group2images[key] / spread), extra_value)
             excess_spreads -= 1  # Reduce excess count
 
     return lookup_table
@@ -215,6 +217,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
      for group_name in group2images.keys()
     ]
     all_results = process_all_groups_parallel(args)
+    print("Results", all_results)
 
     return all_results,updated_groups
 
@@ -245,10 +248,11 @@ def start_processing_album(df, layouts_df, layout_id2data, is_wedding, logger):
         #sorintg & formating & cropping
         if is_wedding:
             sorted_result_list = sort_groups_by_name(result_list)
-            result = sorted_result_list
             #result = organize_groups(sorted_result_list,layouts_df,updated_groups, is_wedding,logger)
         else:
-            result = "^_^"
+            sorted_result_list = result_list
+
+        result = format_output(sorted_result_list)
 
         return result
 

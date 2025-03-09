@@ -251,3 +251,7 @@ def organize_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add s
 
     return organized_groups
 
+
+def organis_format(format_output):
+    pass
+

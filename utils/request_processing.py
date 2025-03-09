@@ -42,18 +42,16 @@ def read_messages(messages,queries_file, logger):
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
 
-        if 'photosIds' not in json_content or \
-                'projectURL' not in json_content or \
-                'storeId' not in json_content or\
-                'sendTime' not in json_content or 'designIds' not in json_content:
+        if 'photos' not in json_content or \
+                'base_url' not in json_content or 'designIds' not in json_content or 'projectId' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
             _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
             continue
         try:
-            images = json_content['photosIds']
-            project_url = json_content.get('projectURL', '')
+            images = json_content['photos']
+            project_url = json_content.get('base_url', '')
 
             design_ids = json_content.get('designIds', [])
 
