@@ -23,8 +23,8 @@ from utils.time_proessing import process_image_time
 from src.album_processing import start_processing_album
 from utils.parallel_methods import parallel_content_processing
 
-# if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
-#     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
+if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
+    os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
 
 
 warnings.filterwarnings('ignore')
@@ -289,7 +289,7 @@ class MessageProcessor:
         private_key = get_variable('PtKey')
         self.logger.debug('Private key: {}'.format(private_key))
 
-        intialize('BackgroundSegmentation', settings_filename)
+        intialize('AlbumDesigner', settings_filename)
 
         try:
             prefix = get_variable('PTEnvironment')
