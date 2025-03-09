@@ -35,7 +35,7 @@ CONFIGS = {'DEBUG': True,
            'visibility_timeout':5,
            'products_json_location':'pictures/photostore/32/settings/products.json.txt',
            'design_pack_base':'pictures/photostore/32/ext/designs',
-           'architect_location':'pictures/photostore/32/ext/productgroups/9/architect2.json.en-us.txt',
+           'architect_base':'pictures/photostore/32/ext/productgroups',
 }
 
 merge_content_priority = {

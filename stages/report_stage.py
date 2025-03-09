@@ -14,7 +14,7 @@ general_time_list = list()
 class ReportStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
-        super().__init__('ProcessMessage', self.report_message, in_q, out_q, err_q, batch_size=1, max_threads=1)
+        super().__init__('ReportMessage', self.report_message, in_q, out_q, err_q, batch_size=1, max_threads=1)
         self.global_start_time = datetime.now()
         self.global_number_of_msgs = 0
         self.number_of_reports = 0
