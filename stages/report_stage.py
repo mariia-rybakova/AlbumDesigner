@@ -4,8 +4,6 @@ from datetime import datetime
 from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, QWriter, Message
 
-from testlocally import Message
-
 read_time_list = list()
 processing_time_list = list()
 processing_scores_time_list = list()

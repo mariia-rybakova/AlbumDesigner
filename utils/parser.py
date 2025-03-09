@@ -32,7 +32,10 @@ CONFIGS = {'DEBUG': True,
            "max_photos_group":12,
            'wedding_merge_images_number':2,
            'collection_name': 'aigeneratealbumdto',
-           'visibility_timeout':120
+           'visibility_timeout':5,
+           'products_json_location':'pictures/photostore/32/settings/products.json.txt',
+           'design_pack_base':'pictures/photostore/32/ext/designs',
+           'architect_location':'pictures/photostore/32/ext/productgroups/9/architect2.json.en-us.txt',
 }
 
 merge_content_priority = {

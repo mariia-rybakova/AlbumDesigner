@@ -3,10 +3,8 @@ from typing import List, Union
 from datetime import datetime
 
 from ptinfra.stage import Stage
-from ptinfra.pt_queue import QReader, QWriter
+from ptinfra.pt_queue import QReader, QWriter, Message
 
-
-from testlocally import Message
 from utils.clustering_time import cluster_by_time
 
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_end_image, get_cover_end_layout

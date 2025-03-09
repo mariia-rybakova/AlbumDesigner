@@ -14,7 +14,7 @@ from ptinfra.config import get_variable
 
 
 from utils.parser import CONFIGS
-from stages.read_stage import GetStage,ReadStage
+from stages.read_stage import ReadStage
 from stages.process_stage import ProcessStage
 from stages.report_stage import ReportStage
 
@@ -56,35 +56,32 @@ class MessageProcessor:
         print(prefix + input_queue)
         if prefix == 'dev':
             dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                     max_dequeue_allowed=100)
+                                     max_dequeue_allowed=1000)
             test_queue = MessageQueue('test' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                      max_dequeue_allowed=100)
+                                      max_dequeue_allowed=1000)
             ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                    max_dequeue_allowed=100)
+                                    max_dequeue_allowed=1000)
             azure_input_q = RoundRobinReader([dev_queue, test_queue, ep_queue])
         elif prefix == 'production':
             self.logger.info('PRODUCTION environment set, queue name: ' + input_queue)
             azure_input_q = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                         max_dequeue_allowed=100)
+                                         max_dequeue_allowed=1000)
         else:
             self.logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
             azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                         max_dequeue_allowed=100)
+                                         max_dequeue_allowed=1000)
 
-        get_q = MemoryQueue(8)
-        read_q = MemoryQueue(8)
-        process_q = MemoryQueue(8)
-        report_q = MemoryQueue(8)
+        read_q = MemoryQueue(2)
+        process_q = MemoryQueue(2)
+        report_q = MemoryQueue(2)
 
-        get_stage = GetStage(azure_input_q, get_q, report_q, logger=self.logger)
-        read_stage = ReadStage(get_q, read_q, report_q, logger=self.logger)
+        read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
         process_stage = ProcessStage(read_q, process_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()
         process_stage.start()
         read_stage.start()
-        get_stage.start()
 
 
 def main():
