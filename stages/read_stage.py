@@ -50,6 +50,8 @@ class ReadStage(Stage):
             fileBytes = design_package.read_blob()
             design_package = json.loads(fileBytes.decode('utf-8'))
 
+            msg.designs = design_package
+
             architect_package = os.path.join(self.architect_base, f'{productGroupId}/architect2.json.en-us.txt')
             architect_package = PTFile(architect_package)
             fileBytes = architect_package.read_blob()
@@ -57,6 +59,7 @@ class ReadStage(Stage):
 
             rules = architect_package['planningRules']
             msg.defaultPackageStyleId = rules['defaultPackageStyleId']
+
             compositions = rules['compositions']
             cover = None
             for composition in compositions:
