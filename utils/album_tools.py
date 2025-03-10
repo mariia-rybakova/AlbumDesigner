@@ -5,6 +5,8 @@ import statistics
 from datetime import datetime
 
 from src.smart_cropping import process_cropping
+from .result_format_template import result_template
+
 
 def get_important_imgs(data_df, top=5):
     selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment','groom and brides dancing together solo', 'bride and groom cutting cake', ]
@@ -252,6 +254,151 @@ def organize_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add s
     return organized_groups
 
 
-def organis_format(format_output):
-    pass
+
+def assembly_output(output_list,message,layouts_df,images_df,cover_images_ids, covers_images_df, covers_layouts_df):
+    output = result_template
+    # adding the Album Cover
+    if message.cover:
+        output['compositions'].append({"compositionId": 1,
+                                       "designId":  message.cover_designs[0] ,
+                                       "styleId": message.defaultPackageStyleId,
+                                       "revisionCounter": 0,
+                                       "copies": 1,
+                                       "boxes": None,
+                                       "logicalSelectionsState": None})
+
+    # adding the first spread image
+    if message.first:
+        left_box_ids = layouts_df.loc[covers_layouts_df[0]]['left_box_ids']
+        right_box_ids = layouts_df.loc[covers_layouts_df[0]]['right_box_ids']
+        all_box_ids = left_box_ids + right_box_ids
+
+        first_design_choose = message.first_designs # check which one has one image then choose randomly and its box id
+        output['compositions'].append({"compositionId": 2,
+                                       "designId": message.cover_designs[0],
+                                       "styleId": message.defaultPackageStyleId,
+                                       "revisionCounter": 0,
+                                       "copies": 1,
+                                       "boxes": None,
+                                       "logicalSelectionsState": None})
+
+        output['placementsImg'].append({"placementImgId": 1,
+                                        "compositionId": 2,
+                                        "boxId": all_box_ids[0],
+                                        "photoId": cover_images_ids[0],
+                                        "cropX": covers_images_df.iloc[0]['cropped_x'],
+                                        "cropY": covers_images_df.iloc[0]['cropped_y'],
+                                        "cropWidth": covers_images_df.iloc[0]['cropped_w'],
+                                        "cropHeight": covers_images_df.iloc[0]['cropped_h'],
+                                        "rotate": 0,
+                                        "projectId": message.content['projectId'],
+                                        "photoFilter": 0,
+                                        "photo": None})
+
+    # layouts_df.loc[covers_layouts_df[0]]['id']
+
+
+    # Add images
+    counter_comp_id = 1
+    counter_image_id = 1
+    for number_groups,group_dict in enumerate(output_list):
+
+        for group_name in group_dict.keys():
+            group_result = group_dict[group_name]
+            total_spreads = len(group_result)
+            for i in range(total_spreads):
+                counter_comp_id += 1
+                group_data = group_result[i]
+                if isinstance(group_data, float):
+                    continue
+                if isinstance(group_data, list):
+                    number_of_spreads = len(group_data)
+
+                    for spread_index in range(number_of_spreads):
+                        layout_id = group_data[spread_index][0]
+
+                        output['compositions'].append({"compositionId": counter_comp_id,
+                                                       "designId": layouts_df.loc[layout_id]['id'],
+                                                       "styleId": 0,#message.content['style_id'],
+                                                       "revisionCounter": 0,
+                                                       "copies": 1,
+                                                       "boxes": None,
+                                                       "logicalSelectionsState": None})
+
+                        cur_layout_info = layouts_df.loc[layout_id]['boxes_info']
+                        left_box_ids = layouts_df.loc[layout_id]['left_box_ids']
+                        right_box_ids = layouts_df.loc[layout_id]['right_box_ids']
+
+                        left_page_photos = list(group_data[spread_index][1])
+                        right_page_photos = list(group_data[spread_index][2])
+
+                        all_box_ids = left_box_ids + right_box_ids
+                        all_photos = left_page_photos + right_page_photos
+
+                        # Loop over boxes and plot images
+                        for j, box in enumerate(cur_layout_info):
+                            counter_image_id = counter_image_id + 1
+                            box_id = box['id']
+                            if box_id not in all_box_ids:
+                                print('Some error, cant find box with id: {}'.format(box_id))
+
+                            element_index = all_box_ids.index(box_id)
+                            cur_photo = all_photos[element_index]
+                            image_id = cur_photo.id
+
+                            image_info = images_df[images_df["image_id"] == image_id]
+                            x = image_info['cropped_x']
+                            y = image_info['cropped_y']
+                            w = image_info['cropped_w']
+                            h = image_info['cropped_h']
+
+                            output['placementsImg'].append({"placementImgId" : counter_image_id,
+                                                            "compositionId" : counter_comp_id,
+                                                            "boxId" : box_id,
+                                                            "photoId" : image_id,
+                                                            "cropX" : x,
+                                                            "cropY" : y,
+                                                            "cropWidth" : w,
+                                                            "cropHeight" : h,
+                                                            "rotate" : 0,
+                                                            "projectId" : message.content['projectId'],
+                                                            "photoFilter" : 0,
+                                                            "photo" : None})
+
+
+    # adding the last page
+    if message.last:
+        left_box_ids = layouts_df.loc[covers_layouts_df[1]]['left_box_ids']
+        right_box_ids = layouts_df.loc[covers_layouts_df[1]]['right_box_ids']
+        all_box_ids = left_box_ids + right_box_ids
+
+        last_design_choose = message.last_designs  # check which one has one image then choose randomly and its box id
+        output['compositions'].append({"compositionId": output['compositions'][-1]['compositionId'] + 1,
+                                       "designId": last_design_choose,
+                                       "styleId": message.defaultPackageStyleId,
+                                       "revisionCounter": 0,
+                                       "copies": 1,
+                                       "boxes": None,
+                                       "logicalSelectionsState": None})
+
+        output['placementsImg'].append({"placementImgId":  len(output['placementsImg']) +1,
+                                        "compositionId": output['compositions'][-1]['compositionId'],
+                                        "boxId": all_box_ids[0],
+                                        "photoId": cover_images_ids[0],
+                                        "cropX": covers_images_df.iloc[0]['cropped_x'],
+                                        "cropY": covers_images_df.iloc[0]['cropped_y'],
+                                        "cropWidth": covers_images_df.iloc[0]['cropped_w'],
+                                        "cropHeight": covers_images_df.iloc[0]['cropped_h'],
+                                        "rotate": 0,
+                                        "projectId": message.content['projectId'],
+                                        "photoFilter": 0,
+                                        "photo": None})
+
+
+    return output
+
+
+
+
+
 

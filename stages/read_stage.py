@@ -52,6 +52,8 @@ class ReadStage(Stage):
 
             msg.designs = design_package
 
+
+
             architect_package = os.path.join(self.architect_base, f'{productGroupId}/architect2.json.en-us.txt')
             architect_package = PTFile(architect_package)
             fileBytes = architect_package.read_blob()

@@ -11,6 +11,7 @@ from utils.cover_image import process_non_wedding_cover_image, process_wedding_c
 from utils.time_proessing import process_image_time
 from src.album_processing import start_processing_album
 from utils.parallel_methods import parallel_content_processing
+from utils.album_tools import assembly_output
 
 
 
@@ -78,11 +79,14 @@ class ProcessStage(Stage):
                                                           message.content['layout_id2data'],
                                                           message.content['is_wedding'], logger=self.logger)
 
+                    final_response = assembly_output(album_result, message, message.content['layouts_df'], df,
+                                                     cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)
+
                     if isinstance(album_result, str):  # Check if it's an error message, report it
-                        message.content['error'] = album_result
+                        message.content['error'] = final_response
                         continue
 
-                    message.content['album'] = album_result
+                    message.content['album'] = final_response
                     processing_time = datetime.now() - start
 
                     self.logger.debug('Lay-outing time: {}.For Processed album id: {}'.format(processing_time,

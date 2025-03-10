@@ -53,7 +53,7 @@ def read_messages(messages,queries_file, logger):
             images = json_content['photos']
             project_url = json_content.get('base_url', '')
 
-            design_ids = json_content.get('designIds', [])
+            design_ids = json_content.get('designs', [])
 
             if cached_design_ids is None or cached_design_ids != design_ids:
                 cached_design_ids = design_ids  # Update cache
