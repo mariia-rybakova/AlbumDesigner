@@ -12,7 +12,7 @@ from utils.time_proessing import process_image_time
 from src.album_processing import start_processing_album
 from utils.parallel_methods import parallel_content_processing
 from utils.album_tools import assembly_output
-
+from utils.parser import CONFIGS
 
 
 
@@ -27,7 +27,20 @@ class ProcessStage(Stage):
         # check if its single message or list
         messages = msgs if isinstance(msgs, list) else [msgs]
         whole_messages_start = datetime.now()
-        for message in messages:
+
+        Spread_score_threshold_params = [0.01,0.5,0.05,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01]
+        Partition_score_threshold_params = [100,100,100,200,150,100,100,100,100,100,100,100,100]
+        Maxm_Combs_params = [1000,1000,1000,1000,1000,50,10,1000,1000,1000,1000,1000,1000]
+        MaxCombsLargeGroups_params = [100,100,100,100,100,100,100,20,5,100,100,100,100]
+        MaxOrientedCombs_params = [300,300,300,300,300,300,300,300,300,10,50,300,300]
+        Max_photo_groups_params = [12,12,12,12,12,12,12,12,12,12,12,8,5]
+
+        for i,message in enumerate(messages):
+            if i > 13:
+                i = 0
+
+            params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
+
             try:
                 stage_start = datetime.now()
                 # Extract gallery photo info safely
@@ -77,7 +90,7 @@ class ProcessStage(Stage):
                     start = datetime.now()
                     album_result = start_processing_album(df, message.content['layouts_df'],
                                                           message.content['layout_id2data'],
-                                                          message.content['is_wedding'], logger=self.logger)
+                                                          message.content['is_wedding'],params, logger=self.logger)
 
                     final_response = assembly_output(album_result, message, message.content['layouts_df'], df,
                                                      cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)

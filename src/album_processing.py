@@ -33,7 +33,7 @@ def get_group_photos_list(cur_group_photos, spread_params, logger):
 
 
 def process_group(args):
-    group_name, group_images_df, spread_params, layouts_df, layout_id2data ,is_wedding,logger= args
+    group_name, group_images_df, spread_params, layouts_df, layout_id2data ,is_wedding,params,logger= args
     logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
@@ -44,7 +44,7 @@ def process_group(args):
         group_idx = 0
         for group_photos in cur_group_photos_list:
             filter_start = time.time()
-            filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,logger)
+            filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,params,logger)
 
             final_groups_and_spreads = None
             if filtered_spreads is None:
@@ -54,7 +54,7 @@ def process_group(args):
                     groups_filtered_spreads_list = list()
                     for cur_sub_group_photos in new_group_photos_list:
                         cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df,
-                                                                           [spread_params[0] / divider, spread_params[1]], logger)
+                                                                           [spread_params[0] / divider, spread_params[1]],params, logger)
                         if cur_filtered_spreads is None:
                             groups_filtered_spreads_list = None
                             break
@@ -189,7 +189,7 @@ def process_all_groups_parallel(args):
     results = [q.get() for _ in range(len(args))]  # retrieve results from the queue
     return results
 
-def groups_processing(group2images,original_groups,look_up_table,layouts_df,layout_id2data,is_wedding,logger):
+def groups_processing(group2images,original_groups,look_up_table,layouts_df,layout_id2data,is_wedding,params,logger):
     start_time = time.time()
     if is_wedding:
         updated_groups, group2images,look_up_table = process_illegal_groups(group2images, original_groups,look_up_table,is_wedding, logger)
@@ -213,6 +213,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
             copy.deepcopy(layouts_df),
             copy.deepcopy(layout_id2data),
             copy.deepcopy(is_wedding),
+            copy.deepcopy(params),
             copy.deepcopy(logger))
      for group_name in group2images.keys()
     ]
@@ -221,7 +222,7 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
 
     return all_results,updated_groups
 
-def start_processing_album(df, layouts_df, layout_id2data, is_wedding, logger):
+def start_processing_album(df, layouts_df, layout_id2data, is_wedding,params, logger):
         if is_wedding:
             original_groups = get_wedding_groups(df,logger)
         else:
@@ -240,7 +241,7 @@ def start_processing_album(df, layouts_df, layout_id2data, is_wedding, logger):
         if isinstance(look_up_table, str):  # Check if it's an error message, report it
             return look_up_table
 
-        result_list,updated_groups = groups_processing(group2images,original_groups,look_up_table,layouts_df, layout_id2data, is_wedding, logger)
+        result_list,updated_groups = groups_processing(group2images,original_groups,look_up_table,layouts_df, layout_id2data, is_wedding,params, logger)
 
         if isinstance(result_list, str):  # Check if it's an error message, report it
             return result_list
