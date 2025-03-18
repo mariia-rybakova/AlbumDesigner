@@ -40,7 +40,7 @@ class ProcessStage(Stage):
                 i = 0
 
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
-
+            print("Params for this Gallery are:", params)
             try:
                 stage_start = datetime.now()
                 # Extract gallery photo info safely
