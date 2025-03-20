@@ -35,78 +35,78 @@ class ReadStage(Stage):
 
         messages = msgs if isinstance(msgs, list) else [msgs]
 
-        for msg in msgs:
-            productId = msg.conten['productId']
-            product_list = self.products_json['products']
-            for product_dict in product_list:
-                if product_dict['productId'] == productId:
-                    break
-
-            packageTypeId = product_dict['packageTypeId']
-            productGroupId = product_dict['productGroupId']
-
-            design_package = os.path.join(self.design_pack_base, f'pack_{packageTypeId}.json.txt')
-            design_package = PTFile(design_package)
-            fileBytes = design_package.read_blob()
-            design_package = json.loads(fileBytes.decode('utf-8'))
-
-            msg.designs = design_package
-
-
-
-            architect_package = os.path.join(self.architect_base, f'{productGroupId}/architect2.json.en-us.txt')
-            architect_package = PTFile(architect_package)
-            fileBytes = architect_package.read_blob()
-            architect_package = json.loads(fileBytes.decode('utf-8'))
-
-            rules = architect_package['planningRules']
-            msg.defaultPackageStyleId = rules['defaultPackageStyleId']
-
-            compositions = rules['compositions']
-            cover = None
-            for composition in compositions:
-                if composition['name']=='cover':
-                    cover = composition
-                    break
-
-            msg.cover = False
-            if cover is not None:
-                msg.cover=True
-                msg.cover_designs = cover['designIds']
-
-            first = None
-            for composition in compositions:
-                if composition['name'] == 'first':
-                    first = composition
-                    break
-
-            msg.first = False
-            if first is not None:
-                msg.first = True
-                msg.first_designs = first['designIds']
-
-            last = None
-            for composition in compositions:
-                if composition['name'] == 'last':
-                    last = composition
-                    break
-
-            msg.last = False
-            if last is not None:
-                msg.last = True
-                msg.last_designs = last['designIds']
-
-            any_page = None
-            for composition in compositions:
-                if composition['name'] == 'any page':
-                    any_page = composition
-                    break
-            if any_page is None:
-                self.logger.error('no designs found for any page')
-                msg.error = Exception('no designs found for any page')
-            else:
-                msg.designs = any_page['designIds']
-
+        # for msg in msgs:
+            # productId = msg.content['productId']
+            # product_list = self.products_json['products']
+            # for product_dict in product_list:
+            #     if product_dict['productId'] == productId:
+            #         break
+            #
+            # packageTypeId = product_dict['packageTypeId']
+            # productGroupId = product_dict['productGroupId']
+            #
+            # design_package = os.path.join(self.design_pack_base, f'pack_{packageTypeId}.json.txt')
+            # design_package = PTFile(design_package)
+            # fileBytes = design_package.read_blob()
+            # design_package = json.loads(fileBytes.decode('utf-8'))
+            #
+            # msg.designs = design_package
+            #
+            #
+            #
+            # architect_package = os.path.join(self.architect_base, f'{productGroupId}/architect2.json.en-us.txt')
+            # architect_package = PTFile(architect_package)
+            # fileBytes = architect_package.read_blob()
+            # architect_package = json.loads(fileBytes.decode('utf-8'))
+            #
+            # rules = architect_package['planningRules']
+            # msg.defaultPackageStyleId = rules['defaultPackageStyleId']
+            #
+            # compositions = rules['compositions']
+            # cover = None
+            # for composition in compositions:
+            #     if composition['name']=='cover':
+            #         cover = composition
+            #         break
+            #
+            # msg.cover = False
+            # if cover is not None:
+            #     msg.cover=True
+            #     msg.cover_designs = cover['designIds']
+            #
+            # first = None
+            # for composition in compositions:
+            #     if composition['name'] == 'first':
+            #         first = composition
+            #         break
+            #
+            # msg.first = False
+            # if first is not None:
+            #     msg.first = True
+            #     msg.first_designs = first['designIds']
+            #
+            # last = None
+            # for composition in compositions:
+            #     if composition['name'] == 'last':
+            #         last = composition
+            #         break
+            #
+            # msg.last = False
+            # if last is not None:
+            #     msg.last = True
+            #     msg.last_designs = last['designIds']
+            #
+            # any_page = None
+            # for composition in compositions:
+            #     if composition['name'] == 'any page':
+            #         any_page = composition
+            #         break
+            # if any_page is None:
+            #     self.logger.error('no designs found for any page')
+            #     msg.error = Exception('no designs found for any page')
+            # else:
+            #     msg.designs = any_page['designIds']
+            #
 
         start = datetime.now()
         #Read messages using a helper function

@@ -68,20 +68,29 @@ def get_info_protobufs(project_base_url, df, logger):
     ]
 
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
-        future_to_function = {executor.submit(func, df, logger): func for func in functions}
 
-        for future in concurrent.futures.as_completed(future_to_function):
-            func = future_to_function[future]
-            try:
-                result = future.result()
-                if result is None:
-                    logger.error("Error in function: %s", func)
-                    return None
-                results.append(result)
-            except Exception as e:
-                logger.error("Exception in function %s: %s", func, e)
-                return None
+    for func in functions:
+        result = func(df, logger)
+        if result is None:
+            logger.error("Error in function: %s", func)
+            return None
+        else:
+            results.append(result)
+
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
+    #     future_to_function = {executor.submit(func, df, logger): func for func in functions}
+    #
+    #     for future in concurrent.futures.as_completed(future_to_function):
+    #         func = future_to_function[future]
+    #         try:
+    #             result = future.result()
+    #             if result is None:
+    #                 logger.error("Error in function: %s", func)
+    #                 return None
+    #             results.append(result)
+    #         except Exception as e:
+    #             logger.error("Exception in function %s: %s", func, e)
+    #             return None
 
     # Merge results (assuming they return modified df)
     gallery_info_df = results[0]

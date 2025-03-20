@@ -46,19 +46,26 @@ def generate_query(tags_file, df, num_workers=4, logger=None):
     results = {}
     delete_empty_images = set()
 
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = {executor.submit(process_row, idx, row, loaded_tags_features): idx for idx, row in df.iterrows()}
+    for idx, row in df.iterrows():
+        idx, image_query_content, image_subquery_content = process_row (idx, row, loaded_tags_features)
+        if image_query_content is None:
+            delete_empty_images.add(idx)
+        else:
+            results[idx] = (image_query_content, image_subquery_content)
 
-        for future in as_completed(futures):
-            try:
-                idx, image_query_content, image_subquery_content = future.result()
-                if image_query_content is None:
-                    delete_empty_images.add(idx)
-                else:
-                    results[idx] = (image_query_content, image_subquery_content)
-            except Exception as e:
-                if logger:
-                    logger.error(f"Error processing row {futures[future]}: {e}")
+    # with ThreadPoolExecutor(max_workers=num_workers) as executor:
+    #     futures = {executor.submit(process_row, idx, row, loaded_tags_features): idx for idx, row in df.iterrows()}
+    #
+    #     for future in as_completed(futures):
+    #         try:
+    #             idx, image_query_content, image_subquery_content = future.result()
+    #             if image_query_content is None:
+    #                 delete_empty_images.add(idx)
+    #             else:
+    #                 results[idx] = (image_query_content, image_subquery_content)
+    #         except Exception as e:
+    #             if logger:
+    #                 logger.error(f"Error processing row {futures[future]}: {e}")
 
     # Update DataFrame efficiently
     if results:

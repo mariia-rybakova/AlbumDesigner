@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from utils import get_layouts_data
 from utils.parser import CONFIGS
 from utils.protobufs_processing import get_info_protobufs
-from utils.layouts_file import generate_layouts_df
+from utils.layouts_file import generate_layouts_df,generate_layouts_fromDesigns_df
 from src.smart_cropping import process_cropping
 
 cached_design_ids = None
@@ -43,7 +43,7 @@ def read_messages(messages,queries_file, logger):
             logger.warning('Incorrect message format: {}.'.format(json_content))
 
         if 'photos' not in json_content or \
-                'base_url' not in json_content or 'designIds' not in json_content or 'projectId' not in json_content:
+                'base_url' not in json_content or 'designInfo' not in json_content or 'projectId' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
@@ -51,18 +51,18 @@ def read_messages(messages,queries_file, logger):
             continue
         try:
             images = json_content['photos']
-            project_url = json_content.get('base_url', '')
+            project_url = json_content['base_url']
 
-            design_ids = json_content.get('designs', [])
 
-            if cached_design_ids is None or cached_design_ids != design_ids:
-                cached_design_ids = design_ids  # Update cache
-                cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
 
-            if not project_url or not images:
-                logger.warning(f"Incomplete message content: {_msg.content}")
-                _msg.error = 'Incomplete message content Project URL: {}. Skipping.'.format(json_content)
-                continue
+            cached_layouts_df = generate_layouts_fromDesigns_df(json_content['designInfo']['designs'])
+
+
+            # design_ids = json_content.get('designs', [])
+
+            # if cached_design_ids is None or cached_design_ids != design_ids:
+            #     cached_design_ids = design_ids  # Update cache
+            #     cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
 
             df = pd.DataFrame(images, columns=['image_id'])
             proto_start = datetime.now()
