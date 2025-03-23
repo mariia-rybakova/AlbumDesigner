@@ -72,8 +72,13 @@ def read_messages(messages,queries_file, logger):
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
             cropping_start = datetime.now()
-            with ThreadPoolExecutor(max_workers=CONFIGS['cropping_workers']) as executor:
-                results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
+            results=[]
+            for _, row in gallery_info_df.iterrows():
+                results.append(process_cropping_for_row(row))
+
+
+            # with ThreadPoolExecutor(max_workers=CONFIGS['cropping_workers']) as executor:
+            #     results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
 
             cropped_df = pd.DataFrame(results)
             # Merge the cropped data back into the original DataFrame

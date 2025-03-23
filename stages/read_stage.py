@@ -114,7 +114,7 @@ class ReadStage(Stage):
             messages = read_messages(messages, self.queries_file, self.logger)
         except Exception as e:
             self.logger.error(f"Error reading messages: {e}")
-            return []
+            return msgs
 
         handling_time = (datetime.now() - start) / len(messages) if messages else 0
         self.logger.info(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
