@@ -67,7 +67,7 @@ def printAllUniqueParts(n):
         k += 1
 
 
-def selectPartitions(nPhotos, classSpreadParams,params):
+def selectPartitions(nPhotos, classSpreadParams,params,available_n):
     # finds all available partitions for a class cluster of size nPhotos
     # eliminates unlikely partitions based ont the cluster class score parameters
     # parameter: nPhotos - total number of photos for a class cluster
@@ -76,6 +76,7 @@ def selectPartitions(nPhotos, classSpreadParams,params):
     classSpreadParams[1] = max(classSpreadParams[1], 0.5)
 
     parts = printAllUniqueParts(nPhotos)
+    parts = [part for part in parts if set(part).issubset(available_n)]
     weights = np.zeros(len(parts))
     for idx, part in enumerate(parts):
         weights[idx] = classWeight(part, classSpreadParams)
@@ -103,7 +104,7 @@ def selectPartitions(nPhotos, classSpreadParams,params):
     return partsAboveThresh, weightsAboveThresh
 
 
-def listSingleCombinations(photos, layout_part):
+def listSingleCombinations(photos, layout_part,maxCombs):
     photos_ids = list(range(len(photos)))
     photos_ids = set(photos_ids)
     l0_combs = list(combinations(photos_ids, layout_part[0]))
@@ -117,6 +118,8 @@ def listSingleCombinations(photos, layout_part):
         for comb_idx in range(len(layout_combs)):
             next_combs = list(combinations(rem_photos[comb_idx], layout_part[layout_index]))
             next_combs = [set(next_comb) for next_comb in next_combs]
+            if len(layout_combs)>maxCombs:
+                next_combs=[next_combs[0]]
             single_comb = [layout_combs[comb_idx].copy() for _ in range(len(next_combs))]
             single_rem_photos = [rem_photos[comb_idx].copy() for _ in range(len(next_combs))]
             for single_idx in range(len(single_comb)):
@@ -344,7 +347,10 @@ def eval_single_comb(comb, photo_times, cluster_labels):
 
 
 def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,logger):
-    layout_parts, weight_parts = selectPartitions(len(photos), spread_params,params)
+
+    available_n =set(layouts_df['number of boxes'].unique())
+
+    layout_parts, weight_parts = selectPartitions(len(photos), spread_params,params,available_n=available_n)
     #logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
     combs = []
@@ -359,7 +365,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
         maxCombsParam = params[2] if len(photos) <= params[5] else params[3]
 
         maxCombs = int(maxCombsParam / np.power(2, i))
-        single_combs = listSingleCombinations(photos, layout_parts[i])
+        single_combs = listSingleCombinations(photos, layout_parts[i],maxCombs)
         #print(f"Single Combinations {len(single_combs)} and maxCombs {maxCombs}")
 
         if len(single_combs) > maxCombs:

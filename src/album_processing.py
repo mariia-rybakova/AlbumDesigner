@@ -176,17 +176,23 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
     return lookup_table
 
 def process_all_groups_parallel(args):
-    jobs = []
-    q = queue.Queue()  # thread safe queue to store results
 
-    def worker(arg):
-        result = process_group(arg)
-        q.put(result)  # put the result in queue
-    #("Process with layout workers ", CONFIGS['max_lay_workers'])
-    with ThreadPoolExecutor(max_workers=CONFIGS['max_lay_workers']) as executor:
-        executor.map(worker, args)
+    # jobs = []
+    # q = queue.Queue()  # thread safe queue to store results
+    #
+    # def worker(arg):
+    #     result = process_group(arg)
+    #     q.put(result)  # put the result in queue
+    # #("Process with layout workers ", CONFIGS['max_lay_workers'])
+    # with ThreadPoolExecutor(max_workers=CONFIGS['max_lay_workers']) as executor:
+    #     executor.map(worker, args)
+    #
+    # results = [q.get() for _ in range(len(args))]  # retrieve results from the queue
 
-    results = [q.get() for _ in range(len(args))]  # retrieve results from the queue
+    results=[]
+    for arg in args:
+        results.append(process_group(arg))
+
     return results
 
 def groups_processing(group2images,original_groups,look_up_table,layouts_df,layout_id2data,is_wedding,params,logger):
