@@ -52,13 +52,6 @@ class ReadStage(Stage):
         self.logger = logger
         self.queries_file = CONFIGS['queries_file']
         self.products_json = PTFile(CONFIGS['products_json_location'])
-        fileBytes = self.products_json.read_blob()
-        self.products_json = json.loads(fileBytes.decode('utf-8'))
-
-        self.architect_base = CONFIGS['architect_base']
-
-        self.design_pack_base = CONFIGS['design_pack_base']
-
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):

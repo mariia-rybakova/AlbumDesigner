@@ -34,11 +34,6 @@ def generate_dict_key(numbers, n_bodies):
     key = f"{count}_{suffix}_" + "_".join(map(str, id_list))
     return key
 
-def generate_people_clustering(df):
-    # Assuming generate_dict_key is a function that can be applied element-wise
-    df['people_cluster'] = df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
-    return df
-
 def check_gallery_type(df):
     count = 0
     for idx, row in df.iterrows():  # Unpack the tuple into idx (index) and row (data)
@@ -85,7 +80,7 @@ def get_info_protobufs(project_base_url, df, logger):
                 results.append(result)
     except Exception as e:
         logger.error("Exception in function %s: %s", func, e)
-        return None
+        return None, None
 
     # with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
     #     future_to_function = {executor.submit(func, df, logger): func for func in functions}
@@ -131,13 +126,15 @@ def get_info_protobufs(project_base_url, df, logger):
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
         # Cluster people by number of people inside the image
-        gallery_info_df = generate_people_clustering(gallery_info_df)
+        gallery_info_df = df['people_cluster'] = df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
         is_wedding = check_gallery_type(gallery_info_df)
 
         logger.info("Reading from protobuf files has been finished successfully!")
         print("other processing ", datetime.now() - other_start)
     except Exception as e:
         logger.error("Error in merging results: %s", e)
+        return None, None
+
     return gallery_info_df, is_wedding
 
 def read_messages(messages,queries_file, logger):
@@ -194,5 +191,6 @@ def read_messages(messages,queries_file, logger):
 
         except Exception as e:
             logger.error(f"Error reading messages at reading stage: {e}")
+            return None
 
     return enriched_messages
