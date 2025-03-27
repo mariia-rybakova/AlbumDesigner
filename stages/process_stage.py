@@ -13,15 +13,17 @@ from src.album_processing import start_processing_album
 from utils.parallel_methods import parallel_content_processing
 from utils.album_tools import assembly_output
 from utils.parser import CONFIGS
-
+import multiprocessing as mp
 
 
 class ProcessStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
-        super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=2,
+        super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=1,
         batch_wait_time=5)
         self.logger = logger
+        self.q = mp.Queue()
+
 
     def process_message(self, msgs: Union[Message, List[Message]]):
         # check if its single message or list
