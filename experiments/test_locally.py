@@ -14,7 +14,7 @@ from utils.parser import CONFIGS
 from stages.read_stage import ReadStage
 from stages.process_stage import ProcessStage
 from stages.report_stage import ReportStage
-from testlocally import Message
+from message_local_class import Message
 
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
