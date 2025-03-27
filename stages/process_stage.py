@@ -15,6 +15,30 @@ from utils.album_tools import assembly_output
 from utils.parser import CONFIGS
 import multiprocessing as mp
 
+from src.smart_cropping import process_cropping
+
+def process_crop_images(q,df):
+    results = []
+    for _, row in df.iterrows():
+        cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
+            float(row['image_as']),
+            row['faces_info'],
+            row['background_centroid'],
+            float(row['diameter']),
+            1
+        )
+        # Store the results in a dictionary to update the DataFrame later
+        results.append({
+            'image_id': row['image_id'],
+            'cropped_x': cropped_x,
+            'cropped_y': cropped_y,
+            'cropped_w': cropped_w,
+            'cropped_h': cropped_h
+        })
+        cropped_df = pd.DataFrame(results)
+        q.put(cropped_df)
+
+
 
 class ProcessStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
@@ -40,9 +64,13 @@ class ProcessStage(Stage):
         for i,message in enumerate(messages):
             if i > 13:
                 i = 0
-
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
             print("Params for this Gallery are:", params)
+
+            p = mp.Process(target=process_crop_images, args=(self.q, message.content.get('gallery_photos_info')))
+            p.start()
+
+
             try:
                 stage_start = datetime.now()
                 # Extract gallery photo info safely
@@ -93,6 +121,18 @@ class ProcessStage(Stage):
                     album_result = start_processing_album(df, message.content['layouts_df'],
                                                           message.content['layout_id2data'],
                                                           message.content['is_wedding'],params, logger=self.logger)
+
+                    try:
+                        cropped_df = self.q.get(timeout=20)
+                    except Exception as e:
+                        p.terminate()
+                        raise Exception('cropping process not completed')
+                    p.join(timeout=5)
+                    if p.is_alive():
+                        p.terminate()
+                        raise Exception('cropping process not completed')
+
+                    df = df.merge(cropped_df, how='inner', on='image_id')
 
                     final_response = assembly_output(album_result, message, message.content['layouts_df'], df,
                                                      cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)
