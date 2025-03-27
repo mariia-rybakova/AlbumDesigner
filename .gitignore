@@ -3,7 +3,6 @@
 dataset/
 models/
 results/
-experiments/message_local_class.py
 __pycache__/
 servicelog.log
 src/__pycache__/

@@ -1,35 +1,144 @@
+import os
 import pandas as pd
-import numpy as np
-from bson.int64 import Int64
-from datetime import datetime
 
-from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from datetime import datetime
 
 from utils import get_layouts_data
 from utils.parser import CONFIGS
-from utils.protobufs_processing import get_info_protobufs
 from utils.layouts_file import generate_layouts_df,generate_layouts_fromDesigns_df
-from src.smart_cropping import process_cropping
+from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
+from utils.image_queries import generate_query
 
 cached_design_ids = None
 cached_layouts_df = None
 
-def process_cropping_for_row(row):
-    cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
-        float(row['image_as']),
-        row['faces_info'],
-        row['background_centroid'],
-        float(row['diameter']),
-        1
-    )
-    # Store the results in a dictionary to update the DataFrame later
-    return {
-        'image_id': row['image_id'],
-        'cropped_x': cropped_x,
-        'cropped_y': cropped_y,
-        'cropped_w': cropped_w,
-        'cropped_h': cropped_h
-    }
+
+def generate_dict_key(numbers, n_bodies):
+    if numbers == 0 and n_bodies == 0 or not numbers:
+        return 'No PEOPLE'
+
+    # Convert the string of numbers into a list
+    try:
+        id_list = eval(numbers) if isinstance(numbers, str) else numbers
+    except:
+        return "Invalid_numbers"
+
+    # Calculate the count based on the list length or n_bodies
+    count = max(len(id_list), n_bodies) if isinstance(id_list, list) else n_bodies
+
+    # Determine the suffix
+    suffix = "person" if count == 1 else "pple"
+
+    # Combine count, suffix, and the numbers joined by underscores
+    key = f"{count}_{suffix}_" + "_".join(map(str, id_list))
+    return key
+
+def generate_people_clustering(df):
+    # Assuming generate_dict_key is a function that can be applied element-wise
+    df['people_cluster'] = df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
+    return df
+
+def check_gallery_type(df):
+    count = 0
+    for idx, row in df.iterrows():  # Unpack the tuple into idx (index) and row (data)
+        content_class = row['image_class']
+        if content_class == -1:
+            count += 1
+
+    number_images = len(df)
+
+    if number_images > 0 and count / number_images > 0.6:  # Ensure no division by zero
+        return False
+    else:
+        return True
+
+def get_info_protobufs(project_base_url, df, logger):
+    start = datetime.now()
+    faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
+    cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
+    persons_file = os.path.join(project_base_url, 'persons_info.pb')
+    image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
+    segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
+    person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
+
+    # List of functions to run in parallel
+    functions = [
+        partial(get_image_embeddings, image_file),
+        partial(get_faces_info, faces_file),
+        partial(get_persons_ids, persons_file),
+        partial(get_clusters_info, cluster_file),
+        partial(get_photo_meta, segmentation_file),
+        partial(get_person_vectors, person_vector_file)
+    ]
+
+    results = []
+
+    try:
+        for func in functions:
+
+            result = func(df, logger)
+            if result is None:
+                logger.error("Error in function: %s", func)
+                return None
+            else:
+                results.append(result)
+    except Exception as e:
+        logger.error("Exception in function %s: %s", func, e)
+        return None
+
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
+    #     future_to_function = {executor.submit(func, df, logger): func for func in functions}
+    #
+    #     for future in concurrent.futures.as_completed(future_to_function):
+    #         func = future_to_function[future]
+    #         try:
+    #             result = future.result()
+    #             if result is None:
+    #                 logger.error("Error in function: %s", func)
+    #                 return None
+    #             results.append(result)
+    #         except Exception as e:
+    #             logger.error("Exception in function %s: %s", func, e)
+    #             return None
+
+    # Merge results (assuming they return modified df)
+
+    try:
+        gallery_info_df = results[0]
+        print("Time for getting from files", datetime.now() - start)
+
+        merge_start = datetime.now()
+        for res in results[1:]:
+            gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
+
+        columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
+
+        # Convert only the specified columns to 'Int64' (nullable integer type)
+        gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
+
+        print("Mering all dataframe time", datetime.now() - merge_start)
+        print("Number of images before cleaning the nan values", len(gallery_info_df.index))
+
+        other_start = datetime.now()
+        # Get Query Content of each image
+        gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+
+        columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
+        gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
+        print("Number of images after cleaning the nan values", len(gallery_info_df.index))
+        # make sure it has list values not float nan
+        gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
+
+        # Cluster people by number of people inside the image
+        gallery_info_df = generate_people_clustering(gallery_info_df)
+        is_wedding = check_gallery_type(gallery_info_df)
+
+        logger.info("Reading from protobuf files has been finished successfully!")
+        print("other processing ", datetime.now() - other_start)
+    except Exception as e:
+        logger.error("Error in merging results: %s", e)
+    return gallery_info_df, is_wedding
 
 def read_messages(messages,queries_file, logger):
     enriched_messages = []
@@ -52,9 +161,6 @@ def read_messages(messages,queries_file, logger):
         try:
             images = json_content['photos']
             project_url = json_content['base_url']
-
-
-
             cached_layouts_df = generate_layouts_fromDesigns_df(json_content['designInfo']['designs'])
 
 
@@ -70,23 +176,6 @@ def read_messages(messages,queries_file, logger):
             gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df, logger=logger)
 
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
-
-            cropping_start = datetime.now()
-            results=[]
-            for _, row in gallery_info_df.iterrows():
-                results.append(process_cropping_for_row(row))
-
-
-            # with ThreadPoolExecutor(max_workers=CONFIGS['cropping_workers']) as executor:
-            #     results = list(executor.map(process_cropping_for_row, [row for _, row in gallery_info_df.iterrows()]))
-
-            cropped_df = pd.DataFrame(results)
-            # Merge the cropped data back into the original DataFrame
-            gallery_info_df = gallery_info_df.merge(cropped_df, how='inner', on='image_id')
-
-
-            logger.info(
-                f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - cropping_start} secs.")
 
             is_wedding = True
             if not gallery_info_df.empty and not cached_layouts_df.empty:
@@ -107,30 +196,3 @@ def read_messages(messages,queries_file, logger):
             logger.error(f"Error reading messages at reading stage: {e}")
 
     return enriched_messages
-
-
-def organize_one_message_results(msg, model_version, logger):
-    try:
-        bg_data = msg.bg_data
-    except AttributeError:
-        logger.error('No background data found for this message: {}.'.format(msg.content['photoId']))
-        bg_data = None
-
-    result_dict = {
-            "storeId": msg.content['storeId'],
-            "accountId": msg.content['accountId'],
-            "projectId": Int64(msg.project_id),  # convert projectId to int64
-            "modelVersion": model_version,
-            'status': msg.status,
-            "processedTime": datetime.utcnow(),
-            "aspectRatio" : msg.ar,
-            "colorEnum" : msg.color,
-        }
-    if bg_data is not None:
-        result_dict['backgroundMask'] = np.array(bg_data['bg_mask'], dtype=np.uint8).tobytes()
-        result_dict['compositionScore'] = bg_data['comp_score']
-        result_dict['flatnessScore'] = bg_data['flatness_score']
-        result_dict['blobDiameter'] = bg_data['blob_diameter']
-        result_dict['blobCentroid'] = [bg_data['centroid'][0], bg_data['centroid'][1]]
-
-    return result_dict
