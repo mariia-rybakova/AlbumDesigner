@@ -82,7 +82,10 @@ def handle_wedding_dress(illegal_group,groups,group_key):
                         group_id[1] or 'getting hair-makeup' == group_id[1]]
     if len(selected_cluster) == 0:
         print("Couldnt find a good group for wedding dress!")
-        return groups
+
+        selected_cluster=list(groups)[0][1]
+
+        # return groups
     else:
         selected_cluster = selected_cluster[0]
 
@@ -106,7 +109,7 @@ def do_not_change_group(illegal_group, groups,group_key):
     return groups
 
 def handle_illegal(group_key,change_tuple,content_cluster_id,illegal_group,imgs_number,groups,look_up_table,is_wedding,count):
-    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['merge_images_number']:
+    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['wedding_merge_images_number']:
         return do_not_change_group(illegal_group, groups,group_key)
     elif "wedding dress" in group_key and imgs_number <= CONFIGS['wedding_merge_images_number']:
         """Merge wedding dress into group related to bride"""

@@ -34,6 +34,10 @@ def get_important_imgs(data_df, top=5):
         # let's pick another images
         image_id_list = data_df[
             (data_df["image_query_content"] == "bride")].head(top)['image_id'].tolist()
+    if len(image_id_list) == 0:
+        # let's pick another images
+        image_id_list = image_id_list = data_df.head(top)['image_id'].tolist()
+
 
     return image_id_list
 

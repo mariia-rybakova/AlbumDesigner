@@ -22,7 +22,6 @@ from utils.time_proessing import process_image_time
 from src.album_processing import start_processing_album
 from utils.parallel_methods import parallel_content_processing
 from utils.album_tools import assembly_output
-from utils.parser import CONFIGS
 from utils.request_processing import read_messages
 from utils.parser import CONFIGS
 

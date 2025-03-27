@@ -56,7 +56,7 @@ def get_persons_ids(persons_file, df,logger=None):
     df = df.merge(persons_info_df, how='inner', on='image_id')
 
 
-    df['persons_ids'].fillna([], inplace=True)
+    # df['persons_ids'].fillna([], inplace=True)
 
     return df
 

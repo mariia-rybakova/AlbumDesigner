@@ -43,8 +43,13 @@ def process_image_time(data_df):
     args_list = [(row, first_image_time) for row in time_data_dict]
 
     # Using Pool to process each row in parallel
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        processed_rows = list(executor.map(process_image_time_row, args_list))
+    # with ThreadPoolExecutor(max_workers=4) as executor:
+    #     processed_rows = list(executor.map(process_image_time_row, args_list))
+
+    processed_rows = []
+    for args in args_list:
+        processed_rows.append(process_image_time_row(args))
+
 
     # Create a new DataFrame from processed rows
     processed_df = pd.DataFrame(processed_rows)

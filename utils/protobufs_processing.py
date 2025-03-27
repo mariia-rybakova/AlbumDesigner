@@ -68,51 +68,69 @@ def get_info_protobufs(project_base_url, df, logger):
     ]
 
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
-        future_to_function = {executor.submit(func, df, logger): func for func in functions}
 
-        for future in concurrent.futures.as_completed(future_to_function):
-            func = future_to_function[future]
-            try:
-                result = future.result()
-                if result is None:
-                    logger.error("Error in function: %s", func)
-                    return None
-                results.append(result)
-            except Exception as e:
-                logger.error("Exception in function %s: %s", func, e)
+    try:
+        for func in functions:
+
+            result = func(df, logger)
+            if result is None:
+                logger.error("Error in function: %s", func)
                 return None
+            else:
+                results.append(result)
+    except Exception as e:
+        logger.error("Exception in function %s: %s", func, e)
+        return None
+
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
+    #     future_to_function = {executor.submit(func, df, logger): func for func in functions}
+    #
+    #     for future in concurrent.futures.as_completed(future_to_function):
+    #         func = future_to_function[future]
+    #         try:
+    #             result = future.result()
+    #             if result is None:
+    #                 logger.error("Error in function: %s", func)
+    #                 return None
+    #             results.append(result)
+    #         except Exception as e:
+    #             logger.error("Exception in function %s: %s", func, e)
+    #             return None
 
     # Merge results (assuming they return modified df)
-    gallery_info_df = results[0]
-    print("Time for getting from files", datetime.now() - start)
 
-    merge_start = datetime.now()
-    for res in results[1:]:
-        gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
+    try:
+        gallery_info_df = results[0]
+        print("Time for getting from files", datetime.now() - start)
 
-    columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
+        merge_start = datetime.now()
+        for res in results[1:]:
+            gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
 
-    # Convert only the specified columns to 'Int64' (nullable integer type)
-    gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
+        columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
 
-    print("Mering all dataframe time", datetime.now() - merge_start)
-    print("Number of images before cleaning the nan values", len(gallery_info_df.index))
+        # Convert only the specified columns to 'Int64' (nullable integer type)
+        gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
 
-    other_start = datetime.now()
-    # Get Query Content of each image
-    gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+        print("Mering all dataframe time", datetime.now() - merge_start)
+        print("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
-    columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
-    gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
-    print("Number of images after cleaning the nan values", len(gallery_info_df.index))
-    # make sure it has list values not float nan
-    gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
+        other_start = datetime.now()
+        # Get Query Content of each image
+        gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
 
-    # Cluster people by number of people inside the image
-    gallery_info_df = generate_people_clustering(gallery_info_df)
-    is_wedding = check_gallery_type(gallery_info_df)
+        columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
+        gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
+        print("Number of images after cleaning the nan values", len(gallery_info_df.index))
+        # make sure it has list values not float nan
+        gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
-    logger.info("Reading from protobuf files has been finished successfully!")
-    print("other processing ", datetime.now() - other_start)
+        # Cluster people by number of people inside the image
+        gallery_info_df = generate_people_clustering(gallery_info_df)
+        is_wedding = check_gallery_type(gallery_info_df)
+
+        logger.info("Reading from protobuf files has been finished successfully!")
+        print("other processing ", datetime.now() - other_start)
+    except Exception as e:
+        logger.error("Error in merging results: %s", e)
     return gallery_info_df, is_wedding
