@@ -29,7 +29,6 @@ from utils.clusters_labels import map_cluster_label
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
 
-
 warnings.filterwarnings('ignore')
 np.random.seed(42)
 torch.manual_seed(42)
@@ -45,8 +44,6 @@ processing_scores_time_list = list()
 storing_time_list = list()
 retorting_time_list = list()
 general_time_list = list()
-
-
 
 class ReadStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
