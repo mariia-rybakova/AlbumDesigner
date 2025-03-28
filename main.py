@@ -9,6 +9,8 @@ import pandas as pd
 from typing import List, Union
 from datetime import datetime
 
+from sklearn.mixture import GaussianMixture
+
 from ptinfra import intialize, get_logger
 from ptinfra.pt_queue import  MessageQueue, MemoryQueue, RoundRobinReader
 from ptinfra.config import get_variable
@@ -127,14 +129,27 @@ class ProcessStage(Stage):
                                                                                                       self.logger)
                 cover_end_imgs_layouts = get_cover_end_layout(message.content['layouts_df'], self.logger)
 
-                sorted_by_time_df, image_id2general_time = process_image_time(df)
-                df_time = cluster_by_time(sorted_by_time_df)
+                df, image_id2general_time = process_image_time(df)
+
+                #Cluster by time
+                X = df['general_time'].values.reshape(-1, 1)
+                # Determine the optimal number of clusters using Bayesian Information Criterion (BIC)
+                n_components = np.arange(1, 10)
+                models = [GaussianMixture(n, covariance_type='full', random_state=0).fit(X) for n in n_components]
+                bics = [m.bic(X) for m in models]
+                # Select the model with the lowest BIC
+                best_n = n_components[np.argmin(bics)]
+                gmm = GaussianMixture(n_components=best_n, covariance_type='full', random_state=0)
+                gmm.fit(X)
+                clusters = gmm.predict(X)
+
+                # Add cluster labels to the dataframe
+                df['time_cluster'] = clusters
 
                 # to ignore the read only memory
-                df = pd.DataFrame(df_time.to_dict())
+                df = pd.DataFrame(df.to_dict())
 
                 # Handle the processing time logging
-
                 start = datetime.now()
                 album_result = start_processing_album(df, message.content['layouts_df'],
                                                       message.content['layout_id2data'],

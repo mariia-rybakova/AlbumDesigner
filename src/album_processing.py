@@ -9,7 +9,7 @@ from gc import collect
 
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
-from utils.album_tools import get_none_wedding_groups,get_wedding_groups,get_images_per_groups,organize_groups,sort_groups_by_name
+from utils.album_tools import get_none_wedding_groups,get_wedding_groups,organize_groups,sort_groups_by_name
 from utils.parser import CONFIGS
 
 
@@ -199,8 +199,6 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
     start_time = time.time()
     if is_wedding:
         updated_groups, group2images,look_up_table = process_illegal_groups(group2images, original_groups,look_up_table,is_wedding, logger)
-        if updated_groups is None:
-             return 'Error: couldn\'t process illegal groups'
         illegal_time = (time.time() - start_time)
         logger.info(f'Illegal groups processing time: {illegal_time:.2f} seconds')
     else:
@@ -210,7 +208,6 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
     print("Groups", group2images)
     # make sure that each group has no more than 3 spreads
     look_up_table = update_lookup_table_with_limit(group2images,is_wedding,look_up_table)
-
 
     args = [
         (group_name,
@@ -224,7 +221,6 @@ def groups_processing(group2images,original_groups,look_up_table,layouts_df,layo
      for group_name in group2images.keys()
     ]
     all_results = process_all_groups_parallel(args)
-    print("Results", all_results)
 
     return all_results,updated_groups
 
@@ -234,23 +230,13 @@ def start_processing_album(df, layouts_df, layout_id2data, is_wedding,params, lo
         else:
             original_groups = get_none_wedding_groups(df,logger)
 
-        if isinstance(original_groups, str):  # Check if it's an error message, report it
-            return original_groups
-
-        group2images = get_images_per_groups(original_groups,logger)
-
-        if isinstance(group2images, str):  # Check if it's an error message, report it
-            return group2images
+        group2images = dict()
+        for name_group, group_df in original_groups:
+            num_images = len(group_df)
+            group2images[name_group] = num_images
 
         look_up_table = get_lookup_table(group2images,is_wedding,logger)
-
-        if isinstance(look_up_table, str):  # Check if it's an error message, report it
-            return look_up_table
-
         result_list,updated_groups = groups_processing(group2images,original_groups,look_up_table,layouts_df, layout_id2data, is_wedding,params, logger)
-
-        if isinstance(result_list, str):  # Check if it's an error message, report it
-            return result_list
 
         #sorintg & formating & cropping
         if is_wedding:
