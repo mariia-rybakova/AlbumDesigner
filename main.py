@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 import torch
 import warnings
 import numpy as np
@@ -20,10 +21,10 @@ from utils.clustering_time import cluster_by_time
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_end_image, get_cover_end_layout
 from utils.time_proessing import process_image_time
 from src.album_processing import start_processing_album
-from utils.parallel_methods import parallel_content_processing
 from utils.album_tools import assembly_output
 from utils.request_processing import read_messages
 from utils.parser import CONFIGS
+from utils.clusters_labels import map_cluster_label
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -44,6 +45,8 @@ processing_scores_time_list = list()
 storing_time_list = list()
 retorting_time_list = list()
 general_time_list = list()
+
+
 
 class ReadStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
@@ -105,34 +108,27 @@ class ProcessStage(Stage):
                     message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
                     continue
 
-                if "image_order" not in df.columns:
-                    self.logger.error(f"Missing 'image_order' column in DataFrame for message {message}")
-                    message.content['error'] = f"Missing 'image_order' column in DataFrame for message {message}"
-                    continue
-
                 # Sorting the DataFrame by "image_order" column
                 sorted_df = df.sort_values(by="image_order", ascending=False)
+                if message.content.get('is_wedding', True):
+                    rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
+                    #convert numeric ids to labels.
+                    processed_rows = []
+                    for row in rows:
+                        cluster_class = row.get('cluster_class')
+                        cluster_class_label = map_cluster_label(cluster_class)
+                        row['cluster_context'] = cluster_class_label
+                        processed_rows.append(row)
 
-                try:
-                    if message.content.get('is_wedding', True):
-                        processed_content_df = parallel_content_processing(sorted_df)
-                        processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
-                                                       how='left', on='image_id')
-                        df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df,
+                    processed_content_df = pd.DataFrame(processed_rows)
+                    processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
+                                                   how='left', on='image_id')
+                    df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df,
+                                                                                                  self.logger)
+                else:
+                    df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(sorted_df,
                                                                                                       self.logger)
-                    else:
-                        df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(sorted_df,
-                                                                                                      self.logger)
-                except Exception as e:
-                    self.logger.error(f"Error in parallel content processing: {e}")
-                    message.content['error'] = f"Error in parallel content processing: {e}"
-                    continue
-
                 cover_end_imgs_layouts = get_cover_end_layout(message.content['layouts_df'], self.logger)
-                if not cover_end_imgs_layouts:
-                    self.logger.error(f"No cover-end layouts found for message {message}")
-                    message.content['error'] = f"No cover-end layouts found for message {message}"
-                    continue
 
                 sorted_by_time_df, image_id2general_time = process_image_time(df)
                 df_time = cluster_by_time(sorted_by_time_df)
@@ -141,34 +137,25 @@ class ProcessStage(Stage):
                 df = pd.DataFrame(df_time.to_dict())
 
                 # Handle the processing time logging
-                try:
-                    start = datetime.now()
-                    album_result = start_processing_album(df, message.content['layouts_df'],
-                                                          message.content['layout_id2data'],
-                                                          message.content['is_wedding'],params, logger=self.logger)
 
-                    final_response = assembly_output(album_result, message, message.content['layouts_df'], df,
-                                                     cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)
+                start = datetime.now()
+                album_result = start_processing_album(df, message.content['layouts_df'],
+                                                      message.content['layout_id2data'],
+                                                      message.content['is_wedding'],params, logger=self.logger)
 
-                    if isinstance(album_result, str):  # Check if it's an error message, report it
-                        message.content['error'] = final_response
-                        continue
+                final_response = assembly_output(album_result, message, message.content['layouts_df'], df,
+                                                 cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)
 
-                    message.content['album'] = final_response
-                    processing_time = datetime.now() - start
+                message.content['album'] = final_response
+                processing_time = datetime.now() - start
 
-                    self.logger.debug('Lay-outing time: {}.For Processed album id: {}'.format(processing_time,
-                                                                                              message.content.get(
-                                                                                                  'projectURL', True)))
-                    self.logger.debug(
-                        'Processing Stage time: {}.For Processed album id: {}'.format(datetime.now() - stage_start,
-                                                                                      message.content.get('projectURL',
+                self.logger.debug('Lay-outing time: {}.For Processed album id: {}'.format(processing_time,
+                                                                                          message.content.get(
+                                                                                              'projectURL', True)))
+                self.logger.debug(
+                    'Processing Stage time: {}.For Processed album id: {}'.format(datetime.now() - stage_start,
+                                                                                  message.content.get('projectURL',
                                                                                                           True)))
-
-                except Exception as ex:
-                    self.logger.error('Exception while processing messages: {}.'.format(ex))
-                    message.content['error'] = ex
-                    continue
 
             except Exception as e:
                 self.logger.error(f"Unexpected error in message processing: {e}")

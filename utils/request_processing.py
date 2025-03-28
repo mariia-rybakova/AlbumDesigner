@@ -144,6 +144,7 @@ def read_messages(messages,queries_file, logger):
 
     for _msg in messages:
         reading_message_time = datetime.now()
+        design_ids = _msg['design_ids']
         json_content = _msg.content
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
@@ -158,8 +159,8 @@ def read_messages(messages,queries_file, logger):
         try:
             images = json_content['photos']
             project_url = json_content['base_url']
-            cached_layouts_df = generate_layouts_fromDesigns_df(json_content['designInfo']['designs'])
-
+            #cached_layouts_df = generate_layouts_fromDesigns_df(json_content['designInfo']['designs'])
+            cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
 
             # design_ids = json_content.get('designs', [])
 
