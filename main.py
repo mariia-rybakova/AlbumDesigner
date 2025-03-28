@@ -19,7 +19,7 @@ from ptinfra.pt_queue import QReader, QWriter, Message
 from ptinfra import  AbortRequested
 from ptinfra.azure.pt_file import PTFile
 
-from utils.clustering_time import cluster_by_time
+
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_end_image, get_cover_end_layout
 from utils.time_proessing import process_image_time
 from src.album_processing import start_processing_album
@@ -53,7 +53,7 @@ class ReadStage(Stage):
         super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=2)
         self.logger = logger
         self.queries_file = CONFIGS['queries_file']
-        self.products_json = PTFile(CONFIGS['products_json_location'])
+
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):

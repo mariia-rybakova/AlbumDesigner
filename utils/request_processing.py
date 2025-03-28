@@ -126,7 +126,7 @@ def get_info_protobufs(project_base_url, df, logger):
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
         # Cluster people by number of people inside the image
-        gallery_info_df = df['people_cluster'] = df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
+        gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
         is_wedding = check_gallery_type(gallery_info_df)
 
         logger.info("Reading from protobuf files has been finished successfully!")
@@ -144,22 +144,22 @@ def read_messages(messages,queries_file, logger):
 
     for _msg in messages:
         reading_message_time = datetime.now()
-        design_ids = _msg['design_ids']
+        design_ids = _msg.content['designIds']
         json_content = _msg.content
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
 
-        if 'photos' not in json_content or \
-                'base_url' not in json_content or 'designInfo' not in json_content or 'projectId' not in json_content:
+        if 'photosIds' not in json_content or \
+                'projectURL' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
             _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
             continue
         try:
-            images = json_content['photos']
-            project_url = json_content['base_url']
-            #cached_layouts_df = generate_layouts_fromDesigns_df(json_content['designInfo']['designs'])
+
+            images = json_content['photosIds']
+            project_url = json_content['projectURL']
             cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
 
             # design_ids = json_content.get('designs', [])

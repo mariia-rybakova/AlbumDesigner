@@ -11,9 +11,9 @@ from ptinfra.config import get_variable
 
 
 from utils.parser import CONFIGS
-from stages.read_stage import ReadStage
-from stages.process_stage import ProcessStage
-from stages.report_stage import ReportStage
+from main import ReadStage
+from main import ProcessStage
+from main import ReportStage
 from message_local_class import Message
 
 
@@ -86,9 +86,14 @@ def main():
     message_processor.run()
 
 
+# if __name__ == '__main__':
+#     main()
 if __name__ == '__main__':
-    main()
-if __name__ == '__main__':
+    settings_filename = os.environ.get('HostingSettingsPath',
+                                       '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
+
+    intialize('AlbumDesigner', settings_filename)
+
     # main()
     import logging
 

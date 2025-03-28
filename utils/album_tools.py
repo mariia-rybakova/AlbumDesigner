@@ -376,6 +376,29 @@ def assembly_output(output_list,message,layouts_df,images_df,cover_images_ids, c
     return output
 
 
+def get_images_per_groups(original_groups, logger=None):
+    # Check if original_groups is a Pandas GroupBy object
+    if not isinstance(original_groups, pd.core.groupby.generic.DataFrameGroupBy):
+        logger.error("Input must be a Pandas DataFrame.")
+        return "Error: Input must be a Pandas GroupBy object."
+
+    # Handle empty groups
+    if not original_groups.groups:
+        logger.error("Input must have at least one group.")
+        return "Error: No groups found in the input."
+
+    group2images_data_list = dict()
+
+    try:
+        for name_group, group_df in original_groups:
+            num_images = len(group_df)
+            group2images_data_list[name_group] = num_images
+
+        return group2images_data_list
+
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error while processing groups: {str(e)}"
 
 
 
