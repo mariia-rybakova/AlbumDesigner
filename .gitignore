@@ -3,10 +3,8 @@
 dataset/
 models/
 results/
-test.py
-testlocally.py
 __pycache__/
 servicelog.log
 src/__pycache__/
 utils/__pycache__/
-test_locally.py
+

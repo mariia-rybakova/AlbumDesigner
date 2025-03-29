@@ -76,31 +76,17 @@ def calculate_flexible_mean(total_images,group_original_mean, max_per_spread=24)
 
 
 def get_lookup_table(group2images, is_wedding, logger=None):
-    # Ensure group2images is a dictionary
-    if not isinstance(group2images, dict):
-        logger.error("Error: group2images must be a dictionary.")
-        return  "Error: group2images must be a dictionary."
-
-    if is_wedding:
-        lookup_table = wedding_lookup_table
-    else:
-        lookup_table = non_wedding_lookup_table
-
-    # Handle empty group2images case
-    if not group2images:
-        logger.warning( "Error: group2images is empty.")
-        return "Error: group2images is empty."
-
     try:
+        if is_wedding:
+            lookup_table = wedding_lookup_table
+        else:
+            lookup_table = non_wedding_lookup_table
+
         for group_name, num_images in group2images.items():
             if is_wedding:
                 group_id = group_name[1]  # Extract group ID
             else:
-                if not isinstance(group_name, tuple) or not isinstance(group_name[0], str):
-                    logger.error(f"Error: Invalid group name format: {group_name}")
-                    return f"Error: Invalid group name format: {group_name}"
                 group_id = group_name[0].split('_')[0]
-
 
             # Assign default values if group_id is not in lookup_table
             if group_id not in lookup_table:
@@ -110,4 +96,4 @@ def get_lookup_table(group2images, is_wedding, logger=None):
 
     except Exception as e:
         logger.error(f"Error: Unexpected error while updating lookup table: {str(e)}")
-        return f"Error: Unexpected error while updating lookup table: {str(e)}"
+        return None

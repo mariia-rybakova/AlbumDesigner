@@ -166,22 +166,8 @@ def update_needed(groups,is_wedding,lookup_table):
     else:
         return False
 
-def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None):
-    # Validate input types
-    if not isinstance(group2images, dict):
-        logger.error("Error: group2images must be a dictionary.")
-        return None, None, None
-
-    if not isinstance(groups, pd.core.groupby.generic.DataFrameGroupBy):
-        logger.error("Error: groups must be a Pandas GroupBy object.")
-        return None, None, None
-
-    if not isinstance(look_up_table, dict):
-        logger.error("Error: look_up_table must be a dictionary.")
-        return None, None, None
-
+def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger):
     count = 2
-
     try:
         while update_needed(group2images, is_wedding, look_up_table):
             if 'groups_to_change' not in globals():

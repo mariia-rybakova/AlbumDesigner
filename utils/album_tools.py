@@ -72,79 +72,28 @@ def get_general_times(data_db):
     return image_id2general_time
 
 
-def get_wedding_groups(df,logger):
-    # Ensure df is a DataFrame
-    if not isinstance(df, pd.DataFrame):
-        return "Error: Input must be a Pandas DataFrame."
-
-    # Required columns
+def get_wedding_groups(df, logger):
     required_columns = {'time_cluster', 'cluster_context'}
 
     # Check if required columns exist
     if not required_columns.issubset(df.columns):
         missing = required_columns - set(df.columns)
         logger.error(f"Missing required columns: {missing}")
-        return f"Error: Missing required columns: {missing}"
+        return None
 
-    # Handle empty DataFrame case
-    if df.empty:
-        logger.error('empty dataframe cant get the groups!')
-        return "Error: DataFrame is empty."
-
-    try:
-        return df.groupby(['time_cluster', 'cluster_context'])
-    except Exception as e:
-        logger.error(f"Unexpected error during grouping: {e}")
-        return f"Error: Unexpected error during grouping: {str(e)}"
+    return df.groupby(['time_cluster', 'cluster_context'])
 
 
-def get_none_wedding_groups(df, logger=None):
-    # Ensure df is a DataFrame
-    if not isinstance(df, pd.DataFrame):
-        logger.error("Input must be a Pandas DataFrame.")
-        return "Error: Input must be a Pandas DataFrame."
-
+def get_none_wedding_groups(df, logger):
     # Check if required column exists
     required_column = 'people_cluster'
 
     if required_column not in df.columns:
         logger.error(f"Missing required column: {required_column}")
-        return f"Error: Missing required column: {required_column}"
+        return None
 
-    # Handle empty DataFrame case
-    if df.empty:
-        logger.error('empty dataframe cant get the groups!')
-        return "Error: DataFrame is empty."
+    return df.groupby(['people_cluster'])
 
-    try:
-        return df.groupby(['people_cluster'])
-    except Exception as e:
-        logger.error(f"Unexpected error during grouping: {e}")
-        return f"Error: Unexpected error during grouping: {str(e)}"
-
-
-def get_images_per_groups(original_groups, logger=None):
-    # Check if original_groups is a Pandas GroupBy object
-    if not isinstance(original_groups, pd.core.groupby.generic.DataFrameGroupBy):
-        logger.error("Input must be a Pandas DataFrame.")
-        return "Error: Input must be a Pandas GroupBy object."
-
-    # Handle empty groups
-    if not original_groups.groups:
-        logger.error("Input must have at least one group.")
-        return "Error: No groups found in the input."
-
-    group2images_data_list = dict()
-
-    try:
-        for name_group, group_df in original_groups:
-            num_images = len(group_df)
-            group2images_data_list[name_group] = num_images
-        return group2images_data_list
-
-    except Exception as e:
-        logger.error(f"Unexpected error during grouping: {e}")
-        return f"Error: Unexpected error while processing groups: {str(e)}"
 
 def calculate_median_time(spread):
     all_times = []
@@ -255,7 +204,7 @@ def organize_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add s
 
 
 
-def assembly_output(output_list,message,layouts_df,images_df,cover_images_ids, covers_images_df, covers_layouts_df):
+def assembly_output(output_list, message, layouts_df, images_df, cover_images_ids, covers_images_df, covers_layouts_df):
     output = result_template
     # adding the Album Cover
     if message.cover:
@@ -398,6 +347,29 @@ def assembly_output(output_list,message,layouts_df,images_df,cover_images_ids, c
     return output
 
 
+def get_images_per_groups(original_groups, logger=None):
+    # Check if original_groups is a Pandas GroupBy object
+    if not isinstance(original_groups, pd.core.groupby.generic.DataFrameGroupBy):
+        logger.error("Input must be a Pandas DataFrame.")
+        return "Error: Input must be a Pandas GroupBy object."
+
+    # Handle empty groups
+    if not original_groups.groups:
+        logger.error("Input must have at least one group.")
+        return "Error: No groups found in the input."
+
+    group2images_data_list = dict()
+
+    try:
+        for name_group, group_df in original_groups:
+            num_images = len(group_df)
+            group2images_data_list[name_group] = num_images
+
+        return group2images_data_list
+
+    except Exception as e:
+        logger.error(f"Unexpected error during grouping: {e}")
+        return f"Error: Unexpected error while processing groups: {str(e)}"
 
 
 

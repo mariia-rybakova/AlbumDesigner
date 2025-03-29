@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pandas as pd
 
 
 def cropWeight(tl, imageShape, foregroundMask=None, faceMask=None, aspectRatio=1,
@@ -180,3 +181,25 @@ def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=10
 
     # Return normalized coordinates
     return s_min[0] / mask.shape[1], s_min[1] / mask.shape[0], w / mask.shape[1], h / mask.shape[0]
+
+
+def process_crop_images(q,df):
+    results = []
+    for _, row in df.iterrows():
+        cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
+            float(row['image_as']),
+            row['faces_info'],
+            row['background_centroid'],
+            float(row['diameter']),
+            1
+        )
+        # Store the results in a dictionary to update the DataFrame later
+        results.append({
+            'image_id': row['image_id'],
+            'cropped_x': cropped_x,
+            'cropped_y': cropped_y,
+            'cropped_w': cropped_w,
+            'cropped_h': cropped_h
+        })
+        cropped_df = pd.DataFrame(results)
+        q.put(cropped_df)
