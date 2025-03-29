@@ -4,9 +4,10 @@ import pandas as pd
 from ptinfra.azure.pt_file import PTFile
 from utils.protos import FaceVector_pb2 as face_vector
 from utils.protos import BGSegmentation_pb2 as meta_vector
-from utils.protos import PersonInfo_pb2 as person_vector
-from utils.protos  import ContentCluster_pb2 as cluster_vector
-from .protos import PersonVector_pb2 as person_vector_2
+from utils.protos import PersonInfo_pb2 as person_info
+from utils.protos  import ContentCluster_pb2 as content_cluster
+from utils.protos import PersonVector_pb2 as person_vector
+
 
 def get_image_embeddings(file, df, logger=None):
     embed = {}
@@ -95,7 +96,6 @@ def get_faces_info(faces_file, df, logger=None):
 
 
 
-
 def get_photo_meta(file, df, logger=None):
     required_ids = set(df['image_id'].tolist())
     try:
@@ -172,7 +172,7 @@ def get_persons_ids(persons_file, df,logger=None):
         if not person_info_bytes.exists():
             return None
         person_info_bytes = person_info_bytes.read_blob()
-        person_descriptor = person_vector.PersonInfoMessageWrapper()
+        person_descriptor = person_info.PersonInfoMessageWrapper()
         person_descriptor.ParseFromString(person_info_bytes)
 
     except Exception as e:
@@ -232,7 +232,7 @@ def get_clusters_info(cluster_file, df,logger=None):
         if not cluster_info_bytes.exists():
             return None
         cluster_info_bytes = cluster_info_bytes.read_blob()
-        cluster_descriptor = cluster_vector.ContentClusterMessageWrapper()
+        cluster_descriptor = content_cluster.ContentClusterMessageWrapper()
         cluster_descriptor.ParseFromString(cluster_info_bytes)
 
     except Exception as e:
@@ -288,7 +288,7 @@ def get_person_vectors(persons_file, df, logger=None):
         if not person_info_bytes.exists():
             return None
         person_info_bytes = person_info_bytes.read_blob()
-        person_descriptor = person_vector_2.PersonVectorMessageWrapper()
+        person_descriptor = person_vector.PersonVectorMessageWrapper()
         person_descriptor.ParseFromString(person_info_bytes)
 
     except Exception as e:

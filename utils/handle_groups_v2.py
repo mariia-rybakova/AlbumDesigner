@@ -166,7 +166,7 @@ def update_needed(groups,is_wedding,lookup_table):
     else:
         return False
 
-def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None):
+def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger):
     count = 2
     try:
         while update_needed(group2images, is_wedding, look_up_table):

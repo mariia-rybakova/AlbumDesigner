@@ -195,10 +195,10 @@ def process_all_groups_parallel(args):
 
     return results
 
-def groups_processing(group2images,original_groups,look_up_table,layouts_df,layout_id2data,is_wedding,params,logger):
+def groups_processing(group2images, original_groups, look_up_table, layouts_df, layout_id2data, is_wedding, params, logger):
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images,look_up_table = process_illegal_groups(group2images, original_groups,look_up_table,is_wedding, logger)
+        updated_groups, group2images, look_up_table = process_illegal_groups(group2images, original_groups, look_up_table, is_wedding, logger)
         illegal_time = (time.time() - start_time)
         logger.info(f'Illegal groups processing time: {illegal_time:.2f} seconds')
     else:
@@ -236,7 +236,7 @@ def start_processing_album(df, layouts_df, layout_id2data, is_wedding,params, lo
             group2images[name_group] = num_images
 
         look_up_table = get_lookup_table(group2images,is_wedding,logger)
-        result_list,updated_groups = groups_processing(group2images,original_groups,look_up_table,layouts_df, layout_id2data, is_wedding,params, logger)
+        result_list, updated_groups = groups_processing(group2images,original_groups,look_up_table,layouts_df, layout_id2data, is_wedding,params, logger)
 
         #sorintg & formating & cropping
         if is_wedding:

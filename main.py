@@ -42,17 +42,14 @@ torch.set_num_threads(1)
 
 read_time_list = list()
 processing_time_list = list()
-processing_scores_time_list = list()
-storing_time_list = list()
-retorting_time_list = list()
-general_time_list = list()
+reporting_time_list = list()
+
 
 class ReadStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
         super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=2)
         self.logger = logger
-        self.queries_file = CONFIGS['queries_file']
 
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
@@ -64,12 +61,13 @@ class ReadStage(Stage):
         start = datetime.now()
         #Read messages using a helper function
         try:
-            messages = read_messages(messages, self.queries_file, self.logger)
+            messages = read_messages(messages, self.logger)
         except Exception as e:
             self.logger.error(f"Error reading messages: {e}")
             return []
 
-        handling_time = (datetime.now() - start) / len(messages) if messages else 0
+        handling_time = (datetime.now() - start) / len(messages) if messages else 1
+        read_time_list.append(handling_time)
         self.logger.info(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
         return messages
 
@@ -174,8 +172,9 @@ class ProcessStage(Stage):
                 message.content['error'] = f"Unexpected error in message processing: {e}"
                 continue
 
-        handling_time = (datetime.now() - whole_messages_start) / len(messages) if messages else 0
-        self.logger.debug('Average Processing Stage time: {}. For : {} messages '.format(handling_time, len(messages)))
+        processing_time = (datetime.now() - whole_messages_start) / len(messages) if messages else 1
+        processing_time_list.append(processing_time)
+        self.logger.debug('Average Processing Stage time: {}. For : {} messages '.format(processing_time, len(messages)))
         return msgs
 
 
@@ -209,13 +208,10 @@ class ReportStage(Stage):
                           'Average processing time for last {} requests: '
                           'Handling messages and data loading average time: {}. '
                           'Processing average time: {}. '
-                          'Processing scores average time: {}. '
-                          'Storing average time: {}. '
                           'Reporting average time: {}. '
                           'General average time: {}. '
                           '**********.'.format(self.global_number_of_msgs, avg_time(read_time_list),
-                                               avg_time(processing_time_list), avg_time(processing_scores_time_list),
-                                               avg_time(storing_time_list), avg_time(retorting_time_list),
+                                               avg_time(processing_time_list), avg_time(reporting_time_list),
                                                global_average))
 
     def report_one_message(self, one_msg):
@@ -233,7 +229,7 @@ class ReportStage(Stage):
                 one_msg.delete()
 
         reporting_time = (datetime.now() - start) / (len(msgs) if isinstance(msgs, list) else 1)
-        retorting_time_list.append(reporting_time)
+        reporting_time_list.append(reporting_time)
 
         # photo_ids = msgs.content['photoId'] if isinstance(msgs, Message) else [msg.content["photoId"] for msg in msgs]
         # self.logger.debug('Deleted images: {}. Reporting time: {}.'.format(photo_ids, reporting_time))

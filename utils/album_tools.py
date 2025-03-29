@@ -72,56 +72,27 @@ def get_general_times(data_db):
     return image_id2general_time
 
 
-def get_wedding_groups(df,logger):
-    # Ensure df is a DataFrame
-    if not isinstance(df, pd.DataFrame):
-        return "Error: Input must be a Pandas DataFrame."
-
-    # Required columns
+def get_wedding_groups(df, logger):
     required_columns = {'time_cluster', 'cluster_context'}
 
     # Check if required columns exist
     if not required_columns.issubset(df.columns):
         missing = required_columns - set(df.columns)
         logger.error(f"Missing required columns: {missing}")
-        return f"Error: Missing required columns: {missing}"
+        return None
 
-    # Handle empty DataFrame case
-    if df.empty:
-        logger.error('empty dataframe cant get the groups!')
-        return "Error: DataFrame is empty."
-
-    try:
-        return df.groupby(['time_cluster', 'cluster_context'])
-    except Exception as e:
-        logger.error(f"Unexpected error during grouping: {e}")
-        return f"Error: Unexpected error during grouping: {str(e)}"
+    return df.groupby(['time_cluster', 'cluster_context'])
 
 
-def get_none_wedding_groups(df, logger=None):
-    # Ensure df is a DataFrame
-    if not isinstance(df, pd.DataFrame):
-        logger.error("Input must be a Pandas DataFrame.")
-        return "Error: Input must be a Pandas DataFrame."
-
+def get_none_wedding_groups(df, logger):
     # Check if required column exists
     required_column = 'people_cluster'
 
     if required_column not in df.columns:
         logger.error(f"Missing required column: {required_column}")
-        return f"Error: Missing required column: {required_column}"
+        return None
 
-    # Handle empty DataFrame case
-    if df.empty:
-        logger.error('empty dataframe cant get the groups!')
-        return "Error: DataFrame is empty."
-
-    try:
-        return df.groupby(['people_cluster'])
-    except Exception as e:
-        logger.error(f"Unexpected error during grouping: {e}")
-        return f"Error: Unexpected error during grouping: {str(e)}"
-
+    return df.groupby(['people_cluster'])
 
 
 def calculate_median_time(spread):
@@ -233,7 +204,7 @@ def organize_groups(data_list,layouts_df,groups_df, is_wedding,logger):  # Add s
 
 
 
-def assembly_output(output_list,message,layouts_df,images_df,cover_images_ids, covers_images_df, covers_layouts_df):
+def assembly_output(output_list, message, layouts_df, images_df, cover_images_ids, covers_images_df, covers_layouts_df):
     output = result_template
     # adding the Album Cover
     if message.cover:

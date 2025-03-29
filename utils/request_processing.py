@@ -6,12 +6,9 @@ from datetime import datetime
 
 from utils import get_layouts_data
 from utils.parser import CONFIGS
-from utils.layouts_file import generate_layouts_df,generate_layouts_fromDesigns_df
+from utils.layouts_file import generate_layouts_df
 from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
 from utils.image_queries import generate_query
-
-cached_design_ids = None
-cached_layouts_df = None
 
 
 def generate_dict_key(numbers, n_bodies):
@@ -49,79 +46,52 @@ def check_gallery_type(df):
         return True
 
 def get_info_protobufs(project_base_url, df, logger):
-    start = datetime.now()
-    faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
-    cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
-    persons_file = os.path.join(project_base_url, 'persons_info.pb')
-    image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
-    segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
-    person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
-
-    # List of functions to run in parallel
-    functions = [
-        partial(get_image_embeddings, image_file),
-        partial(get_faces_info, faces_file),
-        partial(get_persons_ids, persons_file),
-        partial(get_clusters_info, cluster_file),
-        partial(get_photo_meta, segmentation_file),
-        partial(get_person_vectors, person_vector_file)
-    ]
-
-    results = []
-
     try:
+        start = datetime.now()
+        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
+        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
+        persons_file = os.path.join(project_base_url, 'persons_info.pb')
+        image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
+        segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
+        person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
+
+        # List of functions to run in parallel
+        functions = [
+            partial(get_image_embeddings, image_file),
+            partial(get_faces_info, faces_file),
+            partial(get_persons_ids, persons_file),
+            partial(get_clusters_info, cluster_file),
+            partial(get_photo_meta, segmentation_file),
+            partial(get_person_vectors, person_vector_file)
+        ]
+
+        results = []
         for func in functions:
-
             result = func(df, logger)
-            if result is None:
-                logger.error("Error in function: %s", func)
-                return None
-            else:
-                results.append(result)
-    except Exception as e:
-        logger.error("Exception in function %s: %s", func, e)
-        return None, None
+            results.append(result)
 
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=CONFIGS['max_reading_workers']) as executor:
-    #     future_to_function = {executor.submit(func, df, logger): func for func in functions}
-    #
-    #     for future in concurrent.futures.as_completed(future_to_function):
-    #         func = future_to_function[future]
-    #         try:
-    #             result = future.result()
-    #             if result is None:
-    #                 logger.error("Error in function: %s", func)
-    #                 return None
-    #             results.append(result)
-    #         except Exception as e:
-    #             logger.error("Exception in function %s: %s", func, e)
-    #             return None
+        # if None in results:
+        #     logger.error('Error in reading files.')
+        #     return None, None
 
-    # Merge results (assuming they return modified df)
+        logger.debug("Time for getting from files: {}".format(datetime.now() - start))
 
-    try:
         gallery_info_df = results[0]
-        print("Time for getting from files", datetime.now() - start)
-
-        merge_start = datetime.now()
         for res in results[1:]:
             gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
 
-        columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
-
         # Convert only the specified columns to 'Int64' (nullable integer type)
+        columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
         gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
-
-        print("Mering all dataframe time", datetime.now() - merge_start)
         print("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
-        other_start = datetime.now()
         # Get Query Content of each image
         gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
 
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
         print("Number of images after cleaning the nan values", len(gallery_info_df.index))
+
         # make sure it has list values not float nan
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
@@ -129,28 +99,25 @@ def get_info_protobufs(project_base_url, df, logger):
         gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
         is_wedding = check_gallery_type(gallery_info_df)
 
-        logger.info("Reading from protobuf files has been finished successfully!")
-        print("other processing ", datetime.now() - other_start)
+        logger.debug("Time for reading files: {}".format(datetime.now() - start))
+        return gallery_info_df, is_wedding
+
     except Exception as e:
         logger.error("Error in merging results: %s", e)
         return None, None
 
-    return gallery_info_df, is_wedding
 
-def read_messages(messages,queries_file, logger):
+def read_messages(messages, logger):
     enriched_messages = []
-
-    global cached_design_ids, cached_layouts_df
 
     for _msg in messages:
         reading_message_time = datetime.now()
-        design_ids = _msg.content['designIds']
+
         json_content = _msg.content
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
 
-        if 'photosIds' not in json_content or \
-                'projectURL' not in json_content:
+        if 'photosIds' not in json_content or 'projectURL' not in json_content or 'designIds' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
@@ -160,16 +127,12 @@ def read_messages(messages,queries_file, logger):
 
             images = json_content['photosIds']
             project_url = json_content['projectURL']
+            design_ids = json_content['designIds']
             cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
-
-            # design_ids = json_content.get('designs', [])
-
-            # if cached_design_ids is None or cached_design_ids != design_ids:
-            #     cached_design_ids = design_ids  # Update cache
-            #     cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
 
             df = pd.DataFrame(images, columns=['image_id'])
             proto_start = datetime.now()
+
             # check if its wedding here! and added to the message
             gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df, logger=logger)
 

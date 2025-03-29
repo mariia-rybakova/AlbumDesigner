@@ -1000,7 +1000,7 @@ if __name__ == '__main__':
 
     # wedding_2_test_message_200 # wedding_3_test_message wedding_4_test_message  wedding_5_test_message_300 wedding_2_test_message_setting
     # non_wedding_test_message
-    result = read_stage.read_messages([wedding_2_test_message_setting])
+    result = read_stage.read_messages([wedding_2_test_message_250])
 
     processing = ProcessStage(logger=logger)
     processing.process_message(result)
