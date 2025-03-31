@@ -117,7 +117,7 @@ def read_messages(messages, logger):
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
 
-        if 'photosIds' not in json_content or 'projectURL' not in json_content or 'designIds' not in json_content:
+        if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
@@ -125,10 +125,22 @@ def read_messages(messages, logger):
             continue
         try:
 
-            images = json_content['photosIds']
-            project_url = json_content['projectURL']
-            design_ids = json_content['designIds']
-            cached_layouts_df = generate_layouts_df(CONFIGS["designs_json_file_path"], design_ids)
+            images = json_content['photos']
+            project_url = json_content['base_url']
+
+
+            if 'anyPage' in json_content['designInfo']['parts']:
+                _msg.anyPageIds = json_content['designInfo']['parts']['anyPage']['designIds']
+            else:
+                _msg.error = 'no anyPage in designInfo. Skipping.'
+                continue
+            if 'firstPage' in json_content['designInfo']['parts']:
+                _msg.firstPageIds = json_content['designInfo']['parts']['firstPage']['designIds']
+            if 'lastPage' in json_content['designInfo']['parts']:
+                _msg.firstPageIds = json_content['designInfo']['parts']['lastPage']['designIds']
+
+
+            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.anyPageIds)
 
             df = pd.DataFrame(images, columns=['image_id'])
             proto_start = datetime.now()
@@ -156,11 +168,11 @@ def read_messages(messages, logger):
             #     f"Cropping time for  {len(gallery_info_df)} images is: {datetime.now() - cropping_start} secs.")
 
             is_wedding = True
-            if not gallery_info_df.empty and not cached_layouts_df.empty:
+            if not gallery_info_df.empty and not anyPage_layouts_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
-                _msg.content['layouts_df'] = cached_layouts_df
-                _msg.content['layout_id2data'] = get_layouts_data(cached_layouts_df)
+                _msg.content['anyPagelayouts_df'] = anyPage_layouts_df
+                _msg.content['anyPagelayout_id2data'] = get_layouts_data(anyPage_layouts_df)
                 enriched_messages.append(_msg)
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")

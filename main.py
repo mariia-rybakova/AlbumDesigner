@@ -132,7 +132,7 @@ class ProcessStage(Stage):
                 else:
                     df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(sorted_df,
                                                                                                       self.logger)
-                cover_end_imgs_layouts = get_cover_end_layout(message.content['layouts_df'], self.logger)
+                cover_end_imgs_layouts = get_cover_end_layout(message.content['anyPagelayouts_df'], self.logger)
 
                 df, image_id2general_time = process_image_time(df)
 
@@ -156,12 +156,12 @@ class ProcessStage(Stage):
 
                 # Handle the processing time logging
                 start = datetime.now()
-                album_result = start_processing_album(df, message.content['layouts_df'],
-                                                      message.content['layout_id2data'],
+                album_result = start_processing_album(df, message.content['anyPagelayouts_df'],
+                                                      message.content['anyPagelayout_id2data'],
                                                       message.content['is_wedding'],params, logger=self.logger)
 
                 try:
-                    cropped_df = self.q.get(timeout=20)
+                    cropped_df = self.q.get(timeout=200)
                 except Exception as e:
                     p.terminate()
                     raise Exception('cropping process not completed: {}'.format(e))

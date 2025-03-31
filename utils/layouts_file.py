@@ -200,8 +200,8 @@ def generate_layouts_fromDesigns_df(designs,tolerance=0.05):
     return layouts_df
 
 
-def generate_layouts_df(json_file_path, id_list,tolerance=0.05):
-    data = read_json_file(json_file_path)
+def generate_layouts_df(data, id_list,tolerance=0.05):
+
 
     # Initialize lists to hold areas for all portrait and landscape boxes
     all_portrait_areas = []
@@ -209,7 +209,7 @@ def generate_layouts_df(json_file_path, id_list,tolerance=0.05):
 
     # First pass: Collect areas for all boxes
     for item in data:
-        boxes = [box for box in item['boxes'] if box['type'] == 0]  # Filter out text boxes
+        boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
         for box in boxes:
             orientation, area = classify_box(box, tolerance)
             if orientation == 'portrait':
@@ -230,8 +230,8 @@ def generate_layouts_df(json_file_path, id_list,tolerance=0.05):
 
     # Second pass: Classify boxes for each ID and generate visualization
     for item in data:
-        if item['id'] in id_list:
-            boxes = [box for box in item['boxes'] if box['type'] == 0]  # Filter out text boxes
+        if int(item) in id_list:
+            boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
             num_boxes = len(boxes)
 
             if num_boxes == 0:
@@ -335,7 +335,7 @@ def generate_layouts_df(json_file_path, id_list,tolerance=0.05):
 
             # Store the results for the current ID
             result.append({
-                "id": item["id"],
+                "id": int(item),
                 "number of boxes": num_boxes,
                 "left_small_portrait": num_left_small_portrait,
                 "right_small_portrait": num_right_small_portrait,
