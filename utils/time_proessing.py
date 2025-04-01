@@ -1,7 +1,9 @@
 import copy
 import pandas as pd
+import numpy as np
 
 from datetime import datetime
+from sklearn.mixture import GaussianMixture
 from concurrent.futures import ThreadPoolExecutor
 
 def read_timestamp(timestamp_str):
@@ -63,3 +65,17 @@ def process_image_time(data_df):
     image_id2general_time = dict(zip(processed_df['image_id'], processed_df['general_time']))
 
     return sorted_by_time_df, image_id2general_time
+
+
+def get_time_clusters(general_time_df):
+    # Cluster by time
+    X = general_time_df.values.reshape(-1, 1)
+    # Determine the optimal number of clusters using Bayesian Information Criterion (BIC)
+    n_components = np.arange(1, 10)
+    models = [GaussianMixture(n, covariance_type='full', random_state=0).fit(X) for n in n_components]
+    bics = [m.bic(X) for m in models]
+    # Select the model with the lowest BIC
+    best_n = n_components[np.argmin(bics)]
+    gmm = GaussianMixture(n_components=best_n, covariance_type='full', random_state=0)
+    gmm.fit(X)
+    clusters = gmm.predict(X)

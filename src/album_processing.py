@@ -9,7 +9,7 @@ from gc import collect
 
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
-from utils.album_tools import get_none_wedding_groups,get_wedding_groups,organize_groups,sort_groups_by_name
+from utils.album_tools import get_none_wedding_groups, get_wedding_groups, sort_groups_by_name
 from utils.parser import CONFIGS
 
 
@@ -33,7 +33,7 @@ def get_group_photos_list(cur_group_photos, spread_params, logger):
 
 
 def process_group(args):
-    group_name, group_images_df, spread_params, layouts_df, layout_id2data ,is_wedding,params,logger= args
+    group_name, group_images_df, spread_params, layouts_df, layout_id2data ,is_wedding,params, logger= args
     logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
@@ -48,11 +48,12 @@ def process_group(args):
 
             final_groups_and_spreads = None
             if filtered_spreads is None:
-                print("Filtered spreads not found we try again with different params")
+
                 for divider in [2, 3, 4]:
                     new_group_photos_list = get_group_photos_list(group_photos, spread_params, logger)
                     groups_filtered_spreads_list = list()
                     for cur_sub_group_photos in new_group_photos_list:
+                        print("Filtered spreads not found we try again with different params. Group: {}. Params: {}".format(group_name, [spread_params[0] / divider, spread_params[1]]))
                         cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df,
                                                                            [spread_params[0] / divider, spread_params[1]],params, logger)
                         if cur_filtered_spreads is None:
@@ -67,7 +68,7 @@ def process_group(args):
                         final_groups_and_spreads = groups_filtered_spreads_list
                         break
                 if final_groups_and_spreads is None:
-                    logger.info('It is hopeless. Skipping group: {}'.format(group_name))
+                    logger.warning('It is hopeless. Skipping group: {}'.format(group_name))
                     continue
             else:
                 final_groups_and_spreads = [(group_photos, filtered_spreads)]
@@ -75,6 +76,7 @@ def process_group(args):
             logger.info('Number of filtered spreads: {}. Their sizes: {}'.format(len(final_groups_and_spreads), [len(spr) for _, spr in final_groups_and_spreads]))
             logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
+            best_spread = None
             for sub_group_photos, filtered_spreads in final_groups_and_spreads:
                 ranking_start = time.time()
                 filtered_spreads = add_ranking_score(filtered_spreads, sub_group_photos, layout_id2data)
@@ -94,6 +96,7 @@ def process_group(args):
                 else:
                     local_result[str(group_name[0]) + '*' + str(group_idx)] = best_spread
                 group_idx += 1
+            print('Current group: {}. Best spread: {}'.format(group_name, best_spread))
 
 
                 # del filtered_spreads

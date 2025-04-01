@@ -4,13 +4,14 @@ import copy
 import torch
 import warnings
 import numpy as np
+import base64
+import gzip
 
 import pandas as pd
 from typing import List, Union
 from datetime import datetime
 import multiprocessing as mp
-
-from sklearn.mixture import GaussianMixture
+from azure.storage.queue import QueueClient
 
 from ptinfra import intialize, get_logger
 from ptinfra.pt_queue import  MessageQueue, MemoryQueue, RoundRobinReader
@@ -22,11 +23,10 @@ from ptinfra.azure.pt_file import PTFile
 
 
 from src.smart_cropping import process_crop_images
-from utils.cover_image import process_non_wedding_cover_image, process_wedding_cover_end_image, get_cover_end_layout
-from utils.time_proessing import process_image_time
+from utils.cover_image import process_non_wedding_cover_image, process_wedding_first_last_image, get_first_last_design_ids
+from utils.time_proessing import process_image_time, get_time_clusters
 from src.album_processing import start_processing_album
-from utils.album_tools import assembly_output
-from utils.request_processing import read_messages
+from utils.request_processing import read_messages, assembly_output
 from utils.parser import CONFIGS
 from utils.clusters_labels import map_cluster_label
 
@@ -45,6 +45,28 @@ torch.set_num_threads(1)
 read_time_list = list()
 processing_time_list = list()
 reporting_time_list = list()
+
+
+def push_report_msg(one_msg, az_connection_string, logger=None):
+    '''Push result to the report queue'''
+
+    try:
+        q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
+        q_client.create_queue()
+    except Exception as ex:
+        pass
+    # q_name = one_msg.content['replyQueueName']
+    result_doc = one_msg.album_doc
+    jsonContent = json.dumps(result_doc)
+    compressed = gzip.compress(jsonContent.encode("ascii"))
+    base64Content = base64.b64encode(compressed).decode("ascii")
+    try:
+        q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
+        q_client.send_message(base64Content)
+        if logger is not None:
+            logger.info('Message was sent to the report queue {}'.format(result_doc))
+    except Exception as ex:
+        raise Exception('Report queue error, message not sent, error: {}'.format(ex))
 
 
 class ReadStage(Stage):
@@ -112,6 +134,18 @@ class ProcessStage(Stage):
                     message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
                     continue
 
+                try:
+                    cropped_df = self.q.get(timeout=200)
+                except Exception as e:
+                    p.terminate()
+                    raise Exception('cropping process not completed: {}'.format(e))
+                p.join(timeout=5)
+                if p.is_alive():
+                    p.terminate()
+                    self.logger.error('cropping process not completed 2')
+
+                df = df.merge(cropped_df, how='inner', on='image_id')
+
                 # Sorting the DataFrame by "image_order" column
                 sorted_df = df.sort_values(by="image_order", ascending=False)
                 if message.content.get('is_wedding', True):
@@ -127,55 +161,31 @@ class ProcessStage(Stage):
                     processed_content_df = pd.DataFrame(processed_rows)
                     processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
                                                    how='left', on='image_id')
-                    df, cover_end_images_ids, cover_end_imgs_df = process_wedding_cover_end_image(processed_df,
-                                                                                                  self.logger)
+                    df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(processed_df,
+                                                                                                     self.logger)
                 else:
-                    df, cover_end_images_ids, cover_end_imgs_df = process_non_wedding_cover_image(sorted_df,
+                    df, first_last_images_ids, first_last_imgs_df = process_non_wedding_cover_image(sorted_df,
                                                                                                       self.logger)
-                cover_end_imgs_layouts = get_cover_end_layout(message.content['anyPagelayouts_df'], self.logger)
 
+                first_last_design_ids = get_first_last_design_ids(message.designsInfo['anyPagelayouts_df'], self.logger)
+
+                # process time
                 df, image_id2general_time = process_image_time(df)
-
-                #Cluster by time
-                X = df['general_time'].values.reshape(-1, 1)
-                # Determine the optimal number of clusters using Bayesian Information Criterion (BIC)
-                n_components = np.arange(1, 10)
-                models = [GaussianMixture(n, covariance_type='full', random_state=0).fit(X) for n in n_components]
-                bics = [m.bic(X) for m in models]
-                # Select the model with the lowest BIC
-                best_n = n_components[np.argmin(bics)]
-                gmm = GaussianMixture(n_components=best_n, covariance_type='full', random_state=0)
-                gmm.fit(X)
-                clusters = gmm.predict(X)
-
-                # Add cluster labels to the dataframe
-                df['time_cluster'] = clusters
+                df['time_cluster'] = get_time_clusters(df['general_time'])
 
                 # to ignore the read only memory
                 df = pd.DataFrame(df.to_dict())
 
                 # Handle the processing time logging
                 start = datetime.now()
-                album_result = start_processing_album(df, message.content['anyPagelayouts_df'],
-                                                      message.content['anyPagelayout_id2data'],
+                album_result = start_processing_album(df, message.designsInfo['anyPagelayouts_df'],
+                                                      message.designsInfo['anyPagelayout_id2data'],
                                                       message.content['is_wedding'],params, logger=self.logger)
 
-                try:
-                    cropped_df = self.q.get(timeout=200)
-                except Exception as e:
-                    p.terminate()
-                    raise Exception('cropping process not completed: {}'.format(e))
-                p.join(timeout=5)
-                if p.is_alive():
-                    p.terminate()
-                    self.logger.error('cropping process not completed 2')
+                final_response = assembly_output(album_result, message, message.designsInfo['anyPagelayouts_df'], df,
+                                                 first_last_images_ids, first_last_imgs_df, first_last_design_ids)
 
-                df = df.merge(cropped_df, how='inner', on='image_id')
-
-                final_response = assembly_output(album_result, message, message.content['anyPagelayouts_df'], df,
-                                                 cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)
-
-                message.content['album'] = final_response
+                message.album_doc = final_response
                 processing_time = datetime.now() - start
 
                 self.logger.debug('Lay-outing time: {}.For Processed album id: {}'.format(processing_time,
@@ -202,6 +212,7 @@ class ReportStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
         super().__init__('ReportMessage', self.report_message, in_q, out_q, err_q, batch_size=1, max_threads=1)
+        self.az_connection_string = get_variable("QueueConnectionString")
         self.global_start_time = datetime.now()
         self.global_number_of_msgs = 0
         self.number_of_reports = 0
@@ -236,6 +247,9 @@ class ReportStage(Stage):
     def report_one_message(self, one_msg):
         if one_msg.error:
             self.logger.debug('REPORT ERROR MESSAGE  {}.'.format(one_msg.error))
+        push_report_msg(one_msg, self.az_connection_string, self.logger)
+        self.logger.debug('Message was reported to the queue: {}/{}. '.format(one_msg.content['projectId'], one_msg.content['conditionId']))
+
 
     def report_message(self, msgs: Union[Message, List[Message]]):
         start = datetime.now()
@@ -255,8 +269,6 @@ class ReportStage(Stage):
 
         self.global_number_of_msgs += len(msgs) if isinstance(msgs, list) else 1
         self.print_time_summary()
-
-        return
 
 
 
@@ -298,11 +310,10 @@ class MessageProcessor:
                                          max_dequeue_allowed=1000)
 
         read_q = MemoryQueue(2)
-        process_q = MemoryQueue(2)
         report_q = MemoryQueue(2)
 
         read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
-        process_stage = ProcessStage(read_q, process_q, report_q, logger=self.logger)
+        process_stage = ProcessStage(read_q, report_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()

@@ -1,7 +1,6 @@
 import pandas as pd
 
 from utils.illegal_group_splitting_merging import merge_illegal_group, split_illegal_group
-from utils.album_tools import get_images_per_groups
 from utils.parser import CONFIGS
 
 def update_groups(group, merged, merge_group_key, illegal_group_key):
@@ -165,6 +164,17 @@ def update_needed(groups,is_wedding,lookup_table):
         return True
     else:
         return False
+
+
+def get_images_per_groups(original_groups, logger):
+    group2images_data_list = dict()
+
+    for name_group, group_df in original_groups:
+        num_images = len(group_df)
+        group2images_data_list[name_group] = num_images
+
+    return group2images_data_list
+
 
 def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger):
     count = 2

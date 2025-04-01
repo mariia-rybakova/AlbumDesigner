@@ -3,8 +3,6 @@ import os
 import numpy as np
 from glob import glob
 
-from utils.album_tools import get_general_times
-
 
 class Photo:
     # class definition to hold all photo information required to calculate the layout score

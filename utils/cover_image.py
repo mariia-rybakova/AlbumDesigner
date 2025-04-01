@@ -4,7 +4,7 @@ import pandas as pd
 from utils.parser import CONFIGS
 
 
-def get_cover_end_layout(layout_df, logger):
+def get_first_last_design_ids(layout_df, logger):
     # Get all layout keys where "number of boxes" == 1
     one_img_layouts = [key for key, layout in layout_df.iterrows() if layout["number of boxes"] == 1]
 
@@ -44,7 +44,7 @@ def get_important_imgs(data_df, top=5):
 
     return image_id_list
 
-def process_wedding_cover_end_image(df, logger):
+def process_wedding_first_last_image(df, logger):
     bride_groom_highest_images = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
     # if we didn't find the highest ranking images then we won't be able to get cover image
     if len(bride_groom_highest_images) > 0:
