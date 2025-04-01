@@ -3,7 +3,7 @@ import numpy as np
 
 from itertools import combinations, product
 from utils.parser import CONFIGS
-
+import pandas as pd
 
 def classWeight(nPhotos, classSpredParams):
     # calculates the class contribution to score.
@@ -67,16 +67,47 @@ def printAllUniqueParts(n):
         k += 1
 
 
-def selectPartitions(nPhotos, classSpreadParams,params,available_n):
+def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
     # finds all available partitions for a class cluster of size nPhotos
     # eliminates unlikely partitions based ont the cluster class score parameters
     # parameter: nPhotos - total number of photos for a class cluster
     # parameter: classSpreadParams - array size 2 [mean,std] containing the gaussian parameter for the context class score
 
+    nPhotos = len(photos_df.index)
+    available_n = set(layouts_df['number of boxes'].unique())
+
+    nPortrait = len(photos_df[photos_df['ar'] < 1].index)
+    nLandscape = nPhotos - nPortrait
+
     classSpreadParams[1] = max(classSpreadParams[1], 0.5)
 
     parts = printAllUniqueParts(nPhotos)
     parts = [part for part in parts if set(part).issubset(available_n)]
+
+    filtered_parts = []
+    for part in parts:
+
+        part_landscape = nLandscape
+        part_portrait = nPortrait
+
+        for spread in part:
+            n_layouts = layouts_df[layouts_df['number of boxes']==spread][['max portraits','max landscapes']]
+            match_layout=False
+            for idx, row in n_layouts.iterrows():
+                rem_portrait = max(part_portrait - row['max portraits'],0)
+                rem_landscape = max(part_landscape - row['max landscapes'],0)
+                if (part_landscape+part_portrait)-spread >= (rem_portrait+rem_landscape):
+                    match_layout=True
+                    part_portrait = rem_portrait
+                    part_landscape = rem_landscape
+                    break
+            if not match_layout:
+                break
+        if match_layout:
+            filtered_parts.append(part)
+
+
+    parts = filtered_parts
     weights = np.zeros(len(parts))
     for idx, part in enumerate(parts):
         weights[idx] = classWeight(part, classSpreadParams)
@@ -348,9 +379,10 @@ def eval_single_comb(comb, photo_times, cluster_labels):
 
 def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,logger):
 
-    available_n =set(layouts_df['number of boxes'].unique())
 
-    layout_parts, weight_parts = selectPartitions(len(photos), spread_params,params,available_n=available_n)
+
+    photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
+    layout_parts, weight_parts = selectPartitions(photos_df, spread_params,params,layouts_df=layouts_df)
     #logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
     combs = []
