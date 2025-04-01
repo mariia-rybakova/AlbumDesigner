@@ -172,7 +172,7 @@ class ProcessStage(Stage):
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
 
-                final_response = assembly_output(album_result, message, message.content['layouts_df'], df,
+                final_response = assembly_output(album_result, message, message.content['anyPagelayouts_df'], df,
                                                  cover_end_images_ids, cover_end_imgs_df, cover_end_imgs_layouts)
 
                 message.content['album'] = final_response

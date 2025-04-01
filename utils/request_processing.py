@@ -137,7 +137,7 @@ def read_messages(messages, logger):
             if 'firstPage' in json_content['designInfo']['parts']:
                 _msg.firstPageIds = json_content['designInfo']['parts']['firstPage']['designIds']
             if 'lastPage' in json_content['designInfo']['parts']:
-                _msg.firstPageIds = json_content['designInfo']['parts']['lastPage']['designIds']
+                _msg.lastPageIds = json_content['designInfo']['parts']['lastPage']['designIds']
 
 
             anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.anyPageIds)
