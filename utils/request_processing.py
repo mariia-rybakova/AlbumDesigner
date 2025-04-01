@@ -138,8 +138,10 @@ def read_messages(messages, logger):
                 _msg.firstPageIds = json_content['designInfo']['parts']['firstPage']['designIds']
             if 'lastPage' in json_content['designInfo']['parts']:
                 _msg.lastPageIds = json_content['designInfo']['parts']['lastPage']['designIds']
-
-
+            if 'cover' in json_content['designInfo']['parts']:
+                _msg.coverPageIds = json_content['designInfo']['parts']['cover']['designIds']
+                coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.anyPageIds)
+                _msg.content['coverPage_layouts_df'] = coverPage_layouts_df
             anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.anyPageIds)
 
             df = pd.DataFrame(images, columns=['image_id'])
