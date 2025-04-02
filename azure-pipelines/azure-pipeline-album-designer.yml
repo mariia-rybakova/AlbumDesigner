@@ -1,0 +1,60 @@
+# Docker
+# Build and push an image to Azure Container Registry
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+pool:
+# Self-hosted
+    name: Default
+    demands: ubuntuagent
+
+trigger:
+- main
+- release/*
+
+resources:
+#- repo: self
+  repositories:
+  - repository: GitStorageSyncScripts
+    type: github
+    endpoint: pictime
+    name: pic-time/python-infra
+
+variables:
+  # Container registry service connection established during pipeline creation
+  dockerRegistryServiceConnection: 'azureDockerRegistryServiceConnection'
+  imageRepository: 'albumdesigner'
+  containerRegistry: 'pictime.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/AlbumDesigner/Dockerfile'
+  albumDesignerBuildNumber: $[counter('albumDesignerVersionCounter', 100)] # auto-increment on each build
+
+# provides format for build name
+name: 'album-designer-$(Date:yyMMdd)-v$(albumDesignerBuildNumber)-$(Build.SourceBranchName)'
+
+stages:
+- stage: Build
+  displayName: Build and push stage
+  jobs:
+  - job: Build
+    displayName: Build
+    # pool:
+    #   vmImage: $(vmImageName)
+
+    steps:
+    - checkout: self
+      clean: true
+    - checkout: GitStorageSyncScripts
+
+    - script: |
+        sourcePath="$(Build.SourcesDirectory)/python-infra"
+        destinationPath="$(Build.SourcesDirectory)/AlbumDesigner"
+        cp -r "$sourcePath/." "$destinationPath/"
+        echo "Files and subfolders have been copied from $sourcePath to $destinationPath."
+      displayName: Copy files from python-infra repo to build context
+    - task: Docker@2
+      displayName: Build and push an image to container registry
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          $(Build.BuildNumber)
