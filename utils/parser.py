@@ -1,6 +1,6 @@
 CONFIGS = {'DEBUG': True,
-           'queries_file': r'files\queries_features.pkl',
-           'designs_json_file_path': r'files\designs.json',
+           'queries_file': r'files/queries_features.pkl',
+           'designs_json_file_path': r'files/designs.json',
            'image_loading_timeout': 30,
            'min_split_score':4,
            'max_img_split':3,

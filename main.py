@@ -1,7 +1,5 @@
 import os
 import json
-import copy
-import torch
 import warnings
 import numpy as np
 import base64
@@ -19,7 +17,6 @@ from ptinfra.config import get_variable
 from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, QWriter, Message
 from ptinfra import  AbortRequested
-from ptinfra.azure.pt_file import PTFile
 
 
 from src.smart_cropping import process_crop_images
@@ -35,12 +32,8 @@ if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') i
 
 warnings.filterwarnings('ignore')
 np.random.seed(42)
-torch.manual_seed(42)
 os.environ["PYTHONHASHSEED"] = "42"
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-torch.set_num_threads(1)
 
 read_time_list = list()
 processing_time_list = list()
