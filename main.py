@@ -254,7 +254,7 @@ class ReportStage(Stage):
                 self.report_one_message(one_msg)
                 one_msg.delete()
 
-        reporting_time = (datetime.now() - start) / (len(msgs) if isinstance(msgs, list) else 1)
+        reporting_time = (datetime.now() - start) / (len(msgs) if isinstance(msgs, list) and len(msgs) > 0 else 1)
         reporting_time_list.append(reporting_time)
 
         # photo_ids = msgs.content['photoId'] if isinstance(msgs, Message) else [msg.content["photoId"] for msg in msgs]

@@ -79,3 +79,5 @@ def get_time_clusters(general_time_df):
     gmm = GaussianMixture(n_components=best_n, covariance_type='full', random_state=0)
     gmm.fit(X)
     clusters = gmm.predict(X)
+
+    return clusters

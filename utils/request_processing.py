@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 
 from functools import partial
 from datetime import datetime
@@ -198,12 +199,27 @@ def read_messages(messages, logger):
     return enriched_messages
 
 
+def convert_int64_to_int(obj):
+    if isinstance(obj, dict):
+        return {key: convert_int64_to_int(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_int64_to_int(item) for item in obj]
+    elif isinstance(obj, np.int64):
+        return int(obj)
+    else:
+        return obj
+
+
 def assembly_output(output_list, message, layouts_df, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids):
     result_dict = RESULT_TEMPLETE
     result_dict['userJobId'] = message.content['userJobId']
+
+    counter_comp_id = 0
+    counter_image_id = 0
+
     # adding the Album Cover
     if 'cover' in message.pagesInfo.keys():
-        result_dict['compositions'].append({"compositionId": 1,
+        result_dict['compositions'].append({"compositionId": counter_comp_id,
                                        "compositionPackageId": message.content['compositionPackageId'],
                                        "designId":  message.designsInfo['coverDesignIds'][0] ,
                                        "styleId": message.designsInfo['defaultPackageStyleId'],
@@ -211,6 +227,7 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                        "copies": 1,
                                        "boxes": None,
                                        "logicalSelectionsState": None})
+        counter_comp_id += 1
 
     # adding the first spread image
     if 'firstPage' in message.pagesInfo.keys():
@@ -218,8 +235,7 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
         left_box_ids = layouts_df.loc[first_last_design_ids[0]]['left_box_ids']
         right_box_ids = layouts_df.loc[first_last_design_ids[0]]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
-
-        result_dict['compositions'].append({"compositionId": 2,
+        result_dict['compositions'].append({"compositionId": counter_comp_id,
                                        "compositionPackageId": message.content['compositionPackageId'],
                                        "designId": design_id,
                                        "styleId": message.designsInfo['defaultPackageStyleId'],
@@ -228,7 +244,7 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                        "boxes": None,
                                        "logicalSelectionsState": None})
 
-        result_dict['placementsImg'].append({"placementImgId": 1,
+        result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                         "compositionId": 2,
                                         "compositionPackageId": message.content['compositionPackageId'],
                                         "boxId": all_box_ids[0],
@@ -241,20 +257,16 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                         "projectId": message.content['projectId'],
                                         "photoFilter": 0,
                                         "photo": None})
-
-    # layouts_df.loc[covers_layouts_df[0]]['id']
+        counter_comp_id += 1
+        counter_image_id += 1
 
 
     # Add images
-    counter_comp_id = 1
-    counter_image_id = 1
     for number_groups,group_dict in enumerate(output_list):
-
         for group_name in group_dict.keys():
             group_result = group_dict[group_name]
             total_spreads = len(group_result)
             for i in range(total_spreads):
-                counter_comp_id += 1
                 group_data = group_result[i]
                 if isinstance(group_data, float):
                     continue
@@ -285,7 +297,6 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
 
                         # Loop over boxes and plot images
                         for j, box in enumerate(cur_layout_info):
-                            counter_image_id = counter_image_id + 1
                             box_id = box['id']
                             if box_id not in all_box_ids:
                                 print('Some error, cant find box with id: {}'.format(box_id))
@@ -295,10 +306,10 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                             image_id = cur_photo.id
 
                             image_info = images_df[images_df["image_id"] == image_id]
-                            x = image_info['cropped_x']
-                            y = image_info['cropped_y']
-                            w = image_info['cropped_w']
-                            h = image_info['cropped_h']
+                            x = image_info.iloc[0]['cropped_x']
+                            y = image_info.iloc[0]['cropped_y']
+                            w = image_info.iloc[0]['cropped_w']
+                            h = image_info.iloc[0]['cropped_h']
 
                             result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
                                                             "compositionId" : counter_comp_id,
@@ -313,6 +324,8 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                                             "projectId" : message.content['projectId'],
                                                             "photoFilter" : 0,
                                                             "photo" : None})
+                            counter_image_id += 1
+                        counter_comp_id += 1
 
 
     # adding the last page
@@ -321,8 +334,7 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
         left_box_ids = layouts_df.loc[first_last_design_ids[1]]['left_box_ids']
         right_box_ids = layouts_df.loc[first_last_design_ids[1]]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
-
-        result_dict['compositions'].append({"compositionId": result_dict['compositions'][-1]['compositionId'] + 1,
+        result_dict['compositions'].append({"compositionId": counter_comp_id,
                                        "compositionPackageId": message.content['compositionPackageId'],
                                        "designId": design_id,
                                        "styleId": message.designsInfo['defaultPackageStyleId'],
@@ -331,19 +343,21 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                        "boxes": None,
                                        "logicalSelectionsState": None})
 
-        result_dict['placementsImg'].append({"placementImgId":  len(result_dict['placementsImg']) + 1,
-                                        "compositionId": result_dict['compositions'][-1]['compositionId'],
+        result_dict['placementsImg'].append({"placementImgId":  counter_image_id,
+                                        "compositionId": counter_comp_id,
                                         "compositionPackageId": message.content['compositionPackageId'],
-                                        "boxId": all_box_ids[0],
-                                        "photoId": first_last_images_ids[0],
-                                        "cropX": first_last_images_df.iloc[0]['cropped_x'],
-                                        "cropY": first_last_images_df.iloc[0]['cropped_y'],
-                                        "cropWidth": first_last_images_df.iloc[0]['cropped_w'],
-                                        "cropHeight": first_last_images_df.iloc[0]['cropped_h'],
+                                        "boxId": all_box_ids[1],
+                                        "photoId": first_last_images_ids[1],
+                                        "cropX": first_last_images_df.iloc[1]['cropped_x'],
+                                        "cropY": first_last_images_df.iloc[1]['cropped_y'],
+                                        "cropWidth": first_last_images_df.iloc[1]['cropped_w'],
+                                        "cropHeight": first_last_images_df.iloc[1]['cropped_h'],
                                         "rotate": 0,
                                         "projectId": message.content['projectId'],
                                         "photoFilter": 0,
                                         "photo": None})
+
+    result_dict = convert_int64_to_int(result_dict)
 
     final_result = {
         'requestId': message.content['conditionId'],
