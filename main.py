@@ -83,7 +83,7 @@ class ReadStage(Stage):
             self.logger.error(f"Error reading messages: {e}")
             return []
 
-        handling_time = (datetime.now() - start) / len(messages) if messages else 1
+        handling_time = (datetime.now() - start) / max(len(messages), 1)
         read_time_list.append(handling_time)
         self.logger.info(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
         return messages
@@ -194,7 +194,7 @@ class ProcessStage(Stage):
                 message.content['error'] = f"Unexpected error in message processing: {e}"
                 continue
 
-        processing_time = (datetime.now() - whole_messages_start) / len(messages) if messages else 1
+        processing_time = (datetime.now() - whole_messages_start) / max(len(messages), 1)
         processing_time_list.append(processing_time)
         self.logger.debug('Average Processing Stage time: {}. For : {} messages '.format(processing_time, len(messages)))
         return msgs
@@ -211,7 +211,7 @@ class ReportStage(Stage):
         self.number_of_reports = 0
         self.logger = logger
 
-    def print_time_summary(self, period=10):
+    def print_time_summary(self, period=3):
         self.number_of_reports += 1
         if self.number_of_reports % period != 0:
             return
@@ -248,11 +248,17 @@ class ReportStage(Stage):
         start = datetime.now()
         if isinstance(msgs, Message):
             self.report_one_message(msgs)
-            msgs.delete()
+            try:
+                msgs.delete()
+            except Exception as e:
+                self.logger.error('Error while deleting message: {}. Exception: {}'.format(msgs, e))
         elif isinstance(msgs, list):
             for one_msg in msgs:
                 self.report_one_message(one_msg)
-                one_msg.delete()
+                try:
+                    one_msg.delete()
+                except Exception as e:
+                    self.logger.error('Error while deleting message: {}. Exception: {}'.format(one_msg, e))
 
         reporting_time = (datetime.now() - start) / (len(msgs) if isinstance(msgs, list) and len(msgs) > 0 else 1)
         reporting_time_list.append(reporting_time)
