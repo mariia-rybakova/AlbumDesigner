@@ -249,6 +249,7 @@ class ReportStage(Stage):
         if isinstance(msgs, Message):
             self.report_one_message(msgs)
             try:
+                self.logger.debug('deleting message id  {}.'.format(msgs.source.id))
                 msgs.delete()
             except Exception as e:
                 self.logger.error('Error while deleting message: {}. Exception: {}'.format(msgs, e))
@@ -256,6 +257,7 @@ class ReportStage(Stage):
             for one_msg in msgs:
                 self.report_one_message(one_msg)
                 try:
+                    self.logger.debug('deleting message id  {}.'.format(one_msg.source.id))
                     one_msg.delete()
                 except Exception as e:
                     self.logger.error('Error while deleting message: {}. Exception: {}'.format(one_msg, e))
@@ -294,11 +296,15 @@ class MessageProcessor:
         if prefix == 'dev':
             dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                      max_dequeue_allowed=1000)
-            test_queue = MessageQueue('test' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                      max_dequeue_allowed=1000)
-            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                    max_dequeue_allowed=1000)
-            azure_input_q = RoundRobinReader([dev_queue, test_queue, ep_queue])
+
+            # test_queue = MessageQueue('test' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+            #                           max_dequeue_allowed=1000)
+            # ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+            #                         max_dequeue_allowed=1000)
+            # azure_input_q = RoundRobinReader([dev_queue, test_queue, ep_queue])
+
+            azure_input_q = dev_queue
+
         elif prefix == 'production':
             self.logger.info('PRODUCTION environment set, queue name: ' + input_queue)
             azure_input_q = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],

@@ -205,7 +205,7 @@ def read_messages(messages, logger):
                 continue
 
             logger.info(
-                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs.")
+                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
         except Exception as e:
             logger.error(f"Error reading messages at reading stage: {e}")
@@ -229,6 +229,7 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
     result_dict = RESULT_TEMPLETE
     result_dict['userJobId'] = message.content['userJobId']
     result_dict['compositionPackageId'] = message.content['compositionPackageId']
+    result_dict['productId'] = message.content['designInfo']['productId']
     counter_comp_id = 0
     counter_image_id = 0
 
