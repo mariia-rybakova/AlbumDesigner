@@ -10,7 +10,8 @@ from utils.parser import CONFIGS
 from utils.layouts_file import generate_layouts_df
 from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
 from utils.image_queries import generate_query
-
+from ptinfra.azure.pt_file import PTFile
+import json
 
 RESULT_TEMPLETE = {
     "userJobId" :0,
@@ -132,6 +133,20 @@ def read_messages(messages, logger):
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
         # print('Received message: {}/{}'.format(json_content, _msg))
+        if 'designInfo' in json_content and json_content['designInfo'] is None:
+            if 'designInfoTempLocation' in json_content:
+                fb = PTFile(json_content['designInfoTempLocation'])
+                fileBytes = fb.read_blob()
+                designInfo = json.loads(fileBytes.decode('utf-8'))
+                json_content['designInfo'] = designInfo
+                _msg.content['designInfo'] = designInfo
+            else:
+                logger.error('Incorrect input request: {}. Skipping.'.format(json_content))
+                _msg.image = None
+                _msg.status = 0
+                _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
+                continue
+
         if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
