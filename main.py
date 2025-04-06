@@ -33,7 +33,7 @@ if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') i
 warnings.filterwarnings('ignore')
 np.random.seed(42)
 os.environ["PYTHONHASHSEED"] = "42"
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+# os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 read_time_list = list()
 processing_time_list = list()
@@ -127,18 +127,6 @@ class ProcessStage(Stage):
                     message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
                     continue
 
-                try:
-                    cropped_df = self.q.get(timeout=200)
-                except Exception as e:
-                    p.terminate()
-                    raise Exception('cropping process not completed: {}'.format(e))
-                p.join(timeout=5)
-                if p.is_alive():
-                    p.terminate()
-                    self.logger.error('cropping process not completed 2')
-
-                df = df.merge(cropped_df, how='inner', on='image_id')
-
                 # Sorting the DataFrame by "image_order" column
                 sorted_df = df.sort_values(by="image_order", ascending=False)
                 if message.content.get('is_wedding', True):
@@ -174,6 +162,23 @@ class ProcessStage(Stage):
                 album_result = start_processing_album(df, message.designsInfo['anyPagelayouts_df'],
                                                       message.designsInfo['anyPagelayout_id2data'],
                                                       message.content['is_wedding'],params, logger=self.logger)
+
+                wait_start = datetime.now()
+                try:
+                    cropped_df = self.q.get(timeout=200)
+                except Exception as e:
+                    p.terminate()
+                    raise Exception('cropping process not completed: {}'.format(e))
+                p.join(timeout=5)
+                if p.is_alive():
+                    p.terminate()
+                    self.logger.error('cropping process not completed 2')
+
+                df = df.merge(cropped_df, how='inner', on='image_id')
+
+                self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
+
+
 
                 final_response = assembly_output(album_result, message, message.designsInfo['anyPagelayouts_df'], df,
                                                  first_last_images_ids, first_last_imgs_df, first_last_design_ids)
