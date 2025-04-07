@@ -13,19 +13,6 @@ from utils.image_queries import generate_query
 from ptinfra.azure.pt_file import PTFile
 import json
 
-RESULT_TEMPLETE = {
-    "userJobId" :0,
-    "packageDesignId" : None,
-    "compositions" : [
-
-    ],
-    "placementsImg" : [
-
-    ],
-    "placementsTxt" : [
-    ]
-}
-
 
 def generate_dict_key(numbers, n_bodies):
     if numbers == 0 and n_bodies == 0 or not numbers:
@@ -226,10 +213,14 @@ def convert_int64_to_int(obj):
 
 
 def assembly_output(output_list, message, layouts_df, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids):
-    result_dict = RESULT_TEMPLETE
+    result_dict = dict()
+    result_dict['compositions'] = list()
+    result_dict['placementsTxt'] = list()
+    result_dict['placementsImg'] = list()
     result_dict['userJobId'] = message.content['userJobId']
     result_dict['compositionPackageId'] = message.content['compositionPackageId']
     result_dict['productId'] = message.content['designInfo']['productId']
+    result_dict['packageDesignId'] = None
     counter_comp_id = 0
     counter_image_id = 0
 
