@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import pandas as pd
-import multiprocessing as mp
+
 
 def cropWeight(tl, imageShape, foregroundMask=None, faceMask=None, aspectRatio=1,
                center_weight=200, face_weight=150, size_weight=1000):
@@ -184,13 +184,8 @@ def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=10
 
 
 def process_crop_images(q,df):
-    # results = []
-
-    pool = mp.Pool(processes=mp.cpu_count()-1)
-
-    def func(arg):
-        idx, row = arg
-
+    results = []
+    for _, row in df.iterrows():
         cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
             float(row['image_as']),
             row['faces_info'],
@@ -199,33 +194,12 @@ def process_crop_images(q,df):
             1
         )
         # Store the results in a dictionary to update the DataFrame later
-        return {
+        results.append({
             'image_id': row['image_id'],
             'cropped_x': cropped_x,
             'cropped_y': cropped_y,
             'cropped_w': cropped_w,
             'cropped_h': cropped_h
-        }
-
-    results = pool.map(func, [(idx, row) for idx, row in df.iterrows()])
-
-
-
-    # for _, row in df.iterrows():
-    #     cropped_x, cropped_y, cropped_w, cropped_h = process_cropping(
-    #         float(row['image_as']),
-    #         row['faces_info'],
-    #         row['background_centroid'],
-    #         float(row['diameter']),
-    #         1
-    #     )
-    #     # Store the results in a dictionary to update the DataFrame later
-    #     results.append({
-    #         'image_id': row['image_id'],
-    #         'cropped_x': cropped_x,
-    #         'cropped_y': cropped_y,
-    #         'cropped_w': cropped_w,
-    #         'cropped_h': cropped_h
-    #     })
-    cropped_df = pd.DataFrame(results)
+        })
+        cropped_df = pd.DataFrame(results)
     q.put(cropped_df)
