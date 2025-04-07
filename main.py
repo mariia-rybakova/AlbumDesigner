@@ -129,6 +129,11 @@ class ProcessStage(Stage):
 
                 # Sorting the DataFrame by "image_order" column
                 sorted_df = df.sort_values(by="image_order", ascending=False)
+
+                # Process time
+                sorted_df, image_id2general_time = process_image_time(sorted_df)
+                sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
+
                 if message.content.get('is_wedding', True):
                     rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
                     #convert numeric ids to labels.
@@ -150,13 +155,6 @@ class ProcessStage(Stage):
 
                 first_last_design_ids = get_first_last_design_ids(message.designsInfo['anyPagelayouts_df'], self.logger)
 
-                # process time
-                df, image_id2general_time = process_image_time(df)
-                df['time_cluster'] = get_time_clusters(df['general_time'])
-
-                # to ignore the read only memory
-                df = pd.DataFrame(df.to_dict())
-
                 # Handle the processing time logging
                 start = datetime.now()
                 album_result = start_processing_album(df, message.designsInfo['anyPagelayouts_df'],
@@ -175,6 +173,7 @@ class ProcessStage(Stage):
                     self.logger.error('cropping process not completed 2')
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
+                first_last_imgs_df = first_last_imgs_df.merge(cropped_df, how='inner', on='image_id')
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
