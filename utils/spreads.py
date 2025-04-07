@@ -91,7 +91,7 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
         part_portrait = nPortrait
 
         for spread in part:
-            n_layouts = layouts_df[layouts_df['number of boxes']==spread][['max portraits','max landscapes']]
+            n_layouts = layouts_df[layouts_df['number of boxes']==spread][['max portraits','max landscapes']].drop_duplicates()
             match_layout=False
             for idx, row in n_layouts.iterrows():
                 rem_portrait = max(part_portrait - row['max portraits'],0)
