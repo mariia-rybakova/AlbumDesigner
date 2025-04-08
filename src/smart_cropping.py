@@ -119,68 +119,127 @@ def crop_find(foregroundMask, faceMask=None, aspectRatio=1, steps=10):
 
 def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000, face_extension=2):
     #print("ar",ar, faces, centroid, diameter, box_aspect_ratio, min_dim, face_extension)
-    if ar > 1:
-        mask = np.zeros((min_dim, int(ar * min_dim)), dtype=np.uint8)
+
+    min_face_x = 1
+    min_face_y = 1
+    max_face_x = 0
+    max_face_y = 0
+
+    for face in faces:
+        bbox = face.bbox
+
+        min_face_x = min(min_face_x, bbox.x1)
+        min_face_y = min(min_face_y, bbox.y1)
+        max_face_x = max(max_face_x, bbox.x2)
+        max_face_y = max(max_face_y, bbox.y2)
+
+    face_width = max_face_x - min_face_x
+    face_height = max_face_y - min_face_y
+
+    if len(faces) == 0 and box_aspect_ratio == 1:
+        if ar > 1:
+            h=1
+            w = 1/ar
+            y=0
+            x = centroid.x - w/2
+            x= max(0,x)
+            x=min(x,1-w)
+
+
+        else:
+            h = ar
+            w = 1
+            x = 0
+            y = centroid.y - h / 2
+            y = max(0, y)
+            y = min(y, 1 - h)
+
+        return x, y, w, h
+
+    elif box_aspect_ratio == 1 and ar>1 and face_width< 1/ar:
+        h = 1
+        w = 1 / ar
+        y = 0
+        x = (min_face_x + max_face_x)/2 - w / 2
+        x = max(0, x)
+        x = min(x, 1 - w)
+
+        return x, y, w, h
+
+    elif box_aspect_ratio == 1 and ar<1 and face_height< ar:
+        h = ar
+        w = 1
+        x = 0
+        y = (min_face_y + max_face_y)/2 - h / 2
+        y = max(0, y)
+        y = min(y, 1 - h)
+
+        return x, y, w, h
+
     else:
-        mask = np.zeros((int(min_dim / ar), min_dim), dtype=np.uint8)
 
-    # Correct the centroid mapping
-    mask = cv2.circle(
-        mask,
-        (int(centroid.x * mask.shape[1]), int(centroid.y * mask.shape[0])),  # (x, y)
-        int(diameter / 2 * mask.shape[0]),
-        255,
-        -1
-    )
+        if ar > 1:
+            mask = np.zeros((min_dim, int(ar * min_dim)), dtype=np.uint8)
+        else:
+            mask = np.zeros((int(min_dim / ar), min_dim), dtype=np.uint8)
 
-    face_mask = None
-    if len(faces) !=0:
-        face_mask = np.zeros_like(mask, dtype=np.uint8)
-        if not isinstance(faces, list):
-            faces = list(faces)
+        # Correct the centroid mapping
+        mask = cv2.circle(
+            mask,
+            (int(centroid.x * mask.shape[1]), int(centroid.y * mask.shape[0])),  # (x, y)
+            int(diameter / 2 * mask.shape[0]),
+            255,
+            -1
+        )
 
-        for face in faces:
-            bbox = face.bbox
-            # x1 = int(bbox.x1 * face_mask.shape[1])
-            # y1 = int(bbox.y1 * face_mask.shape[0])
-            # x2 = int(bbox.x2 * face_mask.shape[1])
-            # y2 = int(bbox.y2 * face_mask.shape[0])
+        face_mask = None
+        if len(faces) !=0:
+            face_mask = np.zeros_like(mask, dtype=np.uint8)
+            if not isinstance(faces, list):
+                faces = list(faces)
 
-            x1 = int(bbox.x1)
-            y1 = int(bbox.y1)
-            x2 = int(bbox.x2)
-            y2 = int(bbox.y2)
-            bbox_w = (x2 - x1) * face_extension
-            bbox_h = (y2 - y1) * face_extension
+            for face in faces:
+                bbox = face.bbox
+                # x1 = int(bbox.x1 * face_mask.shape[1])
+                # y1 = int(bbox.y1 * face_mask.shape[0])
+                # x2 = int(bbox.x2 * face_mask.shape[1])
+                # y2 = int(bbox.y2 * face_mask.shape[0])
 
-            # x1 = int(max(0, x1 - bbox_w / 2))
-            # y1 = int(max(0, y1 - bbox_h / 2))
-            # x2 = int(min(mask.shape[1], x2 + bbox_w / 2))
-            # y2 = int(min(mask.shape[0], y2 + bbox_h / 2))
+                x1 = int(bbox.x1)
+                y1 = int(bbox.y1)
+                x2 = int(bbox.x2)
+                y2 = int(bbox.y2)
+                bbox_w = (x2 - x1) * face_extension
+                bbox_h = (y2 - y1) * face_extension
 
-            x1 = int(max(0, min(face_mask.shape[1] - 1, x1 - bbox_w / 2)))
-            y1 = int(max(0, min(face_mask.shape[0] - 1, y1 - bbox_h / 2)))
-            x2 = int(max(0, min(face_mask.shape[1] - 1, x2 + bbox_w / 2)))
-            y2 = int(max(0, min(face_mask.shape[0] - 1, y2 + bbox_h / 2)))
+                # x1 = int(max(0, x1 - bbox_w / 2))
+                # y1 = int(max(0, y1 - bbox_h / 2))
+                # x2 = int(min(mask.shape[1], x2 + bbox_w / 2))
+                # y2 = int(min(mask.shape[0], y2 + bbox_h / 2))
 
-            # Access arrays as [rows, cols] = [y, x]
-            face_mask[y1:y2, x1:x2] = 255
+                x1 = int(max(0, min(face_mask.shape[1] - 1, x1 - bbox_w / 2)))
+                y1 = int(max(0, min(face_mask.shape[0] - 1, y1 - bbox_h / 2)))
+                x2 = int(max(0, min(face_mask.shape[1] - 1, x2 + bbox_w / 2)))
+                y2 = int(max(0, min(face_mask.shape[0] - 1, y2 + bbox_h / 2)))
 
-    s_min, s_max, w, h = crop_find(
-        mask,
-        faceMask=face_mask,
-        aspectRatio=box_aspect_ratio,
-        steps=10
-    )
+                # Access arrays as [rows, cols] = [y, x]
+                face_mask[y1:y2, x1:x2] = 255
 
-    # Ensure the crop dimensions are within the image boundaries
-    s_min[0] = max(0, s_min[0])
-    s_min[1] = max(0, s_min[1])
-    w = min(w, mask.shape[1] - s_min[0])
-    h = min(h, mask.shape[0] - s_min[1])
+        s_min, s_max, w, h = crop_find(
+            mask,
+            faceMask=face_mask,
+            aspectRatio=box_aspect_ratio,
+            steps=10
+        )
 
-    # Return normalized coordinates
-    return s_min[0] / mask.shape[1], s_min[1] / mask.shape[0], w / mask.shape[1], h / mask.shape[0]
+        # Ensure the crop dimensions are within the image boundaries
+        s_min[0] = max(0, s_min[0])
+        s_min[1] = max(0, s_min[1])
+        w = min(w, mask.shape[1] - s_min[0])
+        h = min(h, mask.shape[0] - s_min[1])
+
+        # Return normalized coordinates
+        return s_min[0] / mask.shape[1], s_min[1] / mask.shape[0], w / mask.shape[1], h / mask.shape[0]
 
 
 def process_crop_images(q,df):
