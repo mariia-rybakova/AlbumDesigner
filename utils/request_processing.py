@@ -122,11 +122,18 @@ def read_messages(messages, logger):
         # print('Received message: {}/{}'.format(json_content, _msg))
         if 'designInfo' in json_content and json_content['designInfo'] is None:
             if 'designInfoTempLocation' in json_content:
-                fb = PTFile(json_content['designInfoTempLocation'])
-                fileBytes = fb.read_blob()
-                designInfo = json.loads(fileBytes.decode('utf-8'))
-                json_content['designInfo'] = designInfo
-                _msg.content['designInfo'] = designInfo
+                try:
+                    fb = PTFile(json_content['designInfoTempLocation'])
+                    fileBytes = fb.read_blob()
+                    designInfo = json.loads(fileBytes.decode('utf-8'))
+                    json_content['designInfo'] = designInfo
+                    _msg.content['designInfo'] = designInfo
+                except Exception as e:
+                    logger.error('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'],e))
+                    _msg.image = None
+                    _msg.status = 0
+                    _msg.error = 'Error reading designInfo from blob: {}'.format(e)
+                    continue
             else:
                 logger.error('Incorrect input request: {}. Skipping.'.format(json_content))
                 _msg.image = None
