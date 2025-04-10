@@ -191,7 +191,9 @@ def read_messages(messages, logger):
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
                 _msg.designsInfo['anyPagelayouts_df'] = anyPage_layouts_df
-                _msg.designsInfo['anyPagelayout_id2data'] = get_layouts_data(anyPage_layouts_df)
+                layout_id2data, box_id2data = get_layouts_data(anyPage_layouts_df)
+                _msg.designsInfo['anyPagelayout_id2data'] = layout_id2data
+                _msg.designsInfo['anyPagebox_id2data'] = box_id2data
                 enriched_messages.append(_msg)
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
@@ -219,7 +221,54 @@ def convert_int64_to_int(obj):
         return obj
 
 
-def assembly_output(output_list, message, layouts_df, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids):
+def customize_box(image_info, box_info):
+    target_ar = box_info['width'] / box_info['height'] * 2
+    if box_info['orientation'] == 'square':
+        crop_x = image_info['cropped_x']
+        crop_y = image_info['cropped_y']
+        crop_w = image_info['cropped_w']
+        crop_h = image_info['cropped_h']
+        image_ar = crop_w / crop_h
+
+        if image_ar > target_ar:
+            # Crop is too wide → reduce width
+            new_crop_w = crop_h * target_ar
+            dx = (crop_w - new_crop_w) / 2
+            adj_x = crop_x + dx
+            adj_y = crop_y
+            adj_w = new_crop_w
+            adj_h = crop_h
+        else:
+            # Crop is too tall → reduce height
+            new_crop_h = crop_w / target_ar
+            dy = (crop_h - new_crop_h) / 2
+            adj_x = crop_x
+            adj_y = crop_y + dy
+            adj_w = crop_w
+            adj_h = new_crop_h
+
+        return adj_x, adj_y, adj_w, adj_h
+    else:
+        image_ar = float(image_info['image_as'])
+        if image_ar > target_ar:
+            # Image is too wide, crop horizontally
+            new_width_ratio = target_ar / image_ar
+            x = (1 - new_width_ratio) / 2
+            y = 0.0
+            w = new_width_ratio
+            h = 1.0
+        else:
+            # Image is too tall, crop vertically
+            new_height_ratio = image_ar / target_ar
+            x = 0.0
+            y = (1 - new_height_ratio) / 2
+            w = 1.0
+            h = new_height_ratio
+
+        return x, y, w, h
+
+
+def assembly_output(output_list, message, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids):
     result_dict = dict()
     result_dict['compositions'] = list()
     result_dict['placementsTxt'] = list()
@@ -231,6 +280,8 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
     counter_comp_id = 0
     counter_image_id = 0
 
+    layouts_df = message.designsInfo['anyPagelayouts_df']
+    box_id2data = message.designsInfo['anyPagebox_id2data']
     # adding the Album Cover
     if 'cover' in message.pagesInfo.keys():
         result_dict['compositions'].append({"compositionId": counter_comp_id,
@@ -258,15 +309,16 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                        "boxes": None,
                                        "logicalSelectionsState": None})
 
+        x, y, w, h = customize_box(first_last_images_df.iloc[0], box_id2data[all_box_ids[0]])
         result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                         "compositionId": 2,
                                         "compositionPackageId": message.content['compositionPackageId'],
                                         "boxId": all_box_ids[0],
                                         "photoId": first_last_images_ids[0],
-                                        "cropX": first_last_images_df.iloc[0]['cropped_x'],
-                                        "cropY": first_last_images_df.iloc[0]['cropped_y'],
-                                        "cropWidth": first_last_images_df.iloc[0]['cropped_w'],
-                                        "cropHeight": first_last_images_df.iloc[0]['cropped_h'],
+                                        "cropX": x,
+                                        "cropY": y,
+                                        "cropWidth": w,
+                                        "cropHeight": h,
                                         "rotate": 0,
                                         "projectId": message.content['projectId'],
                                         "photoFilter": 0,
@@ -320,11 +372,7 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                             image_id = cur_photo.id
 
                             image_info = images_df[images_df["image_id"] == image_id]
-                            x = image_info.iloc[0]['cropped_x']
-                            y = image_info.iloc[0]['cropped_y']
-                            w = image_info.iloc[0]['cropped_w']
-                            h = image_info.iloc[0]['cropped_h']
-
+                            x, y, w, h = customize_box(image_info.iloc[0], box_id2data[box_id])
                             result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
                                                             "compositionId" : counter_comp_id,
                                                             "compositionPackageId": message.content['compositionPackageId'],
@@ -357,15 +405,16 @@ def assembly_output(output_list, message, layouts_df, images_df, first_last_imag
                                        "boxes": None,
                                        "logicalSelectionsState": None})
 
+        x, y, w, h = customize_box(first_last_images_df.iloc[1], box_id2data[all_box_ids[1]])
         result_dict['placementsImg'].append({"placementImgId":  counter_image_id,
                                         "compositionId": counter_comp_id,
                                         "compositionPackageId": message.content['compositionPackageId'],
                                         "boxId": all_box_ids[1],
                                         "photoId": first_last_images_ids[1],
-                                        "cropX": first_last_images_df.iloc[1]['cropped_x'],
-                                        "cropY": first_last_images_df.iloc[1]['cropped_y'],
-                                        "cropWidth": first_last_images_df.iloc[1]['cropped_w'],
-                                        "cropHeight": first_last_images_df.iloc[1]['cropped_h'],
+                                        "cropX": x,
+                                        "cropY": y,
+                                        "cropWidth": w,
+                                        "cropHeight": h,
                                         "rotate": 0,
                                         "projectId": message.content['projectId'],
                                         "photoFilter": 0,
