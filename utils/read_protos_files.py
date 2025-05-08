@@ -140,8 +140,14 @@ def get_photo_meta(file, df, logger=None):
             image_colors.append(photo.colorEnum)
             image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
             image_orderInScenes.append(photo.orderInScene)
-            background_centroids.append(photo.blobCentroid)
-            blob_diameters.append(photo.blobDiameter)
+            if hasattr(photo,'blobCentroid'):
+                background_centroids.append(photo.blobCentroid)
+                blob_diameters.append(photo.blobDiameter)
+            else:
+                logger.warning(f'photo id {photo.photoId} does not have blobCentroid')
+                blob_diameters.append(None)
+                background_centroids.append(None)
+
 
     # Create a DataFrame from the collected data
     additional_image_info_df = pd.DataFrame({

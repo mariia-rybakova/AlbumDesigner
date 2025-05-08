@@ -109,8 +109,9 @@ class ProcessStage(Stage):
         Max_photo_groups_params = [12,12,12,12,12,12,12,12,12,12,12,8,5]
 
         for i,message in enumerate(messages):
-            if i > 13:
-                i = 0
+            # if i > 13:
+            #     i = 0
+            i=0
 
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
             print("Params for this Gallery are:", params)
