@@ -80,8 +80,9 @@ class ReadStage(Stage):
         try:
             messages = read_messages(messages, self.logger)
         except Exception as e:
-            self.logger.error(f"Error reading messages: {e}")
-            return []
+            # self.logger.error(f"Error reading messages: {e}")
+            raise(e)
+            # return []
 
         handling_time = (datetime.now() - start) / max(len(messages), 1)
         read_time_list.append(handling_time)
