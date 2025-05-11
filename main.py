@@ -245,8 +245,9 @@ class ReportStage(Stage):
     def report_one_message(self, one_msg):
         if one_msg.error:
             self.logger.debug('REPORT ERROR MESSAGE  {}.'.format(one_msg.error))
-        push_report_msg(one_msg, self.az_connection_string, self.logger)
-        self.logger.debug('Message was reported to the queue: {}/{}. '.format(one_msg.content['projectId'], one_msg.content['conditionId']))
+        else:
+            push_report_msg(one_msg, self.az_connection_string, self.logger)
+            self.logger.debug('Message was reported to the queue: {}/{}. '.format(one_msg.content['projectId'], one_msg.content['conditionId']))
 
 
     def report_message(self, msgs: Union[Message, List[Message]]):
