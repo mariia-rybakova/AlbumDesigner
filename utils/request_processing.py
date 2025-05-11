@@ -133,27 +133,31 @@ def read_messages(messages, logger):
                     _msg.image = None
                     _msg.status = 0
                     _msg.error = 'Error reading designInfo from blob: {}'.format(e)
+                    raise(e)
                     continue
             else:
                 logger.error('Incorrect input request: {}. Skipping.'.format(json_content))
                 _msg.image = None
                 _msg.status = 0
                 _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
-                continue
+                raise(Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
+                # continue
 
         if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
             _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
-            continue
+            raise (Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
+            # continue
 
         if len(json_content['photos'])<10:
             logger.warning('Not enough photos: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
             _msg.error = 'Not enough photos: {}. Skipping.'.format(json_content)
-            continue
+            raise(Exception('Not enough photos: {}. Skipping.'.format(json_content)))
+            # continue
 
         try:
             images = json_content['photos']
@@ -206,6 +210,7 @@ def read_messages(messages, logger):
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
                 _msg.error = 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
+                raise (Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content)))
                 continue
 
             logger.info(
