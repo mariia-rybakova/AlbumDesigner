@@ -105,7 +105,13 @@ def get_photo_meta(file, df, logger=None):
             return None
         meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
         meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
-        meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
+        
+        # Add error handling for protobuf parsing
+        try:
+            meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
+        except Exception as e:
+            logger.error(f"Failed to parse protobuf message: {e}")
+            return None
 
     except Exception as e:
         logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
@@ -130,40 +136,49 @@ def get_photo_meta(file, df, logger=None):
     background_centroids = []
     blob_diameters = []
 
-    # Loop through each photo and collect the required information
+    # Add safer handling of photo attributes
     for photo in images_photos:
         if photo.photoId in required_ids:
-            photo_ids.append(photo.photoId)
-            image_times.append(photo.dateTaken)
-            scene_orders.append(photo.sceneOrder)
-            image_aspects.append(photo.aspectRatio)
-            image_colors.append(photo.colorEnum)
-            image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
-            image_orderInScenes.append(photo.orderInScene)
-            if hasattr(photo,'blobCentroid'):
-                background_centroids.append(photo.blobCentroid)
-                blob_diameters.append(photo.blobDiameter)
-            else:
-                logger.warning(f'photo id {photo.photoId} does not have blobCentroid')
-                blob_diameters.append(None)
-                background_centroids.append(None)
+            try:
+                photo_ids.append(photo.photoId)
+                image_times.append(photo.dateTaken)
+                scene_orders.append(photo.sceneOrder)
+                image_aspects.append(photo.aspectRatio)
+                image_colors.append(photo.colorEnum)
+                image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
+                image_orderInScenes.append(photo.orderInScene)
+                
+                # Safer handling of optional fields
+                background_centroids.append(getattr(photo, 'blobCentroid', None))
+                blob_diameters.append(getattr(photo, 'blobDiameter', None))
+                
+            except AttributeError as e:
+                logger.warning(f'Missing attribute in photo {photo.photoId}: {e}')
+                continue
 
+    # Create DataFrame with error handling
+    try:
+        additional_image_info_df = pd.DataFrame({
+            'image_id': photo_ids,
+            'image_time': image_times,
+            'scene_order': scene_orders,
+            'image_as': image_aspects,
+            'image_color': image_colors,
+            'image_orientation': image_orientations,
+            'image_orderInScene': image_orderInScenes,
+            'background_centroid': background_centroids,
+            'diameter': blob_diameters
+        })
+    except Exception as e:
+        logger.error(f'Failed to create DataFrame: {e}')
+        return None
 
-    # Create a DataFrame from the collected data
-    additional_image_info_df = pd.DataFrame({
-        'image_id': photo_ids,
-        'image_time': image_times,
-        'scene_order': scene_orders,
-        'image_as': image_aspects,
-        'image_color': image_colors,
-        'image_orientation': image_orientations,
-        'image_orderInScene': image_orderInScenes,
-        'background_centroid': background_centroids,
-        'diameter': blob_diameters
-    })
-
-    # Merge the original DataFrame with the new information
-    df = df.merge(additional_image_info_df, how='inner', on='image_id')
+    # Merge with error handling
+    try:
+        df = df.merge(additional_image_info_df, how='inner', on='image_id')
+    except Exception as e:
+        logger.error(f'Failed to merge DataFrames: {e}')
+        return None
 
     return df
 
@@ -325,4 +340,3 @@ def get_person_vectors(persons_file, df, logger=None):
     df['number_bodies'].fillna(0, inplace=True)
 
     return df
-
