@@ -147,6 +147,14 @@ def read_messages(messages, logger):
             _msg.status = 0
             _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
             continue
+            
+        if len(json_content['photos']<10):
+            logger.warning('Not enough photos: {}. Skipping.'.format(json_content))
+            _msg.image = None
+            _msg.status = 0
+            _msg.error = 'Not enough photos: {}. Skipping.'.format(json_content)
+            continue
+
         try:
             images = json_content['photos']
             project_url = json_content['base_url']
