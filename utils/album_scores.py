@@ -63,3 +63,49 @@ def add_ranking_score(filtered_spreads, photos, layout_id2data):
         filtered_spreads[idx][1] *= correlation_score
 
     return filtered_spreads
+
+
+def assign_photos_order_one_side(photos, boxes_ids, design_box_id2data):
+    photos_portrait = set([photo for photo in photos if photo.ar < 1])
+    photos_landscape = set([photo for photo in photos if photo.ar >= 1])
+
+    photos_order = [None] * len(boxes_ids)
+    for idx, box_id in enumerate(boxes_ids):
+        box_data = design_box_id2data[box_id]
+        if box_data['orientation'] == 'portrait':
+            cur_photos = photos_portrait.pop()
+            photos_order[idx] = cur_photos
+        if box_data['orientation'] == 'landscape':
+            cur_photos = photos_landscape.pop()
+            photos_order[idx] = cur_photos
+
+    for idx, box_id in enumerate(boxes_ids):
+        box_data = design_box_id2data[box_id]
+        if box_data['orientation'] == 'square':
+            if len(photos_portrait) > 0:
+                cur_photos = photos_portrait.pop()
+                photos_order[idx] = cur_photos
+            elif len(photos_landscape) > 0:
+                cur_photos = photos_landscape.pop()
+                photos_order[idx] = cur_photos
+            else:
+                print("Error: no more photos to add")
+
+    return photos_order
+
+
+def assign_photos_order(spreads, layout_id2data, design_box_id2data):
+    for idx, spread in enumerate(spreads[0]):
+        layout_data = layout_id2data[spread[0]]
+        left_boxes_ids = layout_data['left_box_ids']
+        right_boxes_ids = layout_data['right_box_ids']
+        left_photos = spread[1]
+        right_photos = spread[2]
+
+        left_photos_order = assign_photos_order_one_side(left_photos, left_boxes_ids, design_box_id2data)
+        right_photos_order = assign_photos_order_one_side(right_photos, right_boxes_ids, design_box_id2data)
+
+        spreads[0][idx][1] = left_photos_order
+        spreads[0][idx][2] = right_photos_order
+
+    return spreads

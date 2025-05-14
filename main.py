@@ -22,7 +22,7 @@ from ptinfra import  AbortRequested
 from src.smart_cropping import process_crop_images
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_first_last_image, get_first_last_design_ids
 from utils.time_proessing import process_image_time, get_time_clusters
-from src.album_processing import start_processing_album
+from src.album_processing import album_processing
 from utils.request_processing import read_messages, assembly_output
 from utils.parser import CONFIGS
 from utils.clusters_labels import map_cluster_label
@@ -159,9 +159,8 @@ class ProcessStage(Stage):
 
                 # Handle the processing time logging
                 start = datetime.now()
-                album_result = start_processing_album(df, message.designsInfo['anyPagelayouts_df'],
-                                                      message.designsInfo['anyPagelayout_id2data'],
-                                                      message.content['is_wedding'],params, logger=self.logger)
+                album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], params,
+                                                logger=self.logger)
 
                 wait_start = datetime.now()
                 try:

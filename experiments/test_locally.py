@@ -1,5 +1,4 @@
 import os
-import torch
 import warnings
 import numpy as np
 
@@ -23,12 +22,8 @@ if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') i
 
 warnings.filterwarnings('ignore')
 np.random.seed(42)
-torch.manual_seed(42)
 os.environ["PYTHONHASHSEED"] = "42"
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-torch.set_num_threads(1)
 
 
 class MessageProcessor:
