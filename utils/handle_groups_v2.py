@@ -107,8 +107,10 @@ def do_not_change_group(illegal_group, groups,group_key):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def handle_illegal(group_key,change_tuple,content_cluster_id,illegal_group,imgs_number,groups,look_up_table,is_wedding,count):
-    if "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['wedding_merge_images_number']:
+def handle_illegal(group_key, change_tuple, content_cluster_id, illegal_group, imgs_number, groups, look_up_table, is_wedding, count):
+    if imgs_number == 1 and illegal_group.iloc[0]['image_orientation'] == 'portrait':
+        return merging_process(group_key, groups, illegal_group)
+    elif "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['wedding_merge_images_number']:
         return do_not_change_group(illegal_group, groups,group_key)
     elif "wedding dress" in group_key and imgs_number <= CONFIGS['wedding_merge_images_number']:
         """Merge wedding dress into group related to bride"""
