@@ -57,6 +57,7 @@ def get_info_protobufs(project_base_url, df, logger):
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
         segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
         person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
+        files = [faces_file, cluster_file, persons_file, image_file, segmentation_file, person_vector_file]
 
         # List of functions to run in parallel
         functions = [
@@ -69,8 +70,11 @@ def get_info_protobufs(project_base_url, df, logger):
         ]
 
         results = []
-        for func in functions:
+        for idx, func in enumerate(functions):
             result = func(df, logger)
+            if result is None:
+                logger.error('Error in reading data from protobuf file: {}'.format(files[idx]))
+                raise Exception('Error in reading data from protobuf file: {}'.format(files[idx]))
             results.append(result)
 
         # if None in results:
@@ -106,8 +110,8 @@ def get_info_protobufs(project_base_url, df, logger):
         return gallery_info_df, is_wedding
 
     except Exception as e:
-        logger.error("Error in merging results: %s", e)
-        return None, None
+        logger.error("Error in reading protobufs: %s", e)
+        raise Exception(f'Error in reading protobufs: {e}')
 
 
 def read_messages(messages, logger):
@@ -119,7 +123,7 @@ def read_messages(messages, logger):
         json_content = _msg.content
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
-        # print('Received message: {}/{}'.format(json_content, _msg))
+        logger.info('Received message: {}/{}'.format(json_content, _msg))
         if 'designInfo' in json_content and json_content['designInfo'] is None:
             if 'designInfoTempLocation' in json_content:
                 try:
