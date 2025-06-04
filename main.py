@@ -40,6 +40,33 @@ processing_time_list = list()
 reporting_time_list = list()
 
 
+
+def push_report_error(one_msg, az_connection_string, logger=None):
+    '''Push result to the report queue'''
+
+    error_report = {
+        'requestId': one_msg.content['conditionId'],
+        'error': one_msg.error,
+        'composition': None
+    }
+    try:
+        q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
+        q_client.create_queue()
+    except Exception as ex:
+        pass
+    # q_name = one_msg.content['replyQueueName']
+    result_doc = error_report
+    jsonContent = json.dumps(result_doc)
+    compressed = gzip.compress(jsonContent.encode("ascii"))
+    base64Content = base64.b64encode(compressed).decode("ascii")
+    try:
+        q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
+        q_client.send_message(base64Content)
+        if logger is not None:
+            logger.info('Message was sent to the report queue {}'.format(result_doc))
+    except Exception as ex:
+        raise Exception('Report queue error, message not sent, error: {}'.format(ex))
+
 def push_report_msg(one_msg, az_connection_string, logger=None):
     '''Push result to the report queue'''
 
@@ -244,6 +271,7 @@ class ReportStage(Stage):
 
     def report_one_message(self, one_msg):
         if one_msg.error:
+            push_report_error(one_msg,self.az_connection_string,self.logger)
             self.logger.debug('REPORT ERROR MESSAGE  {}.'.format(one_msg.error))
         else:
             push_report_msg(one_msg, self.az_connection_string, self.logger)
