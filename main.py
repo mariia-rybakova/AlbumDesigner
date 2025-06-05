@@ -199,6 +199,7 @@ class ProcessStage(Stage):
                 if p.is_alive():
                     p.terminate()
                     self.logger.error('cropping process not completed 2')
+                    raise Exception('cropping process not completed.')
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
                 first_last_imgs_df = first_last_imgs_df.merge(cropped_df, how='inner', on='image_id')
@@ -223,8 +224,8 @@ class ProcessStage(Stage):
 
             except Exception as e:
                 self.logger.error(f"Unexpected error in message processing: {e}")
-                message.content['error'] = f"Unexpected error in message processing: {e}"
-                continue
+                message.error = f"Unexpected error in message processing: {e}"
+                raise Exception(f"Unexpected error in message processing: {e}")
 
         processing_time = (datetime.now() - whole_messages_start) / max(len(messages), 1)
         processing_time_list.append(processing_time)

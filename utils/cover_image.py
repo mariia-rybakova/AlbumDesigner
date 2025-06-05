@@ -47,8 +47,8 @@ def get_important_imgs(data_df, top=5):
 def process_wedding_first_last_image(df, logger):
     bride_groom_highest_images = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
     # if we didn't find the highest ranking images then we won't be able to get cover image
-    if len(bride_groom_highest_images) > 0:
-            # Select 2 distinct images
+    if len(bride_groom_highest_images) > 1:
+        # Select 2 distinct images
         cover_img_ids = random.sample(bride_groom_highest_images, 2)
 
         # Get rows corresponding to selected images
