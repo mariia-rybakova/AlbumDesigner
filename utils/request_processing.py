@@ -313,7 +313,7 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
         counter_comp_id += 1
 
     # adding the first spread image
-    if 'firstPage' in message.pagesInfo.keys():
+    if 'firstPage' in message.pagesInfo.keys() and first_last_images_df is not None:
         design_id = layouts_df.loc[first_last_design_ids[0]]['id']
         left_box_ids = layouts_df.loc[first_last_design_ids[0]]['left_box_ids']
         right_box_ids = layouts_df.loc[first_last_design_ids[0]]['right_box_ids']
@@ -409,7 +409,7 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
 
 
     # adding the last page
-    if 'lastPage' in message.pagesInfo.keys():
+    if 'lastPage' in message.pagesInfo.keys() and first_last_images_df is not None:
         design_id = layouts_df.loc[first_last_design_ids[1]]['id']
         left_box_ids = layouts_df.loc[first_last_design_ids[1]]['left_box_ids']
         right_box_ids = layouts_df.loc[first_last_design_ids[1]]['right_box_ids']

@@ -202,7 +202,8 @@ class ProcessStage(Stage):
                     raise Exception('cropping process not completed.')
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
-                first_last_imgs_df = first_last_imgs_df.merge(cropped_df, how='inner', on='image_id')
+                if first_last_imgs_df is not None:
+                    first_last_imgs_df = first_last_imgs_df.merge(cropped_df, how='inner', on='image_id')
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
