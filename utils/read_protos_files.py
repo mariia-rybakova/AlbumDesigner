@@ -20,6 +20,11 @@ def get_image_embeddings(file, df, logger=None):
 
         header_b = fileBytes.read1(4)
         header = header_b.decode('utf-8')
+        if header == 'pai3':
+            model_version_b = fileBytes.read(4)
+            model_version = int.from_bytes(model_version_b, 'little')
+        else:
+            model_version = 1
         num_images_b = fileBytes.read1(4)
         num_images = int.from_bytes(num_images_b, 'little')
 
