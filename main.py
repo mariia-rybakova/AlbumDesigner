@@ -44,11 +44,18 @@ reporting_time_list = list()
 def push_report_error(one_msg, az_connection_string, logger=None):
     '''Push result to the report queue'''
 
-    error_report = {
-        'requestId': one_msg.content['conditionId'],
-        'error': one_msg.error,
-        'composition': None
-    }
+    if type(one_msg.error) is str:
+        error_report = {
+            'requestId': one_msg.content['conditionId'],
+            'error': one_msg.error,
+            'composition': None
+        }
+    else:
+        error_report = {
+            'requestId': one_msg.content['conditionId'],
+            'error': str(one_msg.error),
+            'composition': None
+        }
     try:
         q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
         q_client.create_queue()
