@@ -20,6 +20,7 @@ from ptinfra import  AbortRequested
 
 
 from src.smart_cropping import process_crop_images
+from utils.auto_selection import ai_selection
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_first_last_image, get_first_last_design_ids
 from utils.time_proessing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
@@ -122,6 +123,61 @@ class ReadStage(Stage):
         read_time_list.append(handling_time)
         self.logger.info(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
         return messages
+
+
+
+class SelectionStage(Stage):
+    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
+                 logger=None):
+        super().__init__('SelectionStage', self.get_selection, in_q, out_q, err_q, batch_size=1, max_threads=2)
+        self.logger = logger
+
+
+    def get_selection(self, msgs: Union[Message, List[Message], AbortRequested]):
+        if isinstance(msgs, AbortRequested):
+            self.logger.info("Abort requested")
+            return []
+
+
+        updated_messages = []
+        messages = msgs if isinstance(msgs, list) else [msgs]
+        start = datetime.now()
+        #Iterate over message and start the selection process
+        try:
+            for _msg in messages:
+
+                if 'gallery_photos_info' not in _msg.content:
+                    print("problem with the dataframe oif this msg")
+                    continue
+
+                if 'photos_user_selected' not in _msg.content:
+                    print("the 10 photos not selected!")
+                    ten_photos = []
+                else:
+                    ten_photos = _msg.content['photos_user_selected']
+
+                if 'people_ids' not in _msg.content:
+                    people_ids = []
+                else:
+                    people_ids = _msg.content['people_ids']
+
+                ai_photos_selected = ai_selection(_msg.content['gallery_photos_info'], ten_photos, people_ids, _msg.content['user_relation'],_msg.content['tags'],_msg.content['is_wedding'],
+                          self.logger)
+
+                _msg.content['selected_photos'] = ai_photos_selected
+                updated_messages.append(_msg)
+
+        except Exception as e:
+            # self.logger.error(f"Error reading messages: {e}")
+            raise(e)
+            # return []
+
+        handling_time = (datetime.now() - start) / max(len(messages), 1)
+        read_time_list.append(handling_time)
+        self.logger.info(f"Selection Stage for {len(messages)} messages. Average time: {handling_time}")
+
+        return updated_messages
+
 
 class ProcessStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
