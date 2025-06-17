@@ -84,6 +84,10 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
     parts = printAllUniqueParts(nPhotos)
     parts = [part for part in parts if set(part).issubset(available_n)]
 
+    layouts_dict = dict()
+    for item in list(available_n):
+        layouts_dict[item] = layouts_df[layouts_df['number of boxes']==item][['max portraits','max landscapes']].drop_duplicates()
+
     filtered_parts = []
     for part in parts:
 
@@ -91,7 +95,7 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
         part_portrait = nPortrait
 
         for spread in part:
-            n_layouts = layouts_df[layouts_df['number of boxes']==spread][['max portraits','max landscapes']].drop_duplicates()
+            n_layouts = layouts_dict[spread]
             match_layout=False
             for idx, row in n_layouts.iterrows():
                 rem_portrait = max(part_portrait - row['max portraits'],0)
