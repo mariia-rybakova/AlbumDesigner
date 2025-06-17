@@ -609,7 +609,7 @@ def select_images_of_one_person(related_images, photos_dict,logger):
 
     while len(selected_images) < required_images:
         if not related_images:  # Break if there are no more images to select
-            print("No more images to select.")
+            logger("No more images to select.")
             break
 
         # Select a random image

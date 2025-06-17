@@ -148,7 +148,7 @@ def read_messages(messages, logger):
                 raise(Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
                 # continue
 
-        if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
+        if 'photos_user_selected' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
@@ -156,13 +156,13 @@ def read_messages(messages, logger):
             raise (Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
             # continue
 
-        if len(json_content['photos'])<10:
-            logger.warning('Not enough photos: {}. Skipping.'.format(json_content))
-            _msg.image = None
-            _msg.status = 0
-            _msg.error = 'Not enough photos: {}. Skipping.'.format(json_content)
-            raise(Exception('Not enough photos: {}. Skipping.'.format(json_content)))
-            # continue
+        # if len(json_content['photos'])<10:
+        #     logger.warning('Not enough photos: {}. Skipping.'.format(json_content))
+        #     _msg.image = None
+        #     _msg.status = 0
+        #     _msg.error = 'Not enough photos: {}. Skipping.'.format(json_content)
+        #     raise(Exception('Not enough photos: {}. Skipping.'.format(json_content)))
+        #     # continue
 
         try:
             images = json_content['photos']

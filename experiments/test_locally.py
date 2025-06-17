@@ -7,10 +7,10 @@ from ptinfra import intialize, get_logger
 
 from ptinfra.pt_queue import QReader, QWriter, MessageQueue, MemoryQueue, RoundRobinReader
 from ptinfra.config import get_variable
-
+from pycparser.ply.lex import NullLogger
 
 from utils.parser import CONFIGS
-from main import ReadStage
+from main import ReadStage, SelectionStage
 from main import ProcessStage
 from main import ReportStage
 from message_local_class import Message
@@ -984,7 +984,34 @@ if __name__ == '__main__':
                       3468, 3469, 3470, 3471, 3472, 3473, 3474, 3475, 3476, 3477, 3478, 3479, 3480, 3481, 3482, 3483,
                       3484, 3485, 3486, 3487, 3488, 3489, 3490, 3491, 3492, 3494, 3495, 3496, 15971, 15972, 15973,
                       15974, 15975, 15976, 15977, 15978, 15979, 15980, 15981, 15982, 15983, 15984, 15990, 15991, 15992,
-                      15994, 15995, 15997, 15998, 15999, 16000, 16001, 16002, 16003, 16004, 16111, 16112, 17109, 17110]
+                      15994, 15995, 15997, 15998, 15999, 16000, 16001, 16002, 16003, 16004, 16111, 16112, 17109, 17110],
+        'photos_user_selected':[],
+        'people_ids':[],
+        'tags':[],
+        'relations':'bride and groom',
+        'density': None,
+
+    })
+
+    selection_testing = Message(content={
+        'photosIds': [],
+        'projectURL': 'ptstorage_15://pictures/41/657/41657129/c78oxvy9dtgcw0myjr/',
+        'storeId': 000,
+        'sendTime': 'now',
+        'designIds': [3444, 3415, 3417, 3418, 3419, 3420, 3421, 3423, 3424, 3425, 3426, 3427, 3428, 3429, 3430, 3431,
+                      3432, 3433, 3434, 3435, 3436, 3437, 3438, 3439, 3440, 3441, 3442, 3443, 3445, 3449, 3450, 3451,
+                      3452, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3460, 3461, 3462, 3463, 3464, 3465, 3466, 3467,
+                      3468, 3469, 3470, 3471, 3472, 3473, 3474, 3475, 3476, 3477, 3478, 3479, 3480, 3481, 3482, 3483,
+                      3484, 3485, 3486, 3487, 3488, 3489, 3490, 3491, 3492, 3494, 3495, 3496, 15971, 15972, 15973,
+                      15974, 15975, 15976, 15977, 15978, 15979, 15980, 15981, 15982, 15983, 15984, 15990, 15991, 15992,
+                      15994, 15995, 15997, 15998, 15999, 16000, 16001, 16002, 16003, 16004, 16111, 16112, 17109, 17110],
+        'photos_user_selected': [],
+        'people_ids': [],
+        'tags': [],
+        'relations': 'bride and groom',
+        'density': None,
+        'designInfo':None,
+        'designInfoTempLocation':None
 
     })
 
@@ -995,8 +1022,9 @@ if __name__ == '__main__':
 
     # wedding_2_test_message_200 # wedding_3_test_message wedding_4_test_message  wedding_5_test_message_300 wedding_2_test_message_setting
     # non_wedding_test_message
-    result = read_stage.read_messages([wedding_2_test_message_250])
-
+    result = read_stage.read_messages([selection_testing])
+    selection = SelectionStage(logger=logger)
     processing = ProcessStage(logger=logger)
-    processing.process_message(result)
+    updated_results  = selection.get_selection(result)
+    processing.process_message(updated_results)
     print("Finished will all messages")

@@ -145,13 +145,8 @@ class SelectionStage(Stage):
         #Iterate over message and start the selection process
         try:
             for _msg in messages:
-
-                if 'gallery_photos_info' not in _msg.content:
-                    print("problem with the dataframe oif this msg")
-                    continue
-
                 if 'photos_user_selected' not in _msg.content:
-                    print("the 10 photos not selected!")
+                    self.logger("the 10 photos not selected!")
                     ten_photos = []
                 else:
                     ten_photos = _msg.content['photos_user_selected']
@@ -161,10 +156,18 @@ class SelectionStage(Stage):
                 else:
                     people_ids = _msg.content['people_ids']
 
-                ai_photos_selected = ai_selection(_msg.content['gallery_photos_info'], ten_photos, people_ids, _msg.content['user_relation'],_msg.content['tags'],_msg.content['is_wedding'],
+                df = _msg.content.get('gallery_photos_info', pd.DataFrame())
+                if df.empty:
+                    self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
+                    _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
+                    continue
+
+                ai_photos_selected = ai_selection(df, ten_photos, people_ids, _msg.content['user_relation'],_msg.content['tags'],_msg.content['is_wedding'],
                           self.logger)
 
-                _msg.content['selected_photos'] = ai_photos_selected
+                filtered_df = df[df['image_id'].isin(ai_photos_selected)]
+                _msg.content['gallery_photos_info'] = filtered_df
+                _msg.content['AIphotosIds'] = ai_photos_selected
                 updated_messages.append(_msg)
 
         except Exception as e:
@@ -205,7 +208,7 @@ class ProcessStage(Stage):
             i=0
 
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
-            print("Params for this Gallery are:", params)
+            self.logger("Params for this Gallery are:", params)
 
             p = mp.Process(target=process_crop_images, args=(self.q, message.content.get('gallery_photos_info')))
             p.start()
@@ -417,10 +420,12 @@ class MessageProcessor:
         report_q = MemoryQueue(2)
 
         read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
+        selection_stage = SelectionStage(azure_input_q, read_q, report_q, logger=self.logger)
         process_stage = ProcessStage(read_q, report_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()
+        selection_stage.start()
         process_stage.start()
         read_stage.start()
 

@@ -1,4 +1,4 @@
-
+pip install --force git+https://github.com/pic-time/python-infra
 # 1 - GalId: 41661791
 
 https://pictime6eus1public.blob.core.windows.net/pictures/41/661/41661791/vjg4ekc180wegk0rq0/lowres
