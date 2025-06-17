@@ -145,20 +145,25 @@ class SelectionStage(Stage):
         #Iterate over message and start the selection process
         try:
             for _msg in messages:
-                if 'photos_user_selected' not in _msg.content:
+                photos = _msg.content.get('photos', [])
+                if len(photos) != 0:
+                    updated_messages.append(_msg)
+                    continue
+                if 'photosIds' not in _msg.content:
                     self.logger("the 10 photos not selected!")
                     ten_photos = []
                 else:
-                    ten_photos = _msg.content['photos_user_selected']
+                    ten_photos = _msg.content.get('photosIds', [])
 
                 if 'people_ids' not in _msg.content:
                     people_ids = []
                 else:
-                    people_ids = _msg.content['people_ids']
+                    people_ids = _msg.content.get('people_ids', [])
 
                 df = _msg.content.get('gallery_photos_info', pd.DataFrame())
                 if df.empty:
                     self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
+                    updated_messages.append(_msg)
                     _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
                     continue
 
@@ -167,7 +172,7 @@ class SelectionStage(Stage):
 
                 filtered_df = df[df['image_id'].isin(ai_photos_selected)]
                 _msg.content['gallery_photos_info'] = filtered_df
-                _msg.content['AIphotosIds'] = ai_photos_selected
+                _msg.content['photos'] = ai_photos_selected
                 updated_messages.append(_msg)
 
         except Exception as e:
@@ -208,7 +213,7 @@ class ProcessStage(Stage):
             i=0
 
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
-            self.logger("Params for this Gallery are:", params)
+            self.logger.info("Params for this Gallery are:", params)
 
             p = mp.Process(target=process_crop_images, args=(self.q, message.content.get('gallery_photos_info')))
             p.start()

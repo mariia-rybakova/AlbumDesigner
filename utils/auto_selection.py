@@ -38,15 +38,6 @@ def ai_selection(df, selected_photos, people_ids, user_relation,tags,is_wedding,
     try:
         if is_wedding:
             # Select images for creating an album
-            if len(selected_photos) == 0:
-                return [], "There are Zero example photos selected"
-
-            if len(people_ids) == 0:
-                return [], "There are No people selected"
-
-            if not user_relation:
-                return [], "The user relation is empty"
-
             tags_features = get_tags_bins(tags)
             ai_images_selected, errors = smart_wedding_selection(df, selected_photos, people_ids, user_relation,
                                                                  tags_features, logger)

@@ -90,14 +90,14 @@ def get_info_protobufs(project_base_url, df, logger):
         # Convert only the specified columns to 'Int64' (nullable integer type)
         columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
         gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
-        print("Number of images before cleaning the nan values", len(gallery_info_df.index))
+        logger.info("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
         # Get Query Content of each image
         gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
 
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
-        print("Number of images after cleaning the nan values", len(gallery_info_df.index))
+        logger.info("Number of images after cleaning the nan values", len(gallery_info_df.index))
 
         # make sure it has list values not float nan
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
@@ -148,7 +148,7 @@ def read_messages(messages, logger):
                 raise(Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
                 # continue
 
-        if 'photos_user_selected' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
+        if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
             logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
             _msg.image = None
             _msg.status = 0
@@ -203,7 +203,6 @@ def read_messages(messages, logger):
 
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
-            is_wedding = True
             if not gallery_info_df.empty and not anyPage_layouts_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
@@ -218,8 +217,8 @@ def read_messages(messages, logger):
                 raise (Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content)))
                 continue
 
-            logger.info(
-                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
+            # logger.info(
+            #     f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
         except Exception as e:
             logger.error(f"Error reading messages at reading stage: {e}")
