@@ -84,12 +84,28 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
     parts = printAllUniqueParts(nPhotos)
     parts = [part for part in parts if set(part).issubset(available_n)]
 
+    weights = np.zeros(len(parts))
+    for idx, part in enumerate(parts):
+        weights[idx] = classWeight(part, classSpreadParams)
+
+    if np.all(weights == 0):
+        classSpreadParams[1] = np.abs(nPhotos - classSpreadParams[0]) / 3
+        for idx, part in enumerate(parts):
+            weights[idx] = classWeight(part, classSpreadParams)
+    else:
+        weights /= np.max(weights)
+
+    sorted_indices = np.argsort(weights)[::-1]
+    parts = [parts[i] for i in sorted_indices]
+    weights = weights[sorted_indices]
+
     layouts_dict = dict()
     for item in list(available_n):
         layouts_dict[item] = layouts_df[layouts_df['number of boxes']==item][['max portraits','max landscapes']].drop_duplicates()
 
     filtered_parts = []
-    for part in parts:
+    filtered_weights = []
+    for idx,part in enumerate(parts):
 
         part_landscape = nLandscape
         part_portrait = nPortrait
@@ -109,33 +125,29 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
                 break
         if match_layout:
             filtered_parts.append(part)
+            filtered_weights.append(weights[idx])
+            if len(filtered_parts)>2 and weights[idx] < np.max(weights) / params[1]:
+                break
 
+    partsAboveThresh = filtered_parts
+    weightsAboveThresh = filtered_weights
 
-    parts = filtered_parts
-    weights = np.zeros(len(parts))
-    for idx, part in enumerate(parts):
-        weights[idx] = classWeight(part, classSpreadParams)
-
-    if np.all(weights == 0):
-        classSpreadParams[1] = np.abs(nPhotos - classSpreadParams[0]) / 3
-        for idx, part in enumerate(parts):
-            weights[idx] = classWeight(part, classSpreadParams)
-    else:
-        weights /= np.max(weights)
-    #print("The partition_score_threshold is {} ".format(CONFIGS['partition_score_threshold']))
-    #aboveThresh = np.where(weights > np.max(weights) / CONFIGS['partition_score_threshold'])[0]
-    aboveThresh = np.where(weights > np.max(weights) / params[1])[0]
-    if len(weights) > 2:
-        args = np.argsort(weights)[::-1]
-        if len(aboveThresh) > 2:
-            partsAboveThresh = [parts[args[idx]] for idx in range(len(aboveThresh))]
-            weightsAboveThresh = [weights[args[idx]] for idx in range(len(aboveThresh))]
-        else:
-            partsAboveThresh = [parts[args[idx]] for idx in range(3)]
-            weightsAboveThresh = [weights[args[idx]] for idx in range(3)]
-    else:
-        partsAboveThresh = parts
-        weightsAboveThresh = weights
+    # parts = filtered_parts
+    #
+    # #print("The partition_score_threshold is {} ".format(CONFIGS['partition_score_threshold']))
+    # #aboveThresh = np.where(weights > np.max(weights) / CONFIGS['partition_score_threshold'])[0]
+    # aboveThresh = np.where(weights > np.max(weights) / params[1])[0]
+    # if len(weights) > 2:
+    #     args = np.argsort(weights)[::-1]
+    #     if len(aboveThresh) > 2:
+    #         partsAboveThresh = [parts[args[idx]] for idx in range(len(aboveThresh))]
+    #         weightsAboveThresh = [weights[args[idx]] for idx in range(len(aboveThresh))]
+    #     else:
+    #         partsAboveThresh = [parts[args[idx]] for idx in range(3)]
+    #         weightsAboveThresh = [weights[args[idx]] for idx in range(3)]
+    # else:
+    #     partsAboveThresh = parts
+    #     weightsAboveThresh = weights
     return partsAboveThresh, weightsAboveThresh
 
 
