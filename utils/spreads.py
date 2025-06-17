@@ -105,7 +105,7 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
 
     filtered_parts = []
     filtered_weights = []
-    for idx,part in enumerate(parts):
+    for idx1,part in enumerate(parts):
 
         part_landscape = nLandscape
         part_portrait = nPortrait
@@ -113,7 +113,7 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
         for spread in part:
             n_layouts = layouts_dict[spread]
             match_layout=False
-            for idx, row in n_layouts.iterrows():
+            for idx2, row in n_layouts.iterrows():
                 rem_portrait = max(part_portrait - row['max portraits'],0)
                 rem_landscape = max(part_landscape - row['max landscapes'],0)
                 if (part_landscape+part_portrait)-spread >= (rem_portrait+rem_landscape):
@@ -125,8 +125,8 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
                 break
         if match_layout:
             filtered_parts.append(part)
-            filtered_weights.append(weights[idx])
-            if len(filtered_parts)>2 and weights[idx] < np.max(weights) / params[1]:
+            filtered_weights.append(weights[idx1])
+            if len(filtered_parts)>2 and weights[idx1] < np.max(weights) / params[1]:
                 break
 
     partsAboveThresh = filtered_parts
