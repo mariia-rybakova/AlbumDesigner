@@ -36,6 +36,20 @@ CONFIGS = {'DEBUG': True,
            'products_json_location':'pictures/photostore/32/settings/products.json.txt',
            'design_pack_base':'pictures/photostore/32/ext/designs',
            'architect_base':'pictures/photostore/32/ext/productgroups',
+           'content_threads': 4,
+           'small_groups': 3,
+           'max_number_images': 130,
+           'person_score': 0.0000001,
+           'similarity_score': 0.00001,
+           'class_matching_zero_score': 0.0001,
+           'class_matching_penalty': 0.001,
+           'small_groups_not_to_select': 3,
+           'grays_scale_limit': 1,
+           'person_count_percentage': 0.20,
+           'small_gallery_number': 15,
+           'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
+                                               'dancing',
+                                               'wedding dress', 'kiss']
 }
 
 merge_content_priority = {
@@ -145,7 +159,8 @@ relations = {'bride and groom':{
     'food': (5, 0.5),
     'other': (0, 0.5),
     'invite': (1, 0.5),
-    'wedding dress':(2,0.01)
+    'wedding dress':(2,0.01),
+    'vehicle': (2,0.01)
 }}
 
 
@@ -179,7 +194,42 @@ limit_imgs = {
     'other':0,
     'invite': 1,
     'wedding dress': 1,
-    'rings': 1
+    'rings': 1,
+    'vehicle': 1
 }
+
+label_list = [
+    'accessories',
+    'bride',
+    'bride and groom',
+    'bride getting dressed',
+    'bride party',
+    'cake cutting',
+    'ceremony',
+    'couple',
+    'dancing',
+    'detail',
+    'entertainment',
+    'first dance',
+    'food',
+    'full party',
+    'getting hair-makeup',
+    'groom',
+    'groom party',
+    'inside vehicle',
+    'invite',
+    'kiss',
+    'pet',
+    'portrait',
+    'rings',
+    'settings',
+    'speech',
+    'suit',
+    'vehicle',
+    'very large group',
+    'walking the aisle',
+    'wedding dress',
+    'other'
+]
 
 

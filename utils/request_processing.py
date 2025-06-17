@@ -1,4 +1,5 @@
 import os
+import copy
 import pandas as pd
 import numpy as np
 
@@ -6,7 +7,7 @@ from functools import partial
 from datetime import datetime
 
 from utils import get_layouts_data
-from utils.parser import CONFIGS
+from utils.parser import CONFIGS,label_list
 from utils.layouts_file import generate_layouts_df
 from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
 from utils.image_queries import generate_query
@@ -47,6 +48,22 @@ def check_gallery_type(df):
         return False
     else:
         return True
+
+
+def map_cluster_label(cluster_label):
+    if cluster_label == -1:
+        return "None"
+    elif cluster_label >= 0 and cluster_label < len(label_list):
+        return label_list[cluster_label]
+    else:
+        return "Unknown"
+
+def process_content(row_dict):
+    row_dict = copy.deepcopy(row_dict)
+    cluster_class = row_dict.get('cluster_class')
+    cluster_class_label = map_cluster_label(cluster_class)
+    row_dict['cluster_context'] = cluster_class_label
+    return row_dict
 
 def get_info_protobufs(project_base_url, df, logger):
     try:
@@ -105,6 +122,13 @@ def get_info_protobufs(project_base_url, df, logger):
         # Cluster people by number of people inside the image
         gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
         is_wedding = check_gallery_type(gallery_info_df)
+
+        if is_wedding:
+            # make Cluster column
+            gallery_info_df = gallery_info_df.apply(process_content, axis=1)
+            # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
+            #                                         how='left', on='image_id')
+
 
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
         return gallery_info_df, is_wedding

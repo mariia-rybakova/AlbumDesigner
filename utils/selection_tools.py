@@ -49,6 +49,9 @@ def calculate_similarity_scores(im_embedding, ten_photos_embeddings):
 
 def calcuate_tags_score(tags_features, image_features):
     tags_scores = []
+    if len(tags_features) == 0:
+        return 0.0000002
+
     for tag,tag_feature in tags_features.items():
         similarity = tag_feature @ image_features
         # maximum similarity by query
@@ -77,22 +80,28 @@ def calculate_scores(row_data,selected_photos_df, people_ids, tags):
 
     # 10 images similarity score
     if 'embedding' in row_data.index:
-        similarity_scores = calculate_similarity_scores(row_data['embedding'].tolist(), selected_photos_df['embedding'].tolist())
-        similarity_score = abs(similarity_scores.mean())
+        if selected_photos_df.empty:
+            similarity_score = 0.0000000005
+        else:
+            similarity_scores = calculate_similarity_scores(row_data['embedding'].tolist(), selected_photos_df['embedding'].tolist())
+            similarity_score = abs(similarity_scores.mean())
     else:
         similarity_score = CONFIGS['similarity_score']
 
     # class matching between 10 selected images and the intent image
     if 'image_class' in row_data.index:
-        image_class = row_data['image_class']
-        ten_photos_class = selected_photos_df['image_class'].values.tolist()
-        class_match_counts = ten_photos_class.count(image_class)
-        class_matching_score = class_match_counts / len(ten_photos_class) + CONFIGS['class_matching_zero_score']
+        if selected_photos_df.empty:
+            class_matching_score = 0.0000000005
+        else:
+            image_class = row_data['image_class']
+            ten_photos_class = selected_photos_df['image_class'].values.tolist()
+            class_match_counts = ten_photos_class.count(image_class)
+            class_matching_score = class_match_counts / len(ten_photos_class) + CONFIGS['class_matching_zero_score']
     else:
         class_matching_score = CONFIGS['class_matching_penalty']
 
     if len(tags) !=0:
-       tags_score = calcuate_tags_score(tags, row_data['embedding'])
+        tags_score = calcuate_tags_score(tags, row_data['embedding'])
     else:
         tags_score = 1
 

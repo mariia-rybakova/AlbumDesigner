@@ -163,12 +163,18 @@ class SelectionStage(Stage):
                 df = _msg.content.get('gallery_photos_info', pd.DataFrame())
                 if df.empty:
                     self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
-                    updated_messages.append(_msg)
                     _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
+                    updated_messages.append(_msg)
                     continue
 
-                ai_photos_selected = ai_selection(df, ten_photos, people_ids, _msg.content['user_relation'],_msg.content['tags'],_msg.content['is_wedding'],
+                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, _msg.content['user_relation'],_msg.content['tags'],_msg.content['is_wedding'],
                           self.logger)
+
+                if errors:
+                    self.logger.error(f"Error for Selection images for this message {_msg}")
+                    _msg.content['error'] = f"Error for Selection images for this message {_msg}"
+                    updated_messages.append(_msg)
+                    continue
 
                 filtered_df = df[df['image_id'].isin(ai_photos_selected)]
                 _msg.content['gallery_photos_info'] = filtered_df
@@ -235,19 +241,19 @@ class ProcessStage(Stage):
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
 
                 if message.content.get('is_wedding', True):
-                    rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
-                    #convert numeric ids to labels.
-                    processed_rows = []
-                    for row in rows:
-                        cluster_class = row.get('cluster_class')
-                        cluster_class_label = map_cluster_label(cluster_class)
-                        row['cluster_context'] = cluster_class_label
-                        processed_rows.append(row)
-
-                    processed_content_df = pd.DataFrame(processed_rows)
-                    processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
-                                                   how='left', on='image_id')
-                    df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(processed_df,
+                    # rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
+                    # #convert numeric ids to labels.
+                    # processed_rows = []
+                    # for row in rows:
+                    #     cluster_class = row.get('cluster_class')
+                    #     cluster_class_label = map_cluster_label(cluster_class)
+                    #     row['cluster_context'] = cluster_class_label
+                    #     processed_rows.append(row)
+                    #
+                    # processed_content_df = pd.DataFrame(processed_rows)
+                    # processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
+                    #                                how='left', on='image_id')
+                    df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(sorted_df,
                                                                                                      self.logger)
                 else:
                     df, first_last_images_ids, first_last_imgs_df = process_non_wedding_cover_image(sorted_df,
