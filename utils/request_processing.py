@@ -295,6 +295,7 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
     result_dict['compositionPackageId'] = message.content['compositionPackageId']
     result_dict['productId'] = message.content['designInfo']['productId']
     result_dict['packageDesignId'] = None
+    result_dict['projectId'] = message.content['projectId']
     counter_comp_id = 0
     counter_image_id = 0
 
