@@ -46,6 +46,7 @@ def get_image_embeddings(file, df, logger=None):
         return None
 
     df['embedding'] = df['image_id'].map(lambda x: embed.get(x, {}).get('embedding', np.nan))
+    df['model_version'] = model_version
     return df
 
 

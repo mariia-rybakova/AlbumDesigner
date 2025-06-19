@@ -93,7 +93,12 @@ def get_info_protobufs(project_base_url, df, logger):
         print("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
         # Get Query Content of each image
-        gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+        if gallery_info_df is not None:
+            model_version = gallery_info_df.iloc[0]['model_version']
+            if model_version == 1:
+                gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+            else:
+                gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
 
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
