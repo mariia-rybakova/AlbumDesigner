@@ -82,7 +82,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
 def get_group_photos_list(cur_group_photos, spread_params, logger):
     cur_group_photos_list = copy.deepcopy(list())
     if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
-            round(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11 or
+            math.ceil(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11 or
             len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
                 cur_group_photos) > CONFIGS['max_imges_per_spread']):
         split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
