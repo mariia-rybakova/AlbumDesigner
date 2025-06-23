@@ -178,10 +178,17 @@ def get_images_per_groups(original_groups, logger):
     return group2images_data_list
 
 
-def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger):
+def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger, max_iterations=20):
     count = 2
+    iteration = 0
     try:
         while update_needed(group2images, is_wedding, look_up_table):
+            if iteration >= max_iterations:
+                if logger:
+                    logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
+                else:
+                    print(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
+                break
             if 'groups_to_change' not in globals():
                 logger.error("Error: groups_to_change is not defined.")
                 return None, None, None
@@ -217,6 +224,7 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
 
             logger.info("Iteration completed")
             count += 1
+            iteration += 1
 
         logger.info(f"Final number of groups for the album: {len(groups)}")
         return groups, group2images, look_up_table
