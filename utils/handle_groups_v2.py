@@ -178,6 +178,7 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                     if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1] and 'None' not in group_key[1]:
                         groups_to_change[group_key] = ('split', splitting_score)
             if not groups_to_change or len(groups_to_change.keys()) == 0:
+                logger.info('No groups to change. Continue.')
                 break
             if iteration >= max_iterations:
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
@@ -185,11 +186,11 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
             for key_to_change, change_tuple in groups_to_change.items():
                 try:
                     if key_to_change not in groups.groups:
-                        logger.warning(f"Key {key_to_change} not found in groups. Skipping.")
+                        logger.info(f"Key {key_to_change} not found in groups. Skipping.")
                         continue
                     illegal_group = groups.get_group(key_to_change)
                     if illegal_group.empty:
-                        logger.warning(f"Illegal group {key_to_change} is empty. Skipping.")
+                        logger.info(f"Illegal group {key_to_change} is empty. Skipping.")
                         continue
                     imgs_number = group2images.get(key_to_change, 0)
                     content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
@@ -198,10 +199,10 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                         group2images = get_images_per_groups(new_groups, logger)
                         groups = new_groups
                     else:
-                        logger.warning(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
+                        logger.info(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
                         continue
                 except Exception as e:
-                    logger.warning(f"Warning: handle_illegal returned None for key {key_to_change}.")
+                    logger.info(f"Warning: handle_illegal returned None for key {key_to_change}.")
                     continue
             logger.info("Iteration completed")
             count += 1
