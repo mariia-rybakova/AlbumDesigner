@@ -32,7 +32,10 @@ def update_split_groups(grouped_df, splitted_group, splitting_key):
 
     return updated_df
 
-def merging_process(group_key,groups,illegal_group):
+def merging_process(group_key, groups, illegal_group, logger=None):
+    if illegal_group.empty:
+        logger.warning(f"Illegal group {group_key} is empty. Skipping merge.")
+        return groups
     time_cluster_id = group_key[0]
     # merge this one with the rest
     main_groups = [group for cluster_key, group in groups if
@@ -44,7 +47,7 @@ def merging_process(group_key,groups,illegal_group):
         main_groups = [group for cluster_key, group in groups if
                        time_cluster_id == cluster_key[0] and cluster_key != group_key]
     elif len(main_groups) == 0 and len(illegal_group) > 1:
-        return do_not_change_group(illegal_group, groups,group_key)
+        return do_not_change_group(illegal_group, groups, group_key, logger)
 
     if len(main_groups) == 1:
         selected_cluster = main_groups[0]
@@ -62,7 +65,10 @@ def merging_process(group_key,groups,illegal_group):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def splitting_process(groups,group_key,illegal_group,count):
+def splitting_process(groups,group_key,illegal_group,count, logger=None):
+    if illegal_group.empty:
+        logger.warning(f"Illegal group {group_key} is empty. Skipping split.")
+        return groups
     updated_group, labels_count = split_illegal_group(illegal_group,count)
 
     if updated_group is None:
@@ -75,12 +81,15 @@ def splitting_process(groups,group_key,illegal_group,count):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def handle_wedding_dress(illegal_group,groups,group_key):
+def handle_wedding_dress(illegal_group,groups,group_key, logger=None):
+    if illegal_group.empty:
+        logger.warning(f"Illegal group {group_key} is empty. Skipping wedding dress handling.")
+        return groups
     selected_cluster = [group for group_id, group in groups if
                         "bride getting dressed" == group_id[1] or "bride" == group_id[1] or 'getting dressed' ==
                         group_id[1] or 'getting hair-makeup' == group_id[1]]
     if len(selected_cluster) == 0:
-        print("Couldnt find a good group for wedding dress!")
+        logger.warning("Couldnt find a good group for wedding dress!")
 
         selected_cluster=list(groups)[0][1]
 
@@ -98,8 +107,11 @@ def handle_wedding_dress(illegal_group,groups,group_key):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def do_not_change_group(illegal_group, groups,group_key):
+def do_not_change_group(illegal_group, groups,group_key, logger=None):
     """Wont change a group for first dance and cake cutting"""
+    if illegal_group.empty:
+        logger.warning(f"Illegal group {group_key} is empty. Skipping do_not_change_group.")
+        return groups
     illegal_group.loc[:, 'cluster_context'] = illegal_group["cluster_context"] + "_cant_merge"
     groups = groups.apply(
         lambda x: update_not_processed(x, not_processed=illegal_group, illegal_group_key=group_key))
@@ -107,32 +119,28 @@ def do_not_change_group(illegal_group, groups,group_key):
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
 
-def handle_illegal(group_key, change_tuple, content_cluster_id, illegal_group, imgs_number, groups, look_up_table, is_wedding, count):
-    if imgs_number == 1 and illegal_group.iloc[0]['image_orientation'] == 'portrait':
-        return merging_process(group_key, groups, illegal_group)
-    elif "first dance" in content_cluster_id or "cake cutting" in content_cluster_id and imgs_number <= CONFIGS['wedding_merge_images_number']:
-        return do_not_change_group(illegal_group, groups,group_key)
+def handle_illegal(group_key, change_tuple, content_cluster_id, illegal_group, imgs_number, groups, look_up_table, is_wedding, count, logger=None):
+    if imgs_number == 1 and not illegal_group.empty and illegal_group.iloc[0]['image_orientation'] == 'portrait':
+        return merging_process(group_key, groups, illegal_group, logger)
+    elif ("first dance" in content_cluster_id or "cake cutting" in content_cluster_id) and imgs_number <= CONFIGS['wedding_merge_images_number']:
+        return do_not_change_group(illegal_group, groups, group_key, logger)
     elif "wedding dress" in group_key and imgs_number <= CONFIGS['wedding_merge_images_number']:
-        """Merge wedding dress into group related to bride"""
-        return handle_wedding_dress(illegal_group,groups,group_key)
+        return handle_wedding_dress(illegal_group, groups, group_key, logger)
     elif change_tuple[0] == 'merge':
-        return merging_process(group_key,groups,illegal_group)
+        return merging_process(group_key, groups, illegal_group, logger)
     elif change_tuple[0] == 'split':
         score = get_merge_split_score(group_key, look_up_table, imgs_number, is_wedding)
         if score >= CONFIGS['min_split_score']:
-            return splitting_process(groups,group_key,illegal_group,count)
+            return splitting_process(groups, group_key, illegal_group, count, logger)
         else:
-            return do_not_change_group(illegal_group, groups, group_key)
+            return do_not_change_group(illegal_group, groups, group_key, logger)
     else:
-        return do_not_change_group(illegal_group, groups,group_key)
+        return do_not_change_group(illegal_group, groups, group_key, logger)
 
 
 def get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding):
     if is_wedding:
-        if "_" in  group_key[1]:
-            content_key = group_key[1].split("_")[0]
-        else:
-            content_key = group_key[1]
+        content_key = group_key[1].split("_")[0] if "_" in group_key[1] else group_key[1]
         group_value = lookup_table.get(content_key, [10])[0]
     else:
         group_value = lookup_table.get(group_key[0].split("_")[0], [10])[0]
@@ -145,30 +153,7 @@ def get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding):
 
     return limited_splitting
 
-def update_needed(groups,is_wedding,lookup_table):
-    global groups_to_change
-
-    groups_to_change = dict()
-    # Check if there is any group with value 1 and its key prefix doesn't have more than one key
-    for group_key, imgs_number in groups.items():
-        if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
-            if group_key not in groups_to_change:
-                groups_to_change[group_key] = ('merge',0)
-        else:
-          splitting_score = get_merge_split_score(group_key,lookup_table,imgs_number,is_wedding)
-          if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1] and 'None' not in group_key[1]:
-             if group_key not in groups_to_change:
-                groups_to_change[group_key] = ('split', splitting_score)
-          else:
-             continue
-
-    if  len(groups_to_change) > 0:
-        return True
-    else:
-        return False
-
-
-def get_images_per_groups(original_groups, logger):
+def get_images_per_groups(original_groups, logger=None):
     group2images_data_list = dict()
 
     for name_group, group_df in original_groups:
@@ -178,60 +163,46 @@ def get_images_per_groups(original_groups, logger):
     return group2images_data_list
 
 
-def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger, max_iterations=20):
+def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None, max_iterations=20):
     count = 2
     iteration = 0
-    try:
-        while update_needed(group2images, is_wedding, look_up_table):
-            if iteration >= max_iterations:
-                if logger:
-                    logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
-                else:
-                    print(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
-                break
-            if 'groups_to_change' not in globals():
-                logger.error("Error: groups_to_change is not defined.")
-                return None, None, None
-
-            for key_to_change, change_tuple in groups_to_change.items():
-                try:
-                    # Extract content_cluster_id
-                    content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
-
-                    # Get the illegal group, handling missing keys
-                    if key_to_change not in groups.groups:
-                        logger.warning(f"Warning: Key {key_to_change} not found in groups.")
-                        continue
-
-                    illegal_group = groups.get_group(key_to_change)
-                    imgs_number = group2images.get(key_to_change, 0)
-                    # Handle illegal groups
-                    new_groups = handle_illegal(key_to_change, change_tuple, content_cluster_id, illegal_group, imgs_number, groups,look_up_table,is_wedding, count)
-
-                    if new_groups is not None:
-                        group2images = get_images_per_groups(new_groups, logger)  # Ensure logger is passed
-                        if isinstance(group2images, str):  # Check for error messages
-                            logger.error(group2images)
-                            return None, None, None
-                        groups = new_groups
-                    else:
-                        logger.warning(f"Warning: handle_illegal returned None for key {key_to_change}.")
-                        continue
-
-                except Exception as e:
-                    logger.error(f"Error processing key {key_to_change}: {str(e)}")
-                    continue
-
-            logger.info("Iteration completed")
-            count += 1
-            iteration += 1
-
-        logger.info(f"Final number of groups for the album: {len(groups)}")
-        return groups, group2images, look_up_table
-
-    except Exception as e:
-        logger.error(f"Unexpected error in process_illegal_groups: {str(e)}")
-        return None, None, None
+    while True:
+        # Build groups_to_change directly here
+        groups_to_change = dict()
+        for group_key, imgs_number in group2images.items():
+            if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
+                groups_to_change[group_key] = ('merge', 0)
+            else:
+                splitting_score = get_merge_split_score(group_key, look_up_table, imgs_number, is_wedding)
+                if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1] and 'None' not in group_key[1]:
+                    groups_to_change[group_key] = ('split', splitting_score)
+        if not groups_to_change:
+            break
+        if iteration >= max_iterations:
+            logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
+            break
+        for key_to_change, change_tuple in groups_to_change.items():
+            if key_to_change not in groups.groups:
+                logger.warning(f"Key {key_to_change} not found in groups. Skipping.")
+                continue
+            illegal_group = groups.get_group(key_to_change)
+            if illegal_group.empty:
+                logger.warning(f"Illegal group {key_to_change} is empty. Skipping.")
+                continue
+            imgs_number = group2images.get(key_to_change, 0)
+            content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
+            new_groups = handle_illegal(key_to_change, change_tuple, content_cluster_id, illegal_group, imgs_number, groups, look_up_table, is_wedding, count, logger)
+            if new_groups is not None:
+                group2images = get_images_per_groups(new_groups, logger)
+                groups = new_groups
+            else:
+                logger.warning(f"handle_illegal returned None for key {key_to_change}. Skipping.")
+                continue
+        logger.info("Iteration completed")
+        count += 1
+        iteration += 1
+    logger.info(f"Final number of groups for the album: {len(groups)}")
+    return groups, group2images, look_up_table
 
 
 # if __name__ == "__main__":
