@@ -194,6 +194,7 @@ def album_processing(df, designs_info, is_wedding, params, logger):
     for name_group, group_df in original_groups:
         num_images = len(group_df)
         group2images[name_group] = num_images
+    logger.info('Detected groups: {}'.format(group2images))
 
     look_up_table = get_lookup_table(group2images,is_wedding,logger)
 
