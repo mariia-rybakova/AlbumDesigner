@@ -217,7 +217,7 @@ class ProcessStage(Stage):
 
 
                 final_response = assembly_output(album_result, message, df,
-                                                 first_last_images_ids, first_last_imgs_df, first_last_design_ids)
+                                                 first_last_images_ids, first_last_imgs_df, first_last_design_ids, self.logger)
 
                 message.album_doc = final_response
                 processing_time = datetime.now() - start
