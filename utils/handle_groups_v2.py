@@ -166,41 +166,50 @@ def get_images_per_groups(original_groups, logger=None):
 def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None, max_iterations=20):
     count = 2
     iteration = 0
-    while True:
-        # Build groups_to_change directly here
-        groups_to_change = dict()
-        for group_key, imgs_number in group2images.items():
-            if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
-                groups_to_change[group_key] = ('merge', 0)
-            else:
-                splitting_score = get_merge_split_score(group_key, look_up_table, imgs_number, is_wedding)
-                if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1] and 'None' not in group_key[1]:
-                    groups_to_change[group_key] = ('split', splitting_score)
-        if not groups_to_change:
-            break
-        if iteration >= max_iterations:
-            logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
-            break
-        for key_to_change, change_tuple in groups_to_change.items():
-            if key_to_change not in groups.groups:
-                logger.warning(f"Key {key_to_change} not found in groups. Skipping.")
-                continue
-            illegal_group = groups.get_group(key_to_change)
-            if illegal_group.empty:
-                logger.warning(f"Illegal group {key_to_change} is empty. Skipping.")
-                continue
-            imgs_number = group2images.get(key_to_change, 0)
-            content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
-            new_groups = handle_illegal(key_to_change, change_tuple, content_cluster_id, illegal_group, imgs_number, groups, look_up_table, is_wedding, count, logger)
-            if new_groups is not None:
-                group2images = get_images_per_groups(new_groups, logger)
-                groups = new_groups
-            else:
-                logger.warning(f"handle_illegal returned None for key {key_to_change}. Skipping.")
-                continue
-        logger.info("Iteration completed")
-        count += 1
-        iteration += 1
+    try:
+        while True:
+            # Build groups_to_change directly here
+            groups_to_change = dict()
+            for group_key, imgs_number in group2images.items():
+                if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1] and 'None' not in group_key[1]:
+                    groups_to_change[group_key] = ('merge', 0)
+                else:
+                    splitting_score = get_merge_split_score(group_key, look_up_table, imgs_number, is_wedding)
+                    if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1] and 'None' not in group_key[1]:
+                        groups_to_change[group_key] = ('split', splitting_score)
+            if not groups_to_change or len(groups_to_change.keys()) == 0:
+                break
+            if iteration >= max_iterations:
+                logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
+                break
+            for key_to_change, change_tuple in groups_to_change.items():
+                try:
+                    if key_to_change not in groups.groups:
+                        logger.warning(f"Key {key_to_change} not found in groups. Skipping.")
+                        continue
+                    illegal_group = groups.get_group(key_to_change)
+                    if illegal_group.empty:
+                        logger.warning(f"Illegal group {key_to_change} is empty. Skipping.")
+                        continue
+                    imgs_number = group2images.get(key_to_change, 0)
+                    content_cluster_id = key_to_change[1] if '_' not in key_to_change[1] else key_to_change[1].split('_')[0]
+                    new_groups = handle_illegal(key_to_change, change_tuple, content_cluster_id, illegal_group, imgs_number, groups, look_up_table, is_wedding, count, logger)
+                    if new_groups is not None:
+                        group2images = get_images_per_groups(new_groups, logger)
+                        groups = new_groups
+                    else:
+                        logger.warning(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
+                        continue
+                except Exception as e:
+                    logger.warning(f"Warning: handle_illegal returned None for key {key_to_change}.")
+                    continue
+            logger.info("Iteration completed")
+            count += 1
+            iteration += 1
+    except Exception as ex:
+        logger.error(f"Unexpected error in process_illegal_groups: {str(ex)}")
+        return None, None, None
+
     logger.info(f"Final number of groups for the album: {len(groups)}")
     return groups, group2images, look_up_table
 
