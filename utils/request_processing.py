@@ -251,26 +251,29 @@ def customize_box(image_info, box_info):
         crop_y = image_info['cropped_y']
         crop_w = image_info['cropped_w']
         crop_h = image_info['cropped_h']
-        image_ar = crop_w / crop_h
 
-        if image_ar > target_ar:
-            # Crop is too wide → reduce width
-            new_crop_w = crop_h * target_ar
-            dx = (crop_w - new_crop_w) / 2
-            adj_x = crop_x + dx
-            adj_y = crop_y
-            adj_w = new_crop_w
-            adj_h = crop_h
-        else:
-            # Crop is too tall → reduce height
-            new_crop_h = crop_w / target_ar
-            dy = (crop_h - new_crop_h) / 2
-            adj_x = crop_x
-            adj_y = crop_y + dy
-            adj_w = crop_w
-            adj_h = new_crop_h
+        return crop_x, crop_y, crop_w, crop_h
 
-        return adj_x, adj_y, adj_w, adj_h
+        # image_ar = crop_w / crop_h
+        #
+        # if image_ar > target_ar:
+        #     # Crop is too wide → reduce width
+        #     new_crop_w = crop_h * target_ar
+        #     dx = (crop_w - new_crop_w) / 2
+        #     adj_x = crop_x + dx
+        #     adj_y = crop_y
+        #     adj_w = new_crop_w
+        #     adj_h = crop_h
+        # else:
+        #     # Crop is too tall → reduce height
+        #     new_crop_h = crop_w / target_ar
+        #     dy = (crop_h - new_crop_h) / 2
+        #     adj_x = crop_x
+        #     adj_y = crop_y + dy
+        #     adj_w = crop_w
+        #     adj_h = new_crop_h
+        #
+        # return adj_x, adj_y, adj_w, adj_h
     else:
         image_ar = float(image_info['image_as'])
         if image_ar > target_ar:
