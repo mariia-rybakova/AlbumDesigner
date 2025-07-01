@@ -34,26 +34,32 @@ def update_lookup_table(group2images, lookup_table, is_wedding):
 
     return lookup_table
 
-def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
+
+def get_current_spread_parameters(group_key, number_of_images, is_wedding, lookup_table):
+    # Extract the correct lookup key
+    content_key = group_key[1].split("_")[0] if is_wedding and "_" in group_key[1] else group_key[1] if is_wedding else \
+    group_key[0].split("_")[0]
+
+    group_params = lookup_table.get(content_key, (10, 1.5))
+    group_value = group_params[0]
+
+    spreads = 1 if round(number_of_images / group_value) == 0 else round(number_of_images / group_value)
+
+    if spreads > CONFIGS['max_group_spread']:
+        max_images_per_spread = math.ceil(number_of_images / CONFIGS['max_group_spread'])
+        return max_images_per_spread, group_params[1]
+
+    return group_params
+
+
+def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_total_spreads):
     total_spreads = 0
     groups_with_three_spreads = []
 
     # First pass: Compute initial spreads and track groups with 3 spreads
     for key, number_images in group2images.items():
-        # Extract the correct lookup key
-        content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else key[0].split("_")[0]
-
-        # Get group value, default to 0 if not found
-        group_value = lookup_table.get(content_key, (0,))[0]
-
-        # Calculate spreads safely
-        spreads = 1 if round(number_images / group_value) == 0 else round(number_images / group_value)
-
-        if spreads > CONFIGS['max_group_spread'] :
-            # Update lookup table
-            max_images_per_spread = math.ceil(number_images / CONFIGS['max_group_spread'])
-            lookup_table[content_key] = (max_images_per_spread , lookup_table[content_key][1])
-            spreads = round(number_images / max_images_per_spread)
+        spread_params = get_current_spread_parameters(key, number_images, is_wedding, lookup_table)
+        spreads = round(number_images / spread_params[0])
 
         total_spreads += spreads
 
@@ -62,7 +68,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table):
             groups_with_three_spreads.append(key)
 
     # If total spreads exceed limit, reduce spreads in groups with 3 spreads
-    excess_spreads = total_spreads - CONFIGS['max_total_spreads']
+    excess_spreads = total_spreads - max_total_spreads
 
     if excess_spreads > 0:
         for key in groups_with_three_spreads:
@@ -211,13 +217,14 @@ def album_processing(df, designs_info, is_wedding, params, logger):
 
     print("Groups", group2images)
     # make sure that each group has no more than 3 spreads
-    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table)
+    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max(CONFIGS['max_total_spreads'], designs_info['maxPages']))
 
     result_list = []
     for group_name in group2images.keys():
+        spread_params = get_current_spread_parameters(group_name, group2images[group_name], is_wedding, look_up_table)
         cur_result = process_group(group_name=group_name,
                                    group_images_df=updated_groups.get_group(group_name),
-                                   spread_params=list(look_up_table.get(group_name[1].split('_')[0], (10, 1.5))) if is_wedding else list(look_up_table.get(group_name[1].split('_')[0], (1, 2))),
+                                   spread_params=list(spread_params),
                                    designs_info=designs_info,
                                    is_wedding=is_wedding,
                                    params=params,
