@@ -78,6 +78,22 @@ def get_time_clusters(general_time_df):
     best_n = n_components[np.argmin(bics)]
     gmm = GaussianMixture(n_components=best_n, covariance_type='full', random_state=0)
     gmm.fit(X)
-    clusters = gmm.predict(X)
+    initial_clusters = gmm.predict(X)
+
+    # Calculate mean time for each cluster
+    cluster_means = {}
+    for cluster_id in range(best_n):
+        mask = initial_clusters == cluster_id
+        mean_time = np.mean(X[mask])
+        cluster_means[cluster_id] = mean_time
+
+    # Sort clusters by their mean time
+    sorted_clusters = dict(sorted(cluster_means.items(), key=lambda item: item[1]))
+
+    # Create mapping from old to new cluster IDs
+    cluster_mapping = {old_id: new_id for new_id, old_id in enumerate(sorted_clusters.keys())}
+
+    # Map the clusters to new IDs
+    clusters = np.array([cluster_mapping[c] for c in initial_clusters])
 
     return clusters
