@@ -237,7 +237,7 @@ def album_processing(df, designs_info, is_wedding, params, logger):
     # sorintg
     if is_wedding:
         # return sort_groups_by_name(result_list)
-        return sort_groups_by_time(result_list)
+        return sort_groups_by_time(result_list, logger)
     else:
         return result_list
 
