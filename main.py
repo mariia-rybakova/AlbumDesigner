@@ -21,7 +21,7 @@ from ptinfra import  AbortRequested
 
 from src.smart_cropping import process_crop_images
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_first_last_image, get_first_last_design_ids
-from utils.time_proessing import process_image_time, get_time_clusters
+from utils.time_processing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
 from utils.request_processing import read_messages, assembly_output
 from utils.parser import CONFIGS
@@ -105,18 +105,17 @@ class ReadStage(Stage):
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):
-            self.logger.info("Abort requested")
+            self.logger.info("Abort requested.")
             return []
 
         messages = msgs if isinstance(msgs, list) else [msgs]
         start = datetime.now()
-        #Read messages using a helper function
+        # Read messages using a helper function
         try:
             messages = read_messages(messages, self.logger)
         except Exception as e:
-            # self.logger.error(f"Error reading messages: {e}")
-            raise(e)
-            # return []
+            self.logger.error(f"Error reading messages: {e}")
+            raise Exception(f"Error reading messages: {e}")
 
         handling_time = (datetime.now() - start) / max(len(messages), 1)
         read_time_list.append(handling_time)
@@ -149,7 +148,7 @@ class ProcessStage(Stage):
             i=0
 
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
-            print("Params for this Gallery are:", params)
+            self.logger.debug("Params for this Gallery are:", params)
 
             p = mp.Process(target=process_crop_images, args=(self.q, message.content.get('gallery_photos_info')))
             p.start()
@@ -232,7 +231,6 @@ class ProcessStage(Stage):
 
             except Exception as e:
                 self.logger.error(f"Unexpected error in message processing: {e}")
-                message.error = f"Unexpected error in message processing: {e}"
                 raise Exception(f"Unexpected error in message processing: {e}")
 
         processing_time = (datetime.now() - whole_messages_start) / max(len(messages), 1)

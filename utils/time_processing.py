@@ -12,8 +12,10 @@ def read_timestamp(timestamp_str):
     except ValueError:
         return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
 
+
 def convert_to_timestamp(time_integer):
     return datetime.fromtimestamp(time_integer)
+
 
 def process_image_time_row(args):
     """Processes a single row to compute the general time."""
@@ -31,6 +33,7 @@ def process_image_time_row(args):
 
     row_time['general_time'] = int(general_time)
     return row_time
+
 
 def process_image_time(data_df):
     # Convert image_time to timestamp
@@ -51,17 +54,10 @@ def process_image_time(data_df):
     processed_rows = []
     for args in args_list:
         processed_rows.append(process_image_time_row(args))
-
-
-    # Create a new DataFrame from processed rows
     processed_df = pd.DataFrame(processed_rows)
-
     processed_df = data_df.merge(processed_df[['image_id', 'general_time']], how='left', on='image_id')
 
-    # Sort the DataFrame by general time
     sorted_by_time_df = processed_df.sort_values(by="general_time", ascending=True)
-
-    # Create a dictionary for image_id to general time
     image_id2general_time = dict(zip(processed_df['image_id'], processed_df['general_time']))
 
     return sorted_by_time_df, image_id2general_time
@@ -89,11 +85,41 @@ def get_time_clusters(general_time_df):
 
     # Sort clusters by their mean time
     sorted_clusters = dict(sorted(cluster_means.items(), key=lambda item: item[1]))
-
-    # Create mapping from old to new cluster IDs
     cluster_mapping = {old_id: new_id for new_id, old_id in enumerate(sorted_clusters.keys())}
-
-    # Map the clusters to new IDs
     clusters = np.array([cluster_mapping[c] for c in initial_clusters])
 
     return clusters
+
+
+def sort_groups_by_time(groups_list, logger):
+    try:
+        groups_time_list = list()
+        for number_groups, group_dict in enumerate(groups_list):
+            photos_time_list = list()
+            for group_name in group_dict.keys():
+                group_result = group_dict[group_name]
+                total_spreads = len(group_result)
+                for i in range(total_spreads):
+                    group_data = group_result[i]
+                    if isinstance(group_data, float):
+                        continue
+                    if isinstance(group_data, list):
+                        number_of_spreads = len(group_data)
+
+                        for spread_index in range(number_of_spreads):
+                            left_page_photos = list(group_data[spread_index][1])
+                            right_page_photos = list(group_data[spread_index][2])
+                            all_photos = left_page_photos + right_page_photos
+
+                            # Loop over boxes and plot images
+                            for cur_photo in all_photos:
+                                cur_photo_time = cur_photo.general_time
+                                photos_time_list.append(cur_photo_time)
+            groups_time_list.append((group_dict, sum(photos_time_list) / len(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
+        groups_time_list = sorted(groups_time_list, key=lambda x: x[1])
+        sorted_data_list = [group_data for group_data, _ in groups_time_list]
+
+        return sorted_data_list
+    except Exception as ex:
+        logger.warning(f"Error in sorting groups by time: {ex}. Return groups without sorting by time.")
+        return groups_list

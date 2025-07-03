@@ -11,6 +11,7 @@ from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranki
 from utils.lookup_table_tools import get_lookup_table
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, sort_groups_by_name
 from utils.album_scores import assign_photos_order
+from utils.time_processing import sort_groups_by_time
 from utils.parser import CONFIGS
 
 
@@ -175,7 +176,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
                 else:
                     local_result[str(group_name[0]) + '*' + str(group_idx)] = best_spread
                 group_idx += 1
-            print('Current group: {}. Best spread: {}'.format(group_name, best_spread))
+            logger.debug('Current group: {}. Best spread: {}'.format(group_name, best_spread))
 
         logger.info("Finished with cur photos {} for group name {}".format(len(cur_group_photos), group_name))
 
@@ -185,8 +186,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
         return local_result
 
     except Exception as e:
-        logger.error(f"Error with group_name {group_name}: {e}")
-        print(traceback.format_exc())
+        logger.error(f"Error processing group_name {group_name}: {e}")
         return None
 
 
@@ -234,10 +234,10 @@ def album_processing(df, designs_info, is_wedding, params, logger):
     general_time = (time.time() - start_time)
     logger.info(f'General groups processing time: {general_time:.2f} seconds')
 
-    #sorintg & formating & cropping
+    # sorintg
     if is_wedding:
-        return sort_groups_by_name(result_list)
-        #result = organize_groups(sorted_result_list,layouts_df,updated_groups, is_wedding,logger)
+        # return sort_groups_by_name(result_list)
+        return sort_groups_by_time(result_list)
     else:
         return result_list
 
