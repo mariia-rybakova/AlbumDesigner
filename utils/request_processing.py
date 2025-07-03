@@ -51,13 +51,13 @@ def check_gallery_type(df):
 def get_info_protobufs(project_base_url, df, logger):
     try:
         start = datetime.now()
-        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
-        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
-        persons_file = os.path.join(project_base_url, 'persons_info.pb')
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
+        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
+        persons_file = os.path.join(project_base_url, 'persons_info.pb')
+        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
         segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
         person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
-        files = [faces_file, cluster_file, persons_file, image_file, segmentation_file, person_vector_file]
+        files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
 
         # List of functions to run in parallel
         functions = [
@@ -75,13 +75,10 @@ def get_info_protobufs(project_base_url, df, logger):
             if result is None:
                 logger.error('Error in reading data from protobuf file: {}'.format(files[idx]))
                 raise Exception('Error in reading data from protobuf file: {}'.format(files[idx]))
+            elif result.empty or result.shape[0] == 0:
+                logger.error('There are no required data in protobuf file: {}'.format(files[idx]))
+                raise Exception('There are no required data in protobuf file: {}'.format(files[idx]))
             results.append(result)
-
-        # if None in results:
-        #     logger.error('Error in reading files.')
-        #     return None, None
-
-        logger.debug("Time for getting from files: {}".format(datetime.now() - start))
 
         gallery_info_df = results[0]
         for res in results[1:]:
@@ -90,7 +87,6 @@ def get_info_protobufs(project_base_url, df, logger):
         # Convert only the specified columns to 'Int64' (nullable integer type)
         columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
         gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
-        print("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
         # Get Query Content of each image
         if gallery_info_df is not None:
@@ -100,9 +96,10 @@ def get_info_protobufs(project_base_url, df, logger):
             else:
                 gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
 
+        logger.debug("Number of images before cleaning the nan values", len(gallery_info_df.index))
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
-        print("Number of images after cleaning the nan values", len(gallery_info_df.index))
+        logger.debug("Number of images after cleaning the nan values", len(gallery_info_df.index))
 
         # make sure it has list values not float nan
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
@@ -139,35 +136,19 @@ def read_messages(messages, logger):
                     json_content['designInfo'] = designInfo
                     _msg.content['designInfo'] = designInfo
                 except Exception as e:
-                    logger.error('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'],e))
-                    _msg.image = None
-                    _msg.status = 0
-                    _msg.error = 'Error reading designInfo from blob: {}'.format(e)
-                    raise(e)
-                    continue
+                    logger.error('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e))
+                    raise Exception('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e))
             else:
                 logger.error('Incorrect input request: {}. Skipping.'.format(json_content))
-                _msg.image = None
-                _msg.status = 0
-                _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
-                raise(Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
-                # continue
+                raise Exception('Incorrect message structure: {}. Skipping.'.format(json_content))
 
         if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
-            logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
-            _msg.image = None
-            _msg.status = 0
-            _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
-            raise (Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
-            # continue
+            logger.error('There are missing fields in input request: {}. Skipping.'.format(json_content))
+            raise Exception('There are missing fields in input request: {}. Skipping.'.format(json_content))
 
-        if len(json_content['photos'])<10:
-            logger.warning('Not enough photos: {}. Skipping.'.format(json_content))
-            _msg.image = None
-            _msg.status = 0
-            _msg.error = 'Not enough photos: {}. Skipping.'.format(json_content)
-            raise(Exception('Not enough photos: {}. Skipping.'.format(json_content)))
-            # continue
+        if len(json_content['photos']) < 10:
+            logger.error('Not enough photos: {}. Skipping.'.format(json_content))
+            raise Exception('Not enough photos: {}. Skipping.'.format(json_content))
 
         try:
             images = json_content['photos']
@@ -200,7 +181,6 @@ def read_messages(messages, logger):
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
 
-
             anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'])
 
             df = pd.DataFrame(images, columns=['image_id'])
@@ -222,9 +202,7 @@ def read_messages(messages, logger):
                 enriched_messages.append(_msg)
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
-                _msg.error = 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
-                raise (Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content)))
-                continue
+                raise Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content))
 
             logger.info(
                 f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
