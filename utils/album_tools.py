@@ -2,6 +2,16 @@ import random
 from datetime import datetime
 
 
+def get_images_per_groups(original_groups):
+    group2images_data_list = dict()
+
+    for name_group, group_df in original_groups:
+        num_images = len(group_df)
+        group2images_data_list[name_group] = num_images
+
+    return group2images_data_list
+
+
 def get_important_imgs(data_df, top=5):
     selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment','groom and brides dancing together solo', 'bride and groom cutting cake', ]
     # Step 1: Filter based on the conditions

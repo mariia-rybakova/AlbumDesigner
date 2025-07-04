@@ -9,7 +9,7 @@ from gc import collect
 
 from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
-from utils.album_tools import get_none_wedding_groups, get_wedding_groups, sort_groups_by_name
+from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
 from utils.album_scores import assign_photos_order
 from utils.time_processing import sort_groups_by_time
 from utils.parser import CONFIGS
@@ -196,10 +196,7 @@ def album_processing(df, designs_info, is_wedding, params, logger):
     else:
         original_groups = get_none_wedding_groups(df,logger)
 
-    group2images = dict()
-    for name_group, group_df in original_groups:
-        num_images = len(group_df)
-        group2images[name_group] = num_images
+    group2images = get_images_per_groups(original_groups)
     logger.info('Detected groups: {}'.format(group2images))
 
     look_up_table = get_lookup_table(group2images,is_wedding,logger)
