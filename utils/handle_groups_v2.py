@@ -2,7 +2,7 @@ import pandas as pd
 
 from utils.album_tools import get_images_per_groups
 from utils.illegal_group_splitting_merging import merge_illegal_group, split_illegal_group
-from utils.illegal_group_splitting_merging import merge_illegal_group_by_time, split_illegal_group
+from utils.illegal_group_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time
 from utils.parser import CONFIGS
 
 
@@ -73,7 +73,7 @@ def merging_process(group_key, groups, illegal_group, logger=None):
 
 
 def splitting_process(groups,group_key,illegal_group,count, logger=None):
-    updated_group, labels_count = split_illegal_group(illegal_group,count)
+    updated_group, labels_count = split_illegal_group_by_time(illegal_group,count)
 
     if updated_group is None:
         # we cant split this group
