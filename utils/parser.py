@@ -49,7 +49,8 @@ CONFIGS = {'DEBUG': True,
            'small_gallery_number': 15,
            'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
                                                'dancing',
-                                               'wedding dress', 'kiss']
+                                               'wedding dress', 'kiss'],
+           'focus_csv':r'C:\Users\karmel\Desktop\AlbumDesigner\files\AAD - Focus step categories mapping - Weddings.csv',
 }
 
 merge_content_priority = {

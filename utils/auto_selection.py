@@ -33,14 +33,14 @@ def get_tags_bins(tags):
 
     return tags_features
 
-def ai_selection(df, selected_photos, people_ids, user_relation,tags,is_wedding,
+def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
                           logger):
     try:
         if is_wedding:
             # Select images for creating an album
             tags_features = get_tags_bins(tags)
-            ai_images_selected, errors = smart_wedding_selection(df, selected_photos, people_ids, user_relation,
-                                                                 tags_features, logger)
+            ai_images_selected, errors = smart_wedding_selection(df, selected_photos, people_ids, focus,
+                                                                 tags_features,density, logger)
         else:
             # Select images for creating an album
             ai_images_selected, errors = smart_non_wedding_selection(df, logger=logger)

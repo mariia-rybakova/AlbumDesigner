@@ -167,7 +167,7 @@ class SelectionStage(Stage):
                     updated_messages.append(_msg)
                     continue
 
-                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, _msg.content['user_relation'],_msg.content['tags'],_msg.content['is_wedding'],
+                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, _msg.content['focus'],_msg.content['tags'],_msg.content['is_wedding'],_msg.content['density'],
                           self.logger)
 
                 if errors:

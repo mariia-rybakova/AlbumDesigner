@@ -1,0 +1,32 @@
+sub event,"Bride and groom","Parents","Balanced"
+'accessories',yes,no,yes
+'bride',12%,14%,10%
+'bride and groom',12%,17%,10%
+'bride getting dressed',3%,3%,3%
+'bride party',3%,3%,4%
+'cake cutting',1%,1%,1%
+'ceremony',6%,6%,6%
+'couple',4%,4%,4%
+'dancing',3%,1%,5%
+'detail',4%,1%,4%
+'entertainment',4%,2%,4%
+'first dance',4%,6%,4%
+'food',yes,no,no
+'full party',6%,6%,8%
+'getting hair-makeup',yes,yes,yes
+'groom',12%,14%,10%
+'groom party',3%,3%,4%
+'inside vehicle',yes,no,yes
+'invite',yes,yes,yes
+'kiss',3%,3%,3%
+'pet',yes,no,yes
+'portrait',4%,4%,6%
+'rings',yes,yes,yes
+'settings',yes,no,yes
+'speech',2%,2%,2%
+'suit',yes,yes,yes
+'vehicle',yes,yes,yes
+'very large group',5%,4%,6%
+'walking the aisle',4%,4%,2%
+'wedding dress',yes,yes,yes
+'other',0%,0%,0%
