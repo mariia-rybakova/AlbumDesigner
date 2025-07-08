@@ -398,6 +398,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
 
 
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
+    photos_df = photos_df.sort_values('general_time')
     layout_parts, weight_parts = selectPartitions(photos_df, spread_params,params,layouts_df=layouts_df)
     #logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
