@@ -96,6 +96,7 @@ def sort_groups_by_time(groups_list, logger):
         groups_time_list = list()
         for number_groups, group_dict in enumerate(groups_list):
             photos_time_list = list()
+            # Sort spreads inside each group
             for group_name in group_dict.keys():
                 group_result = group_dict[group_name]
                 total_spreads = len(group_result)
@@ -105,13 +106,19 @@ def sort_groups_by_time(groups_list, logger):
                         continue
                     if isinstance(group_data, list):
                         number_of_spreads = len(group_data)
-
+                        # Sort spreads inside this group_data by min general_time of photos in the spread
+                        def spread_time_key(spread):
+                            left_page_photos = list(spread[1])
+                            right_page_photos = list(spread[2])
+                            all_photos = left_page_photos + right_page_photos
+                            times = [photo.general_time for photo in all_photos]
+                            return min(times) if times else float('inf')
+                        group_data.sort(key=spread_time_key)
+                        # After sorting, continue as before
                         for spread_index in range(number_of_spreads):
                             left_page_photos = list(group_data[spread_index][1])
                             right_page_photos = list(group_data[spread_index][2])
                             all_photos = left_page_photos + right_page_photos
-
-                            # Loop over boxes and plot images
                             for cur_photo in all_photos:
                                 cur_photo_time = cur_photo.general_time
                                 photos_time_list.append(cur_photo_time)
