@@ -51,7 +51,7 @@ CONFIGS = {'DEBUG': True,
            'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
                                                'dancing',
                                                'wedding dress', 'kiss'],
-           'focus_csv':r'C:\Users\karmel\Desktop\AlbumDesigner\files\AAD - Focus step categories mapping - Weddings.csv',
+           'focus_csv':r'files/focus_csv.csv',
 }
 
 merge_content_priority = {
