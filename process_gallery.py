@@ -92,10 +92,11 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
             if not info_row.empty:
                 general_time = info_row.iloc[0].get('image_time_date', '')
                 cluster_context = info_row.iloc[0].get('cluster_context', '')
-                text = f"{general_time} | {cluster_context}"
+                text = f"{general_time}{cluster_context}"
                 c.setFont("Helvetica", 8)
                 c.setFillColorRGB(1, 0, 0)  # White color for bright text
-                c.drawString(box_x, page_height - box_y - box_h + 2, text)
+                c.drawString(box_x, page_height - box_y - box_h + 10, f"{general_time}")
+                c.drawString(box_x, page_height - box_y - box_h + 2, f"{cluster_context}")
                 c.setFillColorRGB(0, 0, 0)  # Reset to black
         c.showPage()
     c.save()
@@ -218,10 +219,10 @@ def process_gallery(input_request):
 if __name__ == '__main__':
     # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46105850, 'userId': 548864249, 'userJobId': 1069943370, 'base_url': 'ptstorage_32://pictures/46/105/46105850/g59f42f8oml2n45x4s', 'photos': [10772592874, 10772592890, 10772592931, 10772592939, 10772592913, 10772593214, 10772593221, 10772593257, 10772593189, 10772593224, 10772593206, 10772593216, 10772593260, 10772593311, 10772593308, 10772593261, 10772593263, 10772593688, 10772593314, 10772593695, 10772593633, 10772593612, 10772593754, 10772593445, 10772593467, 10772594359, 10772594274, 10772594268, 10772594277, 10772593563, 10772593585, 10772594384, 10772594387, 10772594380, 10772594272, 10772594381, 10772594392], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/91qecwibrecpki6p_wcwffdo.json', 'conditionId': 'AAD_46105850_86e53b01-758e-4d5c-8bcd-d43b4e02ec07.326.101', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
     # _images_path = '/home/a.hyryla/data/pic_time/imagesets/testing/46105850/'
-    # _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46105850/album.pdf'
+    # _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46105850/album2.pdf'
     _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46245951, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/245/46245951/ii52fnki40jq0i3xvu', 'photos': [10803725905, 10803725910, 10803725924, 10803725963, 10803725967, 10803725969, 10803725978, 10803725994, 10803725996, 10803725997, 10803726027, 10803726045, 10803726043, 10803726137, 10803726140, 10803726128, 10803726109, 10803726085, 10803726190, 10803726150, 10803726149, 10803726182, 10803726055, 10803726068, 10803726056, 10803726220, 10803726223, 10803726103, 10803726104, 10803726078, 10803726077, 10803726596, 10803726605, 10803726314, 10803726615, 10803726626, 10803726336, 10803726638, 10803726533, 10803726530, 10803726499, 10803726552, 10803726431, 10803726433, 10803726492], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/henypeix2kyn2jrspfcd6wae.json', 'conditionId': 'AAD_46245951_bb226506-e333-4b98-bcee-e0ab624b64c9.208.429', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
     _images_path = '/home/a.hyryla/data/pic_time/imagesets/testing/46245951/'
-    _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46245951/album1.pdf'
+    _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46245951/album6.pdf'
     final_album, _message = process_gallery(_input_request)
     gallery_photos_info = _message.content['gallery_photos_info']
 

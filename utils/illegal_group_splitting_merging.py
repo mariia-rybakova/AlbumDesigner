@@ -193,14 +193,21 @@ def merge_illegal_group_by_time(main_groups, illegal_group):
         tuple: (modified_illegal_group, combined_group, selected_cluster_content_index)
     """
     intended_group_time = illegal_group['general_time'].values.mean()
-    main_groups_time_without_illegal = [group['general_time'].values.mean() for i, group in enumerate(main_groups)]
+    # Calculate minimum time differences for each main group
+    time_differences = []
+    for group in main_groups:
+        # Calculate time differences between illegal group mean and all times in current group
+        group_times = group['general_time'].values
+        time_diffs = np.abs(group_times - intended_group_time)
+        # Get the minimum difference to any image in the group
+        min_time_diff = np.min(time_diffs)
+        time_differences.append(min_time_diff)
 
-    # Calculate time differences and create sorted indices
-    time_differences = np.abs(np.array(main_groups_time_without_illegal) - intended_group_time)
+    time_differences = np.array(time_differences)
     sorted_indices = np.argsort(time_differences)
 
-    selected_cluster_content_index = None
     selected_cluster = None
+    selected_time_difference = None
 
     # Try groups in order of temporal proximity
     for idx in sorted_indices:
@@ -209,17 +216,13 @@ def merge_illegal_group_by_time(main_groups, illegal_group):
 
         # Check if the combination meets size requirements
         if len_combine_group <= 38:
-            selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
+            selected_time_difference = time_differences[idx]
             break
 
     # If still no suitable group found, use the temporally closest group regardless of size
-    if selected_cluster_content_index is None:
+    if selected_time_difference is None and len(sorted_indices) > 0:
         closest_idx = sorted_indices[0]
         selected_cluster = main_groups[closest_idx]
-        selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
+        selected_time_difference = time_differences[closest_idx]
 
-    illegal_group.loc[:, 'cluster_context'] = selected_cluster_content_index
-    illegal_group.loc[:, 'cluster_context_2nd'] = 'merged'
-    combined_group = pd.concat([selected_cluster, illegal_group], ignore_index=False)
-
-    return illegal_group, combined_group, selected_cluster_content_index
+    return selected_cluster, selected_time_difference

@@ -4,6 +4,7 @@ import numpy as np
 
 from datetime import datetime
 from sklearn.mixture import GaussianMixture
+from sklearn.cluster import DBSCAN
 from concurrent.futures import ThreadPoolExecutor
 
 def read_timestamp(timestamp_str):
@@ -63,11 +64,9 @@ def process_image_time(data_df):
     return sorted_by_time_df, image_id2general_time
 
 
-def get_time_clusters(general_time_df):
-    # Cluster by time
-    X = general_time_df.values.reshape(-1, 1)
+def get_time_clusters_gmm(X):
     # Determine the optimal number of clusters using Bayesian Information Criterion (BIC)
-    n_components = np.arange(1, 10)
+    n_components = np.arange(1, 15)
     models = [GaussianMixture(n, covariance_type='full', random_state=0).fit(X) for n in n_components]
     bics = [m.bic(X) for m in models]
     # Select the model with the lowest BIC
@@ -75,6 +74,20 @@ def get_time_clusters(general_time_df):
     gmm = GaussianMixture(n_components=best_n, covariance_type='full', random_state=0)
     gmm.fit(X)
     initial_clusters = gmm.predict(X)
+    return initial_clusters, best_n
+
+
+def get_time_clusters_dbscan(X):
+    dbscan = DBSCAN(eps=20, min_samples=1)  # eps is in minutes, adjust as needed
+    clusters = dbscan.fit_predict(X)
+    best_n = len(set(clusters))
+    return clusters, best_n
+
+
+def get_time_clusters(general_time_df):
+    # Cluster by time
+    X = general_time_df.values.reshape(-1, 1)
+    initial_clusters, best_n = get_time_clusters_dbscan(X)
 
     # Calculate mean time for each cluster
     cluster_means = {}

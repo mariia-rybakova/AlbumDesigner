@@ -1,5 +1,7 @@
 import random
 from datetime import datetime
+from itertools import chain
+import pandas as pd
 
 
 def get_images_per_groups(original_groups):
@@ -77,7 +79,7 @@ def get_general_times(data_db):
 
 
 def get_wedding_groups(df, logger):
-    required_columns = {'time_cluster', 'cluster_context'}
+    required_columns = {'time_cluster', 'cluster_context', 'cluster_label'}
 
     # Check if required columns exist
     if not required_columns.issubset(df.columns):
@@ -85,7 +87,24 @@ def get_wedding_groups(df, logger):
         logger.error(f"Missing required columns: {missing}")
         return None
 
-    return df.groupby(['time_cluster', 'cluster_context'])
+    # Split DataFrame based on cluster_context being 'None' or 'other' (as strings)
+    mask_special = df['cluster_context'].isin(['None', 'other'])
+    df_special = df[mask_special].copy()
+    df_regular = df[~mask_special].copy()
+
+    # Group df_special and update cluster_context for each group
+    groups_special = df_special.groupby(['time_cluster', 'cluster_context', 'cluster_label'])
+    for idx, (key, group_df) in enumerate(groups_special):
+        group_size = len(group_df)
+        new_context = f"{key[1]}_{idx}_{group_size}"
+        df_special.loc[group_df.index, 'cluster_context'] = new_context
+
+    # Merge modified df_special with df_regular
+    merged_df = pd.concat([df_special, df_regular], ignore_index=True)
+
+    # Group the merged DataFrame by ['time_cluster', 'cluster_context']
+    groups_final = merged_df.groupby(['time_cluster', 'cluster_context'])
+    return groups_final
 
 
 def get_none_wedding_groups(df, logger):
