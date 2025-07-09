@@ -84,16 +84,36 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
     parts = printAllUniqueParts(nPhotos)
     parts = [part for part in parts if set(part).issubset(available_n)]
 
+    weights = np.zeros(len(parts))
+    for idx, part in enumerate(parts):
+        weights[idx] = classWeight(part, classSpreadParams)
+
+    if np.all(weights == 0):
+        classSpreadParams[1] = np.abs(nPhotos - classSpreadParams[0]) / 3
+        for idx, part in enumerate(parts):
+            weights[idx] = classWeight(part, classSpreadParams)
+    else:
+        weights /= np.max(weights)
+
+    sorted_indices = np.argsort(weights)[::-1]
+    parts = [parts[i] for i in sorted_indices]
+    weights = weights[sorted_indices]
+
+    layouts_dict = dict()
+    for item in list(available_n):
+        layouts_dict[item] = layouts_df[layouts_df['number of boxes']==item][['max portraits','max landscapes']].drop_duplicates()
+
     filtered_parts = []
-    for part in parts:
+    filtered_weights = []
+    for idx1,part in enumerate(parts):
 
         part_landscape = nLandscape
         part_portrait = nPortrait
 
         for spread in part:
-            n_layouts = layouts_df[layouts_df['number of boxes']==spread][['max portraits','max landscapes']].drop_duplicates()
+            n_layouts = layouts_dict[spread]
             match_layout=False
-            for idx, row in n_layouts.iterrows():
+            for idx2, row in n_layouts.iterrows():
                 rem_portrait = max(part_portrait - row['max portraits'],0)
                 rem_landscape = max(part_landscape - row['max landscapes'],0)
                 if (part_landscape+part_portrait)-spread >= (rem_portrait+rem_landscape):
@@ -105,33 +125,29 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
                 break
         if match_layout:
             filtered_parts.append(part)
+            filtered_weights.append(weights[idx1])
+            if len(filtered_parts)>2 and weights[idx1] < np.max(weights) / params[1]:
+                break
 
+    partsAboveThresh = filtered_parts
+    weightsAboveThresh = filtered_weights
 
-    parts = filtered_parts
-    weights = np.zeros(len(parts))
-    for idx, part in enumerate(parts):
-        weights[idx] = classWeight(part, classSpreadParams)
-
-    if np.all(weights == 0):
-        classSpreadParams[1] = np.abs(nPhotos - classSpreadParams[0]) / 3
-        for idx, part in enumerate(parts):
-            weights[idx] = classWeight(part, classSpreadParams)
-    else:
-        weights /= np.max(weights)
-    #print("The partition_score_threshold is {} ".format(CONFIGS['partition_score_threshold']))
-    #aboveThresh = np.where(weights > np.max(weights) / CONFIGS['partition_score_threshold'])[0]
-    aboveThresh = np.where(weights > np.max(weights) / params[1])[0]
-    if len(weights) > 2:
-        args = np.argsort(weights)[::-1]
-        if len(aboveThresh) > 2:
-            partsAboveThresh = [parts[args[idx]] for idx in range(len(aboveThresh))]
-            weightsAboveThresh = [weights[args[idx]] for idx in range(len(aboveThresh))]
-        else:
-            partsAboveThresh = [parts[args[idx]] for idx in range(3)]
-            weightsAboveThresh = [weights[args[idx]] for idx in range(3)]
-    else:
-        partsAboveThresh = parts
-        weightsAboveThresh = weights
+    # parts = filtered_parts
+    #
+    # #print("The partition_score_threshold is {} ".format(CONFIGS['partition_score_threshold']))
+    # #aboveThresh = np.where(weights > np.max(weights) / CONFIGS['partition_score_threshold'])[0]
+    # aboveThresh = np.where(weights > np.max(weights) / params[1])[0]
+    # if len(weights) > 2:
+    #     args = np.argsort(weights)[::-1]
+    #     if len(aboveThresh) > 2:
+    #         partsAboveThresh = [parts[args[idx]] for idx in range(len(aboveThresh))]
+    #         weightsAboveThresh = [weights[args[idx]] for idx in range(len(aboveThresh))]
+    #     else:
+    #         partsAboveThresh = [parts[args[idx]] for idx in range(3)]
+    #         weightsAboveThresh = [weights[args[idx]] for idx in range(3)]
+    # else:
+    #     partsAboveThresh = parts
+    #     weightsAboveThresh = weights
     return partsAboveThresh, weightsAboveThresh
 
 
@@ -382,6 +398,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
 
 
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
+    photos_df = photos_df.sort_values('general_time')
     layout_parts, weight_parts = selectPartitions(photos_df, spread_params,params,layouts_df=layouts_df)
     #logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 

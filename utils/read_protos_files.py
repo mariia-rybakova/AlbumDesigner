@@ -9,7 +9,7 @@ from utils.protos  import ContentCluster_pb2 as content_cluster
 from utils.protos import PersonVector_pb2 as person_vector
 
 
-def get_image_embeddings(file, df, logger=None):
+def get_image_embeddings(file, df, logger):
     embed = {}
     # required_ids = set(df['image_id'].tolist())
 
@@ -46,8 +46,7 @@ def get_image_embeddings(file, df, logger=None):
             embed[photo_id] = {'embedding': embedding}
 
     except Exception as e:
-        if logger:
-            logger.error(f"Error reading embeddings from file: {e}")
+        logger.error(f"Error reading image embeddings from file: {e}")
         return None
 
     df = pd.DataFrame([
@@ -55,121 +54,88 @@ def get_image_embeddings(file, df, logger=None):
         for photo_id, data in embed.items()
     ])
 
+    df['model_version'] = model_version
     return df
 
 
-
-def get_faces_info(faces_file, df, logger=None):
-    # required_ids = set(df['image_id'].tolist())
-
+def get_faces_info(faces_file, df, logger):
     try:
         faces_info_bytes = PTFile(faces_file)  # load file
-        if not faces_info_bytes.exists():
-            if logger is not None:
-                logger.error("The faces file does not exist in the server")
-            return None
         faces_info_bytes = faces_info_bytes.read_blob()
         face_descriptor = face_vector.FaceVectorMessageWrapper()
         face_descriptor.ParseFromString(faces_info_bytes)
 
-    except Exception as e:
-        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
-        print('Cant load Face Vector data from server: {}. trying to load it from local directory.'.format(e))
-
-    if face_descriptor.WhichOneof("versions") == 'v1':
-        message_data = face_descriptor.v1
-    else:
-        if logger is not None:
+        if face_descriptor.WhichOneof("versions") == 'v1':
+            message_data = face_descriptor.v1
+        else:
             logger.error("There is no appropriate version of face vector message.")
-        raise ValueError("There is no appropriate version of face vector message.")
+            return None
 
-    images_photos = message_data.photos
+        images_photos = message_data.photos
 
-    photo_ids = []
-    num_faces_list = []
-    faces_info_list = []
+        photo_ids = []
+        num_faces_list = []
+        faces_info_list = []
 
-    for photo in images_photos:
-        # if photo.photoId in required_ids:
-        number_faces = len(photo.faces)
-        faces = list(photo.faces)
-        photo_ids.append(photo.photoId)
-        num_faces_list.append(number_faces)
-        faces_info_list.append(faces)
+        for photo in images_photos:
+            number_faces = len(photo.faces)
+            faces = list(photo.faces)
+            photo_ids.append(photo.photoId)
+            num_faces_list.append(number_faces)
+            faces_info_list.append(faces)
 
-    face_info_df = pd.DataFrame({
-        'image_id': photo_ids,
-        'n_faces': num_faces_list,
-        'faces_info': faces_info_list
-    })
+        face_info_df = pd.DataFrame({
+            'image_id': photo_ids,
+            'n_faces': num_faces_list,
+            'faces_info': faces_info_list
+        })
 
+    except Exception as ex:
+        logger.error(f"Error reading face info from file: {ex}")
+        return None
 
     return face_info_df
 
 
-
-def get_photo_meta(file, df, logger=None):
-    # required_ids = set(df['image_id'].tolist())
+def get_photo_meta(file, df, logger):
     try:
         meta_info_bytes = PTFile(file)  # load file
-        if not meta_info_bytes.exists():
-            logger.error(f"the meta file {file} does not exist on the server")
-            return None
         meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
         meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
-        
-        # Add error handling for protobuf parsing
-        try:
-            meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
-        except Exception as e:
-            logger.error(f"Failed to parse protobuf message: {e}")
+        meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
+
+        if meta_descriptor.WhichOneof("versions") == 'v1':
+            message_data = meta_descriptor.v1
+        else:
+            logger.warning('There is no appropriate version of image meta message.')
             return None
 
-    except Exception as e:
-        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
-        return None
+        images_photos = message_data.photos
+        # Prepare lists to collect data
+        photo_ids = []
+        image_times = []
+        scene_orders = []
+        image_aspects = []
+        image_colors = []
+        image_orientations = []
+        image_orderInScenes = []
+        background_centroids = []
+        blob_diameters = []
 
-    if meta_descriptor.WhichOneof("versions") == 'v1':
-        message_data = meta_descriptor.v1
-    else:
-        logger.warning('There is no appropriate version of BGSegmentation vector message.')
-        raise ValueError('There is no appropriate version of BGSegmentation vector message.')
+        # Add safer handling of photo attributes
+        for photo in images_photos:
+            # if photo.photoId in required_ids:
+            photo_ids.append(photo.photoId)
+            image_times.append(photo.dateTaken)
+            scene_orders.append(photo.sceneOrder)
+            image_aspects.append(photo.aspectRatio)
+            image_colors.append(photo.colorEnum)
+            image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
+            image_orderInScenes.append(photo.orderInScene)
+            # Safer handling of optional fields
+            background_centroids.append(getattr(photo, 'blobCentroid', None))
+            blob_diameters.append(getattr(photo, 'blobDiameter', None))
 
-    images_photos = message_data.photos
-
-    # Prepare lists to collect data
-    photo_ids = []
-    image_times = []
-    scene_orders = []
-    image_aspects = []
-    image_colors = []
-    image_orientations = []
-    image_orderInScenes = []
-    background_centroids = []
-    blob_diameters = []
-
-    # Add safer handling of photo attributes
-    for photo in images_photos:
-        # if photo.photoId in required_ids:
-            try:
-                photo_ids.append(photo.photoId)
-                image_times.append(photo.dateTaken)
-                scene_orders.append(photo.sceneOrder)
-                image_aspects.append(photo.aspectRatio)
-                image_colors.append(photo.colorEnum)
-                image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
-                image_orderInScenes.append(photo.orderInScene)
-                
-                # Safer handling of optional fields
-                background_centroids.append(getattr(photo, 'blobCentroid', None))
-                blob_diameters.append(getattr(photo, 'blobDiameter', None))
-                
-            except AttributeError as e:
-                logger.warning(f'Missing attribute in photo {photo.photoId}: {e}')
-                continue
-
-    # Create DataFrame with error handling
-    try:
         additional_image_info_df = pd.DataFrame({
             'image_id': photo_ids,
             'image_time': image_times,
@@ -181,25 +147,16 @@ def get_photo_meta(file, df, logger=None):
             'background_centroid': background_centroids,
             'diameter': blob_diameters
         })
-    except Exception as e:
-        logger.error(f'Failed to create DataFrame: {e}')
-        return None
 
-    # # Merge with error handling
-    # try:
-    #     df = df.merge(additional_image_info_df, how='inner', on='image_id')
-    # except Exception as e:
-    #     logger.error(f'Failed to merge DataFrames: {e}')
-    #     return None
+    except Exception as ex:
+        logger.error(f"Error reading photo meta info from file: {ex}")
+        return None
 
     return additional_image_info_df
 
 
 
-
-def get_persons_ids(persons_file, df,logger=None):
-    # required_ids = set(df['image_id'].tolist())
-
+def get_persons_ids(persons_file, df,logger):
     try:
         person_info_bytes = PTFile(persons_file)  # load file
         if not person_info_bytes.exists():
@@ -208,58 +165,51 @@ def get_persons_ids(persons_file, df,logger=None):
         person_descriptor = person_info.PersonInfoMessageWrapper()
         person_descriptor.ParseFromString(person_info_bytes)
 
+        if person_descriptor.WhichOneof("versions") == 'v1':
+            message_data = person_descriptor.v1
+        else:
+            logger.error('There is no appropriate version of Person vector message.')
+            raise ValueError('There is no appropriate version of Person vector message.')
+
+        identity_info = message_data.identities
+
+        # Prepare lists for DataFrame columns
+        photo_ids = []
+        persons_ids_list = []
+
+        # Extract persons information and prepare for DataFrame update
+        for iden in identity_info:
+            id = iden.identityNumeralId
+            infos = iden.personInfo
+            for im in infos.imagesInfo:
+                # if im.photoId in required_ids:
+                    photo_ids.append(im.photoId)
+                    persons_ids_list.append(id)
+
+
+        # Create a temporary DataFrame with the new person information
+        persons_info_df = pd.DataFrame({
+            'image_id': photo_ids,
+            'persons_ids': persons_ids_list
+        })
+
+        if not photo_ids and not persons_ids_list:
+            df['persons_ids'] = [[] for _ in range(len(df))]
+            return df
+
+        # Aggregate persons_ids for each image_id
+        persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
+
     except Exception as e:
-        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
+        logger.error("Error reading persons info from file: {}".format(e))
         return None
-
-    if person_descriptor.WhichOneof("versions") == 'v1':
-        message_data = person_descriptor.v1
-    else:
-        logger.error('There is no appropriate version of Person vector message.')
-        raise ValueError('There is no appropriate version of Person vector message.')
-
-    identity_info = message_data.identities
-
-    # Prepare lists for DataFrame columns
-    photo_ids = []
-    persons_ids_list = []
-
-    # Extract persons information and prepare for DataFrame update
-    for iden in identity_info:
-        id = iden.identityNumeralId
-        infos = iden.personInfo
-        for im in infos.imagesInfo:
-            # if im.photoId in required_ids:
-                photo_ids.append(im.photoId)
-                persons_ids_list.append(id)
-
-
-    # Create a temporary DataFrame with the new person information
-    persons_info_df = pd.DataFrame({
-        'image_id': photo_ids,
-        'persons_ids': persons_ids_list
-    })
-
-    if not photo_ids and not persons_ids_list:
-        df['persons_ids'] = [[] for _ in range(len(df))]
-        return df
-
-    # Aggregate persons_ids for each image_id
-    persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
-
-    # Merge the original DataFrame with the new person information DataFrame
-    # df = df.merge(persons_info_df, how='inner', on='image_id')
-
-
-    # df['persons_ids'].fillna([], inplace=True)
 
     return persons_info_df
 
 
 
-def get_clusters_info(cluster_file, df,logger=None):
-    # required_ids = set(df['image_id'].tolist())
 
+def get_clusters_info(cluster_file, df,logger):
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file
         if not cluster_info_bytes.exists():
@@ -268,54 +218,51 @@ def get_clusters_info(cluster_file, df,logger=None):
         cluster_descriptor = content_cluster.ContentClusterMessageWrapper()
         cluster_descriptor.ParseFromString(cluster_info_bytes)
 
+        if cluster_descriptor.WhichOneof("versions") == 'v1':
+            message_data = cluster_descriptor.v1
+        else:
+            logger.error('There is no appropriate version of cluster vector message.')
+            raise ValueError('There is no appropriate version of cluster vector message.')
+
+        images_photos = message_data.photos
+
+        # Prepare lists to collect data
+        photo_ids = []
+        image_classes = []
+        cluster_labels = []
+        cluster_classes = []
+        image_rankings = []
+        image_orders = []
+
+        # Loop through each photo and collect the required information
+        for photo in images_photos:
+            # if photo.photoId in required_ids:
+                photo_ids.append(photo.photoId)
+                image_classes.append(int(photo.imageClass))
+                cluster_labels.append(int(photo.clusterId))
+                cluster_classes.append(int(photo.clusterClass))
+                image_rankings.append(photo.selectionScore)
+                image_orders.append(int(photo.selectionOrder))
+
+        # Create a DataFrame from the collected data
+        new_image_info_df = pd.DataFrame({
+            'image_id': photo_ids,
+            'image_class': image_classes,
+            'cluster_label': cluster_labels,
+            'cluster_class': cluster_classes,
+            'ranking': image_rankings,
+            'image_order': image_orders
+        })
+
     except Exception as e:
-        logger.warning('Cant load cluster data from server: {}. Loading from local directory.'.format(e))
+        logger.error("Error reading cluster info from file: {}".format(e))
         return None
-
-    if cluster_descriptor.WhichOneof("versions") == 'v1':
-        message_data = cluster_descriptor.v1
-    else:
-        logger.error('There is no appropriate version of cluster vector message.')
-        raise ValueError('There is no appropriate version of cluster vector message.')
-
-    images_photos = message_data.photos
-
-    # Prepare lists to collect data
-    photo_ids = []
-    image_classes = []
-    cluster_labels = []
-    cluster_classes = []
-    image_rankings = []
-    image_orders = []
-
-    # Loop through each photo and collect the required information
-    for photo in images_photos:
-        # if photo.photoId in required_ids:
-            photo_ids.append(photo.photoId)
-            image_classes.append(int(photo.imageClass))
-            cluster_labels.append(int(photo.clusterId))
-            cluster_classes.append(int(photo.clusterClass))
-            image_rankings.append(photo.selectionScore)
-            image_orders.append(int(photo.selectionOrder))
-
-    # Create a DataFrame from the collected data
-    new_image_info_df = pd.DataFrame({
-        'image_id': photo_ids,
-        'image_class': image_classes,
-        'cluster_label': cluster_labels,
-        'cluster_class': cluster_classes,
-        'ranking': image_rankings,
-        'image_order': image_orders
-    })
-
-    # # Merge the original DataFrame with the new information
-    # df = df.merge(new_image_info_df, how='inner', on='image_id')
 
     return new_image_info_df
 
 
-def get_person_vectors(persons_file, df, logger=None):
-    # required_ids = set(df['image_id'].tolist())
+
+def get_person_vectors(persons_file, df, logger):
     try:
         person_info_bytes = PTFile(persons_file)  # Load file
         if not person_info_bytes.exists():
@@ -324,31 +271,26 @@ def get_person_vectors(persons_file, df, logger=None):
         person_descriptor = person_vector.PersonVectorMessageWrapper()
         person_descriptor.ParseFromString(person_info_bytes)
 
-    except Exception as e:
-        logger.warning('Cannot load cluster data from server: {}. Loading from local directory.'.format(e))
-        print('Cannot load cluster data from server: {}. Loading from local directory.'.format(e))
+        if person_descriptor.WhichOneof("versions") == 'v1':
+            message_data = person_descriptor.v1
+        else:
+            logger.error('There is no appropriate version of Person vector message.')
+            raise ValueError('There is no appropriate version of Person vector message.')
+
+        images = message_data.photos
+
+        # Create a DataFrame for the photos
+        photo_data = []
+        for image in images:
+            # if image.photoId in required_ids:
+                photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
+
+        photo_df = pd.DataFrame(photo_data)
+        # Fill missing 'number_bodies' with 0 if not provided in the photos data
+        photo_df['number_bodies'].fillna(0, inplace=True)
+
+    except Exception as ex:
+        logger.error(f"Error reading person vectors from file: {ex}")
         return None
-
-    if person_descriptor.WhichOneof("versions") == 'v1':
-        message_data = person_descriptor.v1
-    else:
-        logger.error('There is no appropriate version of Person vector message.')
-        raise ValueError('There is no appropriate version of Person vector message.')
-
-    images = message_data.photos
-
-    # Create a DataFrame for the photos
-    photo_data = []
-    for image in images:
-        # if image.photoId in required_ids:
-            photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
-
-    photo_df = pd.DataFrame(photo_data)
-
-    # Merge the new data with the existing DataFrame
-    # df = df.merge(photo_df, how='inner', on='image_id')
-
-    # Fill missing 'number_bodies' with 0 if not provided in the photos data
-    photo_df['number_bodies'].fillna(0, inplace=True)
 
     return photo_df

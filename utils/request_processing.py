@@ -68,13 +68,13 @@ def process_content(row_dict):
 def get_info_protobufs(project_base_url, df, logger):
     try:
         start = datetime.now()
-        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
-        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
-        persons_file = os.path.join(project_base_url, 'persons_info.pb')
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
+        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
+        persons_file = os.path.join(project_base_url, 'persons_info.pb')
+        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
         segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
         person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
-        files = [faces_file, cluster_file, persons_file, image_file, segmentation_file, person_vector_file]
+        files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
 
         # List of functions to run in parallel
         functions = [
@@ -92,13 +92,10 @@ def get_info_protobufs(project_base_url, df, logger):
             if result is None:
                 logger.error('Error in reading data from protobuf file: {}'.format(files[idx]))
                 raise Exception('Error in reading data from protobuf file: {}'.format(files[idx]))
+            elif result.empty or result.shape[0] == 0:
+                logger.error('There are no required data in protobuf file: {}'.format(files[idx]))
+                raise Exception('There are no required data in protobuf file: {}'.format(files[idx]))
             results.append(result)
-
-        # if None in results:
-        #     logger.error('Error in reading files.')
-        #     return None, None
-
-        logger.debug("Time for getting from files: {}".format(datetime.now() - start))
 
         gallery_info_df = results[0]
         for res in results[1:]:
@@ -107,15 +104,19 @@ def get_info_protobufs(project_base_url, df, logger):
         # Convert only the specified columns to 'Int64' (nullable integer type)
         columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
         gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
-        logger.info("Number of images before cleaning the nan values", len(gallery_info_df.index))
 
         # Get Query Content of each image
-        gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+        if gallery_info_df is not None:
+            model_version = gallery_info_df.iloc[0]['model_version']
+            if model_version == 1:
+                gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
+            else:
+                gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
 
+        logger.debug("Number of images before cleaning the nan values: {}".format(len(gallery_info_df.index)))
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
-        logger.info("Number of images after cleaning the nan values", len(gallery_info_df.index))
-
+        logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
         # make sure it has list values not float nan
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
@@ -158,35 +159,20 @@ def read_messages(messages, logger):
                     json_content['designInfo'] = designInfo
                     _msg.content['designInfo'] = designInfo
                 except Exception as e:
-                    logger.error('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'],e))
-                    _msg.image = None
-                    _msg.status = 0
-                    _msg.error = 'Error reading designInfo from blob: {}'.format(e)
-                    raise(e)
-                    continue
+                    logger.error('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e))
+                    raise Exception('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e))
             else:
                 logger.error('Incorrect input request: {}. Skipping.'.format(json_content))
-                _msg.image = None
-                _msg.status = 0
-                _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
-                raise(Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
-                # continue
+                raise Exception('Incorrect message structure: {}. Skipping.'.format(json_content))
 
         if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
-            logger.warning('Incorrect input request: {}. Skipping.'.format(json_content))
-            _msg.image = None
-            _msg.status = 0
-            _msg.error = 'Incorrect message structure: {}. Skipping.'.format(json_content)
-            raise (Exception('Incorrect message structure: {}. Skipping.'.format(json_content)))
-            # continue
+            logger.error('There are missing fields in input request: {}. Skipping.'.format(json_content))
+            raise Exception('There are missing fields in input request: {}. Skipping.'.format(json_content))
 
-        # if len(json_content['photos'])<10:
-        #     logger.warning('Not enough photos: {}. Skipping.'.format(json_content))
-        #     _msg.image = None
-        #     _msg.status = 0
-        #     _msg.error = 'Not enough photos: {}. Skipping.'.format(json_content)
-        #     raise(Exception('Not enough photos: {}. Skipping.'.format(json_content)))
-        #     # continue
+
+        if len(json_content['photos']) < 10:
+            logger.error('Not enough photos: {}. Skipping.'.format(json_content))
+            raise Exception('Not enough photos: {}. Skipping.'.format(json_content))
 
         try:
             images = json_content['photos']
@@ -216,6 +202,8 @@ def read_messages(messages, logger):
                 coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
                 _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
 
+            _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
+            _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
 
             anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'])
 
@@ -237,9 +225,7 @@ def read_messages(messages, logger):
                 enriched_messages.append(_msg)
             else:
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
-                _msg.error = 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
-                raise (Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content)))
-                continue
+                raise Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content))
 
             # logger.info(
             #     f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
@@ -269,26 +255,29 @@ def customize_box(image_info, box_info):
         crop_y = image_info['cropped_y']
         crop_w = image_info['cropped_w']
         crop_h = image_info['cropped_h']
-        image_ar = crop_w / crop_h
 
-        if image_ar > target_ar:
-            # Crop is too wide → reduce width
-            new_crop_w = crop_h * target_ar
-            dx = (crop_w - new_crop_w) / 2
-            adj_x = crop_x + dx
-            adj_y = crop_y
-            adj_w = new_crop_w
-            adj_h = crop_h
-        else:
-            # Crop is too tall → reduce height
-            new_crop_h = crop_w / target_ar
-            dy = (crop_h - new_crop_h) / 2
-            adj_x = crop_x
-            adj_y = crop_y + dy
-            adj_w = crop_w
-            adj_h = new_crop_h
+        return crop_x, crop_y, crop_w, crop_h
 
-        return adj_x, adj_y, adj_w, adj_h
+        # image_ar = crop_w / crop_h
+        #
+        # if image_ar > target_ar:
+        #     # Crop is too wide → reduce width
+        #     new_crop_w = crop_h * target_ar
+        #     dx = (crop_w - new_crop_w) / 2
+        #     adj_x = crop_x + dx
+        #     adj_y = crop_y
+        #     adj_w = new_crop_w
+        #     adj_h = crop_h
+        # else:
+        #     # Crop is too tall → reduce height
+        #     new_crop_h = crop_w / target_ar
+        #     dy = (crop_h - new_crop_h) / 2
+        #     adj_x = crop_x
+        #     adj_y = crop_y + dy
+        #     adj_w = crop_w
+        #     adj_h = new_crop_h
+        #
+        # return adj_x, adj_y, adj_w, adj_h
     else:
         image_ar = float(image_info['image_as'])
         if image_ar > target_ar:
@@ -309,7 +298,7 @@ def customize_box(image_info, box_info):
         return x, y, w, h
 
 
-def assembly_output(output_list, message, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids):
+def assembly_output(output_list, message, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids, logger):
     result_dict = dict()
     result_dict['compositions'] = list()
     result_dict['placementsTxt'] = list()
@@ -318,6 +307,10 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
     result_dict['compositionPackageId'] = message.content['compositionPackageId']
     result_dict['productId'] = message.content['designInfo']['productId']
     result_dict['packageDesignId'] = None
+    result_dict['projectId'] = message.content['projectId']
+    result_dict['storeId'] = message.content['storeId']
+    result_dict['accountId'] = message.content['accountId']
+    result_dict['userId'] = message.content['userId']
     counter_comp_id = 0
     counter_image_id = 0
 
@@ -372,6 +365,7 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
     for number_groups,group_dict in enumerate(output_list):
         for group_name in group_dict.keys():
             group_result = group_dict[group_name]
+            logger.debug('Group name/result: {}: {}'.format(group_name, group_result))
             total_spreads = len(group_result)
             for i in range(total_spreads):
                 group_data = group_result[i]
