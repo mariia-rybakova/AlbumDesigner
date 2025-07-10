@@ -1,4 +1,5 @@
 import os
+import copy
 import pandas as pd
 import numpy as np
 
@@ -6,7 +7,7 @@ from functools import partial
 from datetime import datetime
 
 from utils import get_layouts_data
-from utils.parser import CONFIGS
+from utils.parser import CONFIGS,label_list
 from utils.layouts_file import generate_layouts_df
 from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
 from utils.image_queries import generate_query
@@ -48,7 +49,23 @@ def check_gallery_type(df):
     else:
         return True
 
-def get_info_protobufs(project_base_url, df, logger):
+
+def map_cluster_label(cluster_label):
+    if cluster_label == -1:
+        return "None"
+    elif cluster_label >= 0 and cluster_label < len(label_list):
+        return label_list[cluster_label]
+    else:
+        return "Unknown"
+
+def process_content(row_dict):
+    row_dict = copy.deepcopy(row_dict)
+    cluster_class = row_dict.get('cluster_class')
+    cluster_class_label = map_cluster_label(cluster_class)
+    row_dict['cluster_context'] = cluster_class_label
+    return row_dict
+
+def get_info_protobufs(project_base_url, logger):
     try:
         start = datetime.now()
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
@@ -71,7 +88,7 @@ def get_info_protobufs(project_base_url, df, logger):
 
         results = []
         for idx, func in enumerate(functions):
-            result = func(df, logger)
+            result = func(logger)
             if result is None:
                 logger.error('Error in reading data from protobuf file: {}'.format(files[idx]))
                 raise Exception('Error in reading data from protobuf file: {}'.format(files[idx]))
@@ -100,13 +117,19 @@ def get_info_protobufs(project_base_url, df, logger):
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
         logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
-
         # make sure it has list values not float nan
         gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
         # Cluster people by number of people inside the image
         gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
         is_wedding = check_gallery_type(gallery_info_df)
+
+        if is_wedding:
+            # make Cluster column
+            gallery_info_df = gallery_info_df.apply(process_content, axis=1)
+            # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
+            #                                         how='left', on='image_id')
+
 
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
         return gallery_info_df, is_wedding
@@ -146,12 +169,12 @@ def read_messages(messages, logger):
             logger.error('There are missing fields in input request: {}. Skipping.'.format(json_content))
             raise Exception('There are missing fields in input request: {}. Skipping.'.format(json_content))
 
+
         if len(json_content['photos']) < 10:
             logger.error('Not enough photos: {}. Skipping.'.format(json_content))
             raise Exception('Not enough photos: {}. Skipping.'.format(json_content))
 
         try:
-            images = json_content['photos']
             project_url = json_content['base_url']
 
             _msg.pagesInfo = dict()
@@ -183,15 +206,13 @@ def read_messages(messages, logger):
 
             anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'])
 
-            df = pd.DataFrame(images, columns=['image_id'])
             proto_start = datetime.now()
 
             # check if its wedding here! and added to the message
-            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df, logger=logger)
+            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, logger=logger)
 
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
-            is_wedding = True
             if not gallery_info_df.empty and not anyPage_layouts_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding

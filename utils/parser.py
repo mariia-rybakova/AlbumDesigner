@@ -37,6 +37,21 @@ CONFIGS = {'DEBUG': True,
            'products_json_location':'pictures/photostore/32/settings/products.json.txt',
            'design_pack_base':'pictures/photostore/32/ext/designs',
            'architect_base':'pictures/photostore/32/ext/productgroups',
+           'content_threads': 4,
+           'small_groups': 3,
+           'max_number_images': 130,
+           'person_score': 0.0000001,
+           'similarity_score': 0.00001,
+           'class_matching_zero_score': 0.0001,
+           'class_matching_penalty': 0.001,
+           'small_groups_not_to_select': 3,
+           'grays_scale_limit': 1,
+           'person_count_percentage': 0.20,
+           'small_gallery_number': 15,
+           'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
+                                               'dancing',
+                                               'wedding dress', 'kiss'],
+           'focus_csv':r'files/focus_csv.csv',
 }
 
 merge_content_priority = {
@@ -108,4 +123,115 @@ split_content_priority = {
     'other': 0.000001,
     'nan': 0.00001,
 }
+
+relations = {'bride and groom':{
+    'bride and groom': (10, 0.2),
+
+    'bride': (7, 0.1),
+    'groom': (10, 0.001),
+
+    'bride party': (8, 0.5),
+    'groom party': (8, 0.5),
+    'full party': (4, 0.5),
+
+    'large_portrait': (4, 0.5),
+    'small_portrait': (7, 0.5),
+    'portrait': (7, 0.1),
+    'very large group': (8, 0.5),
+    'walking the aisle': (6, 0.4),
+
+    'bride getting dressed': (6, 0.5),
+    'first dance': (2, 0.2),
+    'cake cutting': (2, 0.1),
+    'ceremony': (10, 0.2),
+    'couple': (0, 0),
+    'dancing': (24, 0.5),
+
+    'entertainment': (0, 0.2),
+
+    'kiss': (2, 0.6),
+    'pet': (0, 0.5),
+
+    'accessories': (1, 0.01),
+    'settings': (5, 0.1),
+    'speech': (4, 0.5),
+
+    'detail': (5, 0.5),
+    'getting hair-makeup': (4, 0.1),
+    'food': (5, 0.5),
+    'other': (0, 0.5),
+    'invite': (1, 0.5),
+    'wedding dress':(2,0.01),
+    'vehicle': (2,0.01)
+}}
+
+
+limit_imgs = {
+    'bride and groom': 9,
+
+    'bride': 7,
+    'groom': 7,
+
+    'bride party': 8,
+    'groom party': 8,
+    'full party': 4,
+    'portrait': 10,
+    'very large group': 6,
+    'walking the aisle': 7,
+    'bride getting dressed': 4,
+    'first dance': 5,
+    'cake cutting': 5,
+    'ceremony': 8,
+    'couple': 0,
+    'dancing': 24,
+    'entertainment': 4,
+    'kiss': 6,
+    'pet': 2,
+    'accessories': 2,
+    'settings': 8,
+    'speech': 8,
+    'detail': 10,
+    'getting hair-makeup': 4,
+    'food': 6,
+    'other':0,
+    'invite': 1,
+    'wedding dress': 1,
+    'rings': 1,
+    'vehicle': 1
+}
+
+label_list = [
+    'accessories',
+    'bride',
+    'bride and groom',
+    'bride getting dressed',
+    'bride party',
+    'cake cutting',
+    'ceremony',
+    'couple',
+    'dancing',
+    'detail',
+    'entertainment',
+    'first dance',
+    'food',
+    'full party',
+    'getting hair-makeup',
+    'groom',
+    'groom party',
+    'inside vehicle',
+    'invite',
+    'kiss',
+    'pet',
+    'portrait',
+    'rings',
+    'settings',
+    'speech',
+    'suit',
+    'vehicle',
+    'very large group',
+    'walking the aisle',
+    'wedding dress',
+    'other'
+]
+
 

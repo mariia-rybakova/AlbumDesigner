@@ -9,9 +9,8 @@ from utils.protos  import ContentCluster_pb2 as content_cluster
 from utils.protos import PersonVector_pb2 as person_vector
 
 
-def get_image_embeddings(file, df, logger):
+def get_image_embeddings(file, logger):
     embed = {}
-    required_ids = set(df['image_id'].tolist())
 
     try:
         fb = PTFile(file)
@@ -23,8 +22,11 @@ def get_image_embeddings(file, df, logger):
         if header == 'pai3':
             model_version_b = fileBytes.read(4)
             model_version = int.from_bytes(model_version_b, 'little')
-        else:
+        elif header == 'pai2':
             model_version = 1
+        else:
+            raise Exception('Unexpected header {}, clip_file {}'.format(header, file))
+
         num_images_b = fileBytes.read1(4)
         num_images = int.from_bytes(num_images_b, 'little')
 
@@ -37,21 +39,22 @@ def get_image_embeddings(file, df, logger):
             embedding_b = fileBytes.read1(4 * emb_size)
             embedding = np.frombuffer(embedding_b, dtype='float32').reshape((emb_size,))
 
-            if photo_id in required_ids:
-                embed[photo_id] = {'embedding': embedding}
+            embed[photo_id] = {'embedding': embedding}
 
     except Exception as e:
         logger.error(f"Error reading image embeddings from file: {e}")
         return None
 
-    df['embedding'] = df['image_id'].map(lambda x: embed.get(x, {}).get('embedding', np.nan))
+    df = pd.DataFrame([
+        {"image_id": photo_id, "embedding": data["embedding"]}
+        for photo_id, data in embed.items()
+    ])
+
     df['model_version'] = model_version
     return df
 
 
-def get_faces_info(faces_file, df, logger):
-    required_ids = set(df['image_id'].tolist())
-
+def get_faces_info(faces_file, logger):
     try:
         faces_info_bytes = PTFile(faces_file)  # load file
         faces_info_bytes = faces_info_bytes.read_blob()
@@ -71,30 +74,26 @@ def get_faces_info(faces_file, df, logger):
         faces_info_list = []
 
         for photo in images_photos:
-            if photo.photoId in required_ids:
-                number_faces = len(photo.faces)
-                faces = list(photo.faces)
-                photo_ids.append(photo.photoId)
-                num_faces_list.append(number_faces)
-                faces_info_list.append(faces)
+            number_faces = len(photo.faces)
+            faces = list(photo.faces)
+            photo_ids.append(photo.photoId)
+            num_faces_list.append(number_faces)
+            faces_info_list.append(faces)
 
         face_info_df = pd.DataFrame({
-            'photo_id': photo_ids,
+            'image_id': photo_ids,
             'n_faces': num_faces_list,
             'faces_info': faces_info_list
         })
+
     except Exception as ex:
         logger.error(f"Error reading face info from file: {ex}")
         return None
 
-    df = df.merge(face_info_df, how='inner', left_on='image_id', right_on='photo_id')
-    df.drop(columns=['photo_id'], inplace=True)
-
-    return df
+    return face_info_df
 
 
-def get_photo_meta(file, df, logger):
-    required_ids = set(df['image_id'].tolist())
+def get_photo_meta(file, logger):
     try:
         meta_info_bytes = PTFile(file)  # load file
         meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
@@ -108,7 +107,6 @@ def get_photo_meta(file, df, logger):
             return None
 
         images_photos = message_data.photos
-
         # Prepare lists to collect data
         photo_ids = []
         image_times = []
@@ -120,19 +118,18 @@ def get_photo_meta(file, df, logger):
         background_centroids = []
         blob_diameters = []
 
+        # Add safer handling of photo attributes
         for photo in images_photos:
-            if photo.photoId in required_ids:
-                photo_ids.append(photo.photoId)
-                image_times.append(photo.dateTaken)
-                scene_orders.append(photo.sceneOrder)
-                image_aspects.append(photo.aspectRatio)
-                image_colors.append(photo.colorEnum)
-                image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
-                image_orderInScenes.append(photo.orderInScene)
-
-                # Safer handling of optional fields
-                background_centroids.append(getattr(photo, 'blobCentroid', None))
-                blob_diameters.append(getattr(photo, 'blobDiameter', None))
+            photo_ids.append(photo.photoId)
+            image_times.append(photo.dateTaken)
+            scene_orders.append(photo.sceneOrder)
+            image_aspects.append(photo.aspectRatio)
+            image_colors.append(photo.colorEnum)
+            image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
+            image_orderInScenes.append(photo.orderInScene)
+            # Safer handling of optional fields
+            background_centroids.append(getattr(photo, 'blobCentroid', None))
+            blob_diameters.append(getattr(photo, 'blobDiameter', None))
 
         additional_image_info_df = pd.DataFrame({
             'image_id': photo_ids,
@@ -145,18 +142,15 @@ def get_photo_meta(file, df, logger):
             'background_centroid': background_centroids,
             'diameter': blob_diameters
         })
+
     except Exception as ex:
         logger.error(f"Error reading photo meta info from file: {ex}")
         return None
 
-    df = df.merge(additional_image_info_df, how='inner', on='image_id')
-
-    return df
+    return additional_image_info_df
 
 
-def get_persons_ids(persons_file, df,logger):
-    required_ids = set(df['image_id'].tolist())
-
+def get_persons_ids(persons_file, logger):
     try:
         person_info_bytes = PTFile(persons_file)  # load file
         if not person_info_bytes.exists():
@@ -169,7 +163,7 @@ def get_persons_ids(persons_file, df,logger):
             message_data = person_descriptor.v1
         else:
             logger.error('There is no appropriate version of Person vector message.')
-            return None
+            raise ValueError('There is no appropriate version of Person vector message.')
 
         identity_info = message_data.identities
 
@@ -182,9 +176,8 @@ def get_persons_ids(persons_file, df,logger):
             id = iden.identityNumeralId
             infos = iden.personInfo
             for im in infos.imagesInfo:
-                if im.photoId in required_ids:
-                    photo_ids.append(im.photoId)
-                    persons_ids_list.append(id)
+                photo_ids.append(im.photoId)
+                persons_ids_list.append(id)
 
 
         # Create a temporary DataFrame with the new person information
@@ -193,24 +186,17 @@ def get_persons_ids(persons_file, df,logger):
             'persons_ids': persons_ids_list
         })
 
-        if not photo_ids and not persons_ids_list:
-            df['persons_ids'] = [[] for _ in range(len(df))]
-            return df
-
         # Aggregate persons_ids for each image_id
         persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
-    except Exception as ex:
-        logger.error(f"Error reading persons info from file: {ex}")
+
+    except Exception as e:
+        logger.error("Error reading persons info from file: {}".format(e))
         return None
 
-    # Merge the original DataFrame with the new person information DataFrame
-    df = df.merge(persons_info_df, how='inner', on='image_id')
-    return df
+    return persons_info_df
 
 
-def get_clusters_info(cluster_file, df,logger):
-    required_ids = set(df['image_id'].tolist())
-
+def get_clusters_info(cluster_file, logger):
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file
         if not cluster_info_bytes.exists():
@@ -237,13 +223,12 @@ def get_clusters_info(cluster_file, df,logger):
 
         # Loop through each photo and collect the required information
         for photo in images_photos:
-            if photo.photoId in required_ids:
-                photo_ids.append(photo.photoId)
-                image_classes.append(int(photo.imageClass))
-                cluster_labels.append(int(photo.clusterId))
-                cluster_classes.append(int(photo.clusterClass))
-                image_rankings.append(photo.selectionScore)
-                image_orders.append(int(photo.selectionOrder))
+            photo_ids.append(photo.photoId)
+            image_classes.append(int(photo.imageClass))
+            cluster_labels.append(int(photo.clusterId))
+            cluster_classes.append(int(photo.clusterClass))
+            image_rankings.append(photo.selectionScore)
+            image_orders.append(int(photo.selectionOrder))
 
         # Create a DataFrame from the collected data
         new_image_info_df = pd.DataFrame({
@@ -254,18 +239,15 @@ def get_clusters_info(cluster_file, df,logger):
             'ranking': image_rankings,
             'image_order': image_orders
         })
-    except Exception as ex:
-        logger.error(f"Error reading cluster info from file: {ex}")
+
+    except Exception as e:
+        logger.error("Error reading cluster info from file: {}".format(e))
         return None
 
-    # Merge the original DataFrame with the new information
-    df = df.merge(new_image_info_df, how='inner', on='image_id')
-
-    return df
+    return new_image_info_df
 
 
-def get_person_vectors(persons_file, df, logger):
-    required_ids = set(df['image_id'].tolist())
+def get_person_vectors(persons_file, logger):
     try:
         person_info_bytes = PTFile(persons_file)  # Load file
         if not person_info_bytes.exists():
@@ -285,16 +267,14 @@ def get_person_vectors(persons_file, df, logger):
         # Create a DataFrame for the photos
         photo_data = []
         for image in images:
-            if image.photoId in required_ids:
-                photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
+            photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
 
         photo_df = pd.DataFrame(photo_data)
+        # Fill missing 'number_bodies' with 0 if not provided in the photos data
+        photo_df['number_bodies'].fillna(0, inplace=True)
+
     except Exception as ex:
         logger.error(f"Error reading person vectors from file: {ex}")
         return None
 
-    # Merge the new data with the existing DataFrame
-    df = df.merge(photo_df, how='inner', on='image_id')
-    df['number_bodies'].fillna(0, inplace=True)
-
-    return df
+    return photo_df

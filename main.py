@@ -20,6 +20,7 @@ from ptinfra import  AbortRequested
 
 
 from src.smart_cropping import process_crop_images
+from utils.auto_selection import ai_selection
 from utils.cover_image import process_non_wedding_cover_image, process_wedding_first_last_image, get_first_last_design_ids
 from utils.time_processing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
@@ -122,6 +123,83 @@ class ReadStage(Stage):
         self.logger.info(f"READING Stage for {len(messages)} messages. Average time: {handling_time}")
         return messages
 
+
+
+class SelectionStage(Stage):
+    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
+                 logger=None):
+        super().__init__('SelectionStage', self.get_selection, in_q, out_q, err_q, batch_size=1, max_threads=2)
+        self.logger = logger
+
+
+    def get_selection(self, msgs: Union[Message, List[Message], AbortRequested]):
+        if isinstance(msgs, AbortRequested):
+            self.logger.info("Abort requested")
+            return []
+
+
+        updated_messages = []
+        messages = msgs if isinstance(msgs, list) else [msgs]
+        start = datetime.now()
+        #Iterate over message and start the selection process
+        try:
+            for _msg in messages:
+                ai_metadata = _msg.content.get('aiMetadata', None)
+                if ai_metadata is None:
+                    self.logger.info(f"aiMetadata not found for message {_msg}. Continue with chosen photos.")
+                    photos = _msg.content.get('photos', [])
+                    df = pd.DataFrame(photos, columns=['image_id'])
+                    _msg.content['gallery_photos_info'] = df.merge(_msg.content['gallery_photos_info'], how='inner', on='image_id')
+                    updated_messages.append(_msg)
+                    continue
+                photos = _msg.content.get('photos', [])
+                if len(photos) != 0:
+                    updated_messages.append(_msg)
+                    continue
+                if 'photosIds' not in _msg.content:
+                    self.logger("the 10 photos not selected!")
+                    ten_photos = []
+                else:
+                    ten_photos = _msg.content.get('photosIds', [])
+
+                if 'people_ids' not in _msg.content:
+                    people_ids = []
+                else:
+                    people_ids = _msg.content.get('people_ids', [])
+
+                df = _msg.content.get('gallery_photos_info', pd.DataFrame())
+                if df.empty:
+                    self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
+                    _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
+                    updated_messages.append(_msg)
+                    continue
+
+                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, _msg.content['focus'],_msg.content['tags'],_msg.content['is_wedding'],_msg.content['density'],
+                          self.logger)
+
+                if errors:
+                    self.logger.error(f"Error for Selection images for this message {_msg}")
+                    _msg.content['error'] = f"Error for Selection images for this message {_msg}"
+                    updated_messages.append(_msg)
+                    continue
+
+                filtered_df = df[df['image_id'].isin(ai_photos_selected)]
+                _msg.content['gallery_photos_info'] = filtered_df
+                _msg.content['photos'] = ai_photos_selected
+                updated_messages.append(_msg)
+
+        except Exception as e:
+            # self.logger.error(f"Error reading messages: {e}")
+            raise(e)
+            # return []
+
+        handling_time = (datetime.now() - start) / max(len(messages), 1)
+        read_time_list.append(handling_time)
+        self.logger.info(f"Selection Stage for {len(messages)} messages. Average time: {handling_time}")
+
+        return updated_messages
+
+
 class ProcessStage(Stage):
     def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
                  logger=None):
@@ -148,6 +226,7 @@ class ProcessStage(Stage):
             i=0
 
             params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
+
             self.logger.debug("Params for this Gallery are: {}".format(params))
 
             p = mp.Process(target=process_crop_images, args=(self.q, message.content.get('gallery_photos_info')))
@@ -170,19 +249,7 @@ class ProcessStage(Stage):
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
 
                 if message.content.get('is_wedding', True):
-                    rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
-                    #convert numeric ids to labels.
-                    processed_rows = []
-                    for row in rows:
-                        cluster_class = row.get('cluster_class')
-                        cluster_class_label = map_cluster_label(cluster_class)
-                        row['cluster_context'] = cluster_class_label
-                        processed_rows.append(row)
-
-                    processed_content_df = pd.DataFrame(processed_rows)
-                    processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
-                                                   how='left', on='image_id')
-                    df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(processed_df,
+                    df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(sorted_df,
                                                                                                      self.logger)
                 else:
                     df, first_last_images_ids, first_last_imgs_df = process_non_wedding_cover_image(sorted_df,
@@ -359,10 +426,12 @@ class MessageProcessor:
         report_q = MemoryQueue(2)
 
         read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
+        selection_stage = SelectionStage(azure_input_q, read_q, report_q, logger=self.logger)
         process_stage = ProcessStage(read_q, report_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()
+        selection_stage.start()
         process_stage.start()
         read_stage.start()
 
