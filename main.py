@@ -156,25 +156,22 @@ class SelectionStage(Stage):
                 if len(photos) != 0:
                     updated_messages.append(_msg)
                     continue
-                if 'photosIds' not in _msg.content:
-                    self.logger("the 10 photos not selected!")
-                    ten_photos = []
-                else:
-                    ten_photos = _msg.content.get('photosIds', [])
 
-                if 'people_ids' not in _msg.content:
-                    people_ids = []
-                else:
-                    people_ids = _msg.content.get('people_ids', [])
-
+                ten_photos = _msg.content.get('photoIds', [])
+                people_ids = _msg.content.get('personIds', [])
                 df = _msg.content.get('gallery_photos_info', pd.DataFrame())
+                focus = _msg.content.get('focus',None)
+                tags = _msg.content.get('subjects',[])
+                is_wedding = _msg.content.get('is_wedding',False)
+                density = _msg.content.get('density',5)
+
                 if df.empty:
                     self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
                     _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
                     updated_messages.append(_msg)
                     continue
 
-                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, _msg.content['focus'],_msg.content['tags'],_msg.content['is_wedding'],_msg.content['density'],
+                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
                           self.logger)
 
                 if errors:
