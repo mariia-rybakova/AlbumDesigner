@@ -127,8 +127,11 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
             logger.info(f"Skipping group {group_to_change_key} as it was already merged into.")
             continue
 
-        # We need to simulate the merge target key before merging, so we do a dry run
-        illegal_group = groups.get_group(group_to_change_key)
+        # Check if group_to_change_key exists in groups
+        if group_to_change_key not in groups.groups:
+            illegal_group = None
+        else:
+            illegal_group = groups.get_group(group_to_change_key)
         if illegal_group is None or illegal_group.empty:
             continue
 

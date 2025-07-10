@@ -212,7 +212,7 @@ def album_processing(df, designs_info, is_wedding, params, logger):
         look_up_table = look_up_table
         updated_groups = original_groups
 
-    logger.debug("Groups", group2images)
+    logger.debug("Groups: {}".format(group2images))
     # make sure that each group has no more than 3 spreads
     look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max(CONFIGS['max_total_spreads'], designs_info['maxPages']))
 
