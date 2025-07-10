@@ -423,11 +423,12 @@ class MessageProcessor:
                                          max_dequeue_allowed=1000)
 
         read_q = MemoryQueue(2)
+        selection_q = MemoryQueue(2)
         report_q = MemoryQueue(2)
 
         read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
-        selection_stage = SelectionStage(azure_input_q, read_q, report_q, logger=self.logger)
-        process_stage = ProcessStage(read_q, report_q, report_q, logger=self.logger)
+        selection_stage = SelectionStage(read_q, selection_q, report_q, logger=self.logger)
+        process_stage = ProcessStage(selection_q, report_q, report_q, logger=self.logger)
         report_stage = ReportStage(report_q, logger=self.logger)
 
         report_stage.start()
