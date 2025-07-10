@@ -51,7 +51,7 @@ CONFIGS = {'DEBUG': True,
            'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
                                                'dancing',
                                                'wedding dress', 'kiss'],
-           'focus_csv':r'files/focus_csv.csv',
+           'focus_csv_path':r'files/focus_csv.csv',
 }
 
 merge_content_priority = {
@@ -162,7 +162,10 @@ relations = {'bride and groom':{
     'other': (0, 0.5),
     'invite': (1, 0.5),
     'wedding dress':(2,0.01),
-    'vehicle': (2,0.01)
+    'vehicle': (2,0.01),
+    'inside vehicle':(2,0.01),
+    'suit':(1, 0.5),
+
 }}
 
 

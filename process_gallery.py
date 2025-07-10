@@ -120,47 +120,48 @@ class Message:
         return self.body
 
 
-def get_selection(message, logger):
+def get_selection(_msg, logger):
     try:
-        ai_metadata = message.content.get('aiMetadata', None)
-        if ai_metadata is None:
-            logger.info(f"aiMetadata not found for message {message}. Continue with chosen photos.")
-            photos = message.content.get('photos', [])
+        ai_metadata = _msg.content.get('aiMetadata', {})
+        if not ai_metadata:
+            logger.info(f"aiMetadata not found for message {_msg}. Continue with chosen photos.")
+            photos = _msg.content.get('photos', [])
             df = pd.DataFrame(photos, columns=['image_id'])
-            message.content['gallery_photos_info'] = df.merge(message.content['gallery_photos_info'], how='inner', on='image_id')
-            return message
-        photos = message.content.get('photos', [])
+            _msg.content['gallery_photos_info'] = df.merge(_msg.content['gallery_photos_info'], how='inner',
+                                                           on='image_id')
+            return _msg
+
+        photos = _msg.content.get('photos', [])
         if len(photos) != 0:
-            return message
-        if 'photosIds' not in message.content:
-            logger("the 10 photos not selected!")
-            ten_photos = []
-        else:
-            ten_photos = message.content.get('photosIds', [])
+             return _msg
 
-        if 'people_ids' not in message.content:
-            people_ids = []
-        else:
-            people_ids = message.content.get('people_ids', [])
+        ten_photos = ai_metadata.get('photoIds', [])
+        people_ids = ai_metadata.get('personIds', [])
+        focus = ai_metadata.get('focus', None)
+        tags = ai_metadata.get('subjects', [])
+        density = ai_metadata.get('density', 5)
+        is_wedding = _msg.content.get('is_wedding', False)
+        df = _msg.content.get('gallery_photos_info', pd.DataFrame())
 
-        df = message.content.get('gallery_photos_info', pd.DataFrame())
+
         if df.empty:
-            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-            return message
+            logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
+            _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
+            return _msg
 
-        ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, message.content['focus'], message.content['tags'], message.content['is_wedding'], message.content['density'],
-                                                 logger)
+        ai_photos_selected, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,
+                                                  logger)
 
         if errors:
-            logger.error(f"Error for Selection images for this message {message}")
-            message.content['error'] = f"Error for Selection images for this message {message}"
-            return message
+            logger.error(f"Error for Selection images for this message {_msg}")
+            _msg.content['error'] = f"Error for Selection images for this message {_msg}"
+            return _msg
 
         filtered_df = df[df['image_id'].isin(ai_photos_selected)]
-        message.content['gallery_photos_info'] = filtered_df
-        message.content['photos'] = ai_photos_selected
-        return message
+        _msg.content['gallery_photos_info'] = filtered_df
+        _msg.content['photos'] = ai_photos_selected
+
+        return _msg
 
     except Exception as e:
         # self.logger.error(f"Error reading messages: {e}")
@@ -258,9 +259,31 @@ if __name__ == '__main__':
     # _images_path = '/home/a.hyryla/data/pic_time/imagesets/testing/46105850/'
     # _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46105850/album2.pdf'
     # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46245951, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/245/46245951/ii52fnki40jq0i3xvu', 'photos': [10803725905, 10803725910, 10803725924, 10803725963, 10803725967, 10803725969, 10803725978, 10803725994, 10803725996, 10803725997, 10803726027, 10803726045, 10803726043, 10803726137, 10803726140, 10803726128, 10803726109, 10803726085, 10803726190, 10803726150, 10803726149, 10803726182, 10803726055, 10803726068, 10803726056, 10803726220, 10803726223, 10803726103, 10803726104, 10803726078, 10803726077, 10803726596, 10803726605, 10803726314, 10803726615, 10803726626, 10803726336, 10803726638, 10803726533, 10803726530, 10803726499, 10803726552, 10803726431, 10803726433, 10803726492], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/henypeix2kyn2jrspfcd6wae.json', 'conditionId': 'AAD_46245951_bb226506-e333-4b98-bcee-e0ab624b64c9.208.429', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
-    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46245951, 'userId': 547128248, 'userJobId': 1068714614, 'base_url': 'ptstorage_32://pictures/46/245/46245951/ii52fnki40jq0i3xvu', 'photos': [10803728384, 10803728502, 10803728538, 10803728560, 10803728527, 10803728549, 10803728582, 10803728547, 10803728593, 10803728385, 10803728396, 10803728407, 10803728418, 10803728429, 10803728440, 10803728571, 10803728451, 10803728462, 10803728473, 10803728484, 10803728503, 10803728514, 10803728519, 10803728520, 10803728521, 10803728522, 10803728523, 10803728524, 10803728525, 10803728526, 10803728528, 10803728529, 10803728530, 10803728531, 10803728532, 10803728533, 10803728534, 10803728550, 10803728535, 10803728536, 10803728537, 10803728548, 10803728539, 10803728540, 10803728541, 10803728542, 10803728543, 10803728551, 10803728544, 10803728545, 10803728546, 10803728552, 10803728555, 10803728553, 10803728554, 10803728556, 10803728558, 10803728419, 10803728557, 10803728420, 10803728559, 10803728561, 10803728562, 10803728563, 10803728564, 10803728565, 10803728566, 10803728567, 10803728568, 10803728569, 10803728570, 10803728572, 10803728573, 10803728577, 10803728578, 10803728579, 10803728580, 10803728574, 10803728581, 10803728576, 10803728583, 10803728584, 10803728585, 10803728586, 10803728587, 10803728588, 10803728589, 10803728575, 10803728590, 10803728591, 10803728592, 10803728594, 10803728595, 10803728596, 10803728597, 10803728598, 10803728599, 10803728600, 10803728601, 10803728386, 10803728602, 10803728603, 10803728387, 10803728388, 10803728389, 10803728390, 10803728391, 10803728392, 10803728393, 10803728394, 10803728397, 10803728398, 10803728399, 10803728400, 10803728401, 10803728402, 10803728403, 10803728404, 10803728405, 10803728395, 10803728406, 10803728408, 10803728409, 10803728410, 10803728411, 10803728412, 10803728413, 10803728414, 10803728415, 10803728416, 10803728417, 10803728421, 10803728422, 10803728423, 10803728424, 10803728425, 10803728426, 10803728439, 10803728441, 10803728442, 10803728428, 10803728427, 10803728432, 10803728436, 10803728430, 10803728435, 10803728433, 10803728434, 10803728431, 10803728437, 10803728438, 10803728443, 10803728444, 10803728445, 10803728446, 10803728447, 10803728448, 10803728449, 10803728450, 10803728452, 10803728453, 10803728454, 10803728455, 10803728456, 10803728457, 10803728458, 10803728459, 10803728460, 10803728461, 10803728463, 10803728464, 10803728465, 10803728466, 10803728467, 10803728468, 10803728469, 10803728470, 10803728471, 10803728472, 10803728474, 10803728475, 10803728476, 10803728477, 10803728478, 10803728479, 10803728480, 10803728481, 10803728482, 10803728483, 10803728485, 10803728486, 10803728487, 10803728488, 10803728489, 10803728490, 10803728491, 10803728492, 10803728501, 10803728493, 10803728504, 10803728505, 10803728511, 10803728509, 10803728510, 10803728512, 10803728513, 10803728517, 10803728515, 10803728518, 10803728516, 10803728506, 10803728507, 10803728508, 10803728383], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/xzycustiue6zobqvnora4fpa.json', 'aiMetadata': None, 'conditionId': 'AAD_46245951_4038cbc7-0743-464c-af1d-cc8bc280e6bb.171.255', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
-    _images_path = '/home/a.hyryla/data/pic_time/imagesets/testing/46245951/'
-    _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46245951/album_2.1.pdf'
+    # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46245951, 'userId': 547128248, 'userJobId': 1068714614, 'base_url': 'ptstorage_32://pictures/46/245/46245951/ii52fnki40jq0i3xvu', 'photos': [10803728384, 10803728502, 10803728538, 10803728560, 10803728527, 10803728549, 10803728582, 10803728547, 10803728593, 10803728385, 10803728396, 10803728407, 10803728418, 10803728429, 10803728440, 10803728571, 10803728451, 10803728462, 10803728473, 10803728484, 10803728503, 10803728514, 10803728519, 10803728520, 10803728521, 10803728522, 10803728523, 10803728524, 10803728525, 10803728526, 10803728528, 10803728529, 10803728530, 10803728531, 10803728532, 10803728533, 10803728534, 10803728550, 10803728535, 10803728536, 10803728537, 10803728548, 10803728539, 10803728540, 10803728541, 10803728542, 10803728543, 10803728551, 10803728544, 10803728545, 10803728546, 10803728552, 10803728555, 10803728553, 10803728554, 10803728556, 10803728558, 10803728419, 10803728557, 10803728420, 10803728559, 10803728561, 10803728562, 10803728563, 10803728564, 10803728565, 10803728566, 10803728567, 10803728568, 10803728569, 10803728570, 10803728572, 10803728573, 10803728577, 10803728578, 10803728579, 10803728580, 10803728574, 10803728581, 10803728576, 10803728583, 10803728584, 10803728585, 10803728586, 10803728587, 10803728588, 10803728589, 10803728575, 10803728590, 10803728591, 10803728592, 10803728594, 10803728595, 10803728596, 10803728597, 10803728598, 10803728599, 10803728600, 10803728601, 10803728386, 10803728602, 10803728603, 10803728387, 10803728388, 10803728389, 10803728390, 10803728391, 10803728392, 10803728393, 10803728394, 10803728397, 10803728398, 10803728399, 10803728400, 10803728401, 10803728402, 10803728403, 10803728404, 10803728405, 10803728395, 10803728406, 10803728408, 10803728409, 10803728410, 10803728411, 10803728412, 10803728413, 10803728414, 10803728415, 10803728416, 10803728417, 10803728421, 10803728422, 10803728423, 10803728424, 10803728425, 10803728426, 10803728439, 10803728441, 10803728442, 10803728428, 10803728427, 10803728432, 10803728436, 10803728430, 10803728435, 10803728433, 10803728434, 10803728431, 10803728437, 10803728438, 10803728443, 10803728444, 10803728445, 10803728446, 10803728447, 10803728448, 10803728449, 10803728450, 10803728452, 10803728453, 10803728454, 10803728455, 10803728456, 10803728457, 10803728458, 10803728459, 10803728460, 10803728461, 10803728463, 10803728464, 10803728465, 10803728466, 10803728467, 10803728468, 10803728469, 10803728470, 10803728471, 10803728472, 10803728474, 10803728475, 10803728476, 10803728477, 10803728478, 10803728479, 10803728480, 10803728481, 10803728482, 10803728483, 10803728485, 10803728486, 10803728487, 10803728488, 10803728489, 10803728490, 10803728491, 10803728492, 10803728501, 10803728493, 10803728504, 10803728505, 10803728511, 10803728509, 10803728510, 10803728512, 10803728513, 10803728517, 10803728515, 10803728518, 10803728516, 10803728506, 10803728507, 10803728508, 10803728383], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/xzycustiue6zobqvnora4fpa.json', 'aiMetadata': None, 'conditionId': 'AAD_46245951_4038cbc7-0743-464c-af1d-cc8bc280e6bb.171.255', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    # _images_path = '/home/a.hyryla/data/pic_time/imagesets/testing/46245951/'
+    # _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/46245951/album_2.1.pdf'
+
+
+    #### KARMEL TESTING ####
+    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310,
+                      'projectId': 37141824, 'userId': 547128248, 'userJobId': 1068714614,
+                      'base_url': 'ptstorage_17://pictures/37/141/37141824/dmgb4onqc3hm',
+                      'photos': [], 'projectCategory': 0,
+                      'compositionPackageId': -1, 'designInfo': None,
+                      'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/xzycustiue6zobqvnora4fpa.json',
+                      'aiMetadata': {'photoIds':[9871230045,9871230067,9871231567,9871231577,9871231585,9871235650,9871253529,9871253582,9871253597,9871260706],'focus':'bride and groom', 'personIds':[1,4,9,13,13, 32, 31, 17, 20, 23,35, 8,5,6,7], 'subjects':[ "table_setting",
+                        "reception_styling",
+                        "ceremony_styling",
+                        "furniture",
+                        "building_exterior",
+                        "garden",
+                        "interior_design",
+                        "architecture",
+                        "ceremony",],'density':4}, 'conditionId': 'AAD_46245951_4038cbc7-0743-464c-af1d-cc8bc280e6bb.171.255',
+                      'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    _images_path = f'dataset/newest_wedding_galleries/{_input_request['projectId']}'
+    _output_pdf_path = f'results/test_deployment/album_{_input_request['projectId']}.pdf'
+
     final_album, _message = process_gallery(_input_request)
     gallery_photos_info = _message.content['gallery_photos_info']
 

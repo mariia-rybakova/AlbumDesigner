@@ -8,7 +8,7 @@ from io import BytesIO
 from utils.selection_tools import smart_wedding_selection,smart_non_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
-    if version == 'v1':
+    if version == 1:
         file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
     else:
         file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_queries_name}.bin')

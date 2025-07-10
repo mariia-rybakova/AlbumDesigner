@@ -169,11 +169,6 @@ def read_messages(messages, logger):
             logger.error('There are missing fields in input request: {}. Skipping.'.format(json_content))
             raise Exception('There are missing fields in input request: {}. Skipping.'.format(json_content))
 
-
-        if len(json_content['photos']) < 10:
-            logger.error('Not enough photos: {}. Skipping.'.format(json_content))
-            raise Exception('Not enough photos: {}. Skipping.'.format(json_content))
-
         try:
             project_url = json_content['base_url']
 
