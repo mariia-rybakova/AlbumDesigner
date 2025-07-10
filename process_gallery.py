@@ -17,6 +17,7 @@ from utils.time_processing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
 from utils.request_processing import assembly_output
 from utils.clusters_labels import map_cluster_label
+from utils.auto_selection import ai_selection
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
@@ -119,6 +120,53 @@ class Message:
         return self.body
 
 
+def get_selection(message, logger):
+    try:
+        ai_metadata = message.content.get('aiMetadata', None)
+        if ai_metadata is None:
+            logger.info(f"aiMetadata not found for message {message}. Continue with chosen photos.")
+            photos = message.content.get('photos', [])
+            df = pd.DataFrame(photos, columns=['image_id'])
+            message.content['gallery_photos_info'] = df.merge(message.content['gallery_photos_info'], how='inner', on='image_id')
+            return message
+        photos = message.content.get('photos', [])
+        if len(photos) != 0:
+            return message
+        if 'photosIds' not in message.content:
+            logger("the 10 photos not selected!")
+            ten_photos = []
+        else:
+            ten_photos = message.content.get('photosIds', [])
+
+        if 'people_ids' not in message.content:
+            people_ids = []
+        else:
+            people_ids = message.content.get('people_ids', [])
+
+        df = message.content.get('gallery_photos_info', pd.DataFrame())
+        if df.empty:
+            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
+            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
+            return message
+
+        ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids, message.content['focus'], message.content['tags'], message.content['is_wedding'], message.content['density'],
+                                                 logger)
+
+        if errors:
+            logger.error(f"Error for Selection images for this message {message}")
+            message.content['error'] = f"Error for Selection images for this message {message}"
+            return message
+
+        filtered_df = df[df['image_id'].isin(ai_photos_selected)]
+        message.content['gallery_photos_info'] = filtered_df
+        message.content['photos'] = ai_photos_selected
+        return message
+
+    except Exception as e:
+        # self.logger.error(f"Error reading messages: {e}")
+        raise(e)
+        # return []
+
 def process_message(message, logger):
     # check if its single message or list
     whole_messages_start = datetime.now()
@@ -147,19 +195,7 @@ def process_message(message, logger):
         sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
 
         if message.content.get('is_wedding', True):
-            rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
-            #convert numeric ids to labels.
-            processed_rows = []
-            for row in rows:
-                cluster_class = row.get('cluster_class')
-                cluster_class_label = map_cluster_label(cluster_class)
-                row['cluster_context'] = cluster_class_label
-                processed_rows.append(row)
-
-            processed_content_df = pd.DataFrame(processed_rows)
-            processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
-                                           how='left', on='image_id')
-            df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(processed_df, logger)
+            df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(sorted_df, logger)
         else:
             df, first_last_images_ids, first_last_imgs_df = process_non_wedding_cover_image(sorted_df, logger)
 
@@ -211,8 +247,9 @@ def process_gallery(input_request):
     msgs = [message]
     logger = get_logger(__name__, 'DEBUG')
     msgs = read_messages(msgs, logger)
+    message = get_selection(msgs[0], logger)
 
-    final_album_result, message = process_message(msgs[0], logger)
+    final_album_result, message = process_message(message, logger)
     return final_album_result, message
 
 

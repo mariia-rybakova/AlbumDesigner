@@ -144,6 +144,14 @@ class SelectionStage(Stage):
         #Iterate over message and start the selection process
         try:
             for _msg in messages:
+                ai_metadata = _msg.content.get('aiMetadata', None)
+                if ai_metadata is None:
+                    self.logger.info(f"aiMetadata not found for message {_msg}. Continue with chosen photos.")
+                    photos = _msg.content.get('photos', [])
+                    df = pd.DataFrame(photos, columns=['image_id'])
+                    _msg.content['gallery_photos_info'] = df.merge(_msg.content['gallery_photos_info'], how='inner', on='image_id')
+                    updated_messages.append(_msg)
+                    continue
                 photos = _msg.content.get('photos', [])
                 if len(photos) != 0:
                     updated_messages.append(_msg)
@@ -241,18 +249,6 @@ class ProcessStage(Stage):
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
 
                 if message.content.get('is_wedding', True):
-                    # rows = sorted_df[['image_id', 'cluster_class']].to_dict('records')
-                    # #convert numeric ids to labels.
-                    # processed_rows = []
-                    # for row in rows:
-                    #     cluster_class = row.get('cluster_class')
-                    #     cluster_class_label = map_cluster_label(cluster_class)
-                    #     row['cluster_context'] = cluster_class_label
-                    #     processed_rows.append(row)
-                    #
-                    # processed_content_df = pd.DataFrame(processed_rows)
-                    # processed_df = sorted_df.merge(processed_content_df[['image_id', 'cluster_context']],
-                    #                                how='left', on='image_id')
                     df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(sorted_df,
                                                                                                      self.logger)
                 else:

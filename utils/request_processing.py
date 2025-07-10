@@ -175,7 +175,6 @@ def read_messages(messages, logger):
             raise Exception('Not enough photos: {}. Skipping.'.format(json_content))
 
         try:
-            images = json_content['photos']
             project_url = json_content['base_url']
 
             _msg.pagesInfo = dict()
@@ -207,7 +206,6 @@ def read_messages(messages, logger):
 
             anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'])
 
-            df = pd.DataFrame(images, columns=['image_id'])
             proto_start = datetime.now()
 
             # check if its wedding here! and added to the message
