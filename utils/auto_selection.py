@@ -7,8 +7,12 @@ from io import BytesIO
 
 from utils.selection_tools import smart_wedding_selection,smart_non_wedding_selection
 
-def load_pre_queries_embeddings(pre_queries_name):
-    file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
+def load_pre_queries_embeddings(pre_queries_name,version):
+    if version == 'v1':
+        file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
+    else:
+        file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_queries_name}.bin')
+
     pai_file_bytes = PTFile(file)  # load file
     fileBytes = pai_file_bytes.read_blob()
     fb = BytesIO(fileBytes)
@@ -19,14 +23,13 @@ def load_pre_queries_embeddings(pre_queries_name):
     return embd_matrix
 
 
-
-def get_tags_bins(tags):
+def get_tags_bins(tags,version):
     if not any(s.strip() for s in tags):
         return []
-
+    #make the check for the model version
     tags_features = {}
     for tag in tags:
-        embeddings = load_pre_queries_embeddings(tag)
+        embeddings = load_pre_queries_embeddings(tag,version)
         if tag not in tags_features:
             tags_features[tag] = []
         tags_features[tag] = embeddings
@@ -38,7 +41,8 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
     try:
         if is_wedding:
             # Select images for creating an album
-            tags_features = get_tags_bins(tags)
+            model_version =  df.iloc[0]['model_version']
+            tags_features = get_tags_bins(tags,model_version)
             ai_images_selected, errors = smart_wedding_selection(df, selected_photos, people_ids, focus,
                                                                  tags_features,density, logger)
         else:
