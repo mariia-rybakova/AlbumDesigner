@@ -9,9 +9,8 @@ from utils.protos  import ContentCluster_pb2 as content_cluster
 from utils.protos import PersonVector_pb2 as person_vector
 
 
-def get_image_embeddings(file, df, logger):
+def get_image_embeddings(file, logger):
     embed = {}
-    # required_ids = set(df['image_id'].tolist())
 
     try:
         fb = PTFile(file)
@@ -40,9 +39,6 @@ def get_image_embeddings(file, df, logger):
             embedding_b = fileBytes.read1(4 * emb_size)
             embedding = np.frombuffer(embedding_b, dtype='float32').reshape((emb_size,))
 
-            # if photo_id in required_ids:
-            #     embed[photo_id] = {'embedding': embedding}
-
             embed[photo_id] = {'embedding': embedding}
 
     except Exception as e:
@@ -58,7 +54,7 @@ def get_image_embeddings(file, df, logger):
     return df
 
 
-def get_faces_info(faces_file, df, logger):
+def get_faces_info(faces_file, logger):
     try:
         faces_info_bytes = PTFile(faces_file)  # load file
         faces_info_bytes = faces_info_bytes.read_blob()
@@ -97,7 +93,7 @@ def get_faces_info(faces_file, df, logger):
     return face_info_df
 
 
-def get_photo_meta(file, df, logger):
+def get_photo_meta(file, logger):
     try:
         meta_info_bytes = PTFile(file)  # load file
         meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
@@ -124,7 +120,6 @@ def get_photo_meta(file, df, logger):
 
         # Add safer handling of photo attributes
         for photo in images_photos:
-            # if photo.photoId in required_ids:
             photo_ids.append(photo.photoId)
             image_times.append(photo.dateTaken)
             scene_orders.append(photo.sceneOrder)
@@ -155,8 +150,7 @@ def get_photo_meta(file, df, logger):
     return additional_image_info_df
 
 
-
-def get_persons_ids(persons_file, df,logger):
+def get_persons_ids(persons_file, logger):
     try:
         person_info_bytes = PTFile(persons_file)  # load file
         if not person_info_bytes.exists():
@@ -182,9 +176,8 @@ def get_persons_ids(persons_file, df,logger):
             id = iden.identityNumeralId
             infos = iden.personInfo
             for im in infos.imagesInfo:
-                # if im.photoId in required_ids:
-                    photo_ids.append(im.photoId)
-                    persons_ids_list.append(id)
+                photo_ids.append(im.photoId)
+                persons_ids_list.append(id)
 
 
         # Create a temporary DataFrame with the new person information
@@ -192,10 +185,6 @@ def get_persons_ids(persons_file, df,logger):
             'image_id': photo_ids,
             'persons_ids': persons_ids_list
         })
-
-        if not photo_ids and not persons_ids_list:
-            df['persons_ids'] = [[] for _ in range(len(df))]
-            return df
 
         # Aggregate persons_ids for each image_id
         persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
@@ -207,9 +196,7 @@ def get_persons_ids(persons_file, df,logger):
     return persons_info_df
 
 
-
-
-def get_clusters_info(cluster_file, df,logger):
+def get_clusters_info(cluster_file, logger):
     try:
         cluster_info_bytes = PTFile(cluster_file)  # load file
         if not cluster_info_bytes.exists():
@@ -236,13 +223,12 @@ def get_clusters_info(cluster_file, df,logger):
 
         # Loop through each photo and collect the required information
         for photo in images_photos:
-            # if photo.photoId in required_ids:
-                photo_ids.append(photo.photoId)
-                image_classes.append(int(photo.imageClass))
-                cluster_labels.append(int(photo.clusterId))
-                cluster_classes.append(int(photo.clusterClass))
-                image_rankings.append(photo.selectionScore)
-                image_orders.append(int(photo.selectionOrder))
+            photo_ids.append(photo.photoId)
+            image_classes.append(int(photo.imageClass))
+            cluster_labels.append(int(photo.clusterId))
+            cluster_classes.append(int(photo.clusterClass))
+            image_rankings.append(photo.selectionScore)
+            image_orders.append(int(photo.selectionOrder))
 
         # Create a DataFrame from the collected data
         new_image_info_df = pd.DataFrame({
@@ -261,8 +247,7 @@ def get_clusters_info(cluster_file, df,logger):
     return new_image_info_df
 
 
-
-def get_person_vectors(persons_file, df, logger):
+def get_person_vectors(persons_file, logger):
     try:
         person_info_bytes = PTFile(persons_file)  # Load file
         if not person_info_bytes.exists():
@@ -282,8 +267,7 @@ def get_person_vectors(persons_file, df, logger):
         # Create a DataFrame for the photos
         photo_data = []
         for image in images:
-            # if image.photoId in required_ids:
-                photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
+            photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
 
         photo_df = pd.DataFrame(photo_data)
         # Fill missing 'number_bodies' with 0 if not provided in the photos data

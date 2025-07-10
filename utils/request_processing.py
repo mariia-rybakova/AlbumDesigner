@@ -65,7 +65,7 @@ def process_content(row_dict):
     row_dict['cluster_context'] = cluster_class_label
     return row_dict
 
-def get_info_protobufs(project_base_url, df, logger):
+def get_info_protobufs(project_base_url, logger):
     try:
         start = datetime.now()
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
@@ -88,7 +88,7 @@ def get_info_protobufs(project_base_url, df, logger):
 
         results = []
         for idx, func in enumerate(functions):
-            result = func(df, logger)
+            result = func(logger)
             if result is None:
                 logger.error('Error in reading data from protobuf file: {}'.format(files[idx]))
                 raise Exception('Error in reading data from protobuf file: {}'.format(files[idx]))
@@ -211,7 +211,7 @@ def read_messages(messages, logger):
             proto_start = datetime.now()
 
             # check if its wedding here! and added to the message
-            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, df=df, logger=logger)
+            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, logger=logger)
 
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
@@ -227,8 +227,8 @@ def read_messages(messages, logger):
                 logger.error(f"Failed to enrich image data for message: {_msg.content}")
                 raise Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content))
 
-            # logger.info(
-            #     f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
+            logger.info(
+                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
         except Exception as e:
             logger.error(f"Error reading messages at reading stage: {e}")
