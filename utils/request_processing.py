@@ -99,7 +99,7 @@ def get_info_protobufs(project_base_url, logger):
 
         gallery_info_df = results[0]
         for res in results[1:]:
-            gallery_info_df = gallery_info_df.combine_first(res)  # Merge dataframes
+            gallery_info_df = pd.merge(gallery_info_df, res, on="image_id", how="outer")
 
         # Convert only the specified columns to 'Int64' (nullable integer type)
         columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
