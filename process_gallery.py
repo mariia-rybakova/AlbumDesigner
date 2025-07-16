@@ -263,11 +263,41 @@ if __name__ == '__main__':
     _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 9092, 'projectId': 3441383, 'userId': 390948694, 'userJobId': 1061794486, 'base_url': 'pictures/3/441/3441383', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/1s_jejgcjk-60shpbclxhpjz.json', 'aiMetadata': {'photoIds': [99950443, 119964528, 119964534, 99950444, 99950442, 99950441, 99950445, 99950446, 119964536, 99950447], 'focus': ['everyoneElse'], 'personIds': [25, 9], 'subjects': ['decorations', 'flowers'], 'density': 4}, 'conditionId': 'AAD_3441383_93203b73-c3e2-4543-bf3d-748e3185c920.143.157', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 2}
     _images_path = '/home/a.hyryla/data/pic_time/imagesets/testing/3441383/'
     _output_pdf_path = '/home/a.hyryla/data/pic_time/results/processed_imagesets/testing/3441383/album_2.1.pdf'
-    final_album, _message = process_gallery(_input_request)
+
+
+    #Karmel
+    #### KARMEL TESTING ####
+    _input_request_karmel = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310,
+                      'projectId': 37141824, 'userId': 547128248, 'userJobId': 1068714614,
+                      'base_url': 'ptstorage_17://pictures/37/141/37141824/dmgb4onqc3hm',
+                      'photos': [], 'projectCategory': 0,
+                      'compositionPackageId': -1, 'designInfo': None,
+                      'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/xzycustiue6zobqvnora4fpa.json',
+                      'aiMetadata': {
+                          'photoIds': [9871230045, 9871230067, 9871231567, 9871231577, 9871231585, 9871235650,
+                                       9871253529, 9871253582, 9871253597, 9871260706], 'focus': 'bride and groom',
+                          'personIds': [1, 4, 9, 13, 13, 32, 31, 17, 20, 23, 35, 8, 5, 6, 7],
+                          'subjects': ["table_setting",
+                                       "reception_styling",
+                                       "ceremony_styling",
+                                       "furniture",
+                                       "building_exterior",
+                                       "garden",
+                                       "interior_design",
+                                       "architecture",
+                                       "ceremony", ], 'density': 4},
+                      'conditionId': 'AAD_46245951_4038cbc7-0743-464c-af1d-cc8bc280e6bb.171.255',
+                      'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    _images_path_karmel = f'dataset/newest_wedding_galleries/{_input_request['projectId']}'
+    _output_pdf_path_karmel = f'results/test_deployment/album_{_input_request['projectId']}.pdf'
+
+
+
+    final_album, _message = process_gallery(_input_request_karmel)
     gallery_photos_info = _message.content['gallery_photos_info']
 
     box_id2data = _message.designsInfo['anyPagebox_id2data'] # if 'designsInfo' in _message and 'anyPagebox_id2data' in _message['designsInfo'] else {}
-    visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info)
+    visualize_album_to_pdf(final_album, _images_path_karmel, _output_pdf_path_karmel, box_id2data, gallery_photos_info)
 
     print(final_album)
 
