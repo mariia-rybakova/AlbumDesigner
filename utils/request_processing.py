@@ -170,7 +170,7 @@ def read_messages(messages, logger):
             raise Exception('There are missing fields in input request: {}. Skipping.'.format(json_content))
 
 
-        if len(json_content['photos']) < 10:
+        if len(json_content['photos']) < 10 and 'aiMetadata' not in json_content:
             logger.error('Not enough photos: {}. Skipping.'.format(json_content))
             raise Exception('Not enough photos: {}. Skipping.'.format(json_content))
 
