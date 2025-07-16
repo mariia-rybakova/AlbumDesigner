@@ -5,7 +5,7 @@ import numpy as np
 from ptinfra.azure.pt_file import PTFile
 from io import BytesIO
 
-from utils.selection_tools import smart_wedding_selection,smart_non_wedding_selection
+from utils.selection_tools2 import smart_wedding_selection,smart_non_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
     if version == 1:

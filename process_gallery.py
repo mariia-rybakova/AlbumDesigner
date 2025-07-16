@@ -143,7 +143,6 @@ def get_selection(_msg, logger):
         is_wedding = _msg.content.get('is_wedding', False)
         df = _msg.content.get('gallery_photos_info', pd.DataFrame())
 
-
         if df.empty:
             logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
             _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
@@ -281,6 +280,20 @@ if __name__ == '__main__':
                         "architecture",
                         "ceremony",],'density':4}, 'conditionId': 'AAD_46245951_4038cbc7-0743-464c-af1d-cc8bc280e6bb.171.255',
                       'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+
+    _input_request_2 = dict(replyQueueName='devaigeneratealbumresponsedto', storeId=32, accountId=9092,
+                            projectId=3441383, userId=390948694, userJobId=1061794486,
+                            base_url='pictures/3/441/3441383', photos=[], projectCategory=1, compositionPackageId=-1,
+                            designInfo=None,
+                            designInfoTempLocation='pictures/temp/devaigeneratealbumdto/1s_jejgcjk-60shpbclxhpjz.json',
+                            aiMetadata={
+                                'photoIds': [99950443, 119964528, 119964534, 99950444, 99950442, 99950441, 99950445,
+                                             99950446, 119964536,
+                                             99950447], 'focus': ['everyoneElse'], 'personIds': [25, 9],
+                                'subjects': ['decorations', 'flowers'],
+                                'density': 4}, conditionId='AAD_3441383_93203b73-c3e2-4543-bf3d-748e3185c920.143.157',
+                            timedOut=False, dependencyDeleted=False, retryCount=2)
+
     _images_path = f'dataset/newest_wedding_galleries/{_input_request['projectId']}'
     _output_pdf_path = f'results/test_deployment/album_{_input_request['projectId']}.pdf'
 

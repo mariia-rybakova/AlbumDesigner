@@ -179,11 +179,10 @@ def get_persons_ids(persons_file, logger):
                 photo_ids.append(im.photoId)
                 persons_ids_list.append(id)
 
-
         # Create a temporary DataFrame with the new person information
         persons_info_df = pd.DataFrame({
             'image_id': photo_ids,
-            'persons_ids': persons_ids_list
+            'persons_ids': persons_ids_list,
         })
 
         # Aggregate persons_ids for each image_id
@@ -267,7 +266,7 @@ def get_person_vectors(persons_file, logger):
         # Create a DataFrame for the photos
         photo_data = []
         for image in images:
-            photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies)})
+            photo_data.append({'image_id': image.photoId, 'number_bodies': len(image.bodies), "bodies_info":image.bodies})
 
         photo_df = pd.DataFrame(photo_data)
         # Fill missing 'number_bodies' with 0 if not provided in the photos data
