@@ -1063,7 +1063,7 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
 
     selected_photos_df = df[df['image_id'].isin(selected_photos)]
 
-    event_mapping = load_event_mapping(CONFIGS['csv_file'])
+    event_mapping = load_event_mapping(CONFIGS['focus_csv'])
 
     actual_number_images_dict = {cluster_name: len(cluster_df) for cluster_name, cluster_df in
                                  df.groupby('cluster_context')}

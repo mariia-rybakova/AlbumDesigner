@@ -157,13 +157,13 @@ class SelectionStage(Stage):
                     updated_messages.append(_msg)
                     continue
 
-                ten_photos = _msg.content.get('photoIds', [])
-                people_ids = _msg.content.get('personIds', [])
+                ten_photos = ai_metadata.get('photoIds', [])
+                people_ids = ai_metadata.get('personIds', [])
                 df = _msg.content.get('gallery_photos_info', pd.DataFrame())
-                focus = _msg.content.get('focus',None)
-                tags = _msg.content.get('subjects',[])
-                is_wedding = _msg.content.get('is_wedding',False)
-                density = _msg.content.get('density',5)
+                focus = ai_metadata.get('focus', None)
+                tags = ai_metadata.get('subjects', [])
+                is_wedding = _msg.content.get('is_wedding', False)
+                density = ai_metadata.get('density', 5)
 
                 if df.empty:
                     self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
