@@ -124,7 +124,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
         if change_tuple[0] != 'merge':
             continue
         if group_to_change_key in merged_targets:
-            logger.info(f"Skipping group {group_to_change_key} as it was already merged into.")
+            # logger.info(f"Skipping group {group_to_change_key} as it was already merged into.")
             continue
 
         # Check if group_to_change_key exists in groups
@@ -153,7 +153,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
             do_not_change_group(illegal_group, groups, group_to_change_key)
             continue
         if merge_target_key in merged_targets:
-            logger.info(f"Skipping merge for {group_to_change_key} as target {merge_target_key} already merged into.")
+            # logger.info(f"Skipping merge for {group_to_change_key} as target {merge_target_key} already merged into.")
             continue
 
         groups = merge_groups(groups, illegal_group, group_to_change_key, selected_cluster, merge_target_key)

@@ -5,18 +5,27 @@ import numpy as np
 from ptinfra.azure.pt_file import PTFile
 from io import BytesIO
 
-from utils.selection_tools2 import smart_wedding_selection,smart_non_wedding_selection
+from utils.selection_tools_v2 import smart_wedding_selection,smart_non_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
-    if version == 1:
-        file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
-    else:
-        file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_queries_name}.bin')
+    try:
+        if version == 1:
+            file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
+        else:
+            file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_queries_name}.bin')
 
-    pai_file_bytes = PTFile(file)  # load file
-    fileBytes = pai_file_bytes.read_blob()
-    fb = BytesIO(fileBytes)
-    b_obs = fb.read()
+        pai_file_bytes = PTFile(file)  # load file
+        fileBytes = pai_file_bytes.read_blob()
+        fb = BytesIO(fileBytes)
+        b_obs = fb.read()
+    except Exception as ex:
+        if version == 1:
+            file_path = os.path.join(r'files/pre_queries/v1/', f'{pre_queries_name}.bin')
+        else:
+            file_path = os.path.join(r'files/pre_queries/v2/', f'{pre_queries_name}.bin')
+        with open(file_path, 'rb') as f:
+            b_obs = f.read()
+
     emb_size = struct.unpack_from('<2i', b_obs)  # [512, num_of_embeddings]
     obs = struct.unpack_from(f'<{emb_size[0] * emb_size[1]}f', b_obs[8:])
     embd_matrix = np.array(obs).reshape(emb_size[1], emb_size[0])  # rows are the embeddings -> [num_of_embeddings, 512]

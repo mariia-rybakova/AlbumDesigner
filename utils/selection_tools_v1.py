@@ -1071,9 +1071,6 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
     ai_images_selected = []
     category_picked = {}
 
-    # get the total number of possible images for an album
-    possible_image_sums = get_possible_image_sums()
-
     selected_photos_df = df[df['image_id'].isin(selected_photos)]
 
     event_mapping = load_event_mapping(CONFIGS['focus_csv_path'])
