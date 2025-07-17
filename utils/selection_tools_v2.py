@@ -9,14 +9,12 @@ from typing import Dict, List, Tuple, Union
 from collections import defaultdict,Counter
 
 
-from flatbuffers.flexbuffers import Object
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
 from scipy.spatial.distance import cosine
 from sklearn.metrics.pairwise import cosine_similarity
-from torch.ao.quantization.pt2e.port_metadata_pass import logger
 
 from utils.parser import CONFIGS,selection_threshold, limit_imgs, relations, spreads_required_per_category, priority_categories, min_images_per_category
 from utils.wedding_selection_tools import get_possible_image_sums,allocate_images_to_categories,remove_similar_images
