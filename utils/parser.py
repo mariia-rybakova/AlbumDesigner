@@ -175,6 +175,85 @@ relations = {'bride and groom':{
     'inside vehicle':(2,0.01),
     'suit':(1, 0.5),
 
+},
+    'parents': {
+        'bride and groom': (8, 0.2),
+
+        'bride': (4, 0.1),
+        'groom': (4, 0.001),
+
+        'bride party': (4, 0.5),
+        'groom party': (4, 0.5),
+        'full party': (4, 0.5),
+        'portrait': (10, 0.1),
+        'very large group': (10, 0.5),
+        'walking the aisle': (4, 0.4),
+
+        'bride getting dressed': (3, 0.5),
+        'first dance': (2, 0.2),
+        'cake cutting': (2, 0.1),
+        'ceremony': (15, 0.2),
+        'couple': (0, 0),
+        'dancing': (12, 0.5),
+
+        'entertainment': (2, 0.2),
+
+        'kiss': (2, 0.6),
+        'pet': (1, 0.5),
+
+        'accessories': (1, 0.01),
+        'settings': (8, 0.1),
+        'speech': (8, 0.5),
+
+        'detail': (8, 0.5),
+        'getting hair-makeup': (2, 0.1),
+        'food': (10, 0.5),
+        'other': (0, 0.5),
+        'invite': (1, 0.5),
+        'wedding dress': (2, 0.01),
+        'vehicle': (2, 0.01),
+        'inside vehicle': (2, 0.01),
+        'suit': (0, 0.5),
+
+    }
+,'everyone else':{
+    'bride and groom': (15, 0.2),
+
+    'bride': (4, 0.1),
+    'groom': (4, 0.001),
+    'bride party': (8, 0.5),
+    'groom party': (8, 0.5),
+    'full party': (6, 0.5),
+    'portrait': (5, 0.1),
+    'very large group': (6, 0.5),
+    'walking the aisle': (10, 0.4),
+
+    'bride getting dressed': (6, 0.5),
+    'first dance': (4, 0.2),
+    'cake cutting': (4, 0.1),
+    'ceremony': (10, 0.2),
+    'couple': (0, 0),
+    'dancing': (24, 0.5),
+
+    'entertainment': (3, 0.2),
+
+    'kiss': (2, 0.6),
+    'pet': (0, 0.5),
+
+    'accessories': (1, 0.01),
+    'settings': (5, 0.1),
+    'speech': (5, 0.5),
+
+    'detail': (5, 0.5),
+    'getting hair-makeup': (4, 0.1),
+    'food': (5, 0.5),
+    'other': (0, 0.5),
+    'invite': (1, 0.5),
+    'wedding dress':(1,0.01),
+    'vehicle': (1,0.01),
+    'inside vehicle':(1,0.01),
+    'suit':(1, 0.5),
+
 }}
 
 

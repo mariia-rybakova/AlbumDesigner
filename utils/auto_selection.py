@@ -5,7 +5,8 @@ import numpy as np
 from ptinfra.azure.pt_file import PTFile
 from io import BytesIO
 
-from utils.selection_tools_v2 import smart_wedding_selection,smart_non_wedding_selection
+from utils.selection_tools_v2 import smart_non_wedding_selection
+from utils.ai_wedding_selection_v2 import ai_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
     try:
@@ -52,7 +53,7 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
             # Select images for creating an album
             model_version =  df.iloc[0]['model_version']
             tags_features = get_tags_bins(tags,model_version)
-            ai_images_selected, errors = smart_wedding_selection(df, selected_photos, people_ids, focus,
+            ai_images_selected, errors = ai_wedding_selection(df, selected_photos, people_ids, focus,
                                                                  tags_features,density, logger)
         else:
             # Select images for creating an album

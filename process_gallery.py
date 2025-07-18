@@ -16,14 +16,19 @@ from utils.cover_image import process_non_wedding_cover_image, process_wedding_f
 from utils.time_processing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
 from utils.request_processing import assembly_output
-from utils.clusters_labels import map_cluster_label
-from utils.auto_selection import ai_selection
-
+from utils.WEDDING import ai_wedding_selection
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
+
+import os
+import struct
+import numpy as np
+
+from ptinfra.azure.pt_file import PTFile
+from io import BytesIO
 
 
 def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info):
@@ -120,6 +125,45 @@ class Message:
         return self.body
 
 
+def load_pre_queries_embeddings(pre_queries_name,version):
+    try:
+        if version == 1:
+            file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
+        else:
+            file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_queries_name}.bin')
+
+        pai_file_bytes = PTFile(file)  # load file
+        fileBytes = pai_file_bytes.read_blob()
+        fb = BytesIO(fileBytes)
+        b_obs = fb.read()
+    except Exception as ex:
+        if version == 1:
+            file_path = os.path.join(r'files/pre_queries/v1/', f'{pre_queries_name}.bin')
+        else:
+            file_path = os.path.join(r'files/pre_queries/v2/', f'{pre_queries_name}.bin')
+        with open(file_path, 'rb') as f:
+            b_obs = f.read()
+
+    emb_size = struct.unpack_from('<2i', b_obs)  # [512, num_of_embeddings]
+    obs = struct.unpack_from(f'<{emb_size[0] * emb_size[1]}f', b_obs[8:])
+    embd_matrix = np.array(obs).reshape(emb_size[1], emb_size[0])  # rows are the embeddings -> [num_of_embeddings, 512]
+    return embd_matrix
+
+
+def get_tags_bins(tags,version):
+    if not any(s.strip() for s in tags):
+        return []
+    #make the check for the model version
+    tags_features = {}
+    for tag in tags:
+        embeddings = load_pre_queries_embeddings(tag,version)
+        if tag not in tags_features:
+            tags_features[tag] = []
+        tags_features[tag] = embeddings
+
+    return tags_features
+
+
 def get_selection(message, logger):
     start = datetime.now()
     # Iterate over message and start the selection process
@@ -148,8 +192,9 @@ def get_selection(message, logger):
             message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
             return message
 
-        ai_photos_selected, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,
-                                                  logger)
+        model_version = df.iloc[0]['model_version']
+        tags_features = get_tags_bins(tags, model_version)
+        ai_photos_selected, category_picked, errors = ai_wedding_selection(df, ten_photos, people_ids, focus, tags_features, density,logger)
 
         if errors:
             logger.error(f"Error for Selection images for this message {message}")
