@@ -9,3 +9,4 @@ src/__pycache__/
 utils/__pycache__/
 
 process_gallery.py
+test_locally.py
