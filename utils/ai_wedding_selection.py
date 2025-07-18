@@ -411,7 +411,7 @@ def calculate_selection_revised(n_actual: Dict, lookup_table: Dict, event_mappin
 
     return results
 
-def ai_wedding_selection(df, selected_photos, people_ids, focus, tags_features,density,
+def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_features,density,
                             logger):
     error_message = None
     ai_images_selected = []
