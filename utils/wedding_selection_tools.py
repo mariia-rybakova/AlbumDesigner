@@ -84,7 +84,6 @@ def allocate_images_to_categories(
 
     return result
 
-
 def get_clusters(df):
     clusters_ids = {}
     # image class
@@ -96,8 +95,6 @@ def get_clusters(df):
 
         clusters_ids[class_id].append(image_id)
     return clusters_ids
-
-
 
 def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
     not_people_events = ['vehicle', 'settings', 'rings', 'entertainment', 'accessories', 'food',

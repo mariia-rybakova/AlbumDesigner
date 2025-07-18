@@ -226,7 +226,12 @@ class ProcessStage(Stage):
 
             self.logger.debug("Params for this Gallery are: {}".format(params))
 
-            p = mp.Process(target=process_crop_images, args=(self.q, message.content.get('gallery_photos_info')))
+            df = message.content.get('gallery_photos_info', pd.DataFrame())
+            df_serializable = df.copy()  # Make a copy to avoid modifying original
+            df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
+
+
+            p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
             p.start()
 
             try:
