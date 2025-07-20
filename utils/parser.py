@@ -61,6 +61,18 @@ CONFIGS = {'DEBUG': True,
            'BODY_MEDIUM_THRESHOLD': 0.4,
            'ε': 1e-9,
            'focus_csv_path':r'files/focus_csv.csv',
+           'bin_name_dictionary':{
+                'weddingDress':'wedding_dress',
+                'brideGettingReady':'bridegettingready',
+                'groomGettingReady':'groomgettingready',
+               'tableSetting':'table_setting',
+               'holdingHands':'holdinghands',
+               'softLight': 'softlight',
+           },
+
+
+
+
 }
 
 merge_content_priority = {
