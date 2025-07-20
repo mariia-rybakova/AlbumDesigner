@@ -9,7 +9,7 @@ from utils.selection_tools_v2 import smart_wedding_selection,smart_non_wedding_s
 
 def load_pre_queries_embeddings(pre_queries_name,version):
 
-    pre_query_file_name = CONFIGS['bin_name_dictionary'][pre_queries_name]
+    pre_query_file_name = CONFIGS['bin_name_dictionary'].get(pre_queries_name,pre_queries_name)
 
     try:
         if version == 1:
