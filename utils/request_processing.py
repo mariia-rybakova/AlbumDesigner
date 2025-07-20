@@ -176,25 +176,28 @@ def read_messages(messages, logger):
             _msg.designsInfo = dict()
             _msg.designsInfo['defaultPackageStyleId'] = json_content['designInfo']['defaultPackageStyleId']
 
-            if 'anyPage' in json_content['designInfo']['parts']:
+            if 'anyPage' in json_content['designInfo']['parts'] and len(json_content['designInfo']['parts']['anyPage']['designIds'])>0:
                 _msg.designsInfo['anyPageIds'] = json_content['designInfo']['parts']['anyPage']['designIds']
             else:
                 _msg.error = 'no anyPage in designInfo. Skipping.'
                 continue
             if 'firstPage' in json_content['designInfo']['parts']:
-                _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
-                _msg.pagesInfo['firstPage'] = True
+                if len(json_content['designInfo']['parts']['firstPage']['designIds']):
+                    _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
+                    _msg.pagesInfo['firstPage'] = True
 
             if 'lastPage' in json_content['designInfo']['parts']:
-                _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
-                _msg.pagesInfo['lastPage'] = True
+                if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
+                    _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
+                    _msg.pagesInfo['lastPage'] = True
 
             if 'cover' in json_content['designInfo']['parts']:
-                _msg.designsInfo['coverDesignIds'] = json_content['designInfo']['parts']['cover']['designIds']
-                _msg.pagesInfo['cover'] = True
+                if len(json_content['designInfo']['parts']['cover']['designIds']) >0:
+                    _msg.designsInfo['coverDesignIds'] = json_content['designInfo']['parts']['cover']['designIds']
+                    _msg.pagesInfo['cover'] = True
 
-                coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
-                _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
+                    # coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
+                    # _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
 
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
