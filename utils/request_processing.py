@@ -186,11 +186,15 @@ def read_messages(messages, logger):
                 if len(json_content['designInfo']['parts']['firstPage']['designIds']):
                     _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
                     _msg.pagesInfo['firstPage'] = True
+                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'])
+                    _msg.designsInfo['firstPage_layouts_df'] = firstPage_layouts_df
 
             if 'lastPage' in json_content['designInfo']['parts']:
                 if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
                     _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
                     _msg.pagesInfo['lastPage'] = True
+                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'])
+                    _msg.designsInfo['lastPage_layouts_df'] = lastPage_layouts_df
 
             if 'cover' in json_content['designInfo']['parts']:
                 if len(json_content['designInfo']['parts']['cover']['designIds']) >0:

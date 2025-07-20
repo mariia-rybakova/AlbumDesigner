@@ -256,8 +256,10 @@ class ProcessStage(Stage):
                 else:
                     df, first_last_images_ids, first_last_imgs_df = process_non_wedding_cover_image(sorted_df,
                                                                                                       self.logger)
-
-                first_last_design_ids = get_first_last_design_ids(message.designsInfo['anyPagelayouts_df'], self.logger)
+                if message.pagesInfo.get('firstPage') and message.pagesInfo.get('lastPage'):
+                    first_last_design_ids = get_first_last_design_ids(pd.concat([message.designsInfo['firstPage_layouts_df'],message.designsInfo['firstPage_layouts_df']]), self.logger)
+                else:
+                    first_last_design_ids = get_first_last_design_ids(message.designsInfo['anyPagelayouts_df'], self.logger)
 
                 # Handle the processing time logging
                 start = datetime.now()
