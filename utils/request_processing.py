@@ -180,7 +180,8 @@ def read_messages(messages, logger):
                 _msg.designsInfo['anyPageIds'] = json_content['designInfo']['parts']['anyPage']['designIds']
             else:
                 _msg.error = 'no anyPage in designInfo. Skipping.'
-                continue
+                logger.error('no anyPage in designInfo. Skipping.')
+                raise Exception('no anyPage in designInfo. Skipping.')
             if 'firstPage' in json_content['designInfo']['parts']:
                 if len(json_content['designInfo']['parts']['firstPage']['designIds']):
                     _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
