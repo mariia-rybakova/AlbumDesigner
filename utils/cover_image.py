@@ -4,19 +4,16 @@ import pandas as pd
 from utils.parser import CONFIGS
 
 
-def get_first_last_design_ids(layout_df, logger):
+def get_design_id(layout_df, number_of_boxes, logger):
     # Get all layout keys where "number of boxes" == 1
-    one_img_layouts = [key for key, layout in layout_df.iterrows() if layout["number of boxes"] == 1]
+    img_layouts = [key for key, layout in layout_df.iterrows() if layout["number of boxes"] == number_of_boxes]
 
     # Ensure there are at least 2 valid layouts
-    if len(one_img_layouts) < 2:
+    if len(img_layouts) < 1:
         logger.error("Not enough layouts with one image to select two distinct ones.")
         return None
 
-    # Select two distinct layouts
-    chosen_layouts = random.sample(one_img_layouts, 2)
-
-    return chosen_layouts
+    return img_layouts[0]
 
 
 def get_important_imgs(data_df, top=5):
@@ -44,12 +41,13 @@ def get_important_imgs(data_df, top=5):
 
     return image_id_list
 
-def process_wedding_first_last_image(df, logger):
-    bride_groom_highest_images = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
+
+def choose_good_wedding_images(df, number_of_images, logger):
+    good_images = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
     # if we didn't find the highest ranking images then we won't be able to get cover image
-    if len(bride_groom_highest_images) > 1:
+    if len(good_images) >= number_of_images:
         # Select 2 distinct images
-        cover_img_ids = random.sample(bride_groom_highest_images, 2)
+        cover_img_ids = random.sample(good_images, number_of_images)
 
         # Get rows corresponding to selected images
         cover_image_df = df[df['image_id'].isin(cover_img_ids)]
@@ -63,7 +61,7 @@ def process_wedding_first_last_image(df, logger):
         return df, None, None
 
 
-def process_non_wedding_cover_image(df, logger):
+def choose_good_non_wedding_images(df, number_of_images, logger):
     # Validate input DataFrame
     required_columns = {'persons_ids', 'image_order', 'image_id'}
 
@@ -91,7 +89,7 @@ def process_non_wedding_cover_image(df, logger):
         return df, [], pd.DataFrame()
 
     # Select the top two images with the highest image_order
-    selected_images_df = selected_images_df.nlargest(2, 'image_order')
+    selected_images_df = selected_images_df.nlargest(number_of_images, 'image_order')
 
     if selected_images_df.empty:
         logger.warning("Warning: No images selected based on image_order.")
@@ -108,3 +106,25 @@ def process_non_wedding_cover_image(df, logger):
     return df_without_selected, selected_image_ids, selected_images_df
 
 
+def generate_first_last_pages(message, df, logger):
+    first_last_pages_data_dict = dict()
+    for page_type in ['firstPage', 'lastPage']:
+        if not message.pagesInfo.get(page_type):
+            continue
+        layouts_sizes = [layout["number of boxes"] for key, layout in message.designsInfo[f'{page_type}_layouts_df'].iterrows()]
+        number_of_images = min(layouts_sizes)
+
+        if message.content.get('is_wedding', True):
+            df, first_last_images_ids, first_last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
+        else:
+            df, first_last_images_ids, first_last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
+
+        cur_design_id = get_design_id(message.designsInfo[f'{page_type}_layouts_df'], number_of_images, logger)
+
+        first_last_pages_data_dict[page_type] = {
+            'design_id': cur_design_id,
+            'images_ids': first_last_images_ids,
+            'images_df': first_last_imgs_df
+        }
+
+    return df, first_last_pages_data_dict

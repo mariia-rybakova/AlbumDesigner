@@ -21,7 +21,7 @@ from ptinfra import  AbortRequested
 
 from src.smart_cropping import process_crop_images
 from utils.auto_selection import ai_selection
-from utils.cover_image import process_non_wedding_cover_image, process_wedding_first_last_image, get_first_last_design_ids
+from utils.cover_image import generate_first_last_pages
 from utils.time_processing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
 from utils.request_processing import read_messages, assembly_output
@@ -250,16 +250,7 @@ class ProcessStage(Stage):
                 sorted_df, image_id2general_time = process_image_time(sorted_df)
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
 
-                if message.content.get('is_wedding', True):
-                    df, first_last_images_ids, first_last_imgs_df = process_wedding_first_last_image(sorted_df,
-                                                                                                     self.logger)
-                else:
-                    df, first_last_images_ids, first_last_imgs_df = process_non_wedding_cover_image(sorted_df,
-                                                                                                      self.logger)
-                if message.pagesInfo.get('firstPage') and message.pagesInfo.get('lastPage'):
-                    first_last_design_ids = get_first_last_design_ids(pd.concat([message.designsInfo['firstPage_layouts_df'],message.designsInfo['firstPage_layouts_df']]), self.logger)
-                else:
-                    first_last_design_ids = get_first_last_design_ids(message.designsInfo['anyPagelayouts_df'], self.logger)
+                df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
 
                 # Handle the processing time logging
                 start = datetime.now()
@@ -279,15 +270,13 @@ class ProcessStage(Stage):
                     raise Exception('cropping process not completed.')
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
-                if first_last_imgs_df is not None:
-                    first_last_imgs_df = first_last_imgs_df.merge(cropped_df, how='inner', on='image_id')
+                for key, value in first_last_pages_data_dict.items():
+                    first_last_pages_data_dict[key]['images_df'] = value['images_df'].merge(cropped_df, how='inner', on='image_id')
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
 
-
-                final_response = assembly_output(album_result, message, df,
-                                                 first_last_images_ids, first_last_imgs_df, first_last_design_ids, self.logger)
+                final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, self.logger)
 
                 message.album_doc = final_response
                 processing_time = datetime.now() - start
