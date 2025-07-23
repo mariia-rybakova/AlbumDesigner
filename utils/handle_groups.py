@@ -164,7 +164,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
     return groups, merged_targets
 
 
-def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None, max_iterations=20):
+def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None, max_iterations=500):
     count = 2
     iteration = 0
     merged_targets = set()
@@ -183,12 +183,12 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                 logger.info('No groups to change. Continue.')
                 break
             if iteration >= max_iterations:
-                logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
+                logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Groups to change left: {groups_to_change}. Exiting to avoid infinite loop.")
                 break
 
             for key_to_change, change_tuple in groups_to_change.items():
                 if key_to_change in merged_targets:
-                    logger.info(f"Skipping group {key_to_change} as it was already merged into.")
+                    # logger.info(f"Skipping group {key_to_change} as it was already merged into.")
                     continue
                 imgs_number = group2images.get(key_to_change, 0)
                 new_groups = handle_illegal(key_to_change, change_tuple, imgs_number, groups, count, logger)
@@ -204,7 +204,7 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                 group2images = get_images_per_groups(new_groups)
                 groups = new_groups
 
-            logger.info("Iteration completed")
+            # logger.info("Iteration completed")
             count += 1
             iteration += 1
     except Exception as ex:

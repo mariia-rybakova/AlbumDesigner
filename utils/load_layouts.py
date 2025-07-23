@@ -3,7 +3,7 @@ import ast
 def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df):
     layout_id2data = dict()
     box_id2data = dict()
-    for layouts_df in [any_layouts_df, first_page_layouts_df, last_page_layouts_df]:
+    for df_id, layouts_df in enumerate([any_layouts_df, first_page_layouts_df, last_page_layouts_df]):
         if layouts_df is None:
             continue
         for idx, layout in layouts_df.iterrows():
@@ -17,11 +17,12 @@ def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df
                 left_boxes_ids = ast.literal_eval(left_boxes_ids)
                 right_boxes_ids = ast.literal_eval(right_boxes_ids)
 
-            layout_id2data[idx] = {
-                'boxes_areas': layout_boxes,
-                'left_box_ids': left_boxes_ids,
-                'right_box_ids': right_boxes_ids
-            }
+            if df_id == 0:
+                layout_id2data[idx] = {
+                    'boxes_areas': layout_boxes,
+                    'left_box_ids': left_boxes_ids,
+                    'right_box_ids': right_boxes_ids
+                }
 
             # get all photos orientation
             left_portrait_ids = layout['left_portrait_ids']
