@@ -157,7 +157,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
             continue
 
         groups = merge_groups(groups, illegal_group, group_to_change_key, selected_cluster, merge_target_key)
-        logger.info(f"Group {group_to_change_key} was merger to {merge_target_key}.")
+        # logger.info(f"Group {group_to_change_key} was merger to {merge_target_key}.")
         merged_targets.add(merge_target_key)
         merged_targets.add(group_to_change_key)
 

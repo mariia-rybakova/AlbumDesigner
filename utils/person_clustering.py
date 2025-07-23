@@ -17,7 +17,7 @@ def select_by_cluster(clusters_ids, image_cluster_dict):
     Fallback selection mechanism (simplified for this example).
     In a real scenario, this would be your actual robust fallback function.
     """
-    print(f"INFO: Fallback select_by_cluster called.")
+    # print(f"INFO: Fallback select_by_cluster called.")
     selected = []
     if image_cluster_dict:
         for cluster_id_key in clusters_ids:  # Use a different var name to avoid conflict

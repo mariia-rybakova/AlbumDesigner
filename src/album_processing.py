@@ -111,10 +111,10 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
     design_box_id2data = designs_info['anyPagebox_id2data']
 
 
-    logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
+    # logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
-        logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
+        # logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
         cur_group_photos_list = get_group_photos_list(cur_group_photos, spread_params, logger)
 
         local_result = {}
@@ -130,7 +130,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
                     new_group_photos_list = get_group_photos_list(group_photos, spread_params, logger)
                     groups_filtered_spreads_list = list()
                     for cur_sub_group_photos in new_group_photos_list:
-                        print("Filtered spreads not found we try again with different params. Group: {}. Params: {}".format(group_name, [spread_params[0] / divider, spread_params[1]]))
+                        logger.debug("Filtered spreads not found we try again with different params. Group: {}. Params: {}".format(group_name, [spread_params[0] / divider, spread_params[1]]))
                         cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df,
                                                                            [spread_params[0] / divider, spread_params[1]],params, logger)
                         if cur_filtered_spreads is None:
@@ -150,16 +150,16 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
             else:
                 final_groups_and_spreads = [(group_photos, filtered_spreads)]
 
-            logger.info('Number of filtered spreads: {}. Their sizes: {}'.format(len(final_groups_and_spreads), [len(spr) for _, spr in final_groups_and_spreads]))
-            logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
+            # logger.info('Number of filtered spreads: {}. Their sizes: {}'.format(len(final_groups_and_spreads), [len(spr) for _, spr in final_groups_and_spreads]))
+            # logger.info('Filtered spreads time: {}'.format(time.time() - filter_start))
 
             best_spread = None
             for sub_group_photos, filtered_spreads in final_groups_and_spreads:
                 ranking_start = time.time()
                 filtered_spreads = add_ranking_score(filtered_spreads, sub_group_photos, layout_id2data)
                 filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-                logger.info(f"Number of filtered spreads after ranking sorted {len(filtered_spreads)}")
-                logger.info('Ranking time: {}'.format(time.time() - ranking_start))
+                # logger.info(f"Number of filtered spreads after ranking sorted {len(filtered_spreads)}")
+                # logger.info('Ranking time: {}'.format(time.time() - ranking_start))
                 if len(filtered_spreads) == 0:
                     continue
                 best_spread = filtered_spreads[0]
@@ -176,9 +176,9 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
                 else:
                     local_result[str(group_name[0]) + '*' + str(group_idx)] = best_spread
                 group_idx += 1
-            logger.debug('Current group: {}. Best spread: {}'.format(group_name, best_spread))
+            # logger.debug('Current group: {}. Best spread: {}'.format(group_name, best_spread))
 
-        logger.info("Finished with cur photos {} for group name {}".format(len(cur_group_photos), group_name))
+        # logger.info("Finished with cur photos {} for group name {}".format(len(cur_group_photos), group_name))
 
         del cur_group_photos_list
         collect()
@@ -197,7 +197,7 @@ def album_processing(df, designs_info, is_wedding, params, logger):
         original_groups = get_none_wedding_groups(df,logger)
 
     group2images = get_images_per_groups(original_groups)
-    logger.info('Detected groups: {}'.format(group2images))
+    # logger.info('Detected groups: {}'.format(group2images))
 
     look_up_table = get_lookup_table(group2images,is_wedding,logger)
 

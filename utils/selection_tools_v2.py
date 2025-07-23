@@ -1181,8 +1181,8 @@ def get_scores(df, selected_photos_df, people_ids, tags_features):
 
 def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_features, density,
                             logger):
-    logger.info("====================================")
-    logger.info("Starting Image selection Process....")
+    # logger.info("====================================")
+    # logger.info("Starting Image selection Process....")
 
     error_message = None
     ai_images_selected = []
@@ -1206,14 +1206,14 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
                 CONFIGS['events_disallowing_small_images']:
             continue
 
-        logger.info("====================================")
-        logger.info(f"Starting with {cluster_name} and actual number  of images {n_actual}")
+        # logger.info("====================================")
+        # logger.info(f"Starting with {cluster_name} and actual number  of images {n_actual}")
 
         if cluster_name not in category_picked:
             category_picked[cluster_name] = []
 
         if n_actual <= final_allocation[cluster_name] or final_allocation[cluster_name] < 2:
-            print("Passed hereeeeeee")
+            # print("Passed hereeeeeee")
             ai_images_selected.extend(cluster_df['image_id'].values[:final_allocation[cluster_name]])
             category_picked[cluster_name].extend(cluster_df['image_id'].values[:final_allocation[cluster_name]])
             continue
@@ -1260,8 +1260,8 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
             ai_images_selected.extend(available_img_ids)
             category_picked[cluster_name].extend(available_img_ids)
 
-    logger.info(f"Total images: {len(ai_images_selected)}")
-    logger.info("*******************************************************")
+    # logger.info(f"Total images: {len(ai_images_selected)}")
+    # logger.info("*******************************************************")
     return ai_images_selected, error_message
 
 
