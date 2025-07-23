@@ -1,7 +1,7 @@
 import os
 import struct
 import numpy as np
-
+from utils.parser import CONFIGS
 from ptinfra.azure.pt_file import PTFile
 from io import BytesIO
 
@@ -9,11 +9,14 @@ from utils.ai_non_wedding_selection import smart_non_wedding_selection
 from utils.ai_wedding_selection import smart_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
+
+    pre_query_file_name = CONFIGS['bin_name_dictionary'].get(pre_queries_name,pre_queries_name)
+
     try:
         if version == 1:
-            file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_queries_name}.bin')
+            file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_query_file_name}.bin')
         else:
-            file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_queries_name}.bin')
+            file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_query_file_name}.bin')
 
         pai_file_bytes = PTFile(file)  # load file
         fileBytes = pai_file_bytes.read_blob()
@@ -21,9 +24,9 @@ def load_pre_queries_embeddings(pre_queries_name,version):
         b_obs = fb.read()
     except Exception as ex:
         if version == 1:
-            file_path = os.path.join(r'files/pre_queries/v1/', f'{pre_queries_name}.bin')
+            file_path = os.path.join(r'files/pre_queries/v1/', f'{pre_query_file_name}.bin')
         else:
-            file_path = os.path.join(r'files/pre_queries/v2/', f'{pre_queries_name}.bin')
+            file_path = os.path.join(r'files/pre_queries/v2/', f'{pre_query_file_name}.bin')
         with open(file_path, 'rb') as f:
             b_obs = f.read()
 

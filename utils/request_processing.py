@@ -176,25 +176,35 @@ def read_messages(messages, logger):
             _msg.designsInfo = dict()
             _msg.designsInfo['defaultPackageStyleId'] = json_content['designInfo']['defaultPackageStyleId']
 
-            if 'anyPage' in json_content['designInfo']['parts']:
+            if 'anyPage' in json_content['designInfo']['parts'] and len(json_content['designInfo']['parts']['anyPage']['designIds'])>0:
                 _msg.designsInfo['anyPageIds'] = json_content['designInfo']['parts']['anyPage']['designIds']
             else:
                 _msg.error = 'no anyPage in designInfo. Skipping.'
-                continue
+                logger.error('no anyPage in designInfo. Skipping.')
+                raise Exception('no anyPage in designInfo. Skipping.')
+            firstPage_layouts_df = None
+            lastPage_layouts_df = None
             if 'firstPage' in json_content['designInfo']['parts']:
-                _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
-                _msg.pagesInfo['firstPage'] = True
+                if len(json_content['designInfo']['parts']['firstPage']['designIds']) > 0:
+                    _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
+                    _msg.pagesInfo['firstPage'] = True
+                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'])
+                    _msg.designsInfo['firstPage_layouts_df'] = firstPage_layouts_df
 
             if 'lastPage' in json_content['designInfo']['parts']:
-                _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
-                _msg.pagesInfo['lastPage'] = True
+                if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
+                    _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
+                    _msg.pagesInfo['lastPage'] = True
+                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'])
+                    _msg.designsInfo['lastPage_layouts_df'] = lastPage_layouts_df
 
             if 'cover' in json_content['designInfo']['parts']:
-                _msg.designsInfo['coverDesignIds'] = json_content['designInfo']['parts']['cover']['designIds']
-                _msg.pagesInfo['cover'] = True
+                if len(json_content['designInfo']['parts']['cover']['designIds']) > 0:
+                    _msg.designsInfo['coverDesignIds'] = json_content['designInfo']['parts']['cover']['designIds']
+                    _msg.pagesInfo['cover'] = True
 
-                coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
-                _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
+                    # coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
+                    # _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
 
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
@@ -212,7 +222,7 @@ def read_messages(messages, logger):
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
                 _msg.designsInfo['anyPagelayouts_df'] = anyPage_layouts_df
-                layout_id2data, box_id2data = get_layouts_data(anyPage_layouts_df)
+                layout_id2data, box_id2data = get_layouts_data(anyPage_layouts_df, firstPage_layouts_df, lastPage_layouts_df)
                 _msg.designsInfo['anyPagelayout_id2data'] = layout_id2data
                 _msg.designsInfo['anyPagebox_id2data'] = box_id2data
                 enriched_messages.append(_msg)
@@ -291,7 +301,7 @@ def customize_box(image_info, box_info):
         return x, y, w, h
 
 
-def assembly_output(output_list, message, images_df, first_last_images_ids, first_last_images_df, first_last_design_ids, logger):
+def assembly_output(output_list, message, images_df, first_last_pages_data_dict, logger):
     result_dict = dict()
     result_dict['compositions'] = list()
     result_dict['placementsTxt'] = list()
@@ -322,10 +332,12 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
         counter_comp_id += 1
 
     # adding the first spread image
-    if 'firstPage' in message.pagesInfo.keys() and first_last_images_df is not None:
-        design_id = layouts_df.loc[first_last_design_ids[0]]['id']
-        left_box_ids = layouts_df.loc[first_last_design_ids[0]]['left_box_ids']
-        right_box_ids = layouts_df.loc[first_last_design_ids[0]]['right_box_ids']
+    if 'firstPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['firstPage']['images_df'] is not None:
+        first_page_data = first_last_pages_data_dict['firstPage']
+        first_page_layouts_df = message.designsInfo['firstPage_layouts_df']
+        design_id = first_page_layouts_df.loc[first_page_data['design_id']]['id']
+        left_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['left_box_ids']
+        right_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
         result_dict['compositions'].append({"compositionId": counter_comp_id,
                                        "compositionPackageId": message.content['compositionPackageId'],
@@ -336,20 +348,21 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
                                        "boxes": None,
                                        "logicalSelectionsState": None})
 
-        x, y, w, h = customize_box(first_last_images_df.iloc[0], box_id2data[all_box_ids[0]])
-        result_dict['placementsImg'].append({"placementImgId": counter_image_id,
-                                        "compositionId": 2,
-                                        "compositionPackageId": message.content['compositionPackageId'],
-                                        "boxId": all_box_ids[0],
-                                        "photoId": first_last_images_ids[0],
-                                        "cropX": x,
-                                        "cropY": y,
-                                        "cropWidth": w,
-                                        "cropHeight": h,
-                                        "rotate": 0,
-                                        "projectId": message.content['projectId'],
-                                        "photoFilter": 0,
-                                        "photo": None})
+        for idx, box_id in enumerate(all_box_ids):
+            x, y, w, h = customize_box(first_page_data['images_df'].iloc[idx], box_id2data[box_id])
+            result_dict['placementsImg'].append({"placementImgId": counter_image_id,
+                                            "compositionId": counter_comp_id,
+                                            "compositionPackageId": message.content['compositionPackageId'],
+                                            "boxId": box_id,
+                                            "photoId": first_page_data['images_ids'][idx],
+                                            "cropX": x,
+                                            "cropY": y,
+                                            "cropWidth": w,
+                                            "cropHeight": h,
+                                            "rotate": 0,
+                                            "projectId": message.content['projectId'],
+                                            "photoFilter": 0,
+                                            "photo": None})
         counter_comp_id += 1
         counter_image_id += 1
 
@@ -419,34 +432,38 @@ def assembly_output(output_list, message, images_df, first_last_images_ids, firs
 
 
     # adding the last page
-    if 'lastPage' in message.pagesInfo.keys() and first_last_images_df is not None:
-        design_id = layouts_df.loc[first_last_design_ids[1]]['id']
-        left_box_ids = layouts_df.loc[first_last_design_ids[1]]['left_box_ids']
-        right_box_ids = layouts_df.loc[first_last_design_ids[1]]['right_box_ids']
+    if 'lastPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['lastPage'][
+        'images_df'] is not None:
+        last_page_data = first_last_pages_data_dict['lastPage']
+        last_page_layouts_df = message.designsInfo['lastPage_layouts_df']
+        design_id = last_page_layouts_df.loc[last_page_data['design_id']]['id']
+        left_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['left_box_ids']
+        right_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
         result_dict['compositions'].append({"compositionId": counter_comp_id,
-                                       "compositionPackageId": message.content['compositionPackageId'],
-                                       "designId": design_id,
-                                       "styleId": message.designsInfo['defaultPackageStyleId'],
-                                       "revisionCounter": 0,
-                                       "copies": 1,
-                                       "boxes": None,
-                                       "logicalSelectionsState": None})
+                                            "compositionPackageId": message.content['compositionPackageId'],
+                                            "designId": design_id,
+                                            "styleId": message.designsInfo['defaultPackageStyleId'],
+                                            "revisionCounter": 0,
+                                            "copies": 1,
+                                            "boxes": None,
+                                            "logicalSelectionsState": None})
 
-        x, y, w, h = customize_box(first_last_images_df.iloc[1], box_id2data[all_box_ids[1]])
-        result_dict['placementsImg'].append({"placementImgId":  counter_image_id,
-                                        "compositionId": counter_comp_id,
-                                        "compositionPackageId": message.content['compositionPackageId'],
-                                        "boxId": all_box_ids[1],
-                                        "photoId": first_last_images_ids[1],
-                                        "cropX": x,
-                                        "cropY": y,
-                                        "cropWidth": w,
-                                        "cropHeight": h,
-                                        "rotate": 0,
-                                        "projectId": message.content['projectId'],
-                                        "photoFilter": 0,
-                                        "photo": None})
+        for idx, box_id in enumerate(all_box_ids):
+            x, y, w, h = customize_box(last_page_data['images_df'].iloc[idx], box_id2data[box_id])
+            result_dict['placementsImg'].append({"placementImgId": counter_image_id,
+                                                 "compositionId": counter_comp_id,
+                                                 "compositionPackageId": message.content['compositionPackageId'],
+                                                 "boxId": box_id,
+                                                 "photoId": last_page_data['images_ids'][idx],
+                                                 "cropX": x,
+                                                 "cropY": y,
+                                                 "cropWidth": w,
+                                                 "cropHeight": h,
+                                                 "rotate": 0,
+                                                 "projectId": message.content['projectId'],
+                                                 "photoFilter": 0,
+                                                 "photo": None})
 
     result_dict = convert_int64_to_int(result_dict)
 
