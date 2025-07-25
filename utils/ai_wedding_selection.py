@@ -301,7 +301,7 @@ def load_event_mapping(csv_path: str):
         return {}
 
 
-def calculate_selection_revised(n_actual: Dict, lookup_table: Dict, event_mapping: Dict,
+def calculate_selection_revised(n_actual_dict: Dict, lookup_table: Dict, event_mapping: Dict,
                                 density: int = 3, logger=None) -> Dict:
     """
     Calculates image selection for photo album spreads, allocating a percentage of the total
@@ -320,96 +320,110 @@ def calculate_selection_revised(n_actual: Dict, lookup_table: Dict, event_mappin
         images to select, the calculated number of spreads, and the reasoning for the decision.
     """
     try:
-        results = {}
         # Density factors determine how many images are packed into one spread.
-        density_factors = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.25, 5: 2.0}
+        density_factors = {1: 0.5, 2: 1.0, 3: 1.25, 4: 1.75, 5: 2.0}
         density_factor = density_factors.get(density, 1.0)
-        # Base number of images per spread is 4, adjusted by the density factor.
-        images_per_spread = max(1, int(4 * density_factor))
 
-        # --- Pre-calculation Step for 'percentage' events ---
-        # To ensure percentages are allocated proportionally, we first sum the total percentage
-        # assigned across all events for the given category. This prevents overallocation
-        # if the sum of percentages exceeds 100.
-        total_percentage_assigned = 0
-        for event in lookup_table:
-            if event not in n_actual.keys():
+        event_selection_dict = {}
+        for event,n_actual in n_actual_dict.items():
+            if event in ['None', 'other']:
+                event_selection_dict[event] = 0
                 continue
-            event_config = event_mapping.get(event, {})
-            if event_config.get('type') == 'percentage':
-                total_percentage_assigned += event_config.get('value', 0)
 
-        # --- Main Processing Loop for Each Event ---
-        for event, config in lookup_table.items():
-            if event not in n_actual.keys():
-                continue
-            n_target, std_target = config
-            event_config = event_mapping.get(event, {})
-            event_type = event_config.get('type')
-
-            reason = 'default_fallback'  # Default reason if no other logic applies.
-
-            # --- Logic Branching Based on Event Type ---
-
-            if event_type == 'percentage':
-                percentage = event_config.get('value', 0)
-                # The selection is a direct percentage of the *actual* number of photos.
-                # If the total assigned percentage is > 0, we calculate a proportional share.
-                if total_percentage_assigned > 0:
-                    proportional_share = percentage / total_percentage_assigned
-                    selection = round(n_actual[event] * proportional_share)
-                else:
-                    selection = 0  # Avoid division by zero if no percentages are assigned.
-
-                reason = f'percentage_{percentage}%_of_total'
-
-            elif event_type == 'yes':
-                # 'yes' signifies a mandatory but minimal inclusion.
-                selection = min(2, n_actual[event])  # Select 1 or 2 images.
-                reason = 'yes_minimal_selection'
-
-            elif event_type == 'no':
-                # 'no' signifies explicit exclusion.
-                selection = 0
-                reason = 'no_selection'
-
-            else:
-                # --- Default Calculation Logic ---
-                # This logic is used for events with no specific type in the event_mapping
-                # or if the event is not in the mapping at all.
-                if n_actual[event] > 0:
-                    proportional_factor = min(1, n_target / n_actual)
-                    deviation_adjustment = (n_actual[event] - n_target) / (std_target + 1e-6)
-                    selection = n_target + deviation_adjustment * proportional_factor
-                    # Clamp the selection to a reasonable range to avoid extreme results.
-                    selection = max(4, min(selection, n_target * 1.5))
-                else:
-                    selection = 0  # Cannot select images if none are available.
-
-                if event not in event_mapping:
-                    reason = 'default_unrecognized'
-
-            # Ensure selection does not exceed the number of available images.
-            final_selection = min(round(selection), n_actual[event])
-
-            # --- Final Spread Calculation ---
-            # Spreads are not calculated for 'yes' and 'no' types as they are special cases.
-            if event_type not in ['no', 'yes'] and images_per_spread > 0:
-                spreads = math.ceil(final_selection / images_per_spread)
-            else:
-                spreads = 0
-
-            results[event] = {
-                'selection': int(final_selection),
-                'spreads': int(spreads),
-                'reason': reason
-            }
+            n_target, std_target = lookup_table.get(event, (0, 0))
+            n_target = max(1, round(n_target * density_factor))
+            selection = n_target + np.random.gamma(shape=5, scale=std_target)
+            event_selection_dict[event] = min(round(selection), n_actual)
 
     except Exception as e:
         logger.error("Error reading messages: {}".format(e))
         raise e
 
-    return results
+    return event_selection_dict
+
+        # # --- Pre-calculation Step for 'percentage' events ---
+        # # To ensure percentages are allocated proportionally, we first sum the total percentage
+        # # assigned across all events for the given category. This prevents overallocation
+        # # if the sum of percentages exceeds 100.
+        # total_percentage_assigned = 0
+        # for event in lookup_table:
+        #     if event not in n_actual.keys():
+        #         continue
+        #     event_config = event_mapping.get(event, {})
+        #     if event_config.get('type') == 'percentage':
+        #         total_percentage_assigned += event_config.get('value', 0)
+        #
+        # # --- Main Processing Loop for Each Event ---
+        # for event, config in lookup_table.items():
+        #     if event not in n_actual.keys():
+        #         continue
+        #     n_target, std_target = config
+        #     event_config = event_mapping.get(event, {})
+        #     event_type = event_config.get('type')
+        #
+        #     reason = 'default_fallback'  # Default reason if no other logic applies.
+        #
+        #     # --- Logic Branching Based on Event Type ---
+        #
+        #     if event_type == 'percentage':
+        #         percentage = event_config.get('value', 0)
+        #         # The selection is a direct percentage of the *actual* number of photos.
+        #         # If the total assigned percentage is > 0, we calculate a proportional share.
+        #         if total_percentage_assigned > 0:
+        #             proportional_share = percentage / total_percentage_assigned
+        #             selection = round(n_actual[event] * proportional_share)
+        #         else:
+        #             selection = 0  # Avoid division by zero if no percentages are assigned.
+        #
+        #         reason = f'percentage_{percentage}%_of_total'
+        #
+        #     elif event_type == 'yes':
+        #         # 'yes' signifies a mandatory but minimal inclusion.
+        #         selection = min(2, n_actual[event])  # Select 1 or 2 images.
+        #         reason = 'yes_minimal_selection'
+        #
+        #     elif event_type == 'no':
+        #         # 'no' signifies explicit exclusion.
+        #         selection = 0
+        #         reason = 'no_selection'
+        #
+        #     else:
+        #         # --- Default Calculation Logic ---
+        #         # This logic is used for events with no specific type in the event_mapping
+        #         # or if the event is not in the mapping at all.
+        #         if n_actual[event] > 0:
+        #             proportional_factor = min(1, n_target / n_actual)
+        #             deviation_adjustment = (n_actual[event] - n_target) / (std_target + 1e-6)
+        #             selection = n_target + deviation_adjustment * proportional_factor
+        #             # Clamp the selection to a reasonable range to avoid extreme results.
+        #             selection = max(4, min(selection, n_target * 1.5))
+        #         else:
+        #             selection = 0  # Cannot select images if none are available.
+        #
+        #         if event not in event_mapping:
+        #             reason = 'default_unrecognized'
+        #
+        #     # Ensure selection does not exceed the number of available images.
+        #     final_selection = min(round(selection), n_actual[event])
+        #
+        #     # --- Final Spread Calculation ---
+        #     # Spreads are not calculated for 'yes' and 'no' types as they are special cases.
+        #     if event_type not in ['no', 'yes'] and images_per_spread > 0:
+        #         spreads = math.ceil(final_selection / images_per_spread)
+        #     else:
+        #         spreads = 0
+        #
+        #     results[event] = {
+        #         'selection': int(final_selection),
+        #         'spreads': int(spreads),
+        #         'reason': reason
+        #     }
+
+    # except Exception as e:
+    #     logger.error("Error reading messages: {}".format(e))
+    #     raise e
+    #
+    # return results
 
 def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_features,density,
                             logger):
@@ -427,15 +441,17 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
     selected_photos_df = df[df['image_id'].isin(selected_photos)]
 
     for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
+
         n_actual = len(cluster_df)
+        if cluster_name not in category_picked:
+            category_picked[cluster_name] = {}
+
+        category_picked[cluster_name].update({'actual': n_actual})
         if cluster_name  in ['other', 'None', 'couple'] or n_actual < CONFIGS['small_groups'] and cluster_name not in CONFIGS['events_disallowing_small_images']:
             continue
 
         logger.info("====================================")
         logger.info(f"Starting with {cluster_name} and actual number  of images {n_actual}")
-
-        if cluster_name not in category_picked:
-            category_picked[cluster_name] = []
 
         # Get scores for each image
         scores,up_df = get_scores(cluster_df, selected_photos_df, people_ids, tags_features)
@@ -454,12 +470,14 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
 
         if len(selected_in_cluster) > 0:
             ai_images_selected.extend(selected_in_cluster)
-            category_picked[cluster_name].extend(selected_in_cluster)
-            final_allocation[cluster_name]['selection'] = final_allocation[cluster_name]['selection'] - len(selected_in_cluster)
+            category_picked[cluster_name].update({'selected': len(selected_in_cluster)})
+            # category_picked[cluster_name].extend(selected_in_cluster)
+            final_allocation[cluster_name] = final_allocation[cluster_name]- len(selected_in_cluster)
 
-        if len(available_img_ids_without_selected) == final_allocation[cluster_name]['selection'] or final_allocation[cluster_name]['selection'] <= 2:
-            ai_images_selected.extend(available_img_ids_without_selected[:final_allocation[cluster_name]['selection']])
-            category_picked[cluster_name].extend(available_img_ids_without_selected[:final_allocation[cluster_name]['selection']])
+        if len(available_img_ids_without_selected) == final_allocation[cluster_name] or final_allocation[cluster_name] <= 2:
+            ai_images_selected.extend(available_img_ids_without_selected[:final_allocation[cluster_name]])
+            #category_picked[cluster_name].extend(available_img_ids_without_selected[:final_allocation[cluster_name]['selection']])
+            category_picked[cluster_name].update({'selected': len(available_img_ids_without_selected[:final_allocation[cluster_name]]) + len(selected_in_cluster)})
         else:
             time_df = cluster_by_time(up_df)
             if cluster_name in ["bride", "groom", "bride and groom"]:
@@ -471,13 +489,17 @@ def smart_wedding_selection(df, selected_photos, people_ids, focus, tags_feature
                 continue
 
             # remove similar before choosing from them
-            available_img_ids = remove_similar_images(cluster_name,final_allocation[cluster_name]['selection'], available_img_ids_without_selected, df,selected_in_cluster)
+            available_img_ids = remove_similar_images(cluster_name,final_allocation[cluster_name], available_img_ids_without_selected, df)
             images_ranked = sorted(available_img_ids, key=lambda img: image_order_dict.get(img, float('inf')),
                                    reverse=True)
             ai_images_selected.extend(images_ranked)
-            category_picked[cluster_name].extend(images_ranked)
+            if 'selected' not in category_picked[cluster_name]:
+                category_picked[cluster_name]['selected'] = 0
+            category_picked[cluster_name].update({'selected': category_picked[cluster_name]['selected'] + len(images_ranked)})
+            #category_picked[cluster_name].extend(images_ranked)
 
     logger.info(f"Total images: {len(ai_images_selected)}")
     logger.info("*******************************************************")
+    print("The final Selection for each category:", category_picked)
 
-    return ai_images_selected,category_picked, error_message
+    return ai_images_selected, error_message

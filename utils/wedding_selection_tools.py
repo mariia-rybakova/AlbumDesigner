@@ -102,6 +102,7 @@ def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
     result = []
     generators = {k: iter(v) for k, v in clusters_ids.items()}  # Create generators for each list
 
+
     while needed_count > 0:
         for key in generators:
             if needed_count <= 0:
@@ -109,7 +110,7 @@ def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
             if needed_count < len(clusters_ids):
                 items_to_take = 1
             # Check list size to determine how many to take
-            elif len(clusters_ids[key]) <= 5 or event in not_people_events:  # Small list: take at most 1
+            elif len(clusters_ids[key]) <= 5 and event in not_people_events:  # Small list: take at most 1
                 items_to_take = min(1, needed_count)
             else:  # Large list: take up to the remaining needed count
                 list_size = len(clusters_ids[key])
@@ -128,58 +129,66 @@ def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
 
 
 
-def remove_similar_images(category,needed_count, selected_images, df,final_selected_images):
-    persons_categories = ['portrait', 'very large group']
-    #'portrait', 'very large group'
-    orientation_time_categories = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party','speech', 'full party','walking the aisle', 'bride getting dress', 'getting hair-makeup', 'first dance', 'cake cutting', 'ceremony', 'dancing']
-    # 'bride', 'groom', 'bride and groom', 'bride party', 'groom party'
+def remove_similar_images(category,needed_count, avaiable_images, df):
+    if len(avaiable_images) <= 4:
+        return avaiable_images
 
-    if len(selected_images) == 1:
-        return selected_images
+    persons_categories = {'portrait', 'very large group'}
+    orientation_time_categories = {
+        'bride', 'groom', 'bride and groom', 'bride party', 'groom party', 'speech',
+        'full party', 'walking the aisle', 'bride getting dress', 'getting hair-makeup',
+        'first dance', 'cake cutting', 'ceremony', 'dancing'
+    }
 
-    clusters_ids = get_clusters(df)
+    df = df.set_index('image_id')  # index once for fast lookups
+    final_selected_images = []
 
-    # Identify grayscale images in the filtered list
-    grayscale_images = [img for img in selected_images if
-                        df.set_index('image_id').loc[img, 'image_color'] == 0]
+    # Identify grayscale images
+    grayscale_images = [img for img in avaiable_images if df.at[img, 'image_color'] == 0]
     num_grayscale = len(grayscale_images)
 
-    if num_grayscale > CONFIGS['grays_scale_limit']: # get high score of the grayscale image instead of random one
-        selected_gray_image = random.choice(grayscale_images)
-        selected_images = [image for image in selected_images if image not in grayscale_images]
-        # Remove other grayscale images except the selected one
-        final_selected_images.append(selected_gray_image)
-        needed_count = needed_count - 1
+    # Select grayscale images
+    if num_grayscale > CONFIGS['grays_scale_limit']:
+        number_needed = random.choice([1, 2])
+    else:
+        number_needed = 1 if grayscale_images else 0
 
-    # needed_count = calculate_selection(category, len(selected_images), relations[user_relation])
+    selected_gray_image = []
+    if number_needed > 0:
+        gray_df = df.loc[grayscale_images].sort_values(by='total_score', ascending=False)
+        selected_gray_image = gray_df.head(number_needed).index.tolist()
+        final_selected_images.extend(selected_gray_image)
+        needed_count -= len(selected_gray_image)
 
-    filtered_df = df[df['image_id'].isin(selected_images)]
+    # Remaining images (exclude non-selected grayscale)
+    colored_images = [img for img in avaiable_images if img not in grayscale_images or img in selected_gray_image]
+    filtered_df = df.loc[colored_images]
 
-    if needed_count == len(selected_images):
-        chosen_images = selected_images
-    elif category in persons_categories:
-        perf_data = {"category": category,
-                     "initial_image_count": len(selected_images)}
+    # If exact fit, return them directly
+    if needed_count == len(colored_images):
+        final_selected_images.extend(colored_images)
+        return final_selected_images
 
-        # Select images using persons clustering
-        final_selected_images_list = modified_run_person_clustering_experiment(
-            input_images_for_category=selected_images,
-            df_all_data=df,  # Assuming df_all_data is comprehensive
+    # Strategy selection by category
+    if category in persons_categories:
+        perf_data = {
+            "category": category,
+            "initial_image_count": len(colored_images)
+        }
+        selected = modified_run_person_clustering_experiment(
+            input_images_for_category=colored_images,
+            df_all_data=filtered_df.reset_index(),
+            needed_count=needed_count,
             image_cluster_dict_for_fallback_logic=perf_data
         )
-        return final_selected_images_list
-
     elif category in orientation_time_categories:
-        # Select based on time clustering, then cluster label
-        final_selected_images_list = select_by_new_clustering_experiment(
+        selected = select_by_new_clustering_experiment(
             needed_count=needed_count,
-            df_all_data=filtered_df,
+            df_all_data=filtered_df.reset_index()
         )
-        return final_selected_images_list
     else:
-        # Select by Clusters label
-        chosen_images = select_non_similar_images(category, clusters_ids, df, needed_count)
+        clusters_ids = get_clusters(df.reset_index())  # df was indexed earlier
+        selected = select_non_similar_images(category, clusters_ids, df.reset_index(), needed_count)
 
-    final_selected_images.extend(chosen_images)
-
+    final_selected_images.extend(selected)
     return final_selected_images

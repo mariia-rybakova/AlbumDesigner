@@ -26,7 +26,7 @@ def select_by_cluster(clusters_ids, image_cluster_dict):
     return list(set(selected))[:5]  # Arbitrary limit for this placeholder
 
 
-def select_by_person(clusters_ids, images_list, df, image_cluster_dict):
+def select_by_person(clusters_ids, images_list, df,needed_count, image_cluster_dict):
     """
     Selects images based on person clustering and optionally plots details to a PDF.
     `track_performance_data` is a dictionary to store metadata about the process.
@@ -47,7 +47,7 @@ def select_by_person(clusters_ids, images_list, df, image_cluster_dict):
     images_for_mlb = [item[0] for item in images_with_persons_data]
     person_ids_for_mlb = [item[1] for item in images_with_persons_data]
 
-    # Condition for attempting person clustering
+    # Condition for attempting person clustering check if its less than 5 no need return
     if len(images_for_mlb) < 2:  # Need at least two images with person data to compare
         result = select_by_cluster(clusters_ids, image_cluster_dict)
         return list(set(result))
@@ -93,6 +93,9 @@ def select_by_person(clusters_ids, images_list, df, image_cluster_dict):
 
     current_selected_images = []
     for cluster_label, images_in_cluster in person_clusters_dict.items():
+        if needed_count == 0:
+            break
+
         # Sort images in cluster by 'image_order' (lower is better)
         images_ordered = sorted(
             images_in_cluster,
@@ -102,10 +105,12 @@ def select_by_person(clusters_ids, images_list, df, image_cluster_dict):
         selected_from_this_cluster = []
         if images_ordered:  # Ensure cluster is not empty
             if len(images_ordered) <= 4:
+                needed_count -= 1
                 selected_from_this_cluster.append(images_ordered[0])  # Select the one with the best (lowest) order
             else:
                 num_to_select = round(len(images_ordered) / 4)
                 if num_to_select == 0: num_to_select = 1  # Ensure at least one is selected
+                needed_count -= num_to_select
                 selected_from_this_cluster.extend(images_ordered[:num_to_select])
 
         current_selected_images.extend(selected_from_this_cluster)
@@ -123,6 +128,7 @@ def select_by_person(clusters_ids, images_list, df, image_cluster_dict):
 def modified_run_person_clustering_experiment( # Renamed for clarity, or keep your name
         input_images_for_category,
         df_all_data,
+        needed_count,
         image_cluster_dict_for_fallback_logic
 ):
 
@@ -141,6 +147,7 @@ def modified_run_person_clustering_experiment( # Renamed for clarity, or keep yo
         clusters_ids=relevant_cluster_labels,
         images_list=input_images_for_category,
         df=df_all_data,
+        needed_count=needed_count,
         image_cluster_dict=image_cluster_dict_for_fallback_logic
 
     )
