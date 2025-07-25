@@ -371,7 +371,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
     for number_groups,group_dict in enumerate(output_list):
         for group_name in group_dict.keys():
             group_result = group_dict[group_name]
-            logger.debug('Group name/result: {}: {}'.format(group_name, group_result))
+            # logger.debug('Group name/result: {}: {}'.format(group_name, group_result))
             total_spreads = len(group_result)
             for i in range(total_spreads):
                 group_data = group_result[i]

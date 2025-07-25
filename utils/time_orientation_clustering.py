@@ -135,14 +135,14 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
               # check which one has a close shot and which one has a far shot
 
             for index, row in group_df.iterrows():
-                print("image id and category", row['image_id'], row['cluster_context'])
+                # print("image id and category", row['image_id'], row['cluster_context'])
                 shot_style = "unknown"
                 # Case 1: Use face sizes if faces are detected
                 if row['n_faces'] > 0:
                     faces_info = row["faces_info"]
                     face_sizes = [face.bbox.x2 * face.bbox.y2 for face in faces_info]
                     max_face_size = max(face_sizes)
-                    print("face size", max_face_size)
+                    # print("face size", max_face_size)
                     if max_face_size < CONFIGS['FACE_FAR_THRESHOLD']:
                         shot_style = "far"
                     elif max_face_size < CONFIGS['FACE_M_THRESHOLD']:
@@ -155,7 +155,7 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
                     bodies_info = row["bodies_info"]
                     body_sizes = [body.bbox.x2 * body.bbox.y2 for body in bodies_info]
                     max_body_size = max(body_sizes)
-                    print("body size", max_body_size)
+                    # print("body size", max_body_size)
                     if max_body_size < CONFIGS['BODY_FAR_THRESHOLD']:
                         shot_style = "far"
                     elif max_body_size < CONFIGS['BODY_MEDIUM_THRESHOLD']:

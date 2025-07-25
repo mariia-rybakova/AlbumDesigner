@@ -210,20 +210,9 @@ class ProcessStage(Stage):
         messages = msgs if isinstance(msgs, list) else [msgs]
         whole_messages_start = datetime.now()
 
-        Spread_score_threshold_params = [0.01,0.5,0.05,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01]
-        Partition_score_threshold_params = [100,100,100,200,150,100,100,100,100,100,100,100,100]
-        Maxm_Combs_params = [1000,1000,1000,1000,1000,50,10,1000,1000,1000,1000,1000,1000]
-        MaxCombsLargeGroups_params = [100,100,100,100,100,100,100,20,5,100,100,100,100]
-        MaxOrientedCombs_params = [300,300,300,300,300,300,300,300,300,10,50,300,300]
-        Max_photo_groups_params = [12,12,12,12,12,12,12,12,12,12,12,8,5]
+        params = [0.01, 100, 1000, 100, 300, 12]
 
         for i,message in enumerate(messages):
-            # if i > 13:
-            #     i = 0
-            i=0
-
-            params = [Spread_score_threshold_params[i], Partition_score_threshold_params[i], Maxm_Combs_params[i],MaxCombsLargeGroups_params[i],MaxOrientedCombs_params[i],Max_photo_groups_params[i]]
-
             self.logger.debug("Params for this Gallery are: {}".format(params))
 
             df = message.content.get('gallery_photos_info', pd.DataFrame())
