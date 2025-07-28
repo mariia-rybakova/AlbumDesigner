@@ -182,6 +182,11 @@ def listSingleCombinations(photos, layout_part,maxCombs):
         layout_combs = merged_combs
         rem_photos = merged_rem_photos
     if len(layout_part) > 1:
+        if len(layout_combs) > maxCombs:
+            #print(f"Sampling {maxCombs} combinations from {len(layout_combs)}")
+            sample_idxs = random.sample(range(len(layout_combs)), maxCombs)
+            layout_combs = [layout_combs[i] for i in sample_idxs]
+            # rem_photos = [rem_photos[i] for i in sample_idxs]
         for comb_idx in range(len(layout_combs)):
             layout_combs[comb_idx].append(rem_photos[comb_idx])
 
