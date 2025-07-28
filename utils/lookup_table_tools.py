@@ -46,15 +46,15 @@ wedding_lookup_table = {
 }
 
 non_wedding_lookup_table = {
-    '1':(1,0.9),
-    '2':(1,0.9),
-    '3':(1,0.9),
-    '4':(2,0.1),
-    '5':(2,0.5),
-    '6':(2,0.5),
-    '7':(2,0.5),
-    '8':(2,0.5),
-    '9':(2,0.5),
+    '1':(2,0.4),
+    '2':(2,0.4),
+    '3':(2,0.4),
+    '4':(3,0.4),
+    '5':(4,0.5),
+    '6':(4,0.5),
+    '7':(4,0.5),
+    '8':(4,0.5),
+    '9':(4,0.5),
     '10':(2,0.5),
 }
 
@@ -90,7 +90,7 @@ def get_lookup_table(group2images, is_wedding, logger=None):
 
             # Assign default values if group_id is not in lookup_table
             if group_id not in lookup_table:
-                lookup_table[group_id] = (1, 0.02)
+                lookup_table[group_id] = (10, 4)
 
         return lookup_table  # Return the updated lookup table
 
