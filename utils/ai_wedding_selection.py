@@ -428,15 +428,16 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             ai_images_selected.extend(to_add)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(to_add)
 
+        # -------- Cluster-specific selection strategies --------
         elif cluster_name in orientation_time_categories:
             # Cluster by time and find most solo person
             df_with_time_cluster = cluster_by_time(scored_df)
+            images_filtered = available_img_ids_wo_user
 
             if cluster_name in ['bride', 'groom', 'bride and groom']:
-                solo_counter = Counter()
-                for row in df_with_time_cluster['persons_ids']:
-                    if len(row) == 1:
-                        solo_counter[row[0]] += 1
+                solo_counter = Counter(
+                    row[0] for row in df_with_time_cluster['persons_ids'] if len(row) == 1
+                )
 
                 if solo_counter:
                     if cluster_name in ["bride", "groom"]:
@@ -466,33 +467,26 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         img_id for img_id in available_img_ids_wo_user
                         if img_id in filtered_ids
                     ]
-            else:
-                filtered_df = df_with_time_cluster
-                images_filtered = available_img_ids_wo_user
 
-            df = filtered_df.set_index('image_id')
-
-            # Identify grayscale images
-            grayscale_images = [img for img in images_filtered if df.at[img, 'image_color'] == 0]
+            df_clustered  = df_with_time_cluster.set_index('image_id')
+            grayscale_images = [img for img in images_filtered if df_clustered.at[img, 'image_color'] == 0]
             num_grayscale = len(grayscale_images)
+            gray_needed = random.choice([1, 2]) if num_grayscale > CONFIGS['grays_scale_limit'] else (
+                1 if grayscale_images else 0)
 
             # Select grayscale images
-            if num_grayscale > CONFIGS['grays_scale_limit']:
-                gray_needed = random.choice([1, 2])
-            else:
-                gray_needed = 1 if grayscale_images else 0
-
             selected_gray_image = []
-            if gray_needed > 0:
-                gray_df = df.loc[grayscale_images].sort_values(by='total_score', ascending=False)
+            if gray_needed:
+                gray_df = df_clustered.loc[grayscale_images].sort_values(by='total_score', ascending=False)
                 selected_gray_image = gray_df.head(gray_needed).index.tolist()
                 ai_images_selected.extend(selected_gray_image)
                 need -= len(selected_gray_image)
 
-            # Remaining images (exclude non-selected grayscale)
-            colored_images = [img for img in images_filtered if
-                              img not in grayscale_images or img in selected_gray_image]
-            filtered_colored_df = df.loc[colored_images]
+            colored_images = [
+                img for img in images_filtered
+                if img not in grayscale_images or img in selected_gray_image
+            ]
+            filtered_colored_df = df_clustered.loc[colored_images]
 
             # If exact fit, return them directly
             if need == len(colored_images):
@@ -508,31 +502,27 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                 selected_imgs)
         elif cluster_name in persons_categories:
-            df = scored_df.set_index('image_id')
+            df_scored  = scored_df.set_index('image_id')
 
             # Identify grayscale images
-            grayscale_images = [img for img in available_img_ids_wo_user if df.at[img, 'image_color'] == 0]
+            grayscale_images = [img for img in available_img_ids_wo_user if df_scored.at[img, 'image_color'] == 0]
             num_grayscale = len(grayscale_images)
-
-            # Select grayscale images
-            if num_grayscale > CONFIGS['grays_scale_limit']:
-                number_needed = random.choice([1, 2])
-            else:
-                number_needed = 1 if grayscale_images else 0
+            gray_number_needed = random.choice([1, 2]) if num_grayscale > CONFIGS['grays_scale_limit'] else (
+                1 if grayscale_images else 0)
 
             selected_gray_image = []
-            if number_needed > 0:
-                gray_df = df.loc[grayscale_images].sort_values(by='total_score', ascending=False)
-                selected_gray_image = gray_df.head(number_needed).index.tolist()
+            if gray_number_needed:
+                gray_df = df_scored.loc[grayscale_images].sort_values(by='total_score', ascending=False)
+                selected_gray_image = gray_df.head(gray_number_needed).index.tolist()
                 ai_images_selected.extend(selected_gray_image)
                 need -= len(selected_gray_image)
 
-            # Remaining images (exclude non-selected grayscale)
-            colored_images = [img for img in available_img_ids_wo_user if
-                              img not in grayscale_images or img in selected_gray_image]
-            filtered_df = df.loc[colored_images]
+            colored_images = [
+                img for img in available_img_ids_wo_user
+                if img not in grayscale_images or img in selected_gray_image
+            ]
+            filtered_df = df_scored.loc[colored_images]
 
-            # If exact fit, return them directly
             if need == len(colored_images):
                 selected_imgs = colored_images
             else:
@@ -540,15 +530,15 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     input_images_for_category=colored_images,
                     df_all_data=scored_df,
                     needed_count=need,
-                    image_cluster_dict = image_order_dict
+                    image_cluster_dict=image_order_dict
                 )
 
-        else:
+            ai_images_selected.extend(selected_imgs)
+            category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
+                selected_imgs)
+    else:
             clusters_ids = get_clusters(df.reset_index())  # df was indexed earlier
             selected_imgs = select_non_similar_images(cluster_name, clusters_ids, df.reset_index(), need)
-
-            # Fallback selection with duplicate removal
-            #selected_imgs = remove_similar_images(cluster_name, need, available_img_ids_wo_user, df)
             ai_images_selected.extend(selected_imgs)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                 selected_imgs)
