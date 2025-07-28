@@ -155,6 +155,11 @@ def listSingleCombinations(photos, layout_part,maxCombs):
     photos_ids = list(range(len(photos)))
     photos_ids = set(photos_ids)
     l0_combs = list(combinations(photos_ids, layout_part[0]))
+
+    if len(l0_combs) > maxCombs:
+        sample_idxs = random.sample(range(len(l0_combs)), maxCombs)
+        l0_combs = [l0_combs[i] for i in sample_idxs]
+
     l0_combs = [[set(l0_comb)] for l0_comb in l0_combs]
     rem_photos = [photos_ids - l0_comb[0] for l0_comb in l0_combs]
     layout_combs = l0_combs
