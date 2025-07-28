@@ -48,6 +48,8 @@ def get_current_spread_parameters(group_key, number_of_images, is_wedding, looku
 
     if spreads > CONFIGS['max_group_spread']:
         max_images_per_spread = math.ceil(number_of_images / CONFIGS['max_group_spread'])
+        if max_images_per_spread > CONFIGS['max_imges_per_spread']:
+            max_images_per_spread = CONFIGS['max_imges_per_spread']
         return max_images_per_spread, group_params[1]
 
     return group_params
