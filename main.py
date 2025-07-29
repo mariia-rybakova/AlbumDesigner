@@ -210,7 +210,7 @@ class ProcessStage(Stage):
         messages = msgs if isinstance(msgs, list) else [msgs]
         whole_messages_start = datetime.now()
 
-        params = [0.01, 100, 1000, 100, 300, 12]
+        params = [0.01, 100, 4000, 100, 300, 12]
 
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
