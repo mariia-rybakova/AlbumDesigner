@@ -48,6 +48,8 @@ def get_current_spread_parameters(group_key, number_of_images, is_wedding, looku
 
     if spreads > CONFIGS['max_group_spread']:
         max_images_per_spread = math.ceil(number_of_images / CONFIGS['max_group_spread'])
+        if max_images_per_spread > CONFIGS['max_imges_per_spread']:
+            max_images_per_spread = CONFIGS['max_imges_per_spread']
         return max_images_per_spread, group_params[1]
 
     return group_params
@@ -88,10 +90,10 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_t
 
 def get_group_photos_list(cur_group_photos, spread_params, logger):
     cur_group_photos_list = copy.deepcopy(list())
-    if (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4 or
-            math.ceil(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11 or
-            len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
-                cur_group_photos) > CONFIGS['max_imges_per_spread']):
+    if ( (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4) or
+            (math.ceil(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11) or
+            (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
+                cur_group_photos) > CONFIGS['max_imges_per_spread']) ):
         split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
         number_of_splits = math.ceil(len(cur_group_photos) / split_size)
         logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
