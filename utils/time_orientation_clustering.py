@@ -95,9 +95,9 @@ def select_photos_with_scoring(groups, needed_count):
     return sorted_group_keys, final_selection, total_selected, eligible_groups
 
 
-def select_by_new_clustering_experiment(needed_count,df_all_data=None):
+def orientation_time_clustering_selection(needed_count,df=None):
     # Group by time_cluster and image_orientation
-    groups = df_all_data.groupby(['sub_group_time_cluster', 'image_orientation'])
+    groups = df.groupby(['sub_group_time_cluster', 'image_orientation'])
     original_groups_names = list(groups.groups.keys())
 
     # Calculate how many images to take from each group
@@ -113,12 +113,10 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
         group_df = groups.get_group(group_key).copy()
         # Sort images in this group by image_order (descending)
         sorted_images = group_df.sort_values('total_score', ascending=False)['image_id'].tolist()
-
         max_take = final_selection.get(group_key, 0)
 
         # Initialize cluster tracking if not exists
-        if group_key not in group_clusters:
-            group_clusters[group_key] = []
+        group_clusters.setdefault(group_key, [])
 
         if max_take == 0:
             group_clusters[group_key].extend(sorted_images)
@@ -137,6 +135,7 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
             for index, row in group_df.iterrows():
                 # print("image id and category", row['image_id'], row['cluster_context'])
                 shot_style = "unknown"
+
                 # Case 1: Use face sizes if faces are detected
                 if row['n_faces'] > 0:
                     faces_info = row["faces_info"]
@@ -179,7 +178,6 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
                 style_scores[style].append(row['total_score'])
 
             # Step 3: Round-robin selection for diversity
-            selected_from_group = []
             style_mean_scores = {
                 style: sum(scores) / len(scores)
                 for style, scores in style_scores.items()
@@ -190,9 +188,9 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
                 key=lambda s: style_mean_scores[s],
                 reverse=True
             )
-
             style_indices = {style: 0 for style in styles_order}
 
+            selected_from_group = []
             while len(selected_from_group) < max_take:
                 added = False
                 for style in styles_order:
@@ -209,7 +207,6 @@ def select_by_new_clustering_experiment(needed_count,df_all_data=None):
             # Extend the result and time_clusters
             result.extend(selected_from_group)
             group_clusters[group_key].extend(sorted_images)
-
 
         # Early termination if we've reached needed count
         if len(result) >= needed_count:

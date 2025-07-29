@@ -1,11 +1,8 @@
-import random
-
-from collections import defaultdict,Counter
+from collections import defaultdict
 from itertools import combinations_with_replacement
 
 from utils.parser import CONFIGS,spreads_required_per_category,min_images_per_category,priority_categories
-from utils.person_clustering import modified_run_person_clustering_experiment
-from utils.time_orientation_clustering import select_by_new_clustering_experiment
+
 
 def get_possible_image_sums():
     # Precompute all possible image sums for 1 to max required spreads
@@ -129,66 +126,3 @@ def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
 
 
 
-def remove_similar_images(category,needed_count, avaiable_images, df):
-    if len(avaiable_images) <= 4:
-        return avaiable_images
-
-    persons_categories = {'portrait', 'very large group'}
-    orientation_time_categories = {
-        'bride', 'groom', 'bride and groom', 'bride party', 'groom party', 'speech',
-        'full party', 'walking the aisle', 'bride getting dress', 'getting hair-makeup',
-        'first dance', 'cake cutting', 'ceremony', 'dancing'
-    }
-
-    df = df.set_index('image_id')  # index once for fast lookups
-    final_selected_images = []
-
-    # Identify grayscale images
-    grayscale_images = [img for img in avaiable_images if df.at[img, 'image_color'] == 0]
-    num_grayscale = len(grayscale_images)
-
-    # Select grayscale images
-    if num_grayscale > CONFIGS['grays_scale_limit']:
-        number_needed = random.choice([1, 2])
-    else:
-        number_needed = 1 if grayscale_images else 0
-
-    selected_gray_image = []
-    if number_needed > 0:
-        gray_df = df.loc[grayscale_images].sort_values(by='total_score', ascending=False)
-        selected_gray_image = gray_df.head(number_needed).index.tolist()
-        final_selected_images.extend(selected_gray_image)
-        needed_count -= len(selected_gray_image)
-
-    # Remaining images (exclude non-selected grayscale)
-    colored_images = [img for img in avaiable_images if img not in grayscale_images or img in selected_gray_image]
-    filtered_df = df.loc[colored_images]
-
-    # If exact fit, return them directly
-    if needed_count == len(colored_images):
-        final_selected_images.extend(colored_images)
-        return final_selected_images
-
-    # Strategy selection by category
-    if category in persons_categories:
-        perf_data = {
-            "category": category,
-            "initial_image_count": len(colored_images)
-        }
-        selected = modified_run_person_clustering_experiment(
-            input_images_for_category=colored_images,
-            df_all_data=filtered_df.reset_index(),
-            needed_count=needed_count,
-            image_cluster_dict_for_fallback_logic=perf_data
-        )
-    elif category in orientation_time_categories:
-        selected = select_by_new_clustering_experiment(
-            needed_count=needed_count,
-            df_all_data=filtered_df.reset_index()
-        )
-    else:
-        clusters_ids = get_clusters(df.reset_index())  # df was indexed earlier
-        selected = select_non_similar_images(category, clusters_ids, df.reset_index(), needed_count)
-
-    final_selected_images.extend(selected)
-    return final_selected_images

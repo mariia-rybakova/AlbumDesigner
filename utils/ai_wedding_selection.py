@@ -12,7 +12,7 @@ from utils.parser import CONFIGS,relations,selection_threshold
 from utils.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 from utils.person_clustering import modified_run_person_clustering_experiment
-from utils.time_orientation_clustering import select_by_new_clustering_experiment
+from utils.time_orientation_clustering import orientation_time_clustering_selection
 
 def process_time(images_time):
     general_times = list()
@@ -476,9 +476,9 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             if need == len(colored_images):
                 selected_imgs = colored_images
             else:
-                selected_imgs = select_by_new_clustering_experiment(
+                selected_imgs = orientation_time_clustering_selection(
                     needed_count=need,
-                    df_all_data=filtered_colored_df.reset_index()
+                    df=filtered_colored_df.reset_index()
                 )
             # Remove duplicates and finalize selection
             #selected_imgs = remove_similar_images(cluster_name, need, images_filtered, filtered_df)
