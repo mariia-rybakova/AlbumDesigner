@@ -5,7 +5,8 @@ from utils.parser import CONFIGS
 from ptinfra.azure.pt_file import PTFile
 from io import BytesIO
 
-from utils.selection_tools_v2 import smart_wedding_selection,smart_non_wedding_selection
+from utils.ai_non_wedding_selection import smart_non_wedding_selection
+from utils.ai_wedding_selection import smart_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
 

@@ -47,7 +47,7 @@ CONFIGS = {'DEBUG': True,
            'class_matching_zero_score': 0.0001,
            'class_matching_penalty': 0.001,
            'small_groups_not_to_select': 3,
-           'grays_scale_limit': 1,
+           'grays_scale_limit': 2,
            'person_count_percentage': 0.20,
            'small_gallery_number': 15,
            'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
@@ -185,6 +185,85 @@ relations = {'bride and groom':{
     'wedding dress':(2,0.01),
     'vehicle': (2,0.01),
     'inside vehicle':(2,0.01),
+    'suit':(1, 0.5),
+
+},
+    'parents': {
+        'bride and groom': (8, 0.2),
+
+        'bride': (4, 0.1),
+        'groom': (4, 0.001),
+
+        'bride party': (4, 0.5),
+        'groom party': (4, 0.5),
+        'full party': (4, 0.5),
+        'portrait': (10, 0.1),
+        'very large group': (10, 0.5),
+        'walking the aisle': (4, 0.4),
+
+        'bride getting dressed': (3, 0.5),
+        'first dance': (2, 0.2),
+        'cake cutting': (2, 0.1),
+        'ceremony': (15, 0.2),
+        'couple': (0, 0),
+        'dancing': (12, 0.5),
+
+        'entertainment': (2, 0.2),
+
+        'kiss': (2, 0.6),
+        'pet': (1, 0.5),
+
+        'accessories': (1, 0.01),
+        'settings': (8, 0.1),
+        'speech': (8, 0.5),
+
+        'detail': (8, 0.5),
+        'getting hair-makeup': (2, 0.1),
+        'food': (10, 0.5),
+        'other': (0, 0.5),
+        'invite': (1, 0.5),
+        'wedding dress': (2, 0.01),
+        'vehicle': (2, 0.01),
+        'inside vehicle': (2, 0.01),
+        'suit': (0, 0.5),
+
+    }
+,'everyone else':{
+    'bride and groom': (15, 0.2),
+
+    'bride': (4, 0.1),
+    'groom': (4, 0.001),
+    'bride party': (8, 0.5),
+    'groom party': (8, 0.5),
+    'full party': (6, 0.5),
+    'portrait': (5, 0.1),
+    'very large group': (6, 0.5),
+    'walking the aisle': (10, 0.4),
+
+    'bride getting dressed': (6, 0.5),
+    'first dance': (4, 0.2),
+    'cake cutting': (4, 0.1),
+    'ceremony': (10, 0.2),
+    'couple': (0, 0),
+    'dancing': (24, 0.5),
+
+    'entertainment': (3, 0.2),
+
+    'kiss': (2, 0.6),
+    'pet': (0, 0.5),
+
+    'accessories': (1, 0.01),
+    'settings': (5, 0.1),
+    'speech': (5, 0.5),
+
+    'detail': (5, 0.5),
+    'getting hair-makeup': (4, 0.1),
+    'food': (5, 0.5),
+    'other': (0, 0.5),
+    'invite': (1, 0.5),
+    'wedding dress':(1,0.01),
+    'vehicle': (1,0.01),
+    'inside vehicle':(1,0.01),
     'suit':(1, 0.5),
 
 }}
@@ -356,7 +435,7 @@ min_images_per_category = {
 
 selection_threshold = {
     'bride and groom': 0.14,
-    'bride': 0.09,
+    'bride': 0.3,
     'groom': 0.005,
     'bride party': 0.14,
     'groom party': 0.14,
@@ -367,7 +446,7 @@ selection_threshold = {
     'very large group': 0.14,
     'walking the aisle': 0.14,
     'bride getting dressed': 0.14,
-    'first dance': 0.14,
+    'first dance': 0.2,
     'cake cutting': 0.14,
     'ceremony': 0.14,
     'couple': 0.14,
@@ -380,11 +459,11 @@ selection_threshold = {
     'speech': 0.14,
     'detail': 0.14,
     'getting hair-makeup': 0.14,
-    'food': 1,
+    'food': 0.2,
     'other': 0,
     'invite': 0,
     'None':0,
-    'wedding dress': 1,
+    'wedding dress': 0.2,
     'vehicle':0,
     'inside vehicle':0,
 

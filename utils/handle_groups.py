@@ -179,9 +179,11 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                     splitting_score = get_split_score(group_key, look_up_table, imgs_number, is_wedding)
                     if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1]: #and 'None' not in group_key[1]
                         groups_to_change[group_key] = ('split', splitting_score)
+
             if not groups_to_change or len(groups_to_change.keys()) == 0:
                 logger.info('No groups to change. Continue.')
                 break
+
             if iteration >= max_iterations:
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Groups to change left: {groups_to_change}. Exiting to avoid infinite loop.")
                 break
