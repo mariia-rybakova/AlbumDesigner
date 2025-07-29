@@ -69,6 +69,13 @@ CONFIGS = {'DEBUG': True,
                'holdingHands':'holdinghands',
                'softLight': 'softlight',
            },
+        'weights' :{
+            'class': 0.2,
+            'similarity': 0.2,
+            'person': 0.4,
+            'tags': 0.1,
+            'rank': 0.2
+         }
 
 
 

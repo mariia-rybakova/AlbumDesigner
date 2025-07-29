@@ -194,14 +194,8 @@ def calculate_scores(row_data,selected_photos_df, people_ids, tags):
 
 
 def get_scores(df, selected_photos_df, people_ids, tags_features):
-
     images_scores = {}
-
-    class_scores = []
-    similarity_scores = []
-    person_scores = []
-    tags_scores = []
-
+    class_scores, similarity_scores, person_scores, tags_scores = [], [], [], []
     for index,data in df.iterrows():
         image_id = data['image_id']
         class_score, sim_score, person_score, tag_score  = calculate_scores(data,selected_photos_df, people_ids, tags_features)
@@ -209,7 +203,6 @@ def get_scores(df, selected_photos_df, people_ids, tags_features):
         similarity_scores.append(sim_score)
         person_scores.append(person_score)
         tags_scores.append(tag_score)
-
         images_scores[image_id] = None  # Placeholder for now
 
     df['class_score'] = class_scores
@@ -217,41 +210,33 @@ def get_scores(df, selected_photos_df, people_ids, tags_features):
     df['person_score'] = person_scores
     df['tags_score'] = tags_scores
 
-    def normalize_column(col):
+    # Inline normalization function
+    def normalize(col):
         min_val, max_val = col.min(), col.max()
-        if max_val - min_val < CONFIGS['ε']:
-            return np.ones_like(col) * 0.5  # Avoid division by near-zero; return neutral score
-        return (col - min_val) / (max_val - min_val)
+        return np.ones_like(col) * 0.5 if max_val - min_val < CONFIGS['ε'] else (col - min_val) / (max_val - min_val)
 
-    df['class_score_norm'] = normalize_column(df['class_score'])
-    df['similarity_score_norm'] = normalize_column(df['similarity_score'])
-    df['person_score_norm'] = normalize_column(df['person_score'])
-    df['tags_score_norm'] = normalize_column(df['tags_score'])
+    # Normalize all relevant score columns
+    df['class_score_norm'] = normalize(df['class_score'])
+    df['similarity_score_norm'] = normalize(df['similarity_score'])
+    df['person_score_norm'] = normalize(df['person_score'])
+    df['tags_score_norm'] = normalize(df['tags_score'])
 
     # Invert and normalize image order
     df['image_order_score'] = 1 / (df['image_order'] + CONFIGS['ε'])
-    df['image_order_score_norm'] = normalize_column(df['image_order_score'])
+    df['image_order_score_norm'] = normalize(df['image_order_score'])
 
     #Ranking is better than order cause its normalized and higher is better
-    w1 = 0.2  # class
-    w2 = 0.2  # similarity
-    w3 = 0.4  # person importance
-    w4 = 0.1  # tags
-    w5 = 0.2  # image Rank
+    total_weight = sum(CONFIGS['weights'].values())
+    for key in CONFIGS['weights']:
+        CONFIGS['weights'][key] /= total_weight
 
-    total_weight = w1 + w2 + w3 + w4 + w5
-    w1 /= total_weight
-    w2 /= total_weight
-    w3 /= total_weight
-    w4 /= total_weight
-    w5 /= total_weight
-
+    # Compute final weighted total score
     df['total_score'] = (
-            w1 * df['class_score_norm'] +
-            w2 * df['similarity_score_norm'] +
-            w3 * df['person_score_norm'] +
-            w4 * df['tags_score_norm'] + w5 * df['ranking']
-            # w5 * df['image_order_score_norm']
+            CONFIGS['weights']['class'] * df['class_score_norm'] +
+            CONFIGS['weights']['similarity'] * df['similarity_score_norm'] +
+            CONFIGS['weights']['person'] * df['person_score_norm'] +
+            CONFIGS['weights']['tags'] * df['tags_score_norm'] +
+            CONFIGS['weights']['rank'] * df['ranking']  # swap with image_order_score_norm if needed
     )
 
     sorted_df = df.sort_values(by='total_score', ascending=False)
@@ -379,7 +364,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         n_actual = len(cluster_df)
         logger.info("====================================")
         logger.info(f"Starting with {cluster_name} and actual number  of images {n_actual}")
-
 
         category_picked.setdefault(cluster_name, {})
         category_picked[cluster_name]['actual'] = n_actual
