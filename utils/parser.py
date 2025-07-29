@@ -152,7 +152,7 @@ split_content_priority = {
     'nan': 0.00001,
 }
 
-relations = {'bride and groom':{
+relations = {'brideAndGroom':{
     'bride and groom': (10, 0.2),
 
     'bride': (7, 0.1),
@@ -235,7 +235,7 @@ relations = {'bride and groom':{
         'suit': (0, 0.5),
 
     }
-,'everyone else':{
+,'everyoneElse':{
     'bride and groom': (15, 0.2),
 
     'bride': (4, 0.1),
