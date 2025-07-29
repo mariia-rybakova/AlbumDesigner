@@ -73,11 +73,23 @@ def assign_photos_order_one_side(photos, boxes_ids, design_box_id2data):
     for idx, box_id in enumerate(boxes_ids):
         box_data = design_box_id2data[box_id]
         if box_data['orientation'] == 'portrait':
-            cur_photos = photos_portrait.pop()
-            photos_order[idx] = cur_photos
+            if len(photos_portrait) > 0:
+                cur_photos = photos_portrait.pop()
+                photos_order[idx] = cur_photos
+            elif len(photos_landscape) > 0:
+                cur_photos = photos_landscape.pop()
+                photos_order[idx] = cur_photos
+            else:
+                print("Error: no more photos to add")
         if box_data['orientation'] == 'landscape':
-            cur_photos = photos_landscape.pop()
-            photos_order[idx] = cur_photos
+            if len(photos_landscape) > 0:
+                cur_photos = photos_landscape.pop()
+                photos_order[idx] = cur_photos
+            elif len(photos_portrait) > 0:
+                cur_photos = photos_portrait.pop()
+                photos_order[idx] = cur_photos
+            else:
+                print("Error: no more photos to add")
 
     for idx, box_id in enumerate(boxes_ids):
         box_data = design_box_id2data[box_id]
