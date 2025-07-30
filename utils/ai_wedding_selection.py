@@ -11,8 +11,8 @@ from collections import Counter
 from utils.parser import CONFIGS,relations,selection_threshold
 from utils.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
-from utils.person_clustering import modified_run_person_clustering_experiment
-from utils.time_orientation_clustering import select_by_new_clustering_experiment
+from utils.person_clustering import person_clustering_selection
+from utils.time_orientation_clustering import orientation_time_clustering_selection
 
 def process_time(images_time):
     general_times = list()
@@ -194,14 +194,8 @@ def calculate_scores(row_data,selected_photos_df, people_ids, tags):
 
 
 def get_scores(df, selected_photos_df, people_ids, tags_features):
-
     images_scores = {}
-
-    class_scores = []
-    similarity_scores = []
-    person_scores = []
-    tags_scores = []
-
+    class_scores, similarity_scores, person_scores, tags_scores = [], [], [], []
     for index,data in df.iterrows():
         image_id = data['image_id']
         class_score, sim_score, person_score, tag_score  = calculate_scores(data,selected_photos_df, people_ids, tags_features)
@@ -209,7 +203,6 @@ def get_scores(df, selected_photos_df, people_ids, tags_features):
         similarity_scores.append(sim_score)
         person_scores.append(person_score)
         tags_scores.append(tag_score)
-
         images_scores[image_id] = None  # Placeholder for now
 
     df['class_score'] = class_scores
@@ -217,41 +210,33 @@ def get_scores(df, selected_photos_df, people_ids, tags_features):
     df['person_score'] = person_scores
     df['tags_score'] = tags_scores
 
-    def normalize_column(col):
+    # Inline normalization function
+    def normalize(col):
         min_val, max_val = col.min(), col.max()
-        if max_val - min_val < CONFIGS['ε']:
-            return np.ones_like(col) * 0.5  # Avoid division by near-zero; return neutral score
-        return (col - min_val) / (max_val - min_val)
+        return np.ones_like(col) * 0.5 if max_val - min_val < CONFIGS['ε'] else (col - min_val) / (max_val - min_val)
 
-    df['class_score_norm'] = normalize_column(df['class_score'])
-    df['similarity_score_norm'] = normalize_column(df['similarity_score'])
-    df['person_score_norm'] = normalize_column(df['person_score'])
-    df['tags_score_norm'] = normalize_column(df['tags_score'])
+    # Normalize all relevant score columns
+    df['class_score_norm'] = normalize(df['class_score'])
+    df['similarity_score_norm'] = normalize(df['similarity_score'])
+    df['person_score_norm'] = normalize(df['person_score'])
+    df['tags_score_norm'] = normalize(df['tags_score'])
 
     # Invert and normalize image order
     df['image_order_score'] = 1 / (df['image_order'] + CONFIGS['ε'])
-    df['image_order_score_norm'] = normalize_column(df['image_order_score'])
+    df['image_order_score_norm'] = normalize(df['image_order_score'])
 
     #Ranking is better than order cause its normalized and higher is better
-    w1 = 0.2  # class
-    w2 = 0.2  # similarity
-    w3 = 0.4  # person importance
-    w4 = 0.1  # tags
-    w5 = 0.2  # image Rank
+    total_weight = sum(CONFIGS['weights'].values())
+    for key in CONFIGS['weights']:
+        CONFIGS['weights'][key] /= total_weight
 
-    total_weight = w1 + w2 + w3 + w4 + w5
-    w1 /= total_weight
-    w2 /= total_weight
-    w3 /= total_weight
-    w4 /= total_weight
-    w5 /= total_weight
-
+    # Compute final weighted total score
     df['total_score'] = (
-            w1 * df['class_score_norm'] +
-            w2 * df['similarity_score_norm'] +
-            w3 * df['person_score_norm'] +
-            w4 * df['tags_score_norm'] + w5 * df['ranking']
-            # w5 * df['image_order_score_norm']
+            CONFIGS['weights']['class'] * df['class_score_norm'] +
+            CONFIGS['weights']['similarity'] * df['similarity_score_norm'] +
+            CONFIGS['weights']['person'] * df['person_score_norm'] +
+            CONFIGS['weights']['tags'] * df['tags_score_norm'] +
+            CONFIGS['weights']['rank'] * df['ranking']  # swap with image_order_score_norm if needed
     )
 
     sorted_df = df.sort_values(by='total_score', ascending=False)
@@ -303,7 +288,7 @@ def load_event_mapping(csv_path: str):
         return {}
 
 
-def calculate_selection_revised(n_actual_dict: Dict, lookup_table: Dict, event_mapping: Dict,
+def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, event_mapping: Dict,
                                 density: int = 3, logger=None) -> Dict:
     """
     Calculates image selection for photo album spreads, allocating a percentage of the total
@@ -323,7 +308,119 @@ def calculate_selection_revised(n_actual_dict: Dict, lookup_table: Dict, event_m
     """
     try:
         # Density factors determine how many images are packed into one spread.
-        density_factors = {1: 0.5, 2: 1.0, 3: 1.25, 4: 1.75, 5: 2.0}
+        results = {}
+        # Density factors determine how many images are packed into one spread.
+        density_factors = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.25, 5: 2.0}
+        density_factor = density_factors.get(density, 1.0)
+        # Base number of images per spread is 4, adjusted by the density factor.
+        images_per_spread = max(1, int(4 * density_factor))
+
+        # --- Pre-calculation Step for 'percentage' events ---
+        # To ensure percentages are allocated proportionally, we first sum the total percentage
+        # assigned across all events for the given category. This prevents overallocation
+        # if the sum of percentages exceeds 100.
+        total_percentage_assigned = 0
+        for event in lookup_table:
+            if event not in n_actual_dict.keys():
+                continue
+            event_config = event_mapping.get(event, {})
+            if event_config.get('type') == 'percentage':
+                total_percentage_assigned += event_config.get('value', 0)
+
+        # --- Main Processing Loop for Each Event ---
+        for event, config in lookup_table.items():
+            if event not in n_actual_dict.keys():
+                continue
+            n_target, std_target = config
+            event_config = event_mapping.get(event, {})
+            event_type = event_config.get('type')
+
+            reason = 'default_fallback'  # Default reason if no other logic applies.
+
+            # --- Logic Branching Based on Event Type ---
+
+            if event_type == 'percentage':
+                percentage = event_config.get('value', 0)
+                # The selection is a direct percentage of the *actual* number of photos.
+                # If the total assigned percentage is > 0, we calculate a proportional share.
+                if total_percentage_assigned > 0:
+                    proportional_share = percentage / total_percentage_assigned
+                    selection = round(n_actual_dict[event] * proportional_share)
+                else:
+                    selection = 0  # Avoid division by zero if no percentages are assigned.
+
+                reason = f'percentage_{percentage}%_of_total'
+
+            elif event_type == 'yes':
+                # 'yes' signifies a mandatory but minimal inclusion.
+                selection = min(2, n_actual_dict[event])  # Select 1 or 2 images.
+                reason = 'yes_minimal_selection'
+
+            elif event_type == 'no':
+                # 'no' signifies explicit exclusion.
+                selection = 0
+                reason = 'no_selection'
+
+            else:
+                # --- Default Calculation Logic ---
+                # This logic is used for events with no specific type in the event_mapping
+                # or if the event is not in the mapping at all.
+                if n_actual_dict[event] > 0:
+                    proportional_factor = min(1, n_target / n_actual_dict)
+                    deviation_adjustment = (n_actual_dict[event] - n_target) / (std_target + 1e-6)
+                    selection = n_target + deviation_adjustment * proportional_factor
+                    # Clamp the selection to a reasonable range to avoid extreme results.
+                    selection = max(4, min(selection, n_target * 1.5))
+                else:
+                    selection = 0  # Cannot select images if none are available.
+
+                if event not in event_mapping:
+                    reason = 'default_unrecognized'
+
+            # Ensure selection does not exceed the number of available images.
+            final_selection = min(round(selection), n_actual_dict[event])
+
+            # --- Final Spread Calculation ---
+            # Spreads are not calculated for 'yes' and 'no' types as they are special cases.
+            if event_type not in ['no', 'yes'] and images_per_spread > 0:
+                spreads = math.ceil(final_selection / images_per_spread)
+            else:
+                spreads = 0
+
+            results[event] = {
+                'selection': int(final_selection),
+                'spreads': int(spreads),
+                'reason': reason
+            }
+
+    except Exception as e:
+        logger.error("Error reading messages: {}".format(e))
+        raise e
+
+    return  {event: data['selection'] for event, data in results.items()}
+
+
+def calculate_selection_revised_v2(n_actual_dict: Dict, lookup_table: Dict, event_mapping: Dict,
+                                density: int = 3, logger=None) -> Dict:
+    """
+    Calculates image selection for photo album spreads, allocating a percentage of the total
+    actual images to events marked as 'percentage' type. This version ensures a more
+    direct and logical allocation based on percentages of the available photo pool.
+
+    Args:
+        category: The focus category (e.g., 'bride and groom').
+        n_actual: Total number of actual images available for the category.
+        lookup_table: Dictionary with base configurations (n_target, std_target) for each event.
+        event_mapping: Dictionary mapping events to category-specific rules ('yes', 'no', 'percentage').
+        density: Density factor (1-5) for calculating how many images fit into a single spread.
+
+    Returns:
+        A dictionary with selection results for each event, including the number of
+        images to select, the calculated number of spreads, and the reasoning for the decision.
+    """
+    try:
+        # Density factors determine how many images are packed into one spread.
+        density_factors = {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0}
         density_factor = density_factors.get(density, 1.0)
 
         event_selection_dict = {}
@@ -343,6 +440,8 @@ def calculate_selection_revised(n_actual_dict: Dict, lookup_table: Dict, event_m
 
     return event_selection_dict
 
+def normalize_key(key):
+    return re.sub(r'\W+', '', key).lower()
 
 def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_features,density,
                             logger):
@@ -360,15 +459,19 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
     # Load configs and mapping
     event_mapping = load_event_mapping(CONFIGS['focus_csv_path'])
+
+    focus_table = event_mapping.get(focus[0], event_mapping['bride and groom'])
+    relation_table = relations.get(focus[0], relations['brideAndGroom'])
+
     actual_number_images_dict = {
         cluster_name: len(cluster_df)
         for cluster_name, cluster_df in df.groupby('cluster_context')
     }
 
-    final_allocation = calculate_selection_revised(
+    final_allocation = calculate_selection_revised_v1(
         actual_number_images_dict,
-        relations[focus],
-        event_mapping[focus],
+        relation_table,
+        focus_table,
         density,
         logger
     )
@@ -379,7 +482,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         n_actual = len(cluster_df)
         logger.info("====================================")
         logger.info(f"Starting with {cluster_name} and actual number  of images {n_actual}")
-
 
         category_picked.setdefault(cluster_name, {})
         category_picked[cluster_name]['actual'] = n_actual
@@ -492,12 +594,11 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             if need == len(colored_images):
                 selected_imgs = colored_images
             else:
-                selected_imgs = select_by_new_clustering_experiment(
+                # Remove duplicates and finalize selection
+                selected_imgs = orientation_time_clustering_selection(
                     needed_count=need,
-                    df_all_data=filtered_colored_df.reset_index()
+                    df=filtered_colored_df.reset_index()
                 )
-            # Remove duplicates and finalize selection
-            #selected_imgs = remove_similar_images(cluster_name, need, images_filtered, filtered_df)
             ai_images_selected.extend(selected_imgs)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                 selected_imgs)
@@ -526,9 +627,9 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             if need == len(colored_images):
                 selected_imgs = colored_images
             else:
-                selected_imgs = modified_run_person_clustering_experiment(
-                    input_images_for_category=colored_images,
-                    df_all_data=scored_df,
+                selected_imgs = person_clustering_selection(
+                    images_for_category=colored_images,
+                    df=scored_df,
                     needed_count=need,
                     image_cluster_dict=image_order_dict
                 )
@@ -538,7 +639,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 selected_imgs)
     else:
             clusters_ids = get_clusters(df.reset_index())  # df was indexed earlier
-            selected_imgs = select_non_similar_images(cluster_name, clusters_ids, df.reset_index(), need)
+            selected_imgs = select_non_similar_images(cluster_name, clusters_ids, image_order_dict, need)
             ai_images_selected.extend(selected_imgs)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                 selected_imgs)
