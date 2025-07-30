@@ -140,7 +140,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
 
         time_cluster_id = group_to_change_key[0]
         main_groups = [group for cluster_key, group in groups if
-                       time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and cluster_key not in merged_targets]
+                       time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and merged_targets.get(cluster_key,0)<CONFIGS['merge_limit_times'] ]
 
         if len(main_groups) > 0:
             selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group)
@@ -166,7 +166,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
         current_merges.add(group_to_change_key)
 
         if merge_target_key in merged_targets:
-            merged_targets[merged_targets] += 1
+            merged_targets[merge_target_key] += 1
         else:
             merged_targets[merge_target_key] = 1
         if group_to_change_key in merged_targets:
@@ -214,7 +214,8 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                     else:
                         logger.info(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
                         continue
-
+            if iteration > 0:
+                pass
             new_groups, merged_targets = handle_merging(groups_to_change, groups, merged_targets, logger)
             if new_groups is not None:
                 new_group2images = get_images_per_groups(new_groups)

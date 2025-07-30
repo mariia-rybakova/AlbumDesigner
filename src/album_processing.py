@@ -97,10 +97,24 @@ def get_group_photos_list(cur_group_photos, spread_params, logger):
         split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
         number_of_splits = math.ceil(len(cur_group_photos) / split_size)
         logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
+
+        # Split as equally as possible
+        total_items = len(cur_group_photos)
+        base_size = total_items // number_of_splits
+        remainder = total_items % number_of_splits
+
+        start_idx = 0
         for split_num in range(number_of_splits):
-            cur_group_photos_list.append(cur_group_photos[
-                                         split_num * split_size: min((split_num + 1) * split_size,
-                                                                     len(cur_group_photos))])
+            # Add 1 extra item to the first 'remainder' splits
+            current_size = base_size + (1 if split_num < remainder else 0)
+            end_idx = start_idx + current_size
+            cur_group_photos_list.append(cur_group_photos[start_idx:end_idx])
+            start_idx = end_idx
+
+        # for split_num in range(number_of_splits):
+        #     cur_group_photos_list.append(cur_group_photos[
+        #                                  split_num * split_size: min((split_num + 1) * split_size,
+        #                                                              len(cur_group_photos))])
     else:
         cur_group_photos_list.append(cur_group_photos)
 
