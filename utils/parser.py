@@ -38,6 +38,8 @@ CONFIGS = {'DEBUG': True,
            'design_pack_base':'pictures/photostore/32/ext/designs',
            'architect_base':'pictures/photostore/32/ext/productgroups',
 
+            'merge_limit_times':2,
+
            #selection
            'content_threads': 4,
            'small_groups': 3,
