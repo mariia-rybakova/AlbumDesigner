@@ -217,7 +217,12 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
 
             new_groups, merged_targets = handle_merging(groups_to_change, groups, merged_targets, logger)
             if new_groups is not None:
-                group2images = get_images_per_groups(new_groups)
+                new_group2images = get_images_per_groups(new_groups)
+                if len(new_group2images) == len(group2images):
+                    logger.info(f"No changes in groups after merging at iteration {iteration}. Exiting.")
+                    break
+                else:
+                    group2images = new_group2images
                 groups = new_groups
 
             # logger.info("Iteration completed")
