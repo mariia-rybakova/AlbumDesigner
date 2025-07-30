@@ -159,9 +159,9 @@ class SelectionStage(Stage):
 
                 ten_photos = ai_metadata.get('photoIds', [])
                 people_ids = ai_metadata.get('personIds', [])
-                focus = ai_metadata.get('focus', None)
-                tags = ai_metadata.get('subjects', [])
-                density = ai_metadata.get('density', 5)
+                focus = ai_metadata.get('focus', ['everyoneElse'])
+                tags = ai_metadata.get('subjects', ['Wedding dress', 'ceremony', 'bride', 'dancing', 'bride getting ready', 'groom getting ready', 'table setting', 'flowers', 'decorations', 'family', 'baby', 'kids', 'mother', 'father', 'Romance', 'affection', 'Intimacy', 'Happiness', 'Holding hands', 'smiling', 'Hugging', 'Kissing', 'ring', 'veil', 'soft light', 'portrait'])
+                density = ai_metadata.get('density', 3)
                 is_wedding = _msg.content.get('is_wedding', False)
                 df = _msg.content.get('gallery_photos_info', pd.DataFrame())
 
