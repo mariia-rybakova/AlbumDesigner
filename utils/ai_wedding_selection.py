@@ -492,6 +492,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         )
 
         if cluster_name  in ['other', 'None', 'couple'] or is_small_group:
+            logger.info("Ignoring None & None & Other!!")
             continue
 
         # Get scores for each image
