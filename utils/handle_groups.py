@@ -120,12 +120,15 @@ def handle_illegal(group_key, change_tuple, imgs_number, groups, count, logger):
 
 def handle_merging(groups_to_change, groups, merged_targets, logger):
     merging_candidates = list()
+    current_merges = set()
+
     for group_to_change_key, change_tuple in groups_to_change.items():
         if change_tuple[0] != 'merge':
             continue
         if group_to_change_key in merged_targets:
-            # logger.info(f"Skipping group {group_to_change_key} as it was already merged into.")
-            continue
+            if merged_targets[group_to_change_key] >= CONFIGS['merge_limit_times']:
+                # logger.info(f"Skipping group {group_to_change_key} as it was already merged into.")
+                continue
 
         # Check if group_to_change_key exists in groups
         if group_to_change_key not in groups.groups:
@@ -152,14 +155,24 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
         if selected_cluster is None:
             do_not_change_group(illegal_group, groups, group_to_change_key)
             continue
-        if merge_target_key in merged_targets:
+        if merge_target_key in current_merges:
             # logger.info(f"Skipping merge for {group_to_change_key} as target {merge_target_key} already merged into.")
             continue
 
         groups = merge_groups(groups, illegal_group, group_to_change_key, selected_cluster, merge_target_key)
         # logger.info(f"Group {group_to_change_key} was merger to {merge_target_key}.")
-        merged_targets.add(merge_target_key)
-        merged_targets.add(group_to_change_key)
+
+        current_merges.add(merge_target_key)
+        current_merges.add(group_to_change_key)
+
+        if merge_target_key in merged_targets:
+            merged_targets[merged_targets] += 1
+        else:
+            merged_targets[merge_target_key] = 1
+        if group_to_change_key in merged_targets:
+            merged_targets[group_to_change_key] += 1
+        else:
+            merged_targets[group_to_change_key] = 1
 
     return groups, merged_targets
 
@@ -167,7 +180,7 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
 def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logger=None, max_iterations=500):
     count = 2
     iteration = 0
-    merged_targets = set()
+    merged_targets = dict()
     try:
         while True:
             # Build groups_to_change directly here
@@ -188,18 +201,19 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Groups to change left: {groups_to_change}. Exiting to avoid infinite loop.")
                 break
 
-            for key_to_change, change_tuple in groups_to_change.items():
-                if key_to_change in merged_targets:
-                    # logger.info(f"Skipping group {key_to_change} as it was already merged into.")
-                    continue
-                imgs_number = group2images.get(key_to_change, 0)
-                new_groups = handle_illegal(key_to_change, change_tuple, imgs_number, groups, count, logger)
-                if new_groups is not None:
-                    group2images = get_images_per_groups(new_groups)
-                    groups = new_groups
-                else:
-                    logger.info(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
-                    continue
+            if iteration==0:
+                for key_to_change, change_tuple in groups_to_change.items():
+                    if key_to_change in merged_targets:
+                        # logger.info(f"Skipping group {key_to_change} as it was already merged into.")
+                        continue
+                    imgs_number = group2images.get(key_to_change, 0)
+                    new_groups = handle_illegal(key_to_change, change_tuple, imgs_number, groups, count, logger)
+                    if new_groups is not None:
+                        group2images = get_images_per_groups(new_groups)
+                        groups = new_groups
+                    else:
+                        logger.info(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
+                        continue
 
             new_groups, merged_targets = handle_merging(groups_to_change, groups, merged_targets, logger)
             if new_groups is not None:
