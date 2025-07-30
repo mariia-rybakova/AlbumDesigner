@@ -78,7 +78,7 @@ def get_time_clusters_gmm(X):
 
 
 def get_time_clusters_dbscan(X):
-    dbscan = DBSCAN(eps=20, min_samples=1)  # eps is in minutes, adjust as needed
+    dbscan = DBSCAN(eps=20, min_samples=3)  # eps is in minutes, adjust as needed
     clusters = dbscan.fit_predict(X)
     best_n = len(set(clusters))
     return clusters, best_n
@@ -88,6 +88,20 @@ def get_time_clusters(general_time_df):
     # Cluster by time
     X = general_time_df.values.reshape(-1, 1)
     initial_clusters, best_n = get_time_clusters_dbscan(X)
+
+    if -1 in initial_clusters:
+        noise_mask = initial_clusters == -1
+        valid_mask = initial_clusters != -1
+
+        if np.any(valid_mask):  # Only if there are valid clusters
+            for i in np.where(noise_mask)[0]:
+                # Find distances to all valid points
+                distances = np.abs(X[i] - X[valid_mask].flatten())
+                nearest_idx = np.where(valid_mask)[0][np.argmin(distances)]
+                initial_clusters[i] = initial_clusters[nearest_idx]
+
+        # Recalculate best_n excluding noise points
+        best_n = len(set(initial_clusters[initial_clusters != -1]))
 
     # Calculate mean time for each cluster
     cluster_means = {}
