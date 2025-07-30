@@ -328,11 +328,9 @@ def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, even
                 total_percentage_assigned += event_config.get('value', 0)
 
         # --- Main Processing Loop for Each Event ---
-        for event, config in lookup_table.items():
-            if event not in n_actual_dict.keys():
-                continue
-            n_target, std_target = config
-            event_config = event_mapping.get(event, {})
+        for event in n_actual_dict.keys():
+            n_target, std_target = lookup_table.get(event,(0,0))
+            event_config = event_mapping.get(event.lower(), {})
             event_type = event_config.get('type')
 
             reason = 'default_fallback'  # Default reason if no other logic applies.
@@ -366,7 +364,7 @@ def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, even
                 # This logic is used for events with no specific type in the event_mapping
                 # or if the event is not in the mapping at all.
                 if n_actual_dict[event] > 0:
-                    proportional_factor = min(1, n_target / n_actual_dict)
+                    proportional_factor = min(1, n_target / n_actual_dict[event])
                     deviation_adjustment = (n_actual_dict[event] - n_target) / (std_target + 1e-6)
                     selection = n_target + deviation_adjustment * proportional_factor
                     # Clamp the selection to a reasonable range to avoid extreme results.
@@ -501,7 +499,11 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         if all(score <= 0 for _, score in scores):
             continue
 
-        image_order_dict = scored_df.set_index('image_id')['total_score'].to_dict()
+        image_order_dict = (
+            scored_df.set_index('image_id')['total_score']
+            .sort_values(ascending=False)
+            .to_dict()
+        )
         available_images_scores = [(image_id, score) for image_id,score in scores
                                    if score > selection_threshold[cluster_name]]
 
@@ -530,7 +532,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             to_add = available_img_ids_wo_user[:need]
             ai_images_selected.extend(to_add)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(to_add)
-
+            continue
         # -------- Cluster-specific selection strategies --------
         elif cluster_name in orientation_time_categories:
             # Cluster by time and find most solo person
@@ -563,6 +565,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
                         filtered_df = df_with_time_cluster[
                             df_with_time_cluster.apply(has_both_ids_or_two_faces_bodies, axis=1)]
+                    else:
+                        filtered_df = df_with_time_cluster
 
                     # Final filtering based on available images
                     filtered_ids = set(filtered_df['image_id'])
@@ -638,8 +642,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             ai_images_selected.extend(selected_imgs)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                 selected_imgs)
-    else:
-            clusters_ids = get_clusters(df.reset_index())  # df was indexed earlier
+        else:
+            clusters_ids = get_clusters(scored_df.reset_index())  # df was indexed earlier
             selected_imgs = select_non_similar_images(cluster_name, clusters_ids, image_order_dict, need)
             ai_images_selected.extend(selected_imgs)
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
