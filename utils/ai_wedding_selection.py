@@ -329,21 +329,26 @@ def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, even
 
         # --- Main Processing Loop for Each Event ---
         for event in n_actual_dict.keys():
+            n_actual = n_actual_dict[event]
             n_target, std_target = lookup_table.get(event,(0,0))
             event_config = event_mapping.get(event.lower(), {})
             event_type = event_config.get('type')
-
             reason = 'default_fallback'  # Default reason if no other logic applies.
-
             # --- Logic Branching Based on Event Type ---
-
             if event_type == 'percentage':
                 percentage = event_config.get('value', 0)
                 # The selection is a direct percentage of the *actual* number of photos.
                 # If the total assigned percentage is > 0, we calculate a proportional share.
                 if total_percentage_assigned > 0:
-                    proportional_share = percentage / total_percentage_assigned
-                    selection = round(n_actual_dict[event] * proportional_share)
+                    scaled_target = n_target * density_factor
+                    proportional_factor = min(1, scaled_target / n_actual)
+                    deviation_adjustment = (n_actual - scaled_target) / (std_target + 1e-6)
+                    selection = scaled_target + deviation_adjustment * proportional_factor
+
+                    # Clamp the selection to a reasonable range and ensure it doesn't exceed available images.
+                    selection = max(4, min(selection, scaled_target * 1.5))
+                    # proportional_share = percentage / total_percentage_assigned
+                    # selection = round(n_actual_dict[event] * proportional_share)
                 else:
                     selection = 0  # Avoid division by zero if no percentages are assigned.
 
