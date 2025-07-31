@@ -17,6 +17,12 @@ def process_row(idx, row, loaded_tags_features):
 
     tags_similarities = {}
 
+    if row['cluster_context'] in loaded_tags_features.keys():
+        sub_loaded_tags_features = {}
+        sub_loaded_tags_features[row['cluster_context']]  = loaded_tags_features[row['cluster_context']]
+        loaded_tags_features = sub_loaded_tags_features
+
+
     for tag, sub_features in loaded_tags_features.items():
         sub_tags = {}
         for tag_feature, feature_values in sub_features.items():
