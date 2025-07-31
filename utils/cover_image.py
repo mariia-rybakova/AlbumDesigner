@@ -78,15 +78,17 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     if not unique_people_ids:
         logger.warning("Warning: No unique people IDs found in dataset.")
-        return df, [], pd.DataFrame()
+        selected_images_df = df.nlargest(number_of_images, 'image_order')
 
     # Find images that contain all unique people IDs
     selected_images_df = df[
         df['persons_ids'].apply(lambda x: set(x).issuperset(unique_people_ids) if isinstance(x, list) else False)]
 
     if selected_images_df.empty:
-        logger.warning("Warning: No images found containing all unique people IDs.")
-        return df, [], pd.DataFrame()
+        logger.warning("Warning: No images found containing all unique people IDs. selectign based on max faces")
+        max_faces = df['n_faces'].max()
+        selected_images_df = df[df['n_faces'] == max_faces]
+        # return df, [], pd.DataFrame()
 
     # Select the top two images with the highest image_order
     selected_images_df = selected_images_df.nlargest(number_of_images, 'image_order')
