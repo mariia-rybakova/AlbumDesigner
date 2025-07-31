@@ -463,8 +463,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
     # Load configs and mapping
     event_mapping = load_event_mapping(CONFIGS['focus_csv_path'])
 
-    focus_table = event_mapping.get(focus[0], event_mapping['bride and groom'])
-    relation_table = relations.get(focus[0], relations['brideAndGroom'])
+    if len(focus)>0:
+        focus_table = event_mapping.get(focus[0], event_mapping['bride and groom'])
+        relation_table = relations.get(focus[0], relations['brideAndGroom'])
+    else:
+        focus_table = event_mapping['bride and groom']
+        relation_table = relations['brideAndGroom']
 
     actual_number_images_dict = {
         cluster_name: len(cluster_df)
