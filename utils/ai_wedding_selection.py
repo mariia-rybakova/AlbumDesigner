@@ -454,7 +454,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
     orientation_time_categories = {
         'bride', 'groom', 'bride and groom', 'bride party', 'groom party', 'speech',
-        'full party', 'walking the aisle', 'bride getting dress', 'getting hair-makeup',
+        'full party', 'walking the aisle', 'bride getting dressed', 'getting hair-makeup',
         'first dance', 'cake cutting', 'ceremony', 'dancing'
     }
 
