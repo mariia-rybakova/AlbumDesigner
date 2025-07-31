@@ -117,6 +117,29 @@ def handle_illegal(group_key, change_tuple, imgs_number, groups, count, logger):
 
     return groups
 
+def add_class_preference(merge_candidates):
+    """Modifies time difference based on content class pairs"""
+    for i, candidate in enumerate(merge_candidates):
+        illegal_group, group_key, selected_cluster, time_diff, merge_target_key = candidate
+        if not all([group_key, merge_target_key]):
+            continue
+
+        source_class = group_key[1].split('_')[0] if '_' in group_key[1] else group_key[1]
+        target_class = merge_target_key[1].split('_')[0] if '_' in merge_target_key[1] else merge_target_key[1]
+
+        similar_classes = [['bride','bride getting dressed','getting hair-makeup','accessories'],['bride','groom'],['ceremony', 'walking the aisle'],['food','settings']]
+
+        # Prefer merging similar classes
+        if source_class == target_class:
+            time_diff *= 0.5
+        # Prefer merging related classes
+        for similar_list in similar_classes:
+            if source_class in similar_list and target_class in similar_list:
+                time_diff *= 0.8
+                break
+        merge_candidates[i] = (illegal_group, group_key, selected_cluster, time_diff, merge_target_key)
+    return merge_candidates
+
 
 def handle_merging(groups_to_change, groups, merged_targets, logger):
     merging_candidates = list()
@@ -150,6 +173,9 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
             selected_cluster, selected_time_difference, merge_target_key = None, float("inf"), None
         merging_candidates.append((illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))
 
+    add_class_preference(merging_candidates)
+
+    merging_candidates = add_class_preference(merging_candidates)
     merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
     for illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key in merging_candidates:
         if selected_cluster is None:

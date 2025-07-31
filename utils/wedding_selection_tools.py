@@ -111,7 +111,7 @@ def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
                 items_to_take = min(1, needed_count)
             else:  # Large list: take up to the remaining needed count
                 list_size = len(clusters_ids[key])
-                items_to_take = round(list_size/ needed_count)
+                items_to_take = max(1,round(list_size/ needed_count))
 
             images_ranked = sorted(clusters_ids[key], key=lambda img: image_order_dict.get(img, float('inf')), reverse=True)
 

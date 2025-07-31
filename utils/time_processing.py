@@ -15,7 +15,11 @@ def read_timestamp(timestamp_str):
 
 
 def convert_to_timestamp(time_integer):
-    return datetime.fromtimestamp(time_integer)
+    try:
+        dt = datetime.fromtimestamp(time_integer)
+    except Exception:
+        dt = datetime.now()
+    return dt
 
 
 def process_image_time_row(args):
