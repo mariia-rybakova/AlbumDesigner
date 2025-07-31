@@ -130,13 +130,7 @@ def get_info_protobufs(project_base_url, logger):
 
         # Cluster people by number of people inside the image
         gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
-        is_wedding = check_gallery_type(gallery_info_df)
 
-        if is_wedding:
-            # make Cluster column
-            gallery_info_df = gallery_info_df.apply(process_content, axis=1)
-            # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
-            #                                         how='left', on='image_id')
 
 
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
