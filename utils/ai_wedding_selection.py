@@ -8,6 +8,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import DBSCAN
 from collections import Counter
 
+from utils.lookup_table_tools import spreads_wedding_lookup_table
 from utils.parser import CONFIGS,relations,selection_threshold
 from utils.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
@@ -284,6 +285,94 @@ def load_event_mapping(csv_path: str):
         print(f"Error loading event mapping: {e}")
         return {}
 
+def calculate_optimal_selection_v3(
+    n_actual_dict,
+    image_lookup_table,
+    spreads_per_category_table,
+    focus_table,
+    density
+    ):
+    MIN_TOTAL_SPREADS = 19
+    MAX_TOTAL_SPREADS = 22
+
+    important_events = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
+
+    # Density factors determine how many images are packed into one spread.
+    density_factors = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.25, 5: 2.0}
+    density_factor = density_factors.get(density, 1.0)
+
+    percentages = {
+        event: config.get('value', 0)
+        for event, config in focus_table.items()
+        if config.get('type') == 'percentage' and event in n_actual_dict.keys()
+    }
+    total_assigned_percent = sum(percentages.values())
+    rem_percent = 100.0 - total_assigned_percent
+
+    if rem_percent > 0:
+        eligible_events = [e for e in important_events if e in percentages]
+        share = rem_percent / len(eligible_events)
+        for event in eligible_events:
+            percentages[event] += share
+
+    spreads = {}
+    selections = {}
+    total_spreads = 0
+
+    # Step 2: combined spread + selection logic
+    for event in n_actual_dict:
+        config = focus_table.get(event, {})
+        n_actual = n_actual_dict[event]
+
+        if config.get('type') == 'no':
+            spreads[event] = 0
+            selections[event] = 0
+            continue
+
+        pct = percentages.get(event, 0)
+        base_spreads, std_spreads = spreads_per_category_table.get(event, (0, 0))
+        est_spreads = round(base_spreads + (pct / 100.0) * std_spreads)
+        est_spreads = max(est_spreads, 0)
+
+        base_images, _ = image_lookup_table.get(event, (0, 0))
+        est_selection = round(base_images * density_factor)
+
+        # Clip selection to real available images
+        final_selection = min(est_selection, n_actual)
+
+        # If not enough images, adjust spreads down
+        if final_selection < est_spreads and event not in ['None', 'other']:
+            est_spreads = max(1, min(final_selection, est_spreads))
+
+        spreads[event] = est_spreads
+        selections[event] = final_selection
+        total_spreads += est_spreads
+
+    # Add spreads if count is too low
+    while total_spreads < MIN_TOTAL_SPREADS:
+        # Prioritize adding to important, percentage-based events
+        candidates = sorted([e for e in important_events if e in percentages], key=lambda e: percentages[e],
+                            reverse=True)
+        if not candidates: break
+        spreads[candidates[0]] += 1
+        total_spreads += 1
+
+    # Remove spreads if count is too high
+    while total_spreads > MAX_TOTAL_SPREADS:
+        # Prioritize removing from least important, percentage-based events
+        candidates = sorted([e for e in percentages if spreads[e] > 0 and e not in important_events],
+                            key=lambda e: percentages[e])
+        if not candidates:  # Fallback to important events if necessary
+            candidates = sorted([e for e in important_events if spreads[e] > 1], key=lambda e: percentages[e])
+        if not candidates: break
+        spreads[candidates[0]] -= 1
+        total_spreads -= 1
+
+    return selections
+
+
+
+
 
 def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, event_mapping: Dict,
                                 density: int = 3, logger=None) -> Dict:
@@ -309,50 +398,47 @@ def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, even
         # Density factors determine how many images are packed into one spread.
         density_factors = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.25, 5: 2.0}
         density_factor = density_factors.get(density, 1.0)
-        # Base number of images per spread is 4, adjusted by the density factor.
-        images_per_spread = max(1, int(4 * density_factor))
 
-        # --- Pre-calculation Step for 'percentage' events ---
-        # To ensure percentages are allocated proportionally, we first sum the total percentage
-        # assigned across all events for the given category. This prevents overallocation
-        # if the sum of percentages exceeds 100.
         total_percentage_assigned = 0
-        for event in lookup_table:
-            if event not in n_actual_dict.keys():
-                continue
+        percent_per_category = {}
+        for event in  n_actual_dict.keys():
             event_config = event_mapping.get(event, {})
             if event_config.get('type') == 'percentage':
+                percent_per_category[event] = event_config.get('value', 0)
                 total_percentage_assigned += event_config.get('value', 0)
 
         # --- Main Processing Loop for Each Event ---
         for event in n_actual_dict.keys():
+            if event in ['None', 'other']:
+                results[event] = {
+                    'selection': 0,
+                    'spreads': 0,
+                    'reason': 'None||Other'
+                }
+                continue
+
             n_actual = n_actual_dict[event]
             n_target, std_target = lookup_table.get(event,(0,0))
+            percentage = percent_per_category.get(event, 0.0)
             event_config = event_mapping.get(event.lower(), {})
             event_type = event_config.get('type')
             reason = 'default_fallback'  # Default reason if no other logic applies.
             # --- Logic Branching Based on Event Type ---
             if event_type == 'percentage':
-                percentage = event_config.get('value', 0)
-                # The selection is a direct percentage of the *actual* number of photos.
-                # If the total assigned percentage is > 0, we calculate a proportional share.
-                if total_percentage_assigned > 0:
-                    scaled_target = n_target * density_factor
-                    proportional_factor = min(1, scaled_target / n_actual)
-                    deviation_adjustment = (n_actual - scaled_target) / (std_target + 1e-6)
-                    selection = scaled_target + deviation_adjustment * proportional_factor
+                scaled_target = n_target * density_factor
+                proportional_factor = min(1, scaled_target / n_actual)
+                deviation_adjustment = (n_actual - scaled_target) / (std_target + 1e-6)
+                selection = scaled_target + deviation_adjustment * proportional_factor
 
-                    # Clamp the selection to a reasonable range and ensure it doesn't exceed available images.
-                    selection = max(4, min(selection, scaled_target * 1.5))
-                    # proportional_share = percentage / total_percentage_assigned
-                    # selection = round(n_actual_dict[event] * proportional_share)
-                else:
-                    selection = 0  # Avoid division by zero if no percentages are assigned.
-
+                # Clamp the selection to a reasonable range and ensure it doesn't exceed available images.
+                selection = max(4, min(selection, scaled_target * 1.5))
+                # proportional_share = percentage / total_percentage_assigned
+                # selection = round(n_actual_dict[event] * proportional_share)
                 reason = f'percentage_{percentage}%_of_total'
 
             elif event_type == 'yes':
                 # 'yes' signifies a mandatory but minimal inclusion.
+                # random_value = random.random(2)
                 selection = min(2, n_actual_dict[event])  # Select 1 or 2 images.
                 reason = 'yes_minimal_selection'
 
@@ -362,9 +448,6 @@ def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, even
                 reason = 'no_selection'
 
             else:
-                # --- Default Calculation Logic ---
-                # This logic is used for events with no specific type in the event_mapping
-                # or if the event is not in the mapping at all.
                 if n_actual_dict[event] > 0:
                     proportional_factor = min(1, n_target / n_actual_dict[event])
                     deviation_adjustment = (n_actual_dict[event] - n_target) / (std_target + 1e-6)
@@ -382,8 +465,8 @@ def calculate_selection_revised_v1(n_actual_dict: Dict, lookup_table: Dict, even
 
             # --- Final Spread Calculation ---
             # Spreads are not calculated for 'yes' and 'no' types as they are special cases.
-            if event_type not in ['no', 'yes'] and images_per_spread > 0:
-                spreads = math.ceil(final_selection / images_per_spread)
+            if event_type not in ['no', 'yes']:
+                spreads = math.ceil(final_selection / 1)
             else:
                 spreads = 0
 
@@ -472,12 +555,20 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         for cluster_name, cluster_df in df.groupby('cluster_context')
     }
 
-    final_allocation = calculate_selection_revised_v1(
-        actual_number_images_dict,
-        relation_table,
-        focus_table,
-        density,
-        logger
+    # final_allocation_old = calculate_selection_revised_v1(
+    #     actual_number_images_dict,
+    #     relation_table,
+    #     focus_table,
+    #     density,
+    #     logger
+    # )
+
+    final_allocation = calculate_optimal_selection_v3(
+    actual_number_images_dict,
+    relation_table,
+    spreads_wedding_lookup_table,
+    focus_table,
+    density,
     )
 
     user_selected_photos_df = df[df['image_id'].isin(user_selected_photos)]

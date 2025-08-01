@@ -4,47 +4,72 @@ import math
 
 wedding_lookup_table = {
     'bride and groom': (4, 0.5),
-
     'bride': (4, 0.5),
     'groom': (4, 0.5),
-
     'bride party': (6, 0.75),
     'groom party': (6, 0.75),
     'full party': (4, 0.5),
-
     'large_portrait': (2, 0.5),
     'small_portrait': (5, 0.5),
     'portrait': (5, 0.5),
     'very large group': (2, 0.5),
     'walking the aisle': (4, 0.75),
-
     'bride getting dressed': (9, 1),
     'first dance': (4, 0.5),
     'cake cutting': (6, 1),
     'ceremony': (5, 1),
     'couple': (6, 1),
     'dancing': (24, 1),
-
-    'entertainment': (8, 1),
-
+    'entertainment': (1, 1),
     'kiss': (4, 0.5),
     'pet': (4, 0.5),
-
     'accessories': (10, 0.5),
     'settings': (10, 0.5),
     'speech': (6, 1),
-
     'detail': (10, 1.5),
     'getting hair-makeup': (10, 1.5),
     'food': (10, 1.5),
-    'other': (16, 1.5),
-    'invite': (12, 1.5),
-    'None':(10,1.5),
-    'wedding dress': (4,1.5),
-    'vehicle':(10,1.5),
-    'inside vehicle':(15,0.5)
+    'other': (0, 0),
+    'invite': (0, 0),
+    'None':(0,0),
+    'wedding dress': (0,0),
+    'vehicle':(0,0),
+    'inside vehicle':(0,0)
 }
 
+
+spreads_wedding_lookup_table = {
+    'bride and groom': (3, 0.5),
+    'bride': (3, 0.5),
+    'groom': (3, 0.5),
+    'bride party': (1, 0.75),
+    'groom party': (1, 0.75),
+    'full party': (1, 0.5),
+    'portrait': (2, 0.5),
+    'very large group': (1, 0.5),
+    'walking the aisle': (3, 0.75),
+    'bride getting dressed': (1, 1),
+    'first dance': (1, 0.5),
+    'cake cutting': (1, 1),
+    'ceremony': (2, 1),
+    'couple': (0, 0),
+    'dancing': (1, 1),
+    'entertainment': (1, 1),
+    'kiss': (1, 0.5),
+    'pet': (0, 0),
+    'accessories': (0, 0),
+    'settings': (1, 0.5),
+    'speech': (1, 1),
+    'detail': (1, 1.5),
+    'getting hair-makeup': (1, 1.5),
+    'food': (1, 1.5),
+    'other': (0, 0),
+    'invite': (0, 0),
+    'None':(0,0),
+    'wedding dress': (0,0),
+    'vehicle':(0,0),
+    'inside vehicle':(0,0)
+}
 non_wedding_lookup_table = {
     '1':(2,0.4),
     '2':(2,0.4),
