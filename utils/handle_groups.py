@@ -131,11 +131,11 @@ def add_class_preference(merge_candidates):
 
         # Prefer merging similar classes
         if source_class == target_class:
-            time_diff *= 0.5
+            time_diff *= 0.2
         # Prefer merging related classes
         for similar_list in similar_classes:
             if source_class in similar_list and target_class in similar_list:
-                time_diff *= 0.8
+                time_diff *= 0.5
                 break
         merge_candidates[i] = (illegal_group, group_key, selected_cluster, time_diff, merge_target_key)
     return merge_candidates
