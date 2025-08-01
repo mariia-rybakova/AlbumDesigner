@@ -16,11 +16,11 @@ def process_row(idx, row, loaded_tags_features):
         return idx, None, None  # Mark for deletion
 
     tags_similarities = {}
-
-    if row['cluster_context'] in loaded_tags_features.keys():
-        sub_loaded_tags_features = {}
-        sub_loaded_tags_features[row['cluster_context']]  = loaded_tags_features[row['cluster_context']]
-        loaded_tags_features = sub_loaded_tags_features
+    if 'cluster_context' in row:
+        if row['cluster_context'] in loaded_tags_features.keys():
+            sub_loaded_tags_features = {}
+            sub_loaded_tags_features[row['cluster_context']]  = loaded_tags_features[row['cluster_context']]
+            loaded_tags_features = sub_loaded_tags_features
 
 
     for tag, sub_features in loaded_tags_features.items():
