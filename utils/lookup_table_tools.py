@@ -29,12 +29,12 @@ wedding_lookup_table = {
     'detail': (10, 1.5),
     'getting hair-makeup': (10, 1.5),
     'food': (10, 1.5),
-    'other': (0, 0),
-    'invite': (0, 0),
-    'None':(0,0),
-    'wedding dress': (0,0),
-    'vehicle':(0,0),
-    'inside vehicle':(0,0)
+    'other': (6, 0.5),
+    'invite': (6, 0.5),
+    'None':(6,0.5),
+    'wedding dress': (6,0.5),
+    'vehicle':(6,0.5),
+    'inside vehicle':(6,0.5)
 }
 
 
