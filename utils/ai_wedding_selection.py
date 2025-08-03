@@ -15,6 +15,7 @@ from utils.time_processing import convert_to_timestamp
 from utils.person_clustering import person_clustering_selection
 from utils.time_orientation_clustering import orientation_time_clustering_selection
 from utils.time_orient_2 import select_images_by_time_and_style,identify_temporal_clusters
+from utils.parser import CONFIGS
 
 def process_time(images_time):
     general_times = list()
@@ -298,7 +299,7 @@ def calculate_optimal_selection_v3(
     important_events = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
 
     # Density factors determine how many images are packed into one spread.
-    density_factors = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.25, 5: 2.0}
+    density_factors = CONFIGS['density_factors']
     density_factor = density_factors.get(density, 1.0)
 
     percentages = {

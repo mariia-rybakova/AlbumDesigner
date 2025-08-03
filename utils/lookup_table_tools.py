@@ -1,6 +1,6 @@
 # Lookup table with category preferences (mean, std)
 import math
-
+from utils.parser import CONFIGS
 
 wedding_lookup_table = {
     'bride and groom': (4, 0.5),
@@ -100,12 +100,16 @@ def calculate_flexible_mean(total_images,group_original_mean, max_per_spread=24)
         return int(mean)
 
 
-def get_lookup_table(group2images, is_wedding, logger=None):
+def get_lookup_table(group2images, is_wedding, logger=None,density=3):
+    density_factors = CONFIGS['density_factors']
+
     try:
         if is_wedding:
             lookup_table = wedding_lookup_table
         else:
             lookup_table = non_wedding_lookup_table
+
+        max_per_spread = 24
 
         for group_name, num_images in group2images.items():
             if is_wedding:
@@ -116,6 +120,10 @@ def get_lookup_table(group2images, is_wedding, logger=None):
             # Assign default values if group_id is not in lookup_table
             if group_id not in lookup_table:
                 lookup_table[group_id] = (10, 4)
+
+            lookup_table[group_id] = (max(1,min(max_per_spread, lookup_table[group_id][0]* density_factors[density])),lookup_table[group_id][1])
+
+
 
         return lookup_table  # Return the updated lookup table
 
