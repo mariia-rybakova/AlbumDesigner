@@ -474,7 +474,8 @@ selection_threshold = {
     'wedding dress': 0.2,
     'vehicle':0,
     'inside vehicle':0,
-
+    'rings':0.15,
+    'suit':0.15,
 
 
 
