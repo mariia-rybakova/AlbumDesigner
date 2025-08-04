@@ -462,7 +462,7 @@ selection_threshold = {
     'entertainment': 0.14,
     'kiss': 0.2,
     'pet': 0.14,
-    'accessories':0.3,
+    'accessories':0.5,
     'settings': 0.3,
     'speech': 0.3,
     'detail': 0.3,

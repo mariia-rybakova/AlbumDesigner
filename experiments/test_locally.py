@@ -1034,3 +1034,66 @@ if __name__ == '__main__':
     updated_results  = selection.get_selection(result)
     processing.process_message(updated_results)
     print("Finished will all messages")
+
+for event in n_actual_dict.keys():
+    n_target, std_target = lookup_table.get(event, (0, 0))
+    event_config = event_mapping.get(event.lower(), {})
+    event_type = event_config.get('type')
+
+    reason = 'default_fallback'  # Default reason if no other logic applies.
+
+    # --- Logic Branching Based on Event Type ---
+
+    if event_type == 'percentage':
+        percentage = event_config.get('value', 0)
+        # The selection is a direct percentage of the *actual* number of photos.
+        # If the total assigned percentage is > 0, we calculate a proportional share.
+        if total_percentage_assigned > 0:
+            proportional_share = percentage / total_percentage_assigned
+            selection = round(n_actual_dict[event] * proportional_share)
+        else:
+            selection = 0  # Avoid division by zero if no percentages are assigned.
+
+        reason = f'percentage_{percentage}%_of_total'
+
+    elif event_type == 'yes':
+        # 'yes' signifies a mandatory but minimal inclusion.
+        selection = min(2, n_actual_dict[event])  # Select 1 or 2 images.
+        reason = 'yes_minimal_selection'
+
+    elif event_type == 'no':
+        # 'no' signifies explicit exclusion.
+        selection = 0
+        reason = 'no_selection'
+
+    else:
+        # --- Default Calculation Logic ---
+        # This logic is used for events with no specific type in the event_mapping
+        # or if the event is not in the mapping at all.
+        if n_actual_dict[event] > 0:
+            proportional_factor = min(1, n_target / n_actual_dict[event])
+            deviation_adjustment = (n_actual_dict[event] - n_target) / (std_target + 1e-6)
+            selection = n_target + deviation_adjustment * proportional_factor
+            # Clamp the selection to a reasonable range to avoid extreme results.
+            selection = max(4, min(selection, n_target * 1.5))
+        else:
+            selection = 0  # Cannot select images if none are available.
+
+        if event not in event_mapping:
+            reason = 'default_unrecognized'
+
+    # Ensure selection does not exceed the number of available images.
+    final_selection = min(round(selection), n_actual_dict[event])
+
+    # --- Final Spread Calculation ---
+    # Spreads are not calculated for 'yes' and 'no' types as they are special cases.
+    if event_type not in ['no', 'yes'] and images_per_spread > 0:
+        spreads = math.ceil(final_selection / images_per_spread)
+    else:
+        spreads = 0
+
+    results[event] = {
+        'selection': int(final_selection),
+        'spreads': int(spreads),
+        'reason': reason
+    }

@@ -596,7 +596,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         if all(score <= 0 for _, score in scores):
             continue
 
-
         candidates_images_scores = [(image_id, score) for image_id,score in scores
                                    if score > selection_threshold[cluster_name]]
 
@@ -628,6 +627,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
         if valid_images_df.empty:
             continue
+        # print(f"event {cluster_name} Actual {n_actual} filtered after threshold {len(candidates_images_scores)} after validation {len(valid_images_df)}")
 
         image_order_dict = (
             valid_images_df.set_index('image_id')['total_score']
@@ -759,8 +759,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                 selected_imgs)
 
-    logger.info("The final Selection for each category: %s", category_picked)
+    # logger.info("The final Selection for each category: %s", category_picked)
     logger.info(f"Total images: {len(ai_images_selected)}")
-    logger.info("*******************************************************")
+    # logger.info("*******************************************************")
 
     return ai_images_selected, error_message
