@@ -14,6 +14,7 @@ from utils.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 from utils.person_clustering import person_clustering_selection
 from utils.time_orient_2 import select_images_by_time_and_style,identify_temporal_clusters
+from utils.parser import CONFIGS
 
 def process_time(images_time):
     general_times = list()

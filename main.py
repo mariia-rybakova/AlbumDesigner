@@ -243,8 +243,14 @@ class ProcessStage(Stage):
 
                 # Handle the processing time logging
                 start = datetime.now()
+
+                if message.content.get('aiMetadata', None) is not None:
+                    density = message.content['aiMetadata'].get('density', 3)
+                else:
+                    density = 3
+
                 album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], params,
-                                                logger=self.logger)
+                                                logger=self.logger,density=density)
 
                 wait_start = datetime.now()
                 try:

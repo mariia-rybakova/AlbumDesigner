@@ -77,9 +77,8 @@ CONFIGS = {'DEBUG': True,
             'person': 0.4,
             'tags': 0.1,
             'rank': 0.2
-         }
-
-
+         },
+           'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
 
 
 }
@@ -471,16 +470,13 @@ selection_threshold = {
     'detail': 0.3,
     'getting hair-makeup': 0.2,
     'food': 0.2,
-    'other': 0,
-    'invite': 0,
-    'None':0,
+    'other': 0.15,
+    'invite': 0.15,
+    'None':0.15,
     'wedding dress': 0.2,
-    'vehicle':0,
-    'inside vehicle':0,
-    'rings':0
-
-
-
-
+    'vehicle':0.15,
+    'inside vehicle':0.15,
+    'rings':0.15,
+    'suit':0.15,
 
 }

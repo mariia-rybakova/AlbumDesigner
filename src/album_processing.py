@@ -208,7 +208,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
         return None
 
 
-def album_processing(df, designs_info, is_wedding, params, logger):
+def album_processing(df, designs_info, is_wedding, params, logger , density =3):
     if is_wedding:
         original_groups = get_wedding_groups(df,logger)
     else:
@@ -217,7 +217,7 @@ def album_processing(df, designs_info, is_wedding, params, logger):
     group2images = get_images_per_groups(original_groups)
     # logger.info('Detected groups: {}'.format(group2images))
 
-    look_up_table = get_lookup_table(group2images,is_wedding,logger)
+    look_up_table = get_lookup_table(group2images,is_wedding,logger,density)
 
     # groups processing
     start_time = time.time()
