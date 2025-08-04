@@ -196,6 +196,7 @@ relations = {'brideAndGroom':{
     'vehicle': (2,0.01),
     'inside vehicle':(2,0.01),
     'suit':(1, 0.5),
+    'rings':(1,0.5)
 
 },
     'parents': {
@@ -236,6 +237,7 @@ relations = {'brideAndGroom':{
         'vehicle': (2, 0.01),
         'inside vehicle': (2, 0.01),
         'suit': (0, 0.5),
+        'rings': (1, 0.5)
 
     }
 ,'everyoneElse':{
@@ -275,6 +277,7 @@ relations = {'brideAndGroom':{
     'vehicle': (1,0.01),
     'inside vehicle':(1,0.01),
     'suit':(1, 0.5),
+    'rings': (1, 0.5)
 
 }}
 
@@ -474,6 +477,7 @@ selection_threshold = {
     'wedding dress': 0.2,
     'vehicle':0,
     'inside vehicle':0,
+    'rings':0
 
 
 

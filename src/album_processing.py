@@ -43,8 +43,10 @@ def get_current_spread_parameters(group_key, number_of_images, is_wedding, looku
 
     group_params = lookup_table.get(content_key, (10, 1.5))
     group_value = group_params[0]
-
-    spreads = 1 if round(number_of_images / group_value) == 0 else round(number_of_images / group_value)
+    if group_value == 0:
+        spreads = 0
+    else:
+        spreads = 1 if round(number_of_images / group_value) == 0 else round(number_of_images / group_value)
 
     if spreads > CONFIGS['max_group_spread']:
         max_images_per_spread = math.ceil(number_of_images / CONFIGS['max_group_spread'])

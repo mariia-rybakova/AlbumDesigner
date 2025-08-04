@@ -103,9 +103,10 @@ def select_photos_with_scoring(groups, needed_count):
 # --- Step 1: Helper function for robust temporal clustering ---
 def identify_temporal_clusters(
         df: pd.DataFrame,
-        time_col: str = 'image_time_date',
-        threshold_minutes: int = 20,
-        min_group_size: int = 4
+        time_col: str,
+        threshold_minutes: int,
+        min_group_size: int,
+        logger,
 ) -> pd.DataFrame:
     """
     Identifies temporal clusters of images using a graph-based approach.
@@ -123,36 +124,41 @@ def identify_temporal_clusters(
         A DataFrame containing only the images from valid temporal clusters,
         with a new 'temporal_group_id' column.
     """
-    if df.empty or time_col not in df.columns:
+    try:
+        if df.empty or time_col not in df.columns:
+            return pd.DataFrame()
+
+        df[time_col] = pd.to_datetime(df[time_col])
+
+        df_sorted = df.sort_values(by=time_col).reset_index(drop=True)
+        threshold = timedelta(minutes=threshold_minutes)
+
+        G = nx.Graph()
+        # Add all images as nodes
+        G.add_nodes_from(df_sorted.index)
+
+        # Efficiently add edges between images within the time threshold
+        for i in range(len(df_sorted)):
+            j = i + 1
+            # This subtraction now works correctly (datetime - datetime = timedelta)
+            while j < len(df_sorted) and (df_sorted.at[j, time_col] - df_sorted.at[i, time_col]) <= threshold:
+                G.add_edge(i, j)
+                j += 1
+
+        # Find connected components (the actual temporal clusters)
+        connected_components = list(nx.connected_components(G))
+
+        # Create a mapping from image index to a component ID
+        node_to_component = {node: i for i, component in enumerate(connected_components) for node in component}
+        df_sorted['temporal_group_id'] = df_sorted.index.map(node_to_component)
+
+        # Filter out small, isolated groups (orphans)
+        group_sizes = df_sorted['temporal_group_id'].value_counts()
+        valid_groups = group_sizes[group_sizes >= min_group_size].index
+
+    except Exception as e:
+        logger.error(f"Error in identify_temporal_clusters {e}")
         return pd.DataFrame()
-
-    df[time_col] = pd.to_datetime(df[time_col])
-
-    df_sorted = df.sort_values(by=time_col).reset_index(drop=True)
-    threshold = timedelta(minutes=threshold_minutes)
-
-    G = nx.Graph()
-    # Add all images as nodes
-    G.add_nodes_from(df_sorted.index)
-
-    # Efficiently add edges between images within the time threshold
-    for i in range(len(df_sorted)):
-        j = i + 1
-        # This subtraction now works correctly (datetime - datetime = timedelta)
-        while j < len(df_sorted) and (df_sorted.at[j, time_col] - df_sorted.at[i, time_col]) <= threshold:
-            G.add_edge(i, j)
-            j += 1
-
-    # Find connected components (the actual temporal clusters)
-    connected_components = list(nx.connected_components(G))
-
-    # Create a mapping from image index to a component ID
-    node_to_component = {node: i for i, component in enumerate(connected_components) for node in component}
-    df_sorted['temporal_group_id'] = df_sorted.index.map(node_to_component)
-
-    # Filter out small, isolated groups (orphans)
-    group_sizes = df_sorted['temporal_group_id'].value_counts()
-    valid_groups = group_sizes[group_sizes >= min_group_size].index
 
     return df_sorted[df_sorted['temporal_group_id'].isin(valid_groups)].copy()
 
@@ -179,64 +185,69 @@ def _determine_shot_style(row: pd.Series) -> str:
 
 
 # --- Step 3: Refactored and simplified main function ---
-def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame) -> list:
+def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame, logger) -> list:
     """
     Selects a diverse set of images that are grouped closely in time.
 
     This function first identifies and filters out temporally isolated images,
     then selects a diverse mix of shots from the remaining valid groups.
     """
-    # 1. Pre-computation: Identify and filter out orphan images/small groups
-    # This is the most critical improvement to solve the core problem.
-    # 2. Vectorized Calculation: Determine shot style for all valid images at once
-    df['shot_style'] = df.apply(_determine_shot_style, axis=1)
+    try:
+        # 1. Pre-computation: Identify and filter out orphan images/small groups
+        # This is the most critical improvement to solve the core problem.
+        # 2. Vectorized Calculation: Determine shot style for all valid images at once
+        df['shot_style'] = df.apply(_determine_shot_style, axis=1)
 
-    # 3. Grouping for Selection: Group by the real temporal cluster and orientation
-    groups = df.groupby(['sub_group_time_cluster', 'image_orientation'])
+        # 3. Grouping for Selection: Group by the real temporal cluster and orientation
+        groups = df.groupby(['sub_group_time_cluster', 'image_orientation'])
 
-    # 4. Allocation: Determine how many images to take from each group
-    # The external `select_photos_with_scoring` function remains a black box as in the original.
-    # It should now operate on these filtered, valid groups.
-    _, final_selection, _, _ = select_photos_with_scoring(groups, needed_count)
+        # 4. Allocation: Determine how many images to take from each group
+        # The external `select_photos_with_scoring` function remains a black box as in the original.
+        # It should now operate on these filtered, valid groups.
+        _, final_selection, _, _ = select_photos_with_scoring(groups, needed_count)
 
-    result = []
+        result = []
 
-    # 5. Unified Selection Logic: Loop and select with style diversity
-    for group_key, max_take in final_selection.items():
-        if max_take == 0:
-            continue
+        # 5. Unified Selection Logic: Loop and select with style diversity
+        for group_key, max_take in final_selection.items():
+            if max_take == 0:
+                continue
 
-        group_df = groups.get_group(group_key)
+            group_df = groups.get_group(group_key)
 
-        # Organize images by style for round-robin selection
-        style_buckets = defaultdict(list)
-        # Sort once by score to prepare for selection
-        sorted_group = group_df.sort_values('total_score', ascending=False)
-        for _, row in sorted_group.iterrows():
-            style_buckets[row['shot_style']].append(row['image_id'])
+            # Organize images by style for round-robin selection
+            style_buckets = defaultdict(list)
+            # Sort once by score to prepare for selection
+            sorted_group = group_df.sort_values('total_score', ascending=False)
+            for _, row in sorted_group.iterrows():
+                style_buckets[row['shot_style']].append(row['image_id'])
 
-        # Round-robin selection for diversity
-        selected_from_group = []
-        style_indices = {style: 0 for style in style_buckets}
-        # Prioritize styles with more high-scoring images, but can be simplified if not needed
-        styles_order = list(style_buckets.keys())
+            # Round-robin selection for diversity
+            selected_from_group = []
+            style_indices = {style: 0 for style in style_buckets}
+            # Prioritize styles with more high-scoring images, but can be simplified if not needed
+            styles_order = list(style_buckets.keys())
 
-        while len(selected_from_group) < max_take:
-            added_this_round = False
-            for style in styles_order:
-                if style_indices[style] < len(style_buckets[style]):
-                    selected_from_group.append(style_buckets[style][style_indices[style]])
-                    style_indices[style] += 1
-                    added_this_round = True
-                    if len(selected_from_group) == max_take:
-                        break
-            if not added_this_round:
-                break  # No more images to select
+            while len(selected_from_group) < max_take:
+                added_this_round = False
+                for style in styles_order:
+                    if style_indices[style] < len(style_buckets[style]):
+                        selected_from_group.append(style_buckets[style][style_indices[style]])
+                        style_indices[style] += 1
+                        added_this_round = True
+                        if len(selected_from_group) == max_take:
+                            break
+                if not added_this_round:
+                    break  # No more images to select
 
-        result.extend(selected_from_group)
+            result.extend(selected_from_group)
 
-        if len(result) >= needed_count:
-            break
+            if len(result) >= needed_count:
+                break
+
+    except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
+        logger.error(f"Couldn't remove similar image using time and style {e}")
+        raise e
 
     return result[:needed_count]
 
