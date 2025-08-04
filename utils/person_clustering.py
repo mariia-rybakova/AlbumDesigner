@@ -17,7 +17,6 @@ def select_by_cluster(clusters_ids, image_cluster_dict,need):
     Fallback selection mechanism (simplified for this example).
     In a real scenario, this would be your actual robust fallback function.
     """
-    # print(f"INFO: Fallback select_by_cluster called.")
     selected = []
     if image_cluster_dict:
         for cluster_id_key in clusters_ids:  # Use a different var name to avoid conflict
@@ -29,7 +28,8 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
         images_for_category,
         df,
         needed_count,
-        image_cluster_dict
+        image_cluster_dict,
+        logger
 ):
 
     """
@@ -126,6 +126,7 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
 
     except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
         result = select_by_cluster(relevant_cluster_labels, image_cluster_dict,needed_count)
+        logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
         return list(set(result))
 
     return list(set(result))  # Ensure unique images in the final list

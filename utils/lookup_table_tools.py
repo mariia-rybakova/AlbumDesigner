@@ -68,7 +68,9 @@ spreads_wedding_lookup_table = {
     'None':(0,0),
     'wedding dress': (0,0),
     'vehicle':(0,0),
-    'inside vehicle':(0,0)
+    'inside vehicle':(0,0),
+    'suit': (0, 0.5),
+    'rings': (0, 0.5)
 }
 non_wedding_lookup_table = {
     '1':(2,0.4),

@@ -195,6 +195,7 @@ relations = {'brideAndGroom':{
     'vehicle': (2,0.01),
     'inside vehicle':(2,0.01),
     'suit':(1, 0.5),
+    'rings':(1,0.5)
 
 },
     'parents': {
@@ -235,6 +236,7 @@ relations = {'brideAndGroom':{
         'vehicle': (2, 0.01),
         'inside vehicle': (2, 0.01),
         'suit': (0, 0.5),
+        'rings': (1, 0.5)
 
     }
 ,'everyoneElse':{
@@ -274,6 +276,7 @@ relations = {'brideAndGroom':{
     'vehicle': (1,0.01),
     'inside vehicle':(1,0.01),
     'suit':(1, 0.5),
+    'rings': (1, 0.5)
 
 }}
 
@@ -461,22 +464,19 @@ selection_threshold = {
     'entertainment': 0.14,
     'kiss': 0.2,
     'pet': 0.14,
-    'accessories':0.3,
+    'accessories':0.5,
     'settings': 0.3,
     'speech': 0.3,
     'detail': 0.3,
     'getting hair-makeup': 0.2,
     'food': 0.2,
-    'other': 0,
-    'invite': 0,
-    'None':0,
+    'other': 0.15,
+    'invite': 0.15,
+    'None':0.15,
     'wedding dress': 0.2,
-    'vehicle':0,
-    'inside vehicle':0,
+    'vehicle':0.15,
+    'inside vehicle':0.15,
     'rings':0.15,
     'suit':0.15,
-
-
-
 
 }
