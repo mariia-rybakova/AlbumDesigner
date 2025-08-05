@@ -547,7 +547,20 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     img for img in images_filtered
                     if img not in grayscale_images or img in selected_gray_image
                 ]
+
                 filtered_colored_df = df_clustered.loc[colored_images]
+
+                if cluster_name == 'dancing' and need < len(colored_images):
+                    landscape_ids = df[(df['image_id'].isin(colored_images)) & (df['image_orientation'] == 'landscape')]['image_id'].values.tolist()
+                    if len(landscape_ids) < need:
+                        non_landscape_df = filtered_colored_df[~filtered_colored_df['image_id'].isin(landscape_ids)]
+                        non_landscape_ids = non_landscape_df['image_id'].tolist()
+
+                        # Combine to reach the required number
+                        selected_ids = landscape_ids + non_landscape_ids[:need - len(landscape_ids)]
+                        colored_images = selected_ids
+                    else:
+                        colored_images = landscape_ids
 
                 # If exact fit, return them directly
                 if need == len(colored_images):
