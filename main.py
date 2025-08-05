@@ -229,7 +229,8 @@ class ProcessStage(Stage):
                 if df.empty:
                     self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
                     message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-                    continue
+                    raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+                    # continue
 
                 # Sorting the DataFrame by "image_order" column
                 sorted_df = df.sort_values(by="image_order", ascending=False)
