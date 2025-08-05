@@ -4,7 +4,7 @@ import pandas as pd
 import networkx as nx
 from collections import defaultdict
 from datetime import timedelta
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 
 # Assume CONFIGS dict is defined elsewhere
 # CONFIGS = {'FACE_FAR_THRESHOLD': ..., 'FACE_M_THRESHOLD': ..., etc.}

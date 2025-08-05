@@ -20,13 +20,12 @@ from ptinfra import  AbortRequested
 
 
 from src.smart_cropping import process_crop_images
-from utils.auto_selection import ai_selection
-from utils.cover_image import generate_first_last_pages
+from src.selection.auto_selection import ai_selection
+from src.core.key_pages import generate_first_last_pages
 from utils.time_processing import process_image_time, get_time_clusters
 from src.album_processing import album_processing
-from utils.request_processing import read_messages, assembly_output
-from utils.parser import CONFIGS
-from utils.clusters_labels import map_cluster_label
+from src.request_processing import read_messages, assembly_output
+from utils.configs import CONFIGS
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'

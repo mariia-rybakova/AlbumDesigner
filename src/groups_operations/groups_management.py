@@ -1,9 +1,8 @@
 import pandas as pd
 
 from utils.album_tools import get_images_per_groups
-from utils.illegal_group_splitting_merging import merge_illegal_group, split_illegal_group
-from utils.illegal_group_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time
-from utils.parser import CONFIGS
+from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time
+from utils.configs import CONFIGS
 
 
 def update_groups(group, merged, merge_group_key, illegal_group_key):

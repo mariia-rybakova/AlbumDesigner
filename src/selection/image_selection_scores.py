@@ -1,7 +1,7 @@
 import numpy as np
 
 from sklearn.metrics.pairwise import cosine_similarity
-from .clusters_labels import label_list
+from utils.configs import label_list
 
 
 

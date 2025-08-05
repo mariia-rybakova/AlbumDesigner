@@ -6,9 +6,8 @@ import numpy as np
 from functools import partial
 from datetime import datetime
 
-from utils import get_layouts_data
-from utils.parser import CONFIGS,label_list
-from utils.layouts_file import generate_layouts_df
+from utils.configs import CONFIGS,label_list
+from utils.layouts_tools import generate_layouts_df, get_layouts_data
 from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
 from utils.image_queries import generate_query
 from ptinfra.azure.pt_file import PTFile

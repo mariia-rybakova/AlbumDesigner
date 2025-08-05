@@ -1,6 +1,6 @@
 # Lookup table with category preferences (mean, std)
 import math
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 
 wedding_lookup_table = {
     'bride and groom': (4, 0.5),

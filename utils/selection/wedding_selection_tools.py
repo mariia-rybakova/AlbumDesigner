@@ -1,7 +1,7 @@
 from collections import defaultdict
 from itertools import combinations_with_replacement
 
-from utils.parser import CONFIGS,spreads_required_per_category,min_images_per_category,priority_categories
+from utils.configs import CONFIGS,spreads_required_per_category,min_images_per_category,priority_categories
 
 
 def get_possible_image_sums():

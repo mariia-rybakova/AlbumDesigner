@@ -1,5 +1,5 @@
-from utils.parser import CONFIGS
-from utils.non_wedding_selection_tools import generate_dict_key,get_appearance_percentage,select_images_of_group,select_images_of_one_person
+from utils.configs import CONFIGS
+from utils.selection.non_wedding_selection_tools import generate_dict_key,get_appearance_percentage,select_images_of_group,select_images_of_one_person
 
 def smart_non_wedding_selection(df, logger):
     # convert df to dict

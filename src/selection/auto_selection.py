@@ -1,12 +1,12 @@
 import os
 import struct
 import numpy as np
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 from ptinfra.azure.pt_file import PTFile
 from io import BytesIO
 
-from utils.ai_non_wedding_selection import smart_non_wedding_selection
-from utils.ai_wedding_selection import smart_wedding_selection
+from src.selection.ai_non_wedding_selection import smart_non_wedding_selection
+from src.selection.ai_wedding_selection import smart_wedding_selection
 
 def load_pre_queries_embeddings(pre_queries_name,version):
 

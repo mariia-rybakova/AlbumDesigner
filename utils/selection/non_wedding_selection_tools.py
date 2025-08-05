@@ -3,7 +3,7 @@ import random
 import numpy as np
 
 from scipy.spatial.distance import cosine
-from utils.parser import CONFIGS, limit_imgs, relations
+from utils.configs import CONFIGS, limit_imgs, relations
 
 def select_n_images(images, n, gallery_photos_info):
     """
