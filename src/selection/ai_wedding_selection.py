@@ -477,6 +477,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             scored_df['image_time_date'] = scored_df['image_time'].apply(lambda x: convert_to_timestamp(x))
             valid_images_df = identify_temporal_clusters(scored_df,'image_time_date', 20,4,logger)
 
+            has = len(valid_images_df)
+
             if valid_images_df.empty:
                 continue
 
