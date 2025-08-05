@@ -22,7 +22,7 @@ from ptinfra import  AbortRequested
 from src.smart_cropping import process_crop_images
 from src.selection.auto_selection import ai_selection
 from src.core.key_pages import generate_first_last_pages
-from utils.time_processing import process_image_time, get_time_clusters
+from utils.time_processing import process_image_time, get_time_clusters, merge_time_clusters_by_context
 from src.album_processing import album_processing
 from src.request_processing import read_messages, assembly_output
 from utils.configs import CONFIGS
@@ -237,6 +237,7 @@ class ProcessStage(Stage):
                 # Process time
                 sorted_df, image_id2general_time = process_image_time(sorted_df)
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
+                sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'])
 
                 df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
 

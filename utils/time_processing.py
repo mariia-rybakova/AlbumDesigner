@@ -122,6 +122,35 @@ def get_time_clusters(general_time_df):
     return clusters
 
 
+def merge_time_clusters_by_context(sorted_df, context_clusters_list):
+    """
+    Modifies time clusters based on context clusters.
+    For each context cluster in the list, sets the same time cluster for all rows with that context cluster.
+    Uses the time cluster that appears most frequently among the identities in that context group.
+
+    Args:
+        sorted_df (pd.DataFrame): DataFrame with 'time_cluster' and 'cluster_context' columns
+        context_clusters_list (list): List of context clusters to process
+
+    Returns:
+        pd.DataFrame: Modified DataFrame with updated time clusters
+    """
+    df = sorted_df.copy()
+
+    for context_cluster in context_clusters_list:
+        # Get rows with this context cluster
+        mask = df['cluster_context'] == context_cluster
+        context_group = df[mask]
+
+        if len(context_group) > 0:
+            # Find the most common time cluster in this context group
+            most_common_time = context_group['time_cluster'].mode().iloc[0]
+
+            # Update time cluster for all rows with this context cluster
+            df.loc[mask, 'time_cluster'] = most_common_time
+
+    return df
+
 def sort_groups_by_time(groups_list, logger):
     try:
         groups_time_list = list()
