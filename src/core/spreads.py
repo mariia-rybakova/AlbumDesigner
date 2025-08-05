@@ -2,7 +2,7 @@ import random
 import numpy as np
 
 from itertools import combinations, product
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 import pandas as pd
 
 def classWeight(nPhotos, classSpredParams):

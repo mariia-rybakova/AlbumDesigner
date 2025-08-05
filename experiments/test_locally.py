@@ -9,7 +9,7 @@ from ptinfra.pt_queue import QReader, QWriter, MessageQueue, MemoryQueue, RoundR
 from ptinfra.config import get_variable
 from pycparser.ply.lex import NullLogger
 
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 from main import ReadStage, SelectionStage
 from main import ProcessStage
 from main import ReportStage

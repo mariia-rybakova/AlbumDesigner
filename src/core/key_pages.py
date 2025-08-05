@@ -1,7 +1,7 @@
 import random
 import pandas as pd
 
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 
 
 def get_design_id(layout_df, number_of_boxes, logger):

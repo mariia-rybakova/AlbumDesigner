@@ -1,7 +1,8 @@
 import numpy as np
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from utils.read_files_types import read_pkl_file
+from utils import read_pkl_file
+
 
 def process_row(idx, row, loaded_tags_features):
     """

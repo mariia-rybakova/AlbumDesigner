@@ -1,18 +1,16 @@
 import math
 import time
 import copy
-import queue
-import traceback
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from gc import collect
 
-from utils import get_photos_from_db, generate_filtered_multi_spreads, add_ranking_score, process_illegal_groups
+from src.core.photos import get_photos_from_db
+from src.core.spreads import generate_filtered_multi_spreads
+from src.core.scores import add_ranking_score, assign_photos_order
+from src.groups_operations.groups_management import process_illegal_groups
 from utils.lookup_table_tools import get_lookup_table
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
-from utils.album_scores import assign_photos_order
 from utils.time_processing import sort_groups_by_time
-from utils.parser import CONFIGS
+from utils.configs import CONFIGS
 
 
 def update_lookup_table(group2images, lookup_table, is_wedding):

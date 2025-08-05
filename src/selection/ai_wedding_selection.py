@@ -1,20 +1,19 @@
 import re
-import math
 import pandas as pd
 import numpy as np
 import random
-from typing import Dict
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import DBSCAN
 from collections import Counter
 
 from utils.lookup_table_tools import spreads_wedding_lookup_table
-from utils.parser import CONFIGS,relations,selection_threshold
-from utils.wedding_selection_tools import get_clusters,select_non_similar_images
+from utils.configs import relations,selection_threshold
+from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
-from utils.person_clustering import person_clustering_selection
-from utils.time_orient_2 import select_images_by_time_and_style,identify_temporal_clusters
-from utils.parser import CONFIGS
+
+from src.selection.person_clustering import person_clustering_selection
+from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters
+from utils.configs import CONFIGS
 
 def process_time(images_time):
     general_times = list()
@@ -421,7 +420,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         )
 
         if images_allocation is None:
-            return None, "No images got selected!"
+            return None,None, "No images got selected!"
 
         user_selected_photos_df = df[df['image_id'].isin(user_selected_photos)]
 
