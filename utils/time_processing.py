@@ -122,7 +122,7 @@ def get_time_clusters(general_time_df):
     return clusters
 
 
-def merge_time_clusters_by_context(sorted_df, context_clusters_list):
+def merge_time_clusters_by_context(sorted_df, context_clusters_list, logger=None):
     """
     Modifies time clusters based on context clusters.
     For each context cluster in the list, sets the same time cluster for all rows with that context cluster.
@@ -135,21 +135,28 @@ def merge_time_clusters_by_context(sorted_df, context_clusters_list):
     Returns:
         pd.DataFrame: Modified DataFrame with updated time clusters
     """
-    df = sorted_df.copy()
+    if sorted_df is None or sorted_df.shape[0] == 0 or context_clusters_list is None:
+        return sorted_df
+    try:
+        df = sorted_df.copy()
 
-    for context_cluster in context_clusters_list:
-        # Get rows with this context cluster
-        mask = df['cluster_context'] == context_cluster
-        context_group = df[mask]
+        for context_cluster in context_clusters_list:
+            # Get rows with this context cluster
+            mask = df['cluster_context'] == context_cluster
+            context_group = df[mask]
 
-        if len(context_group) > 0:
-            # Find the most common time cluster in this context group
-            most_common_time = context_group['time_cluster'].mode().iloc[0]
+            if len(context_group) > 0:
+                # Find the most common time cluster in this context group
+                most_common_time = context_group['time_cluster'].mode().iloc[0]
 
-            # Update time cluster for all rows with this context cluster
-            df.loc[mask, 'time_cluster'] = most_common_time
+                # Update time cluster for all rows with this context cluster
+                df.loc[mask, 'time_cluster'] = most_common_time
 
-    return df
+        return df
+    except Exception as ex:
+        if logger is not None:
+            logger.error(f"Error in merge_time_clusters_by_context: {ex}")
+        return sorted_df
 
 def sort_groups_by_time(groups_list, logger):
     try:
