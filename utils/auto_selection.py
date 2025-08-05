@@ -1,5 +1,6 @@
 import os
 import struct
+
 import numpy as np
 from utils.parser import CONFIGS
 from ptinfra.azure.pt_file import PTFile
@@ -52,11 +53,12 @@ def get_tags_bins(tags,version):
 def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
                           logger):
     try:
+        spreads_dict = {}
         if is_wedding:
             # Select images for creating an album
             model_version =  df.iloc[0]['model_version']
             tags_features = get_tags_bins(tags,model_version)
-            ai_images_selected, errors = smart_wedding_selection(df, selected_photos, people_ids, focus,
+            ai_images_selected, spreads_dict, errors = smart_wedding_selection(df, selected_photos, people_ids, focus,
                                                                  tags_features,density, logger)
         else:
             # Select images for creating an album
@@ -66,4 +68,4 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
         logger.error(e)
         return [], 'Error:{}'.format(e)
 
-    return ai_images_selected, errors
+    return ai_images_selected, spreads_dict, errors

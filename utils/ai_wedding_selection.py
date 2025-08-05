@@ -616,4 +616,4 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
     except Exception as e:
         return [] , f"Error in selection: {e}"
 
-    return ai_images_selected, error_message
+    return ai_images_selected,spreads_allocation, error_message
