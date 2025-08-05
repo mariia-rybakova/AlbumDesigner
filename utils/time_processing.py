@@ -103,6 +103,10 @@ def get_time_clusters(general_time_df):
                 distances = np.abs(X[i] - X[valid_mask].flatten())
                 nearest_idx = np.where(valid_mask)[0][np.argmin(distances)]
                 initial_clusters[i] = initial_clusters[nearest_idx]
+        else:
+            # If all points are noise, assign them to a single cluster
+            initial_clusters = np.zeros_like(initial_clusters)
+            best_n = 1
 
         # Recalculate best_n excluding noise points
         best_n = len(set(initial_clusters[initial_clusters != -1]))
