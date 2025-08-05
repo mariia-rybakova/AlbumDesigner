@@ -410,9 +410,9 @@ class MessageProcessor:
             azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                          max_dequeue_allowed=1000)
 
-        read_q = MemoryQueue(2)
-        selection_q = MemoryQueue(2)
-        report_q = MemoryQueue(2)
+        read_q = MemoryQueue(1)
+        selection_q = MemoryQueue(1)
+        report_q = MemoryQueue(1)
 
         read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
         selection_stage = SelectionStage(read_q, selection_q, report_q, logger=self.logger)
