@@ -214,7 +214,14 @@ class ProcessStage(Stage):
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
 
+
+
             df = message.content.get('gallery_photos_info', pd.DataFrame())
+            if df.empty:
+                self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
+                message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
+                raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+
             df_serializable = df.copy()  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
@@ -225,11 +232,7 @@ class ProcessStage(Stage):
             try:
                 stage_start = datetime.now()
                 # Extract gallery photo info safely
-                df = message.content.get('gallery_photos_info', pd.DataFrame())
-                if df.empty:
-                    self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-                    message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-                    raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+
                     # continue
 
                 # Sorting the DataFrame by "image_order" column
