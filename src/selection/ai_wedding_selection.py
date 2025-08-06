@@ -6,7 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import DBSCAN
 from collections import Counter
 
-from utils.lookup_table_tools import spreads_wedding_lookup_table
+from utils.lookup_table_tools import wedding_lookup_table
 from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
@@ -254,7 +254,8 @@ def load_event_mapping(csv_path: str,logger):
         for _, row in df.iterrows():
             # Clean sub event name
             raw_event = str(row['sub event'])
-            event = re.sub(r"^['\"]+|['\"]+$", '', raw_event).lower().strip()
+            # event = re.sub(r"^['\"]+|['\"]+$", '', raw_event).lower().strip()
+            event = re.sub(r"^['\"]+|['\"]+$", '', raw_event).strip()
 
             for col in df.columns:
                 if col.lower().strip() == 'sub event':
@@ -291,8 +292,8 @@ def load_event_mapping(csv_path: str,logger):
 
 def calculate_optimal_selection(
     n_actual_dict,
-    image_lookup_table,
-    spreads_per_category_table,
+    image_lookup_table, #relation_table
+    spreads_per_category_table, # LUT
     focus_table,
     density,
     logger
@@ -357,78 +358,153 @@ def calculate_optimal_selection(
             return selection,spreads
 
 
-        important_events = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
+        TARGET_SPREADS = 20
 
-        # Density factors determine how many images are packed into one spread.
-        density_factors = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.25, 5: 2.0}
+
+        density_factors = CONFIGS['density_factors']
         density_factor = density_factors.get(density, 1.0)
 
-        percentages = {
-            event: config.get('value', 0)
-            for event, config in focus_table.items()
-            if config.get('type') == 'percentage' and event in n_actual_dict.keys()
-        }
-        total_assigned_percent = sum(percentages.values())
-        rem_percent = 100.0 - total_assigned_percent
+        modified_lut = spreads_per_category_table.copy() # Create a copy to avoid modifying the original LUT
 
-        if rem_percent > 0:
-            eligible_events = [e for e in important_events if e in percentages]
-            share = rem_percent / len(eligible_events)
-            for event in eligible_events:
-                percentages[event] += share
+        for event,pair in modified_lut.items():
+            modified_lut[event] = (min(24,max(1, pair[0]*density_factor)),pair[1])  # Ensure base spreads are at least 1 and not above 24
+
+        # Calculate total numeric values
+        total_value = sum(
+            config['value']
+            for config in focus_table.values()
+            if isinstance(config, dict) and isinstance(config.get('value'), (int, float))
+        )
+
+        # Add spreads in one pass
+        for event, config in focus_table.items():
+            if isinstance(config, dict) and 'value' in config:
+                if isinstance(config['value'], str):
+                    config['spreads'] = 0
+                    config['photos'] = 1
+                    config['miss'] = max(0,config['photos'] - n_actual_dict.get(event, 0))
+                    config['miss_spreads'] = 0
+                    config['over_photos'] = max(0, n_actual_dict.get(event, 0) - config['photos'])
+                    config['over_spreads'] = config['over_photos'] / modified_lut[event][0]
+                else:
+                    config['spreads'] = config['value'] / total_value * TARGET_SPREADS
+                    config['photos'] = config['spreads']*modified_lut[event][0]
+                    config['miss'] = max(0,config['photos'] - n_actual_dict.get(event, 0))
+                    config['miss_spreads'] = config['miss'] / modified_lut[event][0]
+                    config['over_photos'] = max(0,n_actual_dict.get(event, 0) - config['photos'])
+                    config['over_spreads'] = config['over_photos'] / modified_lut[event][0]
+
+        total_miss_spreads = sum(
+            config['miss_spreads']
+            for config in focus_table.values()
+        )
+        total_over_spreads = sum(
+            config['over_spreads']
+            for config in focus_table.values()
+        )
+
+
+        while total_over_spreads>1 and total_miss_spreads > 1:
+            for event, config in focus_table.items():
+                if config['over_spreads'] > 1:
+                    # Reduce over spreads
+                    config['over_spreads'] -= 1
+                    config['over_photos'] -= modified_lut[event][0]
+                    config['photos'] += modified_lut[event][0]
+                    config['spreads'] += 1
+                    total_over_spreads -= 1
+                    total_miss_spreads -= 1
+            availble_over_events = 0
+            for config in focus_table.values():
+                availble_over_events += config['over_spreads']>1
+            if availble_over_events == 0:
+                break
 
         spreads = {}
         selections = {}
-        total_spreads = 0
-
-        # Step 2: combined spread + selection logic
         for event in n_actual_dict:
-            config = focus_table.get(event, {})
-            n_actual = n_actual_dict[event]
+            spreads[event] = focus_table[event]['spreads']
+            selections[event] = round(focus_table[event]['photos'])
 
-            if config.get('type') == 'no':
-                spreads[event] = 0
-                selections[event] = 0
-                continue
+        if total_miss_spreads > 1:
+            logger.warning(f"Unable to fill desired spreads. Total miss spreads: {total_miss_spreads}")
 
-            pct = percentages.get(event, 0)
-            base_spreads, std_spreads = spreads_per_category_table.get(event, (0, 0))
-            est_spreads = round(base_spreads + (pct / 100.0) * std_spreads)
-            est_spreads = max(est_spreads, 0)
 
-            base_images, _ = image_lookup_table.get(event, (0, 0))
-            est_selection = round(base_images * density_factor)
+        # important_events = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        # percentages = {
+        #     event: config.get('value', 0)
+        #     for event, config in focus_table.items()
+        #     if config.get('type') == 'percentage' and event in n_actual_dict.keys()
+        # }
+        # total_assigned_percent = sum(percentages.values())
+        # rem_percent = 100.0 - total_assigned_percent
+        #
+        # if rem_percent > 0:
+        #     eligible_events = [e for e in important_events if e in percentages]
+        #     share = rem_percent / len(eligible_events)
+        #     for event in eligible_events:
+        #         percentages[event] += share
 
-            # Clip selection to real available images
-            final_selection = min(est_selection, n_actual)
-
-            # If not enough images, adjust spreads down
-            if final_selection < est_spreads and event not in ['None', 'other']:
-                est_spreads = max(1, min(final_selection, est_spreads))
-
-            spreads[event] = est_spreads
-            selections[event] = final_selection
-            total_spreads += est_spreads
-
-        # Add spreads if count is too low
-        while total_spreads < MIN_TOTAL_SPREADS:
-            # Prioritize adding to important, percentage-based events
-            candidates = sorted([e for e in important_events if e in percentages], key=lambda e: percentages[e],
-                                reverse=True)
-            if not candidates: break
-            spreads[candidates[0]] += 1
-            total_spreads += 1
-
-        # Remove spreads if count is too high
-        while total_spreads > MAX_TOTAL_SPREADS:
-            # Prioritize removing from least important, percentage-based events
-            candidates = sorted([e for e in percentages if spreads[e] > 0 and e not in important_events],
-                                key=lambda e: percentages[e])
-            if not candidates:  # Fallback to important events if necessary
-                candidates = sorted([e for e in important_events if spreads[e] > 1], key=lambda e: percentages[e])
-            if not candidates: break
-            spreads[candidates[0]] -= 1
-            total_spreads -= 1
+        # spreads = {}
+        # selections = {}
+        # total_spreads = 0
+        #
+        # # Step 2: combined spread + selection logic
+        # for event in n_actual_dict:
+        #     config = focus_table.get(event, {})
+        #     n_actual = n_actual_dict[event]
+        #
+        #     if config.get('type') == 'no':
+        #         spreads[event] = 0
+        #         selections[event] = 0
+        #         continue
+        #
+        #     pct = percentages.get(event, 0)
+        #     base_spreads, std_spreads = spreads_per_category_table.get(event, (0, 0))
+        #     est_spreads = round(base_spreads + (pct / 100.0) * std_spreads)
+        #     est_spreads = max(est_spreads, 0)
+        #
+        #     base_images, _ = image_lookup_table.get(event, (0, 0))
+        #     est_selection = round(base_images * density_factor)
+        #
+        #     # Clip selection to real available images
+        #     final_selection = min(est_selection, n_actual)
+        #
+        #     # If not enough images, adjust spreads down
+        #     if final_selection < est_spreads and event not in ['None', 'other']:
+        #         est_spreads = max(1, min(final_selection, est_spreads))
+        #
+        #     spreads[event] = est_spreads
+        #     selections[event] = final_selection
+        #     total_spreads += est_spreads
+        #
+        # # Add spreads if count is too low
+        # while total_spreads < MIN_TOTAL_SPREADS:
+        #     # Prioritize adding to important, percentage-based events
+        #     candidates = sorted([e for e in important_events if e in percentages], key=lambda e: percentages[e],
+        #                         reverse=True)
+        #     if not candidates: break
+        #     spreads[candidates[0]] += 1
+        #     total_spreads += 1
+        #
+        # # Remove spreads if count is too high
+        # while total_spreads > MAX_TOTAL_SPREADS:
+        #     # Prioritize removing from least important, percentage-based events
+        #     candidates = sorted([e for e in percentages if spreads[e] > 0 and e not in important_events],
+        #                         key=lambda e: percentages[e])
+        #     if not candidates:  # Fallback to important events if necessary
+        #         candidates = sorted([e for e in important_events if spreads[e] > 1], key=lambda e: percentages[e])
+        #     if not candidates: break
+        #     spreads[candidates[0]] -= 1
+        #     total_spreads -= 1
 
     except Exception as e:
         logger.error(f"Error calculate_optimal_selection: {e}")
@@ -472,7 +548,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         images_allocation,spreads_allocation = calculate_optimal_selection(
         actual_number_images_dict,
         relation_table,
-        spreads_wedding_lookup_table,
+        wedding_lookup_table,
         focus_table,
         density,
         logger
