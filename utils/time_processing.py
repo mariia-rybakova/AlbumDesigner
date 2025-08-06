@@ -159,7 +159,7 @@ def merge_time_clusters_by_context(sorted_df, context_clusters_list, logger=None
         return df
     except Exception as ex:
         if logger is not None:
-            logger.error(f"Error in merge_time_clusters_by_context: {ex}")
+            logger.warning(f"Issue in merge_time_clusters_by_context: {ex}. Returning df without changes.")
         return sorted_df
 
 def sort_groups_by_time(groups_list, logger):

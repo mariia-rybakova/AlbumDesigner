@@ -244,7 +244,8 @@ class ProcessStage(Stage):
                 # Process time
                 sorted_df, image_id2general_time = process_image_time(sorted_df)
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
-                sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], self.logger)
+                if message.content['is_wedding']:
+                    sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], self.logger)
 
                 df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
 
