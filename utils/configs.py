@@ -39,7 +39,7 @@ CONFIGS = {'DEBUG': True,
            'architect_base':'pictures/photostore/32/ext/productgroups',
 
             'merge_limit_times':2,
-
+            'none_limit_times': 5,
            #selection
            'content_threads': 4,
            'small_groups': 3,
