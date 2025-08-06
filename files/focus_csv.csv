@@ -2,35 +2,35 @@ sub event,"Bride and groom
 ","Parents
 ","Everyone else
 "
-'accessories',yes,no,yes
 'bride',12%,14%,8%
+'groom',12%,14%,8%
 'bride and groom',12%,16%,8%
-'bride getting dressed',3%,3%,2%
-'bride party',3%,3%,4%
-'cake cutting',1%,1%,1%
 'ceremony',6%,6%,6%
+'full party',6%,6%,10%
+'very large group',5%,4%,7%
 'couple',4%,4%,4%
-'dancing',3%,1%,8%
 'detail',4%,1%,4%
 'entertainment',4%,2%,4%
 'first dance',4%,6%,3%
-'food',yes,no,no
-'full party',6%,6%,10%
-'getting hair-makeup',yes,yes,yes
-'groom',12%,14%,8%
+'portrait',4%,4%,6%
+'bride getting dressed',3%,3%,2%
+'bride party',3%,3%,4%
+'dancing',3%,1%,8%
 'groom party',3%,3%,4%
+'kiss',3%,3%,3%
+'walking the aisle',3%,4%,2%
+'speech',2%,2%,2%
+'cake cutting',1%,1%,1%
+'food',yes,no,no
+'getting hair-makeup',yes,yes,yes
 'inside vehicle',yes,no,yes
 'invite',yes,yes,yes
-'kiss',3%,3%,3%
 'pet',yes,no,yes
-'portrait',4%,4%,6%
 'rings',yes,yes,yes
 'settings',yes,no,yes
-'speech',2%,2%,2%
 'suit',yes,yes,yes
 'vehicle',yes,yes,yes
-'very large group',5%,4%,7%
-'walking the aisle',3%,4%,2%
 'wedding dress',yes,yes,yes
+'accessories',yes,no,yes
 'other',0%,0%,0%
 'None',0%,0%,0%
