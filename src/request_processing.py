@@ -89,11 +89,9 @@ def get_info_protobufs(project_base_url, logger):
         for idx, func in enumerate(functions):
             result = func(logger)
             if result is None:
-                logger.error('Error in reading data from protobuf file: {}'.format(files[idx]))
-                raise Exception('Error in reading data from protobuf file: {}'.format(files[idx]))
+                return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
             elif result.empty or result.shape[0] == 0:
-                logger.error('There are no required data in protobuf file: {}'.format(files[idx]))
-                raise Exception('There are no required data in protobuf file: {}'.format(files[idx]))
+                return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
             results.append(result)
 
         gallery_info_df = results[0]
@@ -133,11 +131,10 @@ def get_info_protobufs(project_base_url, logger):
 
 
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
-        return gallery_info_df, is_wedding
+        return gallery_info_df, is_wedding, None
 
     except Exception as e:
-        logger.error("Error in reading protobufs: %s", e)
-        raise Exception(f'Error in reading protobufs: {e}')
+        return None, None, f'Error in reading protobufs: {e}'
 
 
 def read_messages(messages, logger):
@@ -160,15 +157,12 @@ def read_messages(messages, logger):
                     json_content['designInfo'] = designInfo
                     _msg.content['designInfo'] = designInfo
                 except Exception as e:
-                    logger.error('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e))
-                    raise Exception('Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e))
+                    return None, 'Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e)
             else:
-                logger.error('Incorrect input request: {}. Skipping.'.format(json_content))
-                raise Exception('Incorrect message structure: {}. Skipping.'.format(json_content))
+                return None, 'Incorrect message structure: {}. Skipping.'.format(json_content)
 
         if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
-            logger.error('There are missing fields in input request: {}. Skipping.'.format(json_content))
-            raise Exception('There are missing fields in input request: {}. Skipping.'.format(json_content))
+            return None, 'There are missing fields in input request: {}. Skipping.'.format(json_content)
 
         try:
             project_url = json_content['base_url']
@@ -181,8 +175,7 @@ def read_messages(messages, logger):
                 _msg.designsInfo['anyPageIds'] = json_content['designInfo']['parts']['anyPage']['designIds']
             else:
                 _msg.error = 'no anyPage in designInfo. Skipping.'
-                logger.error('no anyPage in designInfo. Skipping.')
-                raise Exception('no anyPage in designInfo. Skipping.')
+                return None, 'No anyPage in designInfo. Skipping message..'
             firstPage_layouts_df = None
             lastPage_layouts_df = None
             if 'firstPage' in json_content['designInfo']['parts']:
@@ -215,7 +208,9 @@ def read_messages(messages, logger):
             proto_start = datetime.now()
 
             # check if its wedding here! and added to the message
-            gallery_info_df, is_wedding = get_info_protobufs(project_base_url=project_url, logger=logger)
+            gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger)
+            if pt_error is not None:
+                return None, pt_error
 
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
@@ -228,17 +223,15 @@ def read_messages(messages, logger):
                 _msg.designsInfo['anyPagebox_id2data'] = box_id2data
                 enriched_messages.append(_msg)
             else:
-                logger.error(f"Failed to enrich image data for message: {_msg.content}")
-                raise Exception('Failed to enrich image data for message: {}. Skipping.'.format(json_content))
+                return None, 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
 
             logger.info(
                 f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
         except Exception as e:
-            logger.error(f"Error reading messages at reading stage: {e}")
-            return None
+            return None, f'Error reading messages at reading stage: {e}'
 
-    return enriched_messages
+    return enriched_messages, None
 
 
 def convert_int64_to_int(obj):
