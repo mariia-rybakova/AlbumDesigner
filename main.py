@@ -215,7 +215,14 @@ class ProcessStage(Stage):
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
 
+
+
             df = message.content.get('gallery_photos_info', pd.DataFrame())
+            if df.empty:
+                self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
+                message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
+                raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+
             df_serializable = df.copy()  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
@@ -226,11 +233,8 @@ class ProcessStage(Stage):
             try:
                 stage_start = datetime.now()
                 # Extract gallery photo info safely
-                df = message.content.get('gallery_photos_info', pd.DataFrame())
-                if df.empty:
-                    self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-                    message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-                    continue
+
+                    # continue
 
                 # Sorting the DataFrame by "image_order" column
                 sorted_df = df.sort_values(by="image_order", ascending=False)
@@ -238,7 +242,7 @@ class ProcessStage(Stage):
                 # Process time
                 sorted_df, image_id2general_time = process_image_time(sorted_df)
                 sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
-                sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'])
+                sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], self.logger)
 
                 df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
 
@@ -267,7 +271,9 @@ class ProcessStage(Stage):
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
                 for key, value in first_last_pages_data_dict.items():
-                    first_last_pages_data_dict[key]['images_df'] = value['images_df'].merge(cropped_df, how='inner', on='image_id')
+                    if first_last_pages_data_dict[key]['images_df'] is not None:
+                        first_last_pages_data_dict[key]['images_df'] = value['images_df'].merge(cropped_df, how='inner',
+                                                                                                on='image_id')
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
@@ -411,9 +417,9 @@ class MessageProcessor:
             azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                          max_dequeue_allowed=1000)
 
-        read_q = MemoryQueue(2)
-        selection_q = MemoryQueue(2)
-        report_q = MemoryQueue(2)
+        read_q = MemoryQueue(1)
+        selection_q = MemoryQueue(1)
+        report_q = MemoryQueue(1)
 
         read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
         selection_stage = SelectionStage(read_q, selection_q, report_q, logger=self.logger)

@@ -260,5 +260,5 @@ def process_crop_images(q,df):
             'cropped_w': cropped_w,
             'cropped_h': cropped_h
         })
-        cropped_df = pd.DataFrame(results)
+    cropped_df = pd.DataFrame(results)
     q.put(cropped_df)
