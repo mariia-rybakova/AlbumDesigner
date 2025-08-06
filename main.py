@@ -173,7 +173,7 @@ class SelectionStage(Stage):
                     updated_messages.append(_msg)
                     continue
 
-                ai_photos_selected,errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
+                ai_photos_selected,spreads_dict, errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
                           self.logger)
 
                 if errors:
@@ -185,6 +185,7 @@ class SelectionStage(Stage):
                 filtered_df = df[df['image_id'].isin(ai_photos_selected)]
                 _msg.content['gallery_photos_info'] = filtered_df
                 _msg.content['photos'] = ai_photos_selected
+                _msg.content['spreads_dict'] = spreads_dict
                 updated_messages.append(_msg)
 
         except Exception as e:
