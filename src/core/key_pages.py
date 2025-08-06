@@ -73,7 +73,7 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
     if not required_columns.issubset(df.columns):
         missing_cols = required_columns - set(df.columns)
         logger.error(f"Error: DataFrame is missing required columns: {missing_cols}")
-        return df, [], pd.DataFrame()
+        return df, None, None
 
     # Collect all unique people IDs in the dataset
     unique_people_ids = set()
@@ -100,7 +100,7 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     if selected_images_df.empty:
         logger.warning("Warning: No images selected based on image_order.")
-        return df, [], pd.DataFrame()
+        return df, None, None
 
     # Extract image IDs
     selected_image_ids = selected_images_df['image_id'].tolist()
