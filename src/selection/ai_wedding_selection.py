@@ -300,6 +300,62 @@ def calculate_optimal_selection(
     try:
         MIN_TOTAL_SPREADS = 19
         MAX_TOTAL_SPREADS = 22
+        total_images = sum(n_actual_dict.values())
+
+        if total_images <= 250:
+            target_spreads = min(MIN_TOTAL_SPREADS + density - 1, MAX_TOTAL_SPREADS)
+            allocation = {key: {"spreads": 0, "images": 0} for key in n_actual_dict}
+            max_images_per_spread = 4
+            used_spreads = 0
+            used_images = 0
+
+            for category, image_count in n_actual_dict.items():
+                if category is not 'None':  # Skip None for now
+                    spreads = (image_count + 2) // 3  # General rule: ~3 images per spread
+                    # Update allocation
+                    allocation[category]["spreads"] = spreads
+                    allocation[category]["images"] = min(image_count, spreads * max_images_per_spread)
+                    used_spreads += spreads
+                    used_images += allocation[category]["images"]
+
+            # Step 4: Handle "None" category
+            none_images = n_actual_dict.get('None', 0)
+            remaining_spreads = max(0, target_spreads - used_spreads)
+
+            if none_images > 0 and remaining_spreads > 0:
+                # Calculate images per spread for "None" based on density
+                images_per_spread = min(3 + (density - 1), max_images_per_spread)
+                # Total images to use from "None"
+                none_images_to_use = min(none_images, remaining_spreads * images_per_spread)
+                # Adjust spreads if necessary
+                none_spreads = max(1, (none_images_to_use + images_per_spread - 1) // images_per_spread)
+                none_spreads = min(none_spreads, remaining_spreads)
+                none_images_to_use = min(none_images, none_spreads * images_per_spread)
+
+                allocation['None']["spreads"] = none_spreads
+                allocation['None']["images"] = none_images_to_use
+
+            # Step 5: Validate total spreads
+            total_spreads = sum(info["spreads"] for info in allocation.values())
+            if total_spreads < MIN_TOTAL_SPREADS or total_spreads > MAX_TOTAL_SPREADS:
+                # Adjust "None" spreads if possible
+                if 'None' in allocation:
+                    current_none_spreads = allocation['None']["spreads"]
+                    if total_spreads < MIN_TOTAL_SPREADS and none_images > allocation['None']["images"]:
+                        extra_spreads = MIN_TOTAL_SPREADS - total_spreads
+                        allocation['None']["spreads"] += extra_spreads
+                        allocation['None']["images"] = min(none_images,
+                                                         allocation['None']["spreads"] * max_images_per_spread)
+                    elif total_spreads > MAX_TOTAL_SPREADS:
+                        reduce_spreads = total_spreads - MAX_TOTAL_SPREADS
+                        allocation['None']["spreads"] = max(0, current_none_spreads - reduce_spreads)
+                        allocation['None']["images"] = min(none_images,
+                                                         allocation['None']["spreads"] * max_images_per_spread)
+
+            selection = {category: info["images"] for category, info in allocation.items()}
+            spreads = {category: info["spreads"] for category, info in allocation.items()}
+            return selection,spreads
+
 
         important_events = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
 
@@ -410,6 +466,9 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             for cluster_name, cluster_df in df.groupby('cluster_context')
         }
 
+        if len(df) <= 200 and density >= 3:
+            return df['image_id'].values.tolist(), {}, error_message
+
         images_allocation,spreads_allocation = calculate_optimal_selection(
         actual_number_images_dict,
         relation_table,
@@ -434,7 +493,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     and cluster_name not in CONFIGS['events_disallowing_small_images']
             )
 
-            if cluster_name  in ['other', 'None', 'couple'] or is_small_group:
+            if (cluster_name  in ['other', 'None', 'couple'] or is_small_group) and len(df) >= 250:
                 logger.info("Ignoring None & None & Other!!")
                 continue
 
