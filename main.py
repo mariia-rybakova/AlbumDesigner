@@ -112,7 +112,10 @@ class ReadStage(Stage):
         start = datetime.now()
         # Read messages using a helper function
         try:
-            messages = read_messages(messages, self.logger)
+            messages, reading_error = read_messages(messages, self.logger)
+            if reading_error is not None:
+                self.logger.error(f"Error reading messages: {reading_error}")
+                raise Exception(f"Error reading messages: {reading_error}")
         except Exception as e:
             self.logger.error(f"Error reading messages: {e}")
             raise Exception(f"Error reading messages: {e}")
