@@ -8,7 +8,6 @@ servicelog.log
 src/__pycache__/
 utils/__pycache__/
 
-process_gallery.py
 test_locally.py
 plotting_local_test_selection.py
 files/focus_csvold.csv
