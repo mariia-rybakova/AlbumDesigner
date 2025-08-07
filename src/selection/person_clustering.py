@@ -1,8 +1,10 @@
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
-
-
+from itertools import combinations
+from utils.configs import CONFIGS
+import random
+import numpy as np
 
 def jaccard_distance(u, v):
     """Computes Jaccard distance between two binary vectors."""
@@ -130,3 +132,51 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
         return list(set(result))
 
     return list(set(result))  # Ensure unique images in the final list
+
+def person_max_union_selection(images_for_category, df, needed_count,image_cluster_dict, logger):
+
+    if len(images_for_category) < 5:
+        return list(set(select_by_cluster(images_for_category, image_cluster_dict, needed_count)))
+
+    relevant_cluster_labels = []
+    try:
+        if 'cluster_label' in df.columns:
+            relevant_cluster_labels = df[df['image_id'].isin(images_for_category)][
+                'cluster_label'].unique().tolist()
+
+        result = []
+        persons_ids_per_image = []
+        images_with_persons_data = []
+        for image_id in images_for_category:
+            img_info_row = df[df['image_id'] == image_id]
+            if img_info_row.empty:
+                persons_ids_per_image.append([])  # Image not in df, no person data
+                continue
+            current_persons_val = img_info_row['persons_ids'].values[0]
+            images_with_persons_data.append((image_id, current_persons_val))
+
+        combs = combinations(images_with_persons_data, needed_count)
+        combs= list(combs)
+
+        if len(combs) > CONFIGS['MAX_PERSON_COMBINATION']:
+            sample_idxs = random.sample(range(len(combs)), CONFIGS['MAX_PERSON_COMBINATION'])
+        else:
+            sample_idxs = range(len(combs))
+
+        sample_uninon_sizes = np.zeros(len(sample_idxs), dtype=int)
+        for iter_idx,idx  in enumerate(sample_idxs):
+            union_set = set(combs[idx][0][1])
+            for list_idx in range(1, len(combs[idx])):
+                union_set = union_set.union(set(combs[idx][list_idx][1]))
+            sample_uninon_sizes[iter_idx] = len(union_set)
+
+        max_union_size_idx = np.argmax(sample_uninon_sizes)
+        selected_combination = combs[sample_idxs[max_union_size_idx]]
+
+
+    except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
+        result = select_by_cluster(relevant_cluster_labels, image_cluster_dict, needed_count)
+        logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
+        return list(set(result))
+
+    return [item[0] for item in selected_combination]

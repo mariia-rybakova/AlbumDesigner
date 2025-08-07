@@ -148,7 +148,10 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
         if change_tuple[0] != 'merge':
             continue
         if group_to_change_key in merged_targets:
-            if merged_targets[group_to_change_key] >= CONFIGS['merge_limit_times']:
+
+            none_or_other = 'None' in group_to_change_key or 'other' in group_to_change_key
+
+            if (not none_or_other and merged_targets[group_to_change_key] >= CONFIGS['merge_limit_times']) or (none_or_other and merged_targets[group_to_change_key] >= CONFIGS['none_limit_times'] ):
                 # logger.info(f"Skipping group {group_to_change_key} as it was already merged into.")
                 continue
 

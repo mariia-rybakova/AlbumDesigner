@@ -79,7 +79,7 @@ CONFIGS = {'DEBUG': True,
             'rank': 0.2
          },
            'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
-
+        'MAX_PERSON_COMBINATION': 10000,
 
 }
 

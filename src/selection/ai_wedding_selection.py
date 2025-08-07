@@ -11,7 +11,7 @@ from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 
-from src.selection.person_clustering import person_clustering_selection
+from src.selection.person_clustering import person_max_union_selection
 from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters
 from utils.configs import CONFIGS
 
@@ -759,7 +759,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         .sort_values(ascending=False)
                         .to_dict()
                     )
-                    selected_imgs = person_clustering_selection(
+                    selected_imgs = person_max_union_selection(
                         images_for_category=colored_images,
                         df=filtered_df.reset_index(),
                         needed_count=need,
