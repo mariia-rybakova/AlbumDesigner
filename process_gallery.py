@@ -172,6 +172,8 @@ def get_selection(message, logger):
         message.content['gallery_photos_info'] = filtered_df
         message.content['photos'] = ai_photos_selected
         message.content['spreads_dict'] = spreads_dict
+        logger.info('Photos selected: {}'.format(sorted(ai_photos_selected)))
+        logger.info('Spreads dict sum: {}'.format(sum([item for key, item in spreads_dict.items()])))
         return message
 
     except Exception as e:

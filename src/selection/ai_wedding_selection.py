@@ -699,7 +699,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
                 colored_images = [
                     img for img in images_filtered
-                    if img not in grayscale_images or img in selected_gray_image
+                    if img not in grayscale_images and img not in selected_gray_image
                 ]
 
                 filtered_colored_df = df_clustered.loc[colored_images]
