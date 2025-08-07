@@ -406,7 +406,7 @@ def calculate_optimal_selection(
 
         while total_over_spreads>1 and total_miss_spreads > 1:
             for event, config in focus_table.items():
-                if config['over_spreads'] > 1:
+                if config['over_spreads'] > 1 and total_over_spreads > 1:
                     # Reduce over spreads
                     config['over_spreads'] -= 1
                     config['over_photos'] -= modified_lut[event][0]
