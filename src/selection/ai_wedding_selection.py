@@ -311,7 +311,7 @@ def calculate_optimal_selection(
             used_images = 0
 
             for category, image_count in n_actual_dict.items():
-                if category is not 'None':  # Skip None for now
+                if category != 'None':  # Skip None for now
                     spreads = (image_count + 2) // 3  # General rule: ~3 images per spread
                     # Update allocation
                     allocation[category]["spreads"] = spreads
@@ -569,9 +569,9 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     and cluster_name not in CONFIGS['events_disallowing_small_images']
             )
 
-            if (cluster_name  in ['other', 'None', 'couple'] or is_small_group) and len(df) >= 250:
-                logger.info("Ignoring None & None & Other!!")
-                continue
+            # if (cluster_name  in ['other', 'None', 'couple'] or is_small_group) and len(df) >= 250:
+            #     logger.info("Ignoring None & None & Other!!")
+            #     continue
 
             # Get scores for each image
             scores,scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
@@ -583,8 +583,18 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             if all(score <= 0 for _, score in scores):
                 continue
 
+            need = images_allocation[cluster_name]
+            has = len(scored_df)
+
             candidates_images_scores = [(image_id, score) for image_id,score in scores
                                        if score > selection_threshold[cluster_name]]
+
+            if len(candidates_images_scores) < need and len(candidates_images_scores) < has:
+                candidates_images_scores =[]
+                for iter_idx,(index,row) in enumerate(scored_df.iterrows()):
+                    if iter_idx < need:
+                        candidates_images_scores.append((row['image_id'], row['total_score']))
+                # pass
 
             available_img_ids = [image_id for image_id, _ in candidates_images_scores]
 
@@ -606,8 +616,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
             #remove the images that selected from the user
             scored_df = scored_df[scored_df['image_id'].isin(available_img_ids_wo_user)]
-            need = images_allocation[cluster_name]
-            has = len(available_img_ids_wo_user)
+
 
             scored_df['image_time_date'] = scored_df['image_time'].apply(lambda x: convert_to_timestamp(x))
             valid_images_df = identify_temporal_clusters(scored_df,'image_time_date', 20,4,logger)
