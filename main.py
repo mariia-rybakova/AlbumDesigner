@@ -26,6 +26,7 @@ from utils.time_processing import process_image_time, get_time_clusters, merge_t
 from src.album_processing import album_processing
 from src.request_processing import read_messages, assembly_output
 from utils.configs import CONFIGS
+from utils.lookup_table_tools import wedding_lookup_table
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -172,6 +173,13 @@ class SelectionStage(Stage):
                     _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
                     updated_messages.append(_msg)
                     continue
+
+                modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
+                density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
+                for event, pair in modified_lut.items():
+                    modified_lut[event] = (min(24, max(1, pair[0] * density_factor)),
+                                           pair[1])  # Ensure base spreads are at least 1 and not above 24
+                _msg.content['modified_lut'] = modified_lut
 
                 ai_photos_selected,spreads_dict, errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
                           self.logger)

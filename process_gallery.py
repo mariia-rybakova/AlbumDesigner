@@ -22,7 +22,8 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
-
+from utils.lookup_table_tools import wedding_lookup_table
+from utils.configs import CONFIGS
 
 def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info):
     """
@@ -152,12 +153,19 @@ def get_selection(message, logger):
             message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
             return message
 
+        modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
+        density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
+        for event, pair in modified_lut.items():
+            modified_lut[event] = (min(24, max(1, pair[0] * density_factor)),
+                                   pair[1])  # Ensure base spreads are at least 1 and not above 24
+        message.content['modified_lut'] = modified_lut
+
         ai_photos_selected, spreads_dict, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,
                                                   logger)
 
         if errors:
             logger.error(f"Error for Selection images for this message {message}")
-            message.content['error'] = f"Error for Selection images for this message {message}"
+            message.error = f"Error for Selection images for this message {message}"
             return message
 
         filtered_df = df[df['image_id'].isin(ai_photos_selected)]
