@@ -303,59 +303,59 @@ def calculate_optimal_selection(
         MAX_TOTAL_SPREADS = 22
         total_images = sum(n_actual_dict.values())
 
-        if total_images <= 250:
-            target_spreads = min(MIN_TOTAL_SPREADS + density - 1, MAX_TOTAL_SPREADS)
-            allocation = {key: {"spreads": 0, "images": 0} for key in n_actual_dict}
-            max_images_per_spread = 4
-            used_spreads = 0
-            used_images = 0
-
-            for category, image_count in n_actual_dict.items():
-                if category != 'None':  # Skip None for now
-                    spreads = (image_count + 2) // 3  # General rule: ~3 images per spread
-                    # Update allocation
-                    allocation[category]["spreads"] = spreads
-                    allocation[category]["images"] = min(image_count, spreads * max_images_per_spread)
-                    used_spreads += spreads
-                    used_images += allocation[category]["images"]
-
-            # Step 4: Handle "None" category
-            none_images = n_actual_dict.get('None', 0)
-            remaining_spreads = max(0, target_spreads - used_spreads)
-
-            if none_images > 0 and remaining_spreads > 0:
-                # Calculate images per spread for "None" based on density
-                images_per_spread = min(3 + (density - 1), max_images_per_spread)
-                # Total images to use from "None"
-                none_images_to_use = min(none_images, remaining_spreads * images_per_spread)
-                # Adjust spreads if necessary
-                none_spreads = max(1, (none_images_to_use + images_per_spread - 1) // images_per_spread)
-                none_spreads = min(none_spreads, remaining_spreads)
-                none_images_to_use = min(none_images, none_spreads * images_per_spread)
-
-                allocation['None']["spreads"] = none_spreads
-                allocation['None']["images"] = none_images_to_use
-
-            # Step 5: Validate total spreads
-            total_spreads = sum(info["spreads"] for info in allocation.values())
-            if total_spreads < MIN_TOTAL_SPREADS or total_spreads > MAX_TOTAL_SPREADS:
-                # Adjust "None" spreads if possible
-                if 'None' in allocation:
-                    current_none_spreads = allocation['None']["spreads"]
-                    if total_spreads < MIN_TOTAL_SPREADS and none_images > allocation['None']["images"]:
-                        extra_spreads = MIN_TOTAL_SPREADS - total_spreads
-                        allocation['None']["spreads"] += extra_spreads
-                        allocation['None']["images"] = min(none_images,
-                                                         allocation['None']["spreads"] * max_images_per_spread)
-                    elif total_spreads > MAX_TOTAL_SPREADS:
-                        reduce_spreads = total_spreads - MAX_TOTAL_SPREADS
-                        allocation['None']["spreads"] = max(0, current_none_spreads - reduce_spreads)
-                        allocation['None']["images"] = min(none_images,
-                                                         allocation['None']["spreads"] * max_images_per_spread)
-
-            selection = {category: info["images"] for category, info in allocation.items()}
-            spreads = {category: info["spreads"] for category, info in allocation.items()}
-            return selection,spreads
+        # if total_images <= 250:
+        #     target_spreads = min(MIN_TOTAL_SPREADS + density - 1, MAX_TOTAL_SPREADS)
+        #     allocation = {key: {"spreads": 0, "images": 0} for key in n_actual_dict}
+        #     max_images_per_spread = 4
+        #     used_spreads = 0
+        #     used_images = 0
+        #
+        #     for category, image_count in n_actual_dict.items():
+        #         if category != 'None':  # Skip None for now
+        #             spreads = (image_count + 2) // 3  # General rule: ~3 images per spread
+        #             # Update allocation
+        #             allocation[category]["spreads"] = spreads
+        #             allocation[category]["images"] = min(image_count, spreads * max_images_per_spread)
+        #             used_spreads += spreads
+        #             used_images += allocation[category]["images"]
+        #
+        #     # Step 4: Handle "None" category
+        #     none_images = n_actual_dict.get('None', 0)
+        #     remaining_spreads = max(0, target_spreads - used_spreads)
+        #
+        #     if none_images > 0 and remaining_spreads > 0:
+        #         # Calculate images per spread for "None" based on density
+        #         images_per_spread = min(3 + (density - 1), max_images_per_spread)
+        #         # Total images to use from "None"
+        #         none_images_to_use = min(none_images, remaining_spreads * images_per_spread)
+        #         # Adjust spreads if necessary
+        #         none_spreads = max(1, (none_images_to_use + images_per_spread - 1) // images_per_spread)
+        #         none_spreads = min(none_spreads, remaining_spreads)
+        #         none_images_to_use = min(none_images, none_spreads * images_per_spread)
+        #
+        #         allocation['None']["spreads"] = none_spreads
+        #         allocation['None']["images"] = none_images_to_use
+        #
+        #     # Step 5: Validate total spreads
+        #     total_spreads = sum(info["spreads"] for info in allocation.values())
+        #     if total_spreads < MIN_TOTAL_SPREADS or total_spreads > MAX_TOTAL_SPREADS:
+        #         # Adjust "None" spreads if possible
+        #         if 'None' in allocation:
+        #             current_none_spreads = allocation['None']["spreads"]
+        #             if total_spreads < MIN_TOTAL_SPREADS and none_images > allocation['None']["images"]:
+        #                 extra_spreads = MIN_TOTAL_SPREADS - total_spreads
+        #                 allocation['None']["spreads"] += extra_spreads
+        #                 allocation['None']["images"] = min(none_images,
+        #                                                  allocation['None']["spreads"] * max_images_per_spread)
+        #             elif total_spreads > MAX_TOTAL_SPREADS:
+        #                 reduce_spreads = total_spreads - MAX_TOTAL_SPREADS
+        #                 allocation['None']["spreads"] = max(0, current_none_spreads - reduce_spreads)
+        #                 allocation['None']["images"] = min(none_images,
+        #                                                  allocation['None']["spreads"] * max_images_per_spread)
+        #
+        #     selection = {category: info["images"] for category, info in allocation.items()}
+        #     spreads = {category: info["spreads"] for category, info in allocation.items()}
+        #     return selection,spreads
 
 
         TARGET_SPREADS = 20
@@ -384,6 +384,8 @@ def calculate_optimal_selection(
                     config['photos'] = 1
                     config['miss'] = max(0,config['photos'] - n_actual_dict.get(event, 0))
                     config['miss_spreads'] = 0
+                    if config['miss'] > 0:
+                        config['photos'] = 0
                     config['over_photos'] = max(0, n_actual_dict.get(event, 0) - config['photos'])
                     config['over_spreads'] = config['over_photos'] / modified_lut[event][0]
                 else:
@@ -391,6 +393,9 @@ def calculate_optimal_selection(
                     config['photos'] = config['spreads']*modified_lut[event][0]
                     config['miss'] = max(0,config['photos'] - n_actual_dict.get(event, 0))
                     config['miss_spreads'] = config['miss'] / modified_lut[event][0]
+                    if config['miss'] > 0:
+                        config['photos'] = config['photos'] - config['miss']
+                        config['spreads'] = config['photos']/ modified_lut[event][0]
                     config['over_photos'] = max(0,n_actual_dict.get(event, 0) - config['photos'])
                     config['over_spreads'] = config['over_photos'] / modified_lut[event][0]
 
