@@ -135,8 +135,8 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
 
 def person_max_union_selection(images_for_category, df, needed_count,image_cluster_dict, logger):
 
-    if len(images_for_category) < 5:
-        return list(set(select_by_cluster(images_for_category, image_cluster_dict, needed_count)))
+    if len(df) <= needed_count:
+        return list(set(images_for_category))
 
     relevant_cluster_labels = []
     try:
@@ -144,7 +144,6 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
             relevant_cluster_labels = df[df['image_id'].isin(images_for_category)][
                 'cluster_label'].unique().tolist()
 
-        result = []
         persons_ids_per_image = []
         images_with_persons_data = []
         for image_id in images_for_category:
@@ -155,23 +154,40 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
             current_persons_val = img_info_row['persons_ids'].values[0]
             images_with_persons_data.append((image_id, current_persons_val))
 
-        combs = combinations(images_with_persons_data, needed_count)
-        combs= list(combs)
+        selected_indices = []
+        selected_sets = []
+        current_union = set()
 
-        if len(combs) > CONFIGS['MAX_PERSON_COMBINATION']:
-            sample_idxs = random.sample(range(len(combs)), CONFIGS['MAX_PERSON_COMBINATION'])
-        else:
-            sample_idxs = range(len(combs))
+        remaining = [(item[0],set(item[1])) for item in images_with_persons_data] # List of tuples (image_id, set_of_person_ids)
 
-        sample_uninon_sizes = np.zeros(len(sample_idxs), dtype=int)
-        for iter_idx,idx  in enumerate(sample_idxs):
-            union_set = set(combs[idx][0][1])
-            for list_idx in range(1, len(combs[idx])):
-                union_set = union_set.union(set(combs[idx][list_idx][1]))
-            sample_uninon_sizes[iter_idx] = len(union_set)
+        for _ in range(needed_count):
+            # Pick the set that adds the most new elements
+            best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
 
-        max_union_size_idx = np.argmax(sample_uninon_sizes)
-        selected_combination = combs[sample_idxs[max_union_size_idx]]
+            selected_indices.append(best_index)
+            selected_sets.append(best_set)
+            current_union.update(best_set)
+
+            remaining = [item for item in remaining if item[0] != best_index]
+
+
+        # combs = combinations(images_with_persons_data, needed_count)
+        # combs= list(combs)
+        #
+        # if len(combs) > CONFIGS['MAX_PERSON_COMBINATION']:
+        #     sample_idxs = random.sample(range(len(combs)), CONFIGS['MAX_PERSON_COMBINATION'])
+        # else:
+        #     sample_idxs = range(len(combs))
+        #
+        # sample_uninon_sizes = np.zeros(len(sample_idxs), dtype=int)
+        # for iter_idx,idx  in enumerate(sample_idxs):
+        #     union_set = set(combs[idx][0][1])
+        #     for list_idx in range(1, len(combs[idx])):
+        #         union_set = union_set.union(set(combs[idx][list_idx][1]))
+        #     sample_uninon_sizes[iter_idx] = len(union_set)
+        #
+        # max_union_size_idx = np.argmax(sample_uninon_sizes)
+        # selected_combination = combs[sample_idxs[max_union_size_idx]]
 
 
     except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
@@ -179,4 +195,4 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
         logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
         return list(set(result))
 
-    return [item[0] for item in selected_combination]
+    return selected_indices
