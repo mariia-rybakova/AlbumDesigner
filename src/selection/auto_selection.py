@@ -66,6 +66,6 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
 
     except Exception as e:
         logger.error(e)
-        return [], 'Error:{}'.format(e)
+        return [], None, 'Error:{}'.format(e)
 
     return ai_images_selected, spreads_dict, errors

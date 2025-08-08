@@ -266,7 +266,8 @@ class ProcessStage(Stage):
                 else:
                     density = 3
 
-                album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], params,
+                modified_lut = message.content['modified_lut'] if message.content.get('modified_lut', None) is not None else None
+                album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
                                                 logger=self.logger,density=density)
 
                 wait_start = datetime.now()

@@ -5,13 +5,6 @@ import numpy as np
 from datetime import datetime
 from sklearn.mixture import GaussianMixture
 from sklearn.cluster import DBSCAN
-from concurrent.futures import ThreadPoolExecutor
-
-def read_timestamp(timestamp_str):
-    try:
-        return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S.%f")
-    except ValueError:
-        return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
 
 
 def convert_to_timestamp(time_integer):
@@ -82,9 +75,12 @@ def get_time_clusters_gmm(X):
 
 
 def get_time_clusters_dbscan(X):
-    dbscan = DBSCAN(eps=20, min_samples=3)  # eps is in minutes, adjust as needed
-    clusters = dbscan.fit_predict(X)
-    best_n = len(set(clusters))
+    for min_samples_possible in [3, 5, 7]:
+        dbscan = DBSCAN(eps=20, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
+        clusters = dbscan.fit_predict(X)
+        best_n = len(set(clusters))
+        if best_n <= 6:
+            break
     return clusters, best_n
 
 
