@@ -392,10 +392,10 @@ def calculate_optimal_selection(
                     config['spreads'] = config['value'] / total_value * TARGET_SPREADS
                     config['photos'] = config['spreads']*modified_lut[event][0]
                     config['miss'] = max(0,config['photos'] - n_actual_dict.get(event, 0))
-                    config['miss_spreads'] = config['miss'] / modified_lut[event][0]
+                    config['miss_spreads'] = round(config['miss'] / modified_lut[event][0])
                     if config['miss'] > 0:
                         config['photos'] = config['photos'] - config['miss']
-                        config['spreads'] = config['photos']/ modified_lut[event][0]
+                        config['spreads'] = round(config['photos']/ modified_lut[event][0])
                     config['over_photos'] = max(0,n_actual_dict.get(event, 0) - config['photos'])
                     config['over_spreads'] = config['over_photos'] / modified_lut[event][0]
 
@@ -574,7 +574,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     and cluster_name not in CONFIGS['events_disallowing_small_images']
             )
 
-            # if (cluster_name  in ['other', 'None', 'couple'] or is_small_group) and len(df) >= 250:
+            # if cluster_name  in ['other', 'None', 'couple'] or is_small_group:
             #     logger.info("Ignoring None & None & Other!!")
             #     continue
 
@@ -713,15 +713,17 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         # Combine to reach the required number
                         selected_ids = landscape_ids + non_landscape_ids[:need - len(landscape_ids)]
                         colored_images = selected_ids
+                        filtered_colored_df = df_clustered.loc[colored_images]
                     else:
                         colored_images = landscape_ids
+                        filtered_colored_df = df_clustered.loc[colored_images]
 
                 # If exact fit, return them directly
                 if need == len(colored_images):
                     selected_imgs = colored_images
                 else:
                     # Remove duplicates and finalize selection
-                    selected_imgs =  select_images_by_time_and_style(need, filtered_colored_df.reset_index(), logger)
+                    selected_imgs =  select_images_by_time_and_style(need, filtered_colored_df.reset_index(),cluster_name, logger)
 
                 if selected_imgs is None:
                     continue
