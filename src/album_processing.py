@@ -15,7 +15,7 @@ from utils.configs import CONFIGS
 
 def get_group_photos_list(cur_group_photos, spread_params, logger):
     cur_group_photos_list = copy.deepcopy(list())
-    if ( (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) >= 4) or
+    if ( (len(cur_group_photos) / (max(spread_params[0] - 2 * spread_params[1],0.5)) >= 4) or
             (math.ceil(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11) or
             (len(cur_group_photos) / (spread_params[0] - 2 * spread_params[1]) < 3 and len(
                 cur_group_photos) > CONFIGS['max_imges_per_spread']) ):
