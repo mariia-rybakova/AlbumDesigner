@@ -54,6 +54,12 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
 
     # logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
+
+        if 'dancing' in group_name[1]:
+            group_images_df = group_images_df.sort_values(['image_as', 'image_time'])
+        else:
+            group_images_df = group_images_df.sort_values(['image_time'])
+
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
         # logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
         cur_group_photos_list = get_group_photos_list(cur_group_photos, spread_params, logger)
