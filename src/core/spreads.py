@@ -129,8 +129,14 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
             if len(filtered_parts)>2 and weights[idx1] < np.max(weights) / params[1]:
                 break
 
-    partsAboveThresh = filtered_parts
-    weightsAboveThresh = filtered_weights
+    parts_len = [len(part) for part in filtered_parts]
+    if np.max(parts_len) > np.min(parts_len) :
+        idxs = [idx for idx, part in enumerate(filtered_parts) if len(part) == np.min(parts_len)]
+        partsAboveThresh = [filtered_parts[idx] for idx in idxs]
+        weightsAboveThresh = [filtered_weights[idx] for idx in idxs]
+    else:
+        partsAboveThresh = filtered_parts
+        weightsAboveThresh = filtered_weights
 
     # parts = filtered_parts
     #
