@@ -10,7 +10,161 @@ from utils.configs import CONFIGS
 # CONFIGS = {'FACE_FAR_THRESHOLD': ..., 'FACE_M_THRESHOLD': ..., etc.}
 
 
-def select_photos_with_scoring(groups, needed_count):
+def select_photos_with_scoring(groups, needed_count, cluster_name=None):
+    """
+    Selects a specified number of photos from groups based on scoring and size,
+    with special handling for specific cluster names.
+
+    Args:
+        groups (pd.core.groupby.generic.DataFrameGroupBy): A pandas DataFrame grouped by
+            ['sub_group_time_cluster', 'image_orientation'].
+        needed_count (int): The total number of photos to select.
+        clustername (str, optional): The name of the cluster. If 'dancing', a special
+            selection logic prioritizing landscape photos is applied. Defaults to None.
+
+    Returns:
+        tuple: A tuple containing:
+            - sorted_group_keys (list): The keys of the groups from which photos were selected.
+            - final_selection (dict): A dictionary mapping group keys to the number of photos selected.
+            - total_selected (int): The total number of photos selected.
+            - eligible_groups (pd.DataFrame): The DataFrame of groups considered for selection.
+    """
+    if groups.ngroups == 0 or needed_count == 0:
+        return [], {}, 0, pd.DataFrame()
+
+    # --- Initial Setup (Common for both logic paths) ---
+    group_sizes = groups.size().rename('size')
+    avg_scores = groups['total_score'].mean().rename('avg_score')
+    group_info = pd.concat([group_sizes, avg_scores], axis=1).reset_index()
+
+    final_selection = {}
+    photos_selected_so_far = 0
+    group_keys_col = ['sub_group_time_cluster', 'image_orientation']
+
+    # --- Special Logic for 'dancing' cluster ---
+    if cluster_name == 'dancing':
+        # For the 'dancing' cluster, we prioritize all landscape shots first,
+        # then fill the remainder with portrait shots.
+
+        # 1. Separate groups by orientation
+        # Assuming orientation values are 'landscape' and 'portrait'.
+        # This should be validated or made more robust if other values can exist.
+        landscape_groups = group_info[group_info['image_orientation'] == 'landscape'].copy()
+        portrait_groups = group_info[group_info['image_orientation'] == 'portrait'].copy()
+
+        # 2. Sort each orientation group by score and size to pick the best ones first
+        landscape_groups.sort_values(by=['avg_score', 'size'], ascending=[False, False], inplace=True)
+        portrait_groups.sort_values(by=['avg_score', 'size'], ascending=[False, False], inplace=True)
+
+        # 3. Phase 1: Select from Landscape groups first
+        for _, group in landscape_groups.iterrows():
+            if photos_selected_so_far >= needed_count:
+                break
+
+            group_id = tuple(group[group_keys_col])
+            # Take as many as possible up to the group's size or until needed_count is met
+            can_take = needed_count - photos_selected_so_far
+            to_take = min(group['size'], can_take)
+
+            if to_take > 0:
+                final_selection[group_id] = to_take
+                photos_selected_so_far += to_take
+
+        # 4. Phase 2: Fill remaining spots with Portrait groups if needed
+        remaining_needed = needed_count - photos_selected_so_far
+        if remaining_needed > 0:
+            for _, group in portrait_groups.iterrows():
+                if photos_selected_so_far >= needed_count:
+                    break
+
+                group_id = tuple(group[group_keys_col])
+                can_take = needed_count - photos_selected_so_far
+                to_take = min(group['size'], can_take)
+
+                if to_take > 0:
+                    final_selection[group_id] = to_take
+                    photos_selected_so_far += to_take
+
+        # 5. Finalize and return
+        total_selected = sum(final_selection.values())
+        sorted_group_keys = list(final_selection.keys())
+        # For this logic path, `eligible_groups` is simply all original groups
+        return sorted_group_keys, final_selection, total_selected, group_info
+
+
+    # --- Original Logic for all other clusters ---
+    else:
+        # 1. Filter out the bottom 25% based on score
+        mask = (
+                (group_info['avg_score'] > 0.30) |
+                (group_info['avg_score'].nunique() == 1)
+        )
+        eligible_groups = group_info[mask].copy()
+        if eligible_groups.empty:
+            eligible_groups = group_info.copy()
+
+        # 2. Sort by priority: high score, large size
+        eligible_groups = eligible_groups.sort_values(
+            by=['avg_score', 'size'], ascending=[False, False]
+        )
+
+        # 3. Assign minimums — ensuring not to exceed needed_count
+        def get_minimums(size):
+            return 1 if size <= 5 else random.randint(2, 3)
+
+        eligible_groups['minimums'] = eligible_groups['size'].apply(get_minimums)
+        eligible_groups['minimums'] = np.minimum(eligible_groups['minimums'], eligible_groups['size'])
+
+        for idx, group in eligible_groups.iterrows():
+            if photos_selected_so_far >= needed_count:
+                break
+
+            group_id = tuple(group[group_keys_col])
+            min_needed = int(group['minimums'])
+
+            max_possible = needed_count - photos_selected_so_far
+            actual_take = min(min_needed, max_possible)
+
+            if actual_take > 0:
+                final_selection[group_id] = actual_take
+                photos_selected_so_far += actual_take
+            else:
+                final_selection[group_id] = 0
+
+        # 4. Fill remaining using remaining capacity
+        remaining_to_select = needed_count - photos_selected_so_far
+        if remaining_to_select > 0:
+            eligible_groups['already_selected'] = eligible_groups.apply(
+                lambda row: final_selection.get(tuple(row[group_keys_col]), 0), axis=1)
+            eligible_groups['capacity_after_min'] = eligible_groups['size'] - eligible_groups['already_selected']
+
+            priority_sorted_groups = eligible_groups.sort_values(
+                by=['avg_score', 'capacity_after_min'], ascending=[False, False]
+            )
+
+            for _, group in priority_sorted_groups.iterrows():
+                if remaining_to_select <= 0:
+                    break
+
+                group_id = tuple(group[group_keys_col])
+                already_selected = final_selection.get(group_id, 0)
+                remaining_capacity = group['size'] - already_selected
+
+                to_take = min(remaining_to_select, remaining_capacity)
+                if to_take > 0:
+                    final_selection[group_id] = already_selected + to_take
+                    remaining_to_select -= to_take
+
+        # 5. Clean up and return
+        final_selection = {k: v for k, v in final_selection.items() if v > 0}
+        total_selected = sum(final_selection.values())
+        sorted_group_keys = list(final_selection.keys())
+
+        return sorted_group_keys, final_selection, total_selected, eligible_groups
+
+
+
+def select_photos_with_scoring_old(groups, needed_count):
     if groups.ngroups == 0:
         return {}, 0
 
@@ -185,7 +339,7 @@ def _determine_shot_style(row: pd.Series) -> str:
 
 
 # --- Step 3: Refactored and simplified main function ---
-def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame, logger) -> list:
+def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame,cluster_name, logger) -> list:
     """
     Selects a diverse set of images that are grouped closely in time.
 
@@ -204,7 +358,7 @@ def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame, logger)
         # 4. Allocation: Determine how many images to take from each group
         # The external `select_photos_with_scoring` function remains a black box as in the original.
         # It should now operate on these filtered, valid groups.
-        _, final_selection, _, _ = select_photos_with_scoring(groups, needed_count)
+        _, final_selection, _, _ = select_photos_with_scoring(groups, needed_count,cluster_name)
 
         result = []
 
