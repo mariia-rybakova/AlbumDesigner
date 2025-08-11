@@ -707,8 +707,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 if cluster_name == 'dancing' and need < len(colored_images):
                     landscape_ids = df[(df['image_id'].isin(colored_images)) & (df['image_orientation'] == 'landscape')]['image_id'].values.tolist()
                     if len(landscape_ids) < need:
-                        non_landscape_df = filtered_colored_df[~filtered_colored_df['image_id'].isin(landscape_ids)]
-                        non_landscape_ids = non_landscape_df['image_id'].tolist()
+                        non_landscape_df = filtered_colored_df[~filtered_colored_df.index.isin(landscape_ids)]
+                        non_landscape_ids = non_landscape_df.index.tolist()
 
                         # Combine to reach the required number
                         selected_ids = landscape_ids + non_landscape_ids[:need - len(landscape_ids)]
