@@ -205,10 +205,10 @@ def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=10
                 # x2 = int(bbox.x2 * face_mask.shape[1])
                 # y2 = int(bbox.y2 * face_mask.shape[0])
 
-                x1 = int(bbox.x1)
-                y1 = int(bbox.y1)
-                x2 = int(bbox.x2)
-                y2 = int(bbox.y2)
+                x1 = int(bbox.x1*mask.shape[1])
+                y1 = int(bbox.y1*mask.shape[0])
+                x2 = int(bbox.x2*mask.shape[1])
+                y2 = int(bbox.y2*mask.shape[0])
                 bbox_w = (x2 - x1) * face_extension
                 bbox_h = (y2 - y1) * face_extension
 
@@ -262,3 +262,101 @@ def process_crop_images(q,df):
         })
     cropped_df = pd.DataFrame(results)
     q.put(cropped_df)
+
+
+if __name__ == "__main__":
+    project_id = 46229129
+    from multiprocessing import Queue
+    q = Queue()
+    input_path = rf'C:\Users\ZivRotman\PycharmProjects\logAnalysis\galleries_pbs2\{project_id}'
+    from utils.protos import FaceVector_pb2 as face_vector
+    from utils.protos import BGSegmentation_pb2 as meta_vector
+    import os
+    
+    face_file = os.path.join(input_path, "ai_face_vectors.pb")
+
+    faces_info_bytes = open(face_file, 'rb').read()
+    face_descriptor = face_vector.FaceVectorMessageWrapper()
+    face_descriptor.ParseFromString(faces_info_bytes)
+
+    if face_descriptor.WhichOneof("versions") == 'v1':
+        message_data = face_descriptor.v1
+
+    images_photos = message_data.photos
+
+    photo_ids = []
+    num_faces_list = []
+    faces_info_list = []
+
+    for photo in images_photos:
+        number_faces = len(photo.faces)
+        faces = list(photo.faces)
+        photo_ids.append(photo.photoId)
+        num_faces_list.append(number_faces)
+        faces_info_list.append(faces)
+
+    face_info_df = pd.DataFrame({
+        'image_id': photo_ids,
+        'n_faces': num_faces_list,
+        'faces_info': faces_info_list
+    })
+
+
+    meta_file = os.path.join(input_path, "bg_segmentation.pb")
+
+    try:
+
+        meta_info_bytes_info_bytes = open(meta_file, 'rb').read()
+        meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
+        meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
+
+        if meta_descriptor.WhichOneof("versions") == 'v1':
+            message_data = meta_descriptor.v1
+
+        images_photos = message_data.photos
+        # Prepare lists to collect data
+        photo_ids = []
+        image_times = []
+        scene_orders = []
+        image_aspects = []
+        image_colors = []
+        image_orientations = []
+        image_orderInScenes = []
+        background_centroids = []
+        blob_diameters = []
+
+        # Add safer handling of photo attributes
+        for photo in images_photos:
+            photo_ids.append(photo.photoId)
+            image_times.append(photo.dateTaken)
+            scene_orders.append(photo.sceneOrder)
+            image_aspects.append(photo.aspectRatio)
+            image_colors.append(photo.colorEnum)
+            image_orientations.append('landscape' if photo.aspectRatio >= 1 else 'portrait')
+            image_orderInScenes.append(photo.orderInScene)
+            # Safer handling of optional fields
+            background_centroids.append(getattr(photo, 'blobCentroid', None))
+            blob_diameters.append(getattr(photo, 'blobDiameter', None))
+
+        additional_image_info_df = pd.DataFrame({
+            'image_id': photo_ids,
+            'image_time': image_times,
+            'scene_order': scene_orders,
+            'image_as': image_aspects,
+            'image_color': image_colors,
+            'image_orientation': image_orientations,
+            'image_orderInScene': image_orderInScenes,
+            'background_centroid': background_centroids,
+            'diameter': blob_diameters
+        })
+    except Exception as ex:
+        print(f"Error reading photo meta info from file: {ex}")
+
+
+    # Merge the two DataFrames on 'image_id'
+    df = pd.merge(face_info_df, additional_image_info_df, on='image_id', how='left')
+
+    process_crop_images(q,df)
+
+    print("done")
+
