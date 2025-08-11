@@ -103,7 +103,7 @@ def handle_illegal(group_key, change_tuple, imgs_number, groups, count, logger):
         return groups
 
     content_cluster_id = group_key[1] if '_' not in group_key[1] else group_key[1].split('_')[0]
-    if ("first dance" in content_cluster_id or "cake cutting" in content_cluster_id) and imgs_number <= CONFIGS['wedding_merge_images_number']:
+    if ("first dance" in content_cluster_id or "cake cutting" in content_cluster_id) and imgs_number > CONFIGS['wedding_merge_images_number']:
         return do_not_change_group(illegal_group, groups, group_key)
     if "wedding dress" in group_key and imgs_number <= CONFIGS['wedding_merge_images_number']:
         return handle_wedding_dress(illegal_group, groups, group_key, logger)
