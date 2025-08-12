@@ -22,16 +22,13 @@ def do_not_change_group(illegal_group, groups, group_key):
     return groups
 
 
-def get_split_score(group_key, lookup_table, imgs_number, is_wedding):
+def get_lut_value(group_key, look_up_table, is_wedding):
     if is_wedding:
         content_key = group_key[1].split("_")[0] if "_" in group_key[1] else group_key[1]
-        group_value = lookup_table.get(content_key, [10])[0]
+        group_value = look_up_table.get(content_key, [10])[0]
     else:
-        group_value = lookup_table.get(group_key[0].split("_")[0], [10])[0]
-
-    limited_splitting = round(imgs_number / group_value) if group_value > 0 else 0
-
-    return limited_splitting, group_value
+        group_value = look_up_table.get(group_key[0].split("_")[0], [10])[0]
+    return group_value
 
 
 def handle_splitting(groups, group2images, look_up_table, is_wedding):
@@ -42,32 +39,34 @@ def handle_splitting(groups, group2images, look_up_table, is_wedding):
         if imgs_number < CONFIGS['max_img_split']:
             continue
 
-        splitting_score, group_spread_size = get_split_score(group_key, look_up_table, imgs_number, is_wedding)
-        if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1]:
+        group_spread_size = get_lut_value(group_key, look_up_table, is_wedding)
+        splitting_score = round(imgs_number / group_spread_size) if group_spread_size > 0 else 0
+        if ((splitting_score > CONFIGS['min_split_score']
+            or splitting_score == CONFIGS['min_split_score'] and group_spread_size > 5
+            or splitting_score == 2 and group_spread_size >= 12
+            or group_spread_size >= 24)
+                and 'cant_split' not in group_key[1]):
             illegal_group = groups.get_group(group_key)
             if illegal_group.empty:
                 continue
 
-            if splitting_score >= CONFIGS['min_split_score']:
-                updated_group, labels_count = split_illegal_group_by_time(illegal_group, group_spread_size, count)
+            updated_group, labels_count = split_illegal_group_by_time(illegal_group, group_spread_size, count)
 
-                if updated_group is None:
-                    # we can't split this group
-                    illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
-                    updated_group = illegal_group
+            if updated_group is None:
+                # we can't split this group
+                illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
+                updated_group = illegal_group
 
-                # Construct a list of tuples containing the name and data for each group
-                new_groups = [(name, group) for name, group in groups if name != group_key]
-                sub_group_cluster = updated_group.groupby(['time_cluster', 'cluster_context'])
-                for sub in sub_group_cluster:
-                    new_groups.append(sub)
+            # Construct a list of tuples containing the name and data for each group
+            new_groups = [(name, group) for name, group in groups if name != group_key]
+            sub_group_cluster = updated_group.groupby(['time_cluster', 'cluster_context'])
+            for sub in sub_group_cluster:
+                new_groups.append(sub)
 
-                # Convert the list of groups to a DataFrameGroupBy object
-                groups = pd.concat([group for _, group in new_groups], ignore_index=True)
-                groups = groups.reset_index(drop=True)
-                groups = groups.groupby(['time_cluster', 'cluster_context'])
-            else:
-                groups = do_not_change_group(illegal_group, groups, group_key)
+            # Convert the list of groups to a DataFrameGroupBy object
+            groups = pd.concat([group for _, group in new_groups], ignore_index=True)
+            groups = groups.reset_index(drop=True)
+            groups = groups.groupby(['time_cluster', 'cluster_context'])
 
     return groups
 

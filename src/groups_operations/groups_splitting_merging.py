@@ -113,7 +113,7 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
         clf = KMeansConstrained(
             n_clusters=n_clusters,
             size_min=size_min,
-            size_max=split_size,
+            size_max=min(split_size, n_samples),
             random_state=0
         )
         labels = clf.fit_predict(time_features)
