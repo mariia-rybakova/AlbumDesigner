@@ -8,24 +8,15 @@ from utils.configs import CONFIGS
 def update_groups(group, merged, merge_group_key, illegal_group_key):
     if merge_group_key == group.name:
         return merged
-    elif illegal_group_key == group.name:
-        return
-    else:
-        return group
-
-
-def update_not_processed(group, not_processed, illegal_group_key):
-    if group.name == illegal_group_key:
-        return not_processed
-    else:
-        return group
+    if illegal_group_key == group.name:
+        return None
+    return group
 
 
 def do_not_change_group(illegal_group, groups, group_key):
     """Wont change a group for first dance and cake cutting"""
     illegal_group.loc[:, 'cluster_context'] = illegal_group["cluster_context"] + "_cant_merge"
-    groups = groups.apply(
-        lambda x: update_not_processed(x, not_processed=illegal_group, illegal_group_key=group_key))
+    groups = groups.apply(lambda group: illegal_group if group.name == group_key else group)
     groups = groups.reset_index(drop=True)
     groups = groups.groupby(['time_cluster', 'cluster_context'])
     return groups
@@ -40,27 +31,44 @@ def get_split_score(group_key, lookup_table, imgs_number, is_wedding):
 
     limited_splitting = round(imgs_number / group_value) if group_value > 0 else 0
 
-    return limited_splitting
+    return limited_splitting, group_value
 
 
-def splitting_process(groups, group_key, illegal_group, count):
-    updated_group, labels_count = split_illegal_group_by_time(illegal_group, count)
+def handle_splitting(groups, group2images, look_up_table, is_wedding):
+    # handle splitting
+    count = 2
 
-    if updated_group is None:
-        # we can't split this group
-        illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
-        updated_group = illegal_group
+    for group_key, imgs_number in group2images.items():
+        if imgs_number < CONFIGS['max_img_split']:
+            continue
 
-    # Construct a list of tuples containing the name and data for each group
-    new_groups = [(name, group) for name, group in groups if name != group_key]
-    sub_group_cluster = updated_group.groupby(['time_cluster', 'cluster_context'])
-    for sub in sub_group_cluster:
-        new_groups.append(sub)
+        splitting_score, group_spread_size = get_split_score(group_key, look_up_table, imgs_number, is_wedding)
+        if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1]:
+            illegal_group = groups.get_group(group_key)
+            if illegal_group.empty:
+                continue
 
-    # Convert the list of groups to a DataFrameGroupBy object
-    groups = pd.concat([group for _, group in new_groups], ignore_index=True)
-    groups = groups.reset_index(drop=True)
-    groups = groups.groupby(['time_cluster', 'cluster_context'])
+            if splitting_score >= CONFIGS['min_split_score']:
+                updated_group, labels_count = split_illegal_group_by_time(illegal_group, group_spread_size, count)
+
+                if updated_group is None:
+                    # we can't split this group
+                    illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
+                    updated_group = illegal_group
+
+                # Construct a list of tuples containing the name and data for each group
+                new_groups = [(name, group) for name, group in groups if name != group_key]
+                sub_group_cluster = updated_group.groupby(['time_cluster', 'cluster_context'])
+                for sub in sub_group_cluster:
+                    new_groups.append(sub)
+
+                # Convert the list of groups to a DataFrameGroupBy object
+                groups = pd.concat([group for _, group in new_groups], ignore_index=True)
+                groups = groups.reset_index(drop=True)
+                groups = groups.groupby(['time_cluster', 'cluster_context'])
+            else:
+                groups = do_not_change_group(illegal_group, groups, group_key)
+
     return groups
 
 
@@ -77,45 +85,6 @@ def merge_groups(groups, illegal_group, illegal_group_key, selected_cluster, mer
     return groups
 
 
-def handle_wedding_dress(illegal_group, groups, group_key, logger):
-    merge_candidates = [group for group_id, group in groups if
-                        group_id[1] in ["bride getting dressed", "bride", "getting dressed", "getting hair-makeup"]]
-    if len(merge_candidates) == 0:
-        logger.warning("Couldnt find a good group for wedding dress. Take the first one.")
-        selected_group = list(groups)[0][1]
-    else:
-        selected_group = merge_candidates[0]
-
-    illegal_group.loc[:, 'cluster_context'] = selected_group['cluster_context'].iloc[0]
-    value_to_assign = selected_group['time_cluster'].iloc[0]
-    illegal_group.loc[:, 'time_cluster'] = value_to_assign
-    updated_group = pd.concat([selected_group, illegal_group], ignore_index=False)
-    groups = groups.apply(lambda x: update_groups(x, merged=updated_group, merge_group_key=(value_to_assign, "bride getting dressed"), illegal_group_key=group_key))
-    groups = groups.reset_index(drop=True)
-    groups = groups.groupby(['time_cluster', 'cluster_context'])
-    return groups
-
-
-def handle_illegal(group_key, change_tuple, imgs_number, groups, count, logger):
-    illegal_group = groups.get_group(group_key)
-    if illegal_group.empty:
-        logger.info(f"Illegal group {group_key} is empty. Skipping.")
-        return groups
-
-    content_cluster_id = group_key[1] if '_' not in group_key[1] else group_key[1].split('_')[0]
-    if ("first dance" in content_cluster_id or "cake cutting" in content_cluster_id) and imgs_number > CONFIGS['wedding_merge_images_number']:
-        return do_not_change_group(illegal_group, groups, group_key)
-    if "wedding dress" in group_key and imgs_number <= CONFIGS['wedding_merge_images_number']:
-        return handle_wedding_dress(illegal_group, groups, group_key, logger)
-    if change_tuple[0] == 'split':
-        score = change_tuple[1]
-        if score >= CONFIGS['min_split_score']:
-            return splitting_process(groups, group_key, illegal_group, count)
-        else:
-            return do_not_change_group(illegal_group, groups, group_key)
-
-    return groups
-
 def add_class_preference(merge_candidates):
     """Modifies time difference based on content class pairs"""
     for i, candidate in enumerate(merge_candidates):
@@ -126,7 +95,7 @@ def add_class_preference(merge_candidates):
         source_class = group_key[1].split('_')[0] if '_' in group_key[1] else group_key[1]
         target_class = merge_target_key[1].split('_')[0] if '_' in merge_target_key[1] else merge_target_key[1]
 
-        similar_classes = [['bride','bride getting dressed','getting hair-makeup','accessories'],['bride','groom'],['ceremony', 'walking the aisle'],['food','settings']]
+        similar_classes = [['bride','bride getting dressed','getting hair-makeup','wedding dress','accessories'],['bride','groom'],['ceremony', 'walking the aisle'],['food','settings']]
 
         # Prefer merging similar classes
         if source_class == target_class:
@@ -140,7 +109,7 @@ def add_class_preference(merge_candidates):
     return merge_candidates
 
 
-def handle_merging(groups_to_change, groups, merged_targets, logger):
+def process_merging(groups_to_change, groups, merged_targets, logger):
     merging_candidates = list()
     current_merges = set()
 
@@ -168,14 +137,12 @@ def handle_merging(groups_to_change, groups, merged_targets, logger):
                        time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and merged_targets.get(cluster_key,0)<CONFIGS['merge_limit_times'] and len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread']]
 
         if len(main_groups) > 0:
-            selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group)
+            selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_spread=CONFIGS['max_imges_per_spread'])
             selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
             merge_target_key = (time_cluster_id, selected_cluster_content_index)
         else:
             selected_cluster, selected_time_difference, merge_target_key = None, float("inf"), None
         merging_candidates.append((illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))
-
-    add_class_preference(merging_candidates)
 
     merging_candidates = add_class_preference(merging_candidates)
     merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
@@ -210,39 +177,26 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
     iteration = 0
     merged_targets = dict()
     try:
+        groups = handle_splitting(groups, group2images, look_up_table, is_wedding)
+        group2images = get_images_per_groups(groups)
+
+        # iteratively merging groups
         while True:
             # Build groups_to_change directly here
             groups_to_change = dict()
             for group_key, imgs_number in group2images.items():
                 if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1]: #and 'None' not in group_key[1]
                     groups_to_change[group_key] = ('merge', 0)
-                else:
-                    splitting_score = get_split_score(group_key, look_up_table, imgs_number, is_wedding)
-                    if splitting_score >= CONFIGS['min_split_score'] and 'cant_split' not in group_key[1]: #and 'None' not in group_key[1]
-                        groups_to_change[group_key] = ('split', splitting_score)
 
             if not groups_to_change or len(groups_to_change.keys()) == 0:
-                logger.info('No groups to change. Continue.')
+                logger.info('No groups to change. Iteration: {}. Continue.'.format(iteration))
                 break
 
             if iteration >= max_iterations:
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Groups to change left: {groups_to_change}. Exiting to avoid infinite loop.")
                 break
 
-            if iteration==0:
-                for key_to_change, change_tuple in groups_to_change.items():
-                    if key_to_change in merged_targets:
-                        # logger.info(f"Skipping group {key_to_change} as it was already merged into.")
-                        continue
-                    imgs_number = group2images.get(key_to_change, 0)
-                    new_groups = handle_illegal(key_to_change, change_tuple, imgs_number, groups, count, logger)
-                    if new_groups is not None:
-                        group2images = get_images_per_groups(new_groups)
-                        groups = new_groups
-                    else:
-                        logger.info(f"handle_illegal returned None for key {key_to_change}. Skipping. {groups.groups}")
-                        continue
-            new_groups, merged_targets = handle_merging(groups_to_change, groups, merged_targets, logger)
+            new_groups, merged_targets = process_merging(groups_to_change, groups, merged_targets, logger)
             if new_groups is not None:
                 new_group2images = get_images_per_groups(new_groups)
                 if len(new_group2images) == len(group2images):

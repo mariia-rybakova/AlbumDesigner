@@ -56,65 +56,80 @@ def split_illegal_group(illegal_group, count):
     return illegal_group, label_counts
 
 
-def split_illegal_group_by_time(illegal_group, count):
+def split_illegal_group_by_time(illegal_group, single_spread_size, count):
     """
-    Split illegal group into two subgroups based on temporal clustering.
+    Split an illegal group into subgroups based on time or size.
 
     Args:
-        illegal_group: DataFrame containing the group to be split
-        count: Integer counter for naming new clusters
+        illegal_group (DataFrame): The group to be split.
+        single_spread_size (int): Threshold for determining split sizes.
+        count (int): Counter for naming new clusters.
 
     Returns:
-        tuple: (modified_DataFrame with new cluster labels, label_counts) or (None, None) if splitting fails
+        tuple: (modified DataFrame with new cluster labels, label counts) 
+               or (None, None) if splitting fails.
     """
     # Get time features and normalize them
     time_features = illegal_group["general_time"].values.reshape(-1, 1)
 
-    # Early return if all times are identical
-    if np.all(time_features == time_features[0]):
-        return None, None
-
-    # Calculate minimum group size
+    # Calculate `max_size_splits` based on `single_spread_size`
     n_samples = len(illegal_group)
-    size_min = max(1, n_samples // 4)
+    max_size_splits = False
+    if single_spread_size >= 16:
+        if 24 - single_spread_size < single_spread_size - 16:
+            split_size = 24
+        else:
+            split_size = 16
+        max_size_splits = True
+    elif single_spread_size >= 12:
+        split_size = single_spread_size * 2
+    else:
+        split_size = single_spread_size * 3
+
+    # If max_size_splits is True, split into chunks of size split_size
+    if max_size_splits:
+        if split_size <= 0 or split_size >= n_samples:
+            # If the split size is invalid or larger than the group, don't split
+            return None, None
+
+        # Create chunks of size `split_size`
+        chunks = [illegal_group.iloc[i:i + split_size] for i in range(0, n_samples, split_size)]
+
+        # Assign unique cluster labels to each chunk
+        content_cluster_origin = illegal_group['cluster_context'].values[0]
+        for i, chunk in enumerate(chunks):
+            chunk.loc[:, 'cluster_context'] = f'{content_cluster_origin}_split_{i}_{count}'
+
+        # Combine all chunks into a single DataFrame
+        updated_group = pd.concat(chunks, ignore_index=True)
+        return updated_group, Counter(updated_group['cluster_context'])
+
+    # Otherwise, use clustering to split
+    n_clusters = max(2, int(np.ceil(n_samples / split_size)))
+    size_min = max(1, n_samples // n_clusters)
 
     try:
-        # Apply constrained k-means clustering on time values
+        # Apply constrained K-Means clustering on time
         clf = KMeansConstrained(
-            n_clusters=2,
+            n_clusters=n_clusters,
             size_min=size_min,
-            size_max=len(time_features),
+            size_max=split_size,
             random_state=0
         )
         labels = clf.fit_predict(time_features)
 
-        # Calculate silhouette score to evaluate clustering quality
-        silhouette_avg = silhouette_score(time_features, labels)
-
-        # If clustering quality is poor, don't split
-        if silhouette_avg < 0.15:
-            return None, None
-
         # Create new cluster labels with original context preserved
         content_cluster_origin = illegal_group['cluster_context'].values[0]
-        new_labels = [f'{content_cluster_origin}_{label}_{count}' for label in labels]
-
-        # Count occurrences of each label
-        label_counts = Counter(new_labels)
-
-        # Check if split is too uneven (one group < 25% of total)
-        total_samples = sum(label_counts.values())
-        if any(count < total_samples * 0.25 for count in label_counts.values()):
-            return None, None
+        new_labels = [f'{content_cluster_origin}_split_{label}_{count}' for label in labels]
 
         # Assign new cluster labels to the DataFrame
         illegal_group.loc[:, 'cluster_context'] = new_labels
 
-        # Sort groups by mean time to ensure temporal ordering
+        # Sort groups by mean time for temporal ordering
         mean_times = illegal_group.groupby('cluster_context')['general_time'].mean()
         sorted_clusters = mean_times.sort_values().index
 
-        # Rename labels to ensure earlier time group gets lower number
+        # Rename labels to ensure earlier time group gets a lower number
         mapping = {old: f'{content_cluster_origin}_{i}_{count}'
                    for i, old in enumerate(sorted_clusters)}
         illegal_group.loc[:, 'cluster_context'] = illegal_group['cluster_context'].map(mapping)
@@ -181,7 +196,7 @@ def merge_illegal_group(main_groups, illegal_group):
     return illegal_group, combine_groups, selected_cluster_content_index
 
 
-def merge_illegal_group_by_time(main_groups, illegal_group):
+def merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_spread=24):
     """
     Merge illegal group with the closest group by time that meets size requirements.
 
@@ -215,7 +230,7 @@ def merge_illegal_group_by_time(main_groups, illegal_group):
         len_combine_group = len(selected_cluster) + len(illegal_group)
 
         # Check if the combination meets size requirements
-        if len_combine_group <= 38:
+        if len_combine_group <= max_images_per_spread:
             selected_time_difference = time_differences[idx]
             break
 
