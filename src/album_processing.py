@@ -18,7 +18,8 @@ def get_group_photos_list(cur_group_photos, spread_params, logger):
     if ( (len(cur_group_photos) / (max(spread_params[0] - 2 * spread_params[1],1)) >= 4) or
             (math.ceil(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11) or
             (len(cur_group_photos) / (max(spread_params[0] - 2 * spread_params[1],1)) < 3 and len(
-                cur_group_photos) > CONFIGS['max_imges_per_spread']) ):
+                cur_group_photos) > CONFIGS['max_imges_per_spread']) or
+            (spread_params[0]>8 and math.ceil(len(cur_group_photos) / spread_params[0]) >= 2)):
         split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
         number_of_splits = math.ceil(len(cur_group_photos) / split_size)
         logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
