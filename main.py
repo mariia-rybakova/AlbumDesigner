@@ -266,7 +266,8 @@ class ProcessStage(Stage):
                 else:
                     density = 3
 
-                album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], params,
+                modified_lut = message.content['modified_lut'] if message.content.get('modified_lut', None) is not None else None
+                album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
                                                 logger=self.logger,density=density)
 
                 wait_start = datetime.now()
@@ -415,9 +416,9 @@ class MessageProcessor:
 
             dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                       max_dequeue_allowed=1000)
-            # ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-            #                         max_dequeue_allowed=1000)
-            azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
+            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                    max_dequeue_allowed=1000)
+            azure_input_q = RoundRobinReader([dev_queue, dev3_queue, ep_queue])
 
             # azure_input_q = dev_queue
 

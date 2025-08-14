@@ -45,7 +45,7 @@ def get_photos_from_db(data_db, is_wedding):
                             general_time=row['general_time']))
 
 
-    photos = sorted(photos, key=lambda photo: photo.id)
+    # photos = sorted(photos, key=lambda photo: photo.id)
 
     return photos
 

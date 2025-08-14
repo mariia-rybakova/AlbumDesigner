@@ -153,7 +153,7 @@ def read_messages(messages, logger):
                     fb = PTFile(json_content['designInfoTempLocation'])
                     fileBytes = fb.read_blob()
                     designInfo = json.loads(fileBytes.decode('utf-8'))
-                    logger.info('Read designInfo from blob location: {}'.format(designInfo))
+                    # logger.info('Read designInfo from blob location: {}'.format(designInfo))
                     json_content['designInfo'] = designInfo
                     _msg.content['designInfo'] = designInfo
                 except Exception as e:
