@@ -416,9 +416,9 @@ class MessageProcessor:
 
             dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                       max_dequeue_allowed=1000)
-            # ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-            #                         max_dequeue_allowed=1000)
-            azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
+            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                    max_dequeue_allowed=1000)
+            azure_input_q = RoundRobinReader([dev_queue, dev3_queue, ep_queue])
 
             # azure_input_q = dev_queue
 
