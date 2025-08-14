@@ -326,7 +326,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         counter_comp_id += 1
 
     # adding the first spread image
-    if 'firstPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['firstPage']['images_df'] is not None:
+    if 'firstPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['firstPage']['first_images_df'] is not None:
         first_page_data = first_last_pages_data_dict['firstPage']
         first_page_layouts_df = message.designsInfo['firstPage_layouts_df']
         design_id = first_page_layouts_df.loc[first_page_data['design_id']]['id']
@@ -343,12 +343,12 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(first_page_data['images_df'].iloc[idx], box_id2data[box_id])
+            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[box_id])
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
                                             "compositionPackageId": message.content['compositionPackageId'],
                                             "boxId": box_id,
-                                            "photoId": first_page_data['images_ids'][idx],
+                                            "photoId": first_page_data['first_images_ids'][idx],
                                             "cropX": x,
                                             "cropY": y,
                                             "cropWidth": w,
@@ -427,7 +427,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
 
     # adding the last page
     if 'lastPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['lastPage'][
-        'images_df'] is not None:
+        'last_images_df'] is not None:
         last_page_data = first_last_pages_data_dict['lastPage']
         last_page_layouts_df = message.designsInfo['lastPage_layouts_df']
         design_id = last_page_layouts_df.loc[last_page_data['design_id']]['id']
@@ -444,12 +444,12 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(last_page_data['images_df'].iloc[idx], box_id2data[box_id])
+            x, y, w, h = customize_box(last_page_data['last_images_df'].iloc[idx], box_id2data[box_id])
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                                  "compositionId": counter_comp_id,
                                                  "compositionPackageId": message.content['compositionPackageId'],
                                                  "boxId": box_id,
-                                                 "photoId": last_page_data['images_ids'][idx],
+                                                 "photoId": last_page_data['last_images_ids'][idx],
                                                  "cropX": x,
                                                  "cropY": y,
                                                  "cropWidth": w,

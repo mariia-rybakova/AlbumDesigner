@@ -1,5 +1,5 @@
 import random
-import pandas as pd
+from collections import Counter
 
 from utils.configs import CONFIGS
 
@@ -17,50 +17,126 @@ def get_design_id(layout_df, number_of_boxes, logger):
 
 
 def get_important_imgs(data_df, top=5):
-    selection_q = ['bride and groom in a great moment together','bride and groom ONLY','bride and groom ONLY with beautiful background ',' intimate moment in a serene setting between bride and groom ONLY','bride and groom Only in the picture  holding hands','bride and groom Only kissing each other in a romantic way',   'bride and groom Only in a gorgeous standing ','bride and groom doing a great photosession together',' bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom kissing each other in a photoshot','bride and groom holding hands','bride and groom half hugged for a speical photo moment','groom and brides dancing together solo', 'bride and groom cutting cake', ]
-    # Step 1: Filter based on the conditions
-    filtered_df = data_df[
+    FIRST_PAGE_QUERIES = [
+        'bride and groom in a great moment together',
+        'bride and groom Only in the picture  holding hands',
+        'bride and groom ONLY',
+        'bride and groom ONLY with beautiful background ',
+        'intimate moment in a serene setting between bride and groom ONLY',
+        'bride and groom Only in the picture  holding hands',
+        'bride and groom Only kissing each other in a romantic way',
+        'bride and groom Only in a gorgeous standing ',
+        'bride and groom doing a great photosession together',
+        ' bride and groom with a fantastic standing looking to each other with beautiful scene',
+        'bride and groom kissing each other in a photoshot',
+        'bride and groom holding hands',
+        'bride and groom half hugged for a speical photo moment',
+        'groom and brides dancing together solo'
+    ]
+
+    first_page_ids = []
+    last_page_ids = []
+
+    filtered  = data_df[
         (data_df["cluster_context"] == "bride and groom") &
-        (data_df["image_subquery_content"].isin(selection_q))
+        (data_df["image_subquery_content"].isin(FIRST_PAGE_QUERIES))
         ]
+    ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
 
-    # Step 2: Take the top N rows based on the 'top' variable
-    top_filtered_df = filtered_df.head(top)
+    if len(ids) >= top:
+        first_page_ids.extend(ids[:top])
+    else:
+        # Strategy 2: Any image with "bride and groom" context
+        filtered = data_df[data_df["cluster_context"] == "bride and groom"]
+        ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+        if len(ids) >= top:
+            first_page_ids.extend(ids[:top])
+        else:
+            # Strategy 3: Any image with "bride" in the main query
+            filtered = data_df[data_df["image_query_content"] == "bride"]
+            ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+            if len(ids) >= top:
+                first_page_ids.extend(ids[:top])
 
-    # Step 3: Extract the image_ids into a list
-    image_id_list = top_filtered_df["image_id"].tolist()
+    # select last page of album
+    sorted_df = data_df.sort_values(by='image_time_date', ascending=False)
+    last_event_context = sorted_df['cluster_context'].iloc[0]
 
-    if len(image_id_list) == 0:
-        # let's pick another images
-        image_id_list = data_df[
-            (data_df["cluster_context"] == "bride and groom")].head(top)['image_id'].tolist()
+    if last_event_context == 'speech' or last_event_context == 'wedding dress':
+        last_event_context = sorted_df['cluster_context'].iloc[3]
 
-    if len(image_id_list) == 0:
-        # let's pick another images
-        image_id_list = data_df[
-            (data_df["image_query_content"] == "bride")].head(top)['image_id'].tolist()
+    last_event_df = data_df[data_df['cluster_context'] == last_event_context].copy()
 
-    if len(image_id_list) == 0:
-        # let's pick another images
-        image_id_list = data_df.head(top)['image_id'].tolist()
+    two_person_mask = last_event_df['persons_ids'].apply(
+        lambda x: isinstance(x, (list, tuple)) and len(x) == 2
+    )
+    two_person_df = last_event_df[two_person_mask]
 
-    return image_id_list
+    if not two_person_df.empty:
+        normalized_ids = [tuple(sorted(p_id)) for p_id in two_person_df['persons_ids']]
+        if not normalized_ids:
+            last_page_ids.extend(two_person_df.head(top)['image_id'].tolist())
+
+        id_counts = Counter(normalized_ids)
+        majority_pair = id_counts.most_common(1)[0][0]
+
+        majority_pair_mask = two_person_df['persons_ids'].apply(
+            lambda x: tuple(sorted(x)) == majority_pair
+        )
+        finalist_df = two_person_df[majority_pair_mask].copy()
+        ids = finalist_df.sort_values(by='image_order', ascending=True).head(top)['image_id'].tolist()
+        last_page_ids.extend(ids)
+    else:
+        last_page_ids.extend(last_event_df.head(top)['image_id'].tolist())
+
+    return first_page_ids, last_page_ids
+
+
+    # # Step 1: Filter based on the conditions
+    # filtered_df = data_df[
+    #     (data_df["cluster_context"] == "bride and groom") &
+    #     (data_df["image_subquery_content"].isin(selection_q))
+    #     ]
+    #
+    # # Step 2: Take the top N rows based on the 'top' variable
+    # top_filtered_df = filtered_df.head(top)
+    #
+    # # Step 3: Extract the image_ids into a list
+    # image_id_list = top_filtered_df["image_id"].tolist()
+    #
+    # if len(image_id_list) == 0:
+    #     # let's pick another images
+    #     image_id_list = data_df[
+    #         (data_df["cluster_context"] == "bride and groom")].head(top)['image_id'].tolist()
+    #
+    # if len(image_id_list) == 0:
+    #     # let's pick another images
+    #     image_id_list = data_df[
+    #         (data_df["image_query_content"] == "bride")].head(top)['image_id'].tolist()
+    #
+    # if len(image_id_list) == 0:
+    #     # let's pick another images
+    #     image_id_list = data_df.head(top)['image_id'].tolist()
+
 
 
 def choose_good_wedding_images(df, number_of_images, logger):
-    good_images = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
+    first_page_ids, last_page_ids = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
+
     # if we didn't find the highest ranking images then we won't be able to get cover image
-    if len(good_images) >= number_of_images:
+    if len(first_page_ids) >= number_of_images and len(last_page_ids) >= number_of_images:
         # Select 2 distinct images
-        cover_img_ids = random.sample(good_images, number_of_images)
+        first_cover_img_ids = random.sample(first_page_ids, number_of_images)
+        last_cover_img_ids = random.sample(last_page_ids, number_of_images)
 
         # Get rows corresponding to selected images
-        cover_image_df = df[df['image_id'].isin(cover_img_ids)]
+        first_cover_image_df = df[df['image_id'].isin(first_cover_img_ids)]
+        last_cover_image_df = df[df['image_id'].isin(last_cover_img_ids)]
 
         # Remove selected images from main dataframe
-        df = df[~df['image_id'].isin(cover_img_ids)]
+        df = df[~df['image_id'].isin([first_cover_image_df,last_cover_image_df])]
 
-        return df, cover_img_ids, cover_image_df
+        return df, first_cover_img_ids,first_cover_image_df,last_cover_img_ids,last_cover_image_df
     else:
         logger.error("Image Cover not selected for wedding")
         return df, None, None
@@ -122,7 +198,7 @@ def generate_first_last_pages(message, df, logger):
         number_of_images = min(layouts_sizes)
 
         if message.content.get('is_wedding', True):
-            df, first_last_images_ids, first_last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
+            df, first_images_ids, first_imgs_df,last_images_ids,last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
         else:
             df, first_last_images_ids, first_last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
 
@@ -130,8 +206,11 @@ def generate_first_last_pages(message, df, logger):
 
         first_last_pages_data_dict[page_type] = {
             'design_id': cur_design_id,
-            'images_ids': first_last_images_ids,
-            'images_df': first_last_imgs_df
+            'first_images_ids': first_images_ids,
+            'first_images_df': first_imgs_df,
+            'last_images_ids': last_images_ids,
+            'last_images_df': last_imgs_df,
+
         }
 
     return df, first_last_pages_data_dict
