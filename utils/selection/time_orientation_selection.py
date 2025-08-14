@@ -472,8 +472,8 @@ def plot_clusters_to_pdf(clusters, input_dir, output_pdf, images_per_row=4, imag
     c.save()
     print(f"PDF saved to {output_pdf}")
 
-def filter_similarity(need, df,cluster_name, target_group_size=10):
-    threshold = 0.5
+def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.9):
+
     embeddings = np.vstack(df['embedding'].values).astype('float32')
     n_clusters = math.ceil(len(df) / target_group_size)
 
@@ -530,9 +530,9 @@ def filter_similarity(need, df,cluster_name, target_group_size=10):
     # If over need, cut down by global score
     if len(selected_images) > need:
         selected_images = sorted(selected_images, key=lambda x: score_lookup[x], reverse=True)[:need]
-    input_dir = _images_path_karmel = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120/'
-    output_pdf = fr'C:\Users\karmel\Desktop\AlbumDesigner\output/46881120/simcheck/sim_{cluster_name}_{threshold}.pdf'
-    plot_clusters_to_pdf(clusters, input_dir, output_pdf, images_per_row=4, image_size=(120, 120), margin=20)
+    # input_dir = _images_path_karmel = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120/'
+    # output_pdf = fr'C:\Users\karmel\Desktop\AlbumDesigner\output/46881120/simcheck/sim_{cluster_name}_{threshold}.pdf'
+    # plot_clusters_to_pdf(clusters, input_dir, output_pdf, images_per_row=4, image_size=(120, 120), margin=20)
     return selected_images
 
 

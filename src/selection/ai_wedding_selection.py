@@ -724,6 +724,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 else:
                     # Remove duplicates and finalize selection
                     selected_imgs = filter_similarity(need, filtered_colored_df.reset_index(),cluster_name)
+                    # old way to remove similar images keep it COMMENT for now
                     # selected_imgs =  select_images_by_time_and_style(need, filtered_colored_df.reset_index(),cluster_name, logger)
 
                 if selected_imgs is None:
