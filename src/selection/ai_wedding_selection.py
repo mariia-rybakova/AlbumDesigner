@@ -12,7 +12,7 @@ from utils.selection.wedding_selection_tools import get_clusters,select_non_simi
 from utils.time_processing import convert_to_timestamp
 
 from src.selection.person_clustering import person_max_union_selection
-from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters
+from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity
 from utils.configs import CONFIGS
 
 def process_time(images_time):
@@ -723,7 +723,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     selected_imgs = colored_images
                 else:
                     # Remove duplicates and finalize selection
-                    selected_imgs =  select_images_by_time_and_style(need, filtered_colored_df.reset_index(),cluster_name, logger)
+                    selected_imgs = filter_similarity(need, filtered_colored_df.reset_index(),cluster_name)
+                    # selected_imgs =  select_images_by_time_and_style(need, filtered_colored_df.reset_index(),cluster_name, logger)
 
                 if selected_imgs is None:
                     continue
