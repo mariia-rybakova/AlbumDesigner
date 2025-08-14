@@ -16,3 +16,4 @@ pyopenssl==24.1.0
 protobuf==6.30.2
 networkx
 openpyxl
+reportlab
