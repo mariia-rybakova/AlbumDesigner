@@ -160,8 +160,10 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     # Extract image IDs
     selected_image_ids = selected_images_df['image_id'].tolist()
-    first_image_id = selected_image_ids[:len(selected_image_ids) // 2]
-    last_image_id = selected_image_ids[len(selected_image_ids) // 2:]
+    mid_index = len(selected_image_ids) // 2
+    first_image_id = selected_image_ids[:mid_index]
+    last_image_id = selected_image_ids[mid_index:]
+
     first_image_df = df[df['image_id'].isin(first_image_id)]
     last_image_df = df[df['image_id'].isin(last_image_id)]
 
