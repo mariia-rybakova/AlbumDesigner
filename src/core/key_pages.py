@@ -16,7 +16,7 @@ def get_design_id(layout_df, number_of_boxes, logger):
     return img_layouts[0]
 
 
-def get_important_imgs(data_df, top=5):
+def get_important_imgs(data_df, top=3):
     FIRST_PAGE_QUERIES = [
         'bride and groom in a great moment together',
         'bride and groom Only in the picture  holding hands',
@@ -58,36 +58,16 @@ def get_important_imgs(data_df, top=5):
             if len(ids) >= top:
                 first_page_ids.extend(ids[:top])
 
-    # select last page of album
-    sorted_df = data_df.sort_values(by='image_time_date', ascending=False)
-    last_event_context = sorted_df['cluster_context'].iloc[0]
-
-    if last_event_context == 'speech' or last_event_context == 'wedding dress':
-        last_event_context = sorted_df['cluster_context'].iloc[3]
-
-    last_event_df = data_df[data_df['cluster_context'] == last_event_context].copy()
-
-    two_person_mask = last_event_df['persons_ids'].apply(
-        lambda x: isinstance(x, (list, tuple)) and len(x) == 2
-    )
-    two_person_df = last_event_df[two_person_mask]
-
-    if not two_person_df.empty:
-        normalized_ids = [tuple(sorted(p_id)) for p_id in two_person_df['persons_ids']]
-        if not normalized_ids:
-            last_page_ids.extend(two_person_df.head(top)['image_id'].tolist())
-
-        id_counts = Counter(normalized_ids)
-        majority_pair = id_counts.most_common(1)[0][0]
-
-        majority_pair_mask = two_person_df['persons_ids'].apply(
-            lambda x: tuple(sorted(x)) == majority_pair
-        )
-        finalist_df = two_person_df[majority_pair_mask].copy()
-        ids = finalist_df.sort_values(by='image_order', ascending=True).head(top)['image_id'].tolist()
-        last_page_ids.extend(ids)
+    filtered = data_df[
+        (data_df["cluster_context"] == "kiss")]
+    ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+    if len(ids) >= top:
+        last_page_ids.extend(ids[:top])
     else:
-        last_page_ids.extend(last_event_df.head(top)['image_id'].tolist())
+        filtered = data_df[data_df["cluster_context"] == "bride and groom"]
+        ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+        not_in_first = [i for i in ids if i not in first_page_ids]
+        last_page_ids.extend(not_in_first[:top])
 
     return first_page_ids, last_page_ids
 
@@ -180,13 +160,17 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     # Extract image IDs
     selected_image_ids = selected_images_df['image_id'].tolist()
+    first_image_id = selected_image_ids[:len(selected_image_ids) // 2]
+    last_image_id = selected_image_ids[len(selected_image_ids) // 2:]
+    first_image_df = df[df['image_id'].isin(first_image_id)]
+    last_image_df = df[df['image_id'].isin(last_image_id)]
 
     # Remove selected images from the original DataFrame
     df_without_selected = df[~df['image_id'].isin(selected_image_ids)]
 
     logger.info(f"Selected cover images: {selected_image_ids}")
 
-    return df_without_selected, selected_image_ids, selected_images_df
+    return df_without_selected, first_image_id,last_image_id,first_image_df,last_image_df
 
 
 def generate_first_last_pages(message, df, logger):
@@ -200,7 +184,7 @@ def generate_first_last_pages(message, df, logger):
         if message.content.get('is_wedding', True):
             df, first_images_ids, first_imgs_df,last_images_ids,last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
         else:
-            df, first_last_images_ids, first_last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
+            df, first_images_ids, first_imgs_df,last_images_ids,last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
 
         cur_design_id = get_design_id(message.designsInfo[f'{page_type}_layouts_df'], number_of_images, logger)
 
