@@ -1,15 +1,10 @@
+import os
 import random
 import numpy as np
 import pandas as pd
 import networkx as nx
 from collections import defaultdict
 from datetime import timedelta
-
-from openpyxl.styles.builtins import output
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
-import os
 
 from utils.configs import CONFIGS
 
@@ -415,63 +410,6 @@ def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame,cluster_
     return result[:needed_count]
 
 
-
-def plot_clusters_to_pdf(clusters, input_dir, output_pdf, images_per_row=4, image_size=(120, 120), margin=20):
-    """
-    Plot clusters into a PDF with one page per cluster.
-
-    Args:
-        clusters (dict): {cluster_id: [image_id, ...]}
-        input_dir (str): Directory containing images
-        output_pdf (str): Path to output PDF
-        images_per_row (int): Number of images per row
-        image_size (tuple): (width, height) of each image in PDF
-        margin (int): Page margin in points
-    """
-    c = canvas.Canvas(output_pdf, pagesize=A4)
-    page_width, page_height = A4
-    img_w, img_h = image_size
-
-    for cluster_id, img_ids in clusters.items():
-        # Title for cluster
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(margin, page_height - margin, f"Cluster {cluster_id} ({len(img_ids)} images)")
-
-        x_pos = margin
-        y_pos = page_height - margin - 30  # Leave space for title
-
-        for idx, img_id in enumerate(img_ids):
-            img_path = os.path.join(input_dir, f"{img_id}.jpg")
-            if not os.path.exists(img_path):
-                print(f"Warning: {img_path} not found, skipping...")
-                continue
-
-            try:
-                img = ImageReader(img_path)
-                c.drawImage(img, x_pos, y_pos - img_h, width=img_w, height=img_h, preserveAspectRatio=True, anchor='n')
-            except Exception as e:
-                print(f"Error loading {img_path}: {e}")
-                continue
-
-            # Move to next position
-            x_pos += img_w + margin
-            if (idx + 1) % images_per_row == 0:
-                x_pos = margin
-                y_pos -= img_h + margin
-
-                # If we run out of space on page, start new page
-                if y_pos - img_h < margin:
-                    c.showPage()
-                    c.setFont("Helvetica-Bold", 14)
-                    c.drawString(margin, page_height - margin, f"Cluster {cluster_id} (cont.)")
-                    x_pos = margin
-                    y_pos = page_height - margin - 30
-
-        c.showPage()
-
-    c.save()
-    print(f"PDF saved to {output_pdf}")
-
 def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.9):
 
     embeddings = np.vstack(df['embedding'].values).astype('float32')
@@ -530,9 +468,7 @@ def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.
     # If over need, cut down by global score
     if len(selected_images) > need:
         selected_images = sorted(selected_images, key=lambda x: score_lookup[x], reverse=True)[:need]
-    # input_dir = _images_path_karmel = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120/'
-    # output_pdf = fr'C:\Users\karmel\Desktop\AlbumDesigner\output/46881120/simcheck/sim_{cluster_name}_{threshold}.pdf'
-    # plot_clusters_to_pdf(clusters, input_dir, output_pdf, images_per_row=4, image_size=(120, 120), margin=20)
+
     return selected_images
 
 
