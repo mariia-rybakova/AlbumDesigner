@@ -159,14 +159,11 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
         current_merges.add(merge_target_key)
         current_merges.add(group_to_change_key)
 
-        if merge_target_key in merged_targets:
-            merged_targets[merge_target_key] += 1
-        else:
-            merged_targets[merge_target_key] = 1
-        if group_to_change_key in merged_targets:
-            merged_targets[group_to_change_key] += 1
-        else:
-            merged_targets[group_to_change_key] = 1
+        target_merges = 0 if merge_target_key not in merged_targets else merged_targets[merge_target_key]
+        change_group_merges = 0 if group_to_change_key not in merged_targets else merged_targets[group_to_change_key]
+
+        merged_targets[merge_target_key] = target_merges + change_group_merges + 1
+        merged_targets[group_to_change_key] = target_merges + change_group_merges + 1
 
     return groups, merged_targets
 

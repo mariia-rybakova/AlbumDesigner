@@ -2,6 +2,7 @@ import copy
 import pandas as pd
 import numpy as np
 
+from statistics import median
 from datetime import datetime
 from sklearn.mixture import GaussianMixture
 from sklearn.cluster import DBSCAN
@@ -189,7 +190,7 @@ def sort_groups_by_time(groups_list, logger):
                             for cur_photo in all_photos:
                                 cur_photo_time = cur_photo.general_time
                                 photos_time_list.append(cur_photo_time)
-            groups_time_list.append((group_dict, sum(photos_time_list) / len(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
+            groups_time_list.append((group_dict, median(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
         groups_time_list = sorted(groups_time_list, key=lambda x: x[1])
         sorted_data_list = [group_data for group_data, _ in groups_time_list]
 
