@@ -212,6 +212,7 @@ def read_messages(messages, logger):
             if pt_error is not None:
                 return None, pt_error
 
+
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
             if not gallery_info_df.empty and not anyPage_layouts_df.empty:
