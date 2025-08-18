@@ -62,6 +62,8 @@ def get_important_imgs(data_df, top=3):
             ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
             if len(ids) >= top:
                 first_page_ids.extend(ids[:top])
+            else:
+                first_page_ids = data_df.head(top)['image_id'].tolist()
 
     # filtered = data_df[
     #     (data_df["cluster_context"] == "kiss")]
@@ -87,12 +89,16 @@ def get_important_imgs(data_df, top=3):
 
         if len(last_page_ids) >= top:
             break
-
+    if len(last_page_ids) < top:
+        top_rows = data_df[~data_df['image_id'].isin(first_page_ids)].head(top)['image_id'].tolist()
+        last_page_ids.extend(top_rows[:top - len(last_page_ids)])
     # plot_images_with_first_last( df=data_df,
     # image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46670335/',
     # output_pdf="output/covers_images.pdf",
     # first_page_images=first_page_ids,
     # last_page_images=last_page_ids)
+
+
 
     return first_page_ids, last_page_ids
 
