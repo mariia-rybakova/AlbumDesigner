@@ -34,9 +34,7 @@ def get_important_imgs(data_df, top=3):
     ]
 
     second_q = [
-        'a secluded and private photoshoot of the bride and groom',
         "an intimate portrait of just the bride and groom",
-        "bride and groom alone together after the wedding ceremony",
         "creative and artistic wedding portrait of the bride and groom",
         "a private moment captured between the bride and groom on their wedding day"
     ]
