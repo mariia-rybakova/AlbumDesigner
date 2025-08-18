@@ -364,9 +364,10 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * double_mix_color
             spread_scores[j] = spread_scores[j] * np.power(crop_penalty, spread[3])
             photo_order_time = [photos[photo_id].general_time for photo_id in list(spread[1])+list(spread[2])]
-            for time_idx in range(len(photo_order_time) - 1):
-                if photo_order_time[time_idx] > photo_order_time[time_idx+1]:
-                    spread_scores[j] = spread_scores[j] * 0.5  # if time order is not correct, give it a penalty
+            for time_idx1 in range(len(photo_order_time)):
+                for time_idx2 in range(time_idx1 + 1, len(photo_order_time)):
+                    if photo_order_time[time_idx1] > photo_order_time[time_idx2]:
+                        spread_scores[j] = spread_scores[j] * 0.5  # if time order is not correct, give it a penalty
         if len(spread_scores) > 0:
             filtered_idx = np.where(spread_scores / np.max(spread_scores) > score_threshold)[0]
             filtered_multi_spreads.append([multi_spreads[i][j] + [spread_scores[j]] for j in filtered_idx])

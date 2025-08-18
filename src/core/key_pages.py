@@ -143,10 +143,10 @@ def choose_good_wedding_images(df, number_of_images, logger):
         # Remove selected images from main dataframe
         df = df[~df['image_id'].isin([first_cover_image_df,last_cover_image_df])]
 
-        return df, first_cover_img_ids,first_cover_image_df,last_cover_img_ids,last_cover_image_df
+        return df, first_cover_img_ids, first_cover_image_df, last_cover_img_ids, last_cover_image_df
     else:
         logger.error("Image Cover not selected for wedding")
-        return df, None, None
+        return df, None, None, None, None
 
 
 def choose_good_non_wedding_images(df, number_of_images, logger):
@@ -156,7 +156,7 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
     if not required_columns.issubset(df.columns):
         missing_cols = required_columns - set(df.columns)
         logger.error(f"Error: DataFrame is missing required columns: {missing_cols}")
-        return df, None, None
+        return df, None, None, None, None
 
     # Collect all unique people IDs in the dataset
     unique_people_ids = set()
@@ -183,7 +183,7 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     if selected_images_df.empty:
         logger.warning("Warning: No images selected based on image_order.")
-        return df, None, None
+        return df, None, None, None, None
 
     # Extract image IDs
     selected_image_ids = selected_images_df['image_id'].tolist()
@@ -199,7 +199,7 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     logger.info(f"Selected cover images: {selected_image_ids}")
 
-    return df_without_selected, first_image_id,last_image_id,first_image_df,last_image_df
+    return df_without_selected, first_image_id, last_image_id, first_image_df, last_image_df
 
 
 def generate_first_last_pages(message, df, logger):
@@ -211,9 +211,9 @@ def generate_first_last_pages(message, df, logger):
         number_of_images = min(layouts_sizes)
 
         if message.content.get('is_wedding', True):
-            df, first_images_ids, first_imgs_df,last_images_ids,last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
+            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
         else:
-            df, first_images_ids, first_imgs_df,last_images_ids,last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
+            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
 
         cur_design_id = get_design_id(message.designsInfo[f'{page_type}_layouts_df'], number_of_images, logger)
 

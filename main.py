@@ -281,15 +281,11 @@ class ProcessStage(Stage):
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
                 for key, value in first_last_pages_data_dict.items():
-                    if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key][
-                        'first_images_df'] is not None and first_last_pages_data_dict[key]['last_images_df'].shape[
-                        0] != 0 or first_last_pages_data_dict[key]['first_images_df'].shape[0] != 0:
-                        first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(cropped_df,
-                                                                                                          how='inner',
-                                                                                                          on='image_id')
-                        first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(cropped_df,
-                                                                                                            how='inner',
-                                                                                                            on='image_id')
+                    if (first_last_pages_data_dict[key]['last_images_df'] is not None or
+                            first_last_pages_data_dict[key]['first_images_df'] is not None and first_last_pages_data_dict[key]['last_images_df'].shape[0] != 0 or
+                            first_last_pages_data_dict[key]['first_images_df'].shape[0] != 0):
+                        first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(cropped_df, how='inner', on='image_id')
+                        first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(cropped_df, how='inner', on='image_id')
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 

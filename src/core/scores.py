@@ -66,27 +66,33 @@ def add_ranking_score(filtered_spreads, photos, layout_id2data):
 
 
 def assign_photos_order_one_side(photos, boxes_ids, design_box_id2data):
-    photos_portrait = set([photo for photo in photos if photo.ar < 1])
-    photos_landscape = set([photo for photo in photos if photo.ar >= 1])
+    photos_portrait = [photo for photo in photos if photo.ar < 1]
+    photos_landscape = [photo for photo in photos if photo.ar >= 1]
+    port_idx = 0
+    land_idx = 0
 
     photos_order = [None] * len(boxes_ids)
     for idx, box_id in enumerate(boxes_ids):
         box_data = design_box_id2data[box_id]
         if box_data['orientation'] == 'portrait':
-            if len(photos_portrait) > 0:
-                cur_photos = photos_portrait.pop()
+            if port_idx != len(photos_portrait):
+                cur_photos = photos_portrait[port_idx]
+                port_idx += 1
                 photos_order[idx] = cur_photos
-            elif len(photos_landscape) > 0:
-                cur_photos = photos_landscape.pop()
+            elif land_idx != len(photos_landscape):
+                cur_photos = photos_landscape[land_idx]
+                land_idx += 1
                 photos_order[idx] = cur_photos
             else:
                 print("Error: no more photos to add")
         if box_data['orientation'] == 'landscape':
-            if len(photos_landscape) > 0:
-                cur_photos = photos_landscape.pop()
+            if land_idx != len(photos_landscape):
+                cur_photos = photos_landscape[land_idx]
+                land_idx += 1
                 photos_order[idx] = cur_photos
-            elif len(photos_portrait) > 0:
-                cur_photos = photos_portrait.pop()
+            elif port_idx != len(photos_portrait):
+                cur_photos = photos_portrait[port_idx]
+                port_idx += 1
                 photos_order[idx] = cur_photos
             else:
                 print("Error: no more photos to add")
@@ -94,11 +100,13 @@ def assign_photos_order_one_side(photos, boxes_ids, design_box_id2data):
     for idx, box_id in enumerate(boxes_ids):
         box_data = design_box_id2data[box_id]
         if box_data['orientation'] == 'square':
-            if len(photos_portrait) > 0:
-                cur_photos = photos_portrait.pop()
+            if port_idx != len(photos_portrait):
+                cur_photos = photos_portrait[port_idx]
+                port_idx += 1
                 photos_order[idx] = cur_photos
-            elif len(photos_landscape) > 0:
-                cur_photos = photos_landscape.pop()
+            elif land_idx != len(photos_landscape):
+                cur_photos = photos_landscape[land_idx]
+                land_idx += 1
                 photos_order[idx] = cur_photos
             else:
                 print("Error: no more photos to add")
@@ -112,7 +120,9 @@ def assign_photos_order(spreads, layout_id2data, design_box_id2data):
         left_boxes_ids = layout_data['left_box_ids']
         right_boxes_ids = layout_data['right_box_ids']
         left_photos = spread[1]
+        left_photos = sorted(left_photos, key=lambda x: x.general_time)
         right_photos = spread[2]
+        right_photos = sorted(right_photos, key=lambda x: x.general_time)
 
         left_photos_order = assign_photos_order_one_side(left_photos, left_boxes_ids, design_box_id2data)
         right_photos_order = assign_photos_order_one_side(right_photos, right_boxes_ids, design_box_id2data)

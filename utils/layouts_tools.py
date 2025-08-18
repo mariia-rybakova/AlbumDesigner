@@ -1,7 +1,7 @@
 import ast
 import csv
 import pickle
-
+import numpy as np
 import pandas as pd
 
 
@@ -245,6 +245,14 @@ def generate_layouts_df(data, id_list,tolerance=0.05):
             boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
             num_boxes = len(boxes)
 
+
+            xs = [box['x'] for box in boxes]
+            ys = [box['y'] for box in boxes]
+            sorted_indices = np.lexsort((ys, xs))
+
+            boxes_s = [boxes[ind] for ind in sorted_indices]
+            boxes = boxes_s
+
             if num_boxes == 0:
                 continue  # Skip if there are no image boxes
 
@@ -372,7 +380,8 @@ def generate_layouts_df(data, id_list,tolerance=0.05):
                 "boxes_areas": boxes_areas,
                 "left_mixed": left_mixed,
                 "right_mixed": right_mixed,
-                "boxes_info": boxes,
+                "boxes_info": boxes_s,
+                "ordered_boxes": list(sorted_indices)
             })
 
     layouts_df = pd.DataFrame(result)

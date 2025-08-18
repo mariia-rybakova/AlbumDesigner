@@ -2,6 +2,7 @@ import copy
 import pandas as pd
 import numpy as np
 
+from statistics import median
 from datetime import datetime
 from sklearn.mixture import GaussianMixture
 from sklearn.cluster import DBSCAN
@@ -21,13 +22,9 @@ def process_image_time_row(args):
     row_time = copy.deepcopy(row_time)
     cur_timestamp = convert_to_timestamp(row_time['image_time'])
 
-    if 0 <= cur_timestamp.hour <= 4:
-        general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
-    else:
-        general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
-
-    diff_from_first = cur_timestamp - first_image_time
-    general_time += diff_from_first.days * 1440
+    cur_day_time = int(cur_timestamp.hour * 3600 + cur_timestamp.minute * 60 + cur_timestamp.second)
+    diff_from_first = (cur_timestamp - first_image_time).total_seconds()
+    general_time = cur_day_time + int(diff_from_first)
 
     row_time['general_time'] = int(general_time)
     return row_time
@@ -189,7 +186,7 @@ def sort_groups_by_time(groups_list, logger):
                             for cur_photo in all_photos:
                                 cur_photo_time = cur_photo.general_time
                                 photos_time_list.append(cur_photo_time)
-            groups_time_list.append((group_dict, sum(photos_time_list) / len(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
+            groups_time_list.append((group_dict, median(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
         groups_time_list = sorted(groups_time_list, key=lambda x: x[1])
         sorted_data_list = [group_data for group_data, _ in groups_time_list]
 
