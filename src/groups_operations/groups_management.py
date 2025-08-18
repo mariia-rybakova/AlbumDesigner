@@ -133,7 +133,9 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
 
         time_cluster_id = group_to_change_key[0]
         main_groups = [group for cluster_key, group in groups if
-                       time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and merged_targets.get(cluster_key,0)<CONFIGS['merge_limit_times'] and len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread']]
+                       time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and
+                       merged_targets.get(cluster_key,0) + merged_targets.get(group_to_change_key, 0) < CONFIGS['merge_limit_times'] and
+                       len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread']]
 
         if len(main_groups) > 0:
             selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_spread=CONFIGS['max_imges_per_spread'])

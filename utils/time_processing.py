@@ -22,13 +22,9 @@ def process_image_time_row(args):
     row_time = copy.deepcopy(row_time)
     cur_timestamp = convert_to_timestamp(row_time['image_time'])
 
-    if 0 <= cur_timestamp.hour <= 4:
-        general_time = int((cur_timestamp.hour + 24) * 60 + cur_timestamp.minute)
-    else:
-        general_time = int(cur_timestamp.hour * 60 + cur_timestamp.minute)
-
-    diff_from_first = cur_timestamp - first_image_time
-    general_time += diff_from_first.days * 1440
+    cur_day_time = int(cur_timestamp.hour * 3600 + cur_timestamp.minute * 60 + cur_timestamp.second)
+    diff_from_first = (cur_timestamp - first_image_time).total_seconds()
+    general_time = cur_day_time + int(diff_from_first)
 
     row_time['general_time'] = int(general_time)
     return row_time
