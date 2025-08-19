@@ -170,3 +170,9 @@ def plot_images_to_pdf(df, image_dir, output_pdf, keyword="bride and groom",
 # first_page_images=first_page_ids,
 # last_page_images=last_page_ids)
 
+# plot_images_with_first_last( df=data_df,
+    # image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/36048323/',
+    # output_pdf="output/covers_images_36048323_afterchanging.pdf",
+    # first_page_images=first_page_ids,
+    # last_page_images=last_page_ids)
+

@@ -73,43 +73,7 @@ def get_important_imgs(data_df, top=3):
         ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
         last_page_ids.extend([id for id in ids if id not in first_page_ids])
 
-    # plot_images_with_first_last( df=data_df,
-    # image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/36048323/',
-    # output_pdf="output/covers_images_36048323_afterchanging.pdf",
-    # first_page_images=first_page_ids,
-    # last_page_images=last_page_ids)
-
-
     return first_page_ids, last_page_ids
-
-
-    # # Step 1: Filter based on the conditions
-    # filtered_df = data_df[
-    #     (data_df["cluster_context"] == "bride and groom") &
-    #     (data_df["image_subquery_content"].isin(selection_q))
-    #     ]
-    #
-    # # Step 2: Take the top N rows based on the 'top' variable
-    # top_filtered_df = filtered_df.head(top)
-    #
-    # # Step 3: Extract the image_ids into a list
-    # image_id_list = top_filtered_df["image_id"].tolist()
-    #
-    # if len(image_id_list) == 0:
-    #     # let's pick another images
-    #     image_id_list = data_df[
-    #         (data_df["cluster_context"] == "bride and groom")].head(top)['image_id'].tolist()
-    #
-    # if len(image_id_list) == 0:
-    #     # let's pick another images
-    #     image_id_list = data_df[
-    #         (data_df["image_query_content"] == "bride")].head(top)['image_id'].tolist()
-    #
-    # if len(image_id_list) == 0:
-    #     # let's pick another images
-    #     image_id_list = data_df.head(top)['image_id'].tolist()
-
-
 
 def choose_good_wedding_images(df, number_of_images, logger):
     first_page_ids, last_page_ids = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
