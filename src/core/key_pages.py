@@ -1,8 +1,6 @@
 import random
-from collections import Counter
-
 from utils.configs import CONFIGS
-from experiments.plotting_exp import plot_images_with_first_last
+
 
 def get_design_id(layout_df, number_of_boxes, logger):
     # Get all layout keys where "number of boxes" == 1
