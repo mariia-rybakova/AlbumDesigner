@@ -162,6 +162,10 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
 
         for _ in range(needed_count):
             # Pick the set that adds the most new elements
+
+            new_people = [len(x[1] - current_union) for x in remaining]
+            if max(new_people) == 0:
+                current_union= set()
             best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
 
             selected_indices.append(best_index)
