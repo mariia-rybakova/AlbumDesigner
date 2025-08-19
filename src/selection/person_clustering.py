@@ -1,6 +1,9 @@
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
+from collections import defaultdict
+
+
 from itertools import combinations
 from utils.configs import CONFIGS
 import random
@@ -154,21 +157,57 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
             current_persons_val = img_info_row['persons_ids'].values[0]
             images_with_persons_data.append((image_id, current_persons_val))
 
-        selected_indices = []
-        selected_sets = []
-        current_union = set()
+        score_lookup = df.set_index("image_id")["total_score"].to_dict()
 
-        remaining = [(item[0],set(item[1])) for item in images_with_persons_data] # List of tuples (image_id, set_of_person_ids)
+        grouped = defaultdict(list)
 
-        for _ in range(needed_count):
-            # Pick the set that adds the most new elements
-            best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
+        # Step 2: group images by people set (frozenset so it's hashable)
+        for img_id, people in images_with_persons_data:
+            grouped[frozenset(people)].append(img_id)
 
-            selected_indices.append(best_index)
-            selected_sets.append(best_set)
-            current_union.update(best_set)
+        deduped = []
+        remaining = []
 
-            remaining = [item for item in remaining if item[0] != best_index]
+        # Step 3: pick best per group
+        for people_set, ids in grouped.items():
+            if not ids:
+                continue
+
+            # Sort by score descending
+            ids_sorted = sorted(ids, key=lambda x: score_lookup.get(x, 0), reverse=True)
+            best = ids_sorted[0]
+            deduped.append(best)
+
+            if len(ids_sorted) > 1:
+                remaining.extend(ids_sorted[1:])
+
+
+
+        # Step 4: sort deduped and remaining by score
+        deduped_sorted = sorted(deduped, key=lambda x: score_lookup.get(x, 0), reverse=True)
+        remaining_sorted = sorted(remaining, key=lambda x: score_lookup.get(x, 0), reverse=True)
+
+        # Step 5: select final images
+        final_selection = deduped_sorted[:needed_count]
+        if len(final_selection) < needed_count:
+            shortfall = needed_count - len(final_selection)
+            final_selection.extend(remaining_sorted[:shortfall])
+
+        # selected_indices = []
+        # selected_sets = []
+        # current_union = set()
+        #
+        # remaining = [(item[0],set(item[1])) for item in images_with_persons_data] # List of tuples (image_id, set_of_person_ids)
+        #
+        # for _ in range(needed_count):
+        #     # Pick the set that adds the most new elements
+        #     best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
+        #
+        #     selected_indices.append(best_index)
+        #     selected_sets.append(best_set)
+        #     current_union.update(best_set)
+        #
+        #     remaining = [item for item in remaining if item[0] != best_index]
 
 
         # combs = combinations(images_with_persons_data, needed_count)
@@ -195,4 +234,4 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
         logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
         return list(set(result))
 
-    return selected_indices
+    return final_selection

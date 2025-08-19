@@ -87,7 +87,8 @@ def choose_good_wedding_images(df, number_of_images, logger):
         last_cover_image_df = df[df['image_id'].isin(last_cover_img_ids)]
 
         # Remove selected images from main dataframe
-        df = df[~df['image_id'].isin([first_cover_image_df,last_cover_image_df])]
+        exclude_ids = first_cover_img_ids + last_cover_img_ids
+        df = df[~df['image_id'].isin(exclude_ids)]
 
         return df, first_cover_img_ids, first_cover_image_df, last_cover_img_ids, last_cover_image_df
     else:
