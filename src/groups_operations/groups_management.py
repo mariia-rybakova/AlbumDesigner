@@ -148,6 +148,12 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
     merging_candidates = add_class_preference(merging_candidates)
     merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
     for illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key in merging_candidates:
+        if (('bride' in group_to_change_key[1] and 'groom' in merge_target_key[1] or
+                'groom' in group_to_change_key[1] and 'bride' in merge_target_key[1]) and
+            'bride and groom' not in group_to_change_key[1] and 'bride and groom' not in merge_target_key[1]):
+            if abs(illegal_group.shape[0] - selected_cluster.shape[0]) > 1:
+                logger.info(f"Skipping merge for bride and groom for {group_to_change_key} as target {merge_target_key} has different number of images.")
+            continue
         if selected_cluster is None:
             do_not_change_group(illegal_group, groups, group_to_change_key)
             continue

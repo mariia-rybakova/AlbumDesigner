@@ -73,7 +73,7 @@ def get_time_clusters_gmm(X):
 
 def get_time_clusters_dbscan(X):
     for min_samples_possible in [3, 5, 7]:
-        dbscan = DBSCAN(eps=20, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
+        dbscan = DBSCAN(eps=1200, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
         clusters = dbscan.fit_predict(X)
         best_n = len(set(clusters))
         if best_n <= 6:
