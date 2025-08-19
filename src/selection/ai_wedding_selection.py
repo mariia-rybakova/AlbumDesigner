@@ -358,7 +358,7 @@ def calculate_optimal_selection(
         #     return selection,spreads
 
 
-        TARGET_SPREADS = 20
+        TARGET_SPREADS = CONFIGS['max_total_spreads']
 
 
         density_factors = CONFIGS['density_factors']
