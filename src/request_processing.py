@@ -38,6 +38,8 @@ def check_gallery_type(df):
     count = 0
     for idx, row in df.iterrows():  # Unpack the tuple into idx (index) and row (data)
         content_class = row['image_class']
+        if pd.isna(content_class):
+            continue
         if content_class == -1:
             count += 1
 

@@ -1,3 +1,4 @@
+import os
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.backends.backend_pdf import PdfPages
@@ -158,8 +159,14 @@ def plot_images_to_pdf(df, image_dir, output_pdf, keyword="bride and groom",
     print(f"✅ PDF saved to {output_pdf}")
 
 
-output_pdf = r'C:\Users\karmel\Desktop\AlbumDesigner\output\brindeandgroom_2.pdf'
-plot_images_to_pdf(gallery_info_df, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46670335/',
-                   output_pdf, keyword="bride and groom",
-                   images_per_row=3, max_images_per_page=9)
+# output_pdf = r'C:\Users\karmel\Desktop\AlbumDesigner\output\brindeandgroom_2.pdf'
+# plot_images_to_pdf(gallery_info_df, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46670335/',
+#                    output_pdf, keyword="bride and groom",
+#                    images_per_row=3, max_images_per_page=9)
+
+# plot_images_with_first_last( df=data_df,
+# image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46670335/',
+# output_pdf="output/covers_images.pdf",
+# first_page_images=first_page_ids,
+# last_page_images=last_page_ids)
 
