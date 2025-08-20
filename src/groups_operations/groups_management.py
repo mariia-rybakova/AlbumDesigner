@@ -5,6 +5,26 @@ from src.groups_operations.groups_splitting_merging import merge_illegal_group_b
 from utils.configs import CONFIGS
 
 
+SIMILAR_CLASSES_L1 = [
+    ['bride', 'bride getting dressed', 'getting hair-makeup', 'wedding dress', 'accessories'],
+    ['bride', 'groom'],
+    ['ceremony', 'walking the aisle'],
+    ['food', 'settings', 'invite', 'detail'],
+    ['dancing', 'entertainment'],
+    ]
+
+SIMILAR_CLASSES_L2 = [
+    ['bride', 'groom', 'bride and groom'],
+    ['bride', 'bride party'],
+    ['groom', 'groom party'],
+    ['ceremony', 'walking the aisle', 'speech'],
+    ['portrait', 'very large group', 'full party', 'large_portrait', 'small_portrait', 'couple'],
+    ['accessories', 'food', 'settings', 'invite', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit'],
+    ['groom', 'suit'],
+    ['bride and groom', 'kiss', 'rings', 'first dance']
+    ]
+
+
 def update_groups(group, merged, merge_group_key, illegal_group_key):
     if merge_group_key == group.name:
         return merged
@@ -94,16 +114,30 @@ def add_class_preference(merge_candidates):
         source_class = group_key[1].split('_')[0] if '_' in group_key[1] else group_key[1]
         target_class = merge_target_key[1].split('_')[0] if '_' in merge_target_key[1] else merge_target_key[1]
 
-        similar_classes = [['bride','bride getting dressed','getting hair-makeup','wedding dress','accessories'],['bride','groom'],['ceremony', 'walking the aisle'],['food','settings']]
-
+        multiplied = False
         # Prefer merging similar classes
         if source_class == target_class:
             time_diff *= 0.2
+            multiplied = True
+
         # Prefer merging related classes
-        for similar_list in similar_classes:
-            if source_class in similar_list and target_class in similar_list:
-                time_diff *= 0.5
-                break
+        if not multiplied:
+            for similar_list in SIMILAR_CLASSES_L1:
+                if source_class in similar_list and target_class in similar_list:
+                    time_diff *= 0.3
+                    multiplied = True
+                    break
+        if not multiplied:
+            for similar_list in SIMILAR_CLASSES_L2:
+                if source_class in similar_list and target_class in similar_list:
+                    time_diff *= 0.5
+
+        # Prefer not merging bride and groom classes with different size
+        if (source_class == 'bride' and target_class == 'groom' or
+            source_class == 'groom' and target_class == 'bride'):
+            photos_diff = abs(illegal_group.shape[0] - selected_cluster.shape[0])
+            time_diff *= (1 + photos_diff * 0.25)
+
         merge_candidates[i] = (illegal_group, group_key, selected_cluster, time_diff, merge_target_key)
     return merge_candidates
 
@@ -148,13 +182,6 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
     merging_candidates = add_class_preference(merging_candidates)
     merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
     for illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key in merging_candidates:
-        if (group_to_change_key is not None and merge_target_key is not None and
-            (('bride' in group_to_change_key[1] and 'groom' in merge_target_key[1] or
-                'groom' in group_to_change_key[1] and 'bride' in merge_target_key[1]) and
-                'bride and groom' not in group_to_change_key[1] and 'bride and groom' not in merge_target_key[1])):
-            if abs(illegal_group.shape[0] - selected_cluster.shape[0]) > 1:
-                logger.info(f"Skipping merge for bride and groom for {group_to_change_key} as target {merge_target_key} has different number of images.")
-            continue
         if selected_cluster is None:
             do_not_change_group(illegal_group, groups, group_to_change_key)
             continue
