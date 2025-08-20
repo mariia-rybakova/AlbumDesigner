@@ -1,6 +1,9 @@
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import AgglomerativeClustering
 from scipy.spatial.distance import pdist, squareform
+from collections import defaultdict
+
+
 from itertools import combinations
 from utils.configs import CONFIGS
 import random
@@ -134,69 +137,81 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
     return list(set(result))  # Ensure unique images in the final list
 
 def person_max_union_selection(images_for_category, df, needed_count,image_cluster_dict, logger):
-
-    if len(df) <= needed_count:
-        return list(set(images_for_category))
-
-    relevant_cluster_labels = []
     try:
+        if len(df) <= needed_count:
+            return list(set(images_for_category))
+
+        score_lookup = df.set_index("image_id")["total_score"].to_dict()
+
+        images_with_persons_data = []
+        for image_id in images_for_category:
+            row = df[df["image_id"] == image_id]
+            if row.empty:
+                continue
+            persons = row["persons_ids"].values[0]
+            images_with_persons_data.append((image_id, persons))
+
+        grouped = defaultdict(list)
+
+        # Step 2: group images by people set (frozenset so it's hashable)
+        for img_id, people in images_with_persons_data:
+            grouped[frozenset(people)].append(img_id)
+
+        deduped = [] # one best image per group
+        unused_groups = []  # whole groups we didn't pick from at all
+        grouped_items = list(grouped.items())
+
+        # Step 3: pick best per group
+        for i, (people_set, ids )in enumerate(grouped_items):
+            if not ids:
+                continue
+
+            if len(deduped) >= needed_count:
+                unused_groups = grouped_items[i:]
+                break
+
+            # Sort by score descending
+            ids_sorted = sorted(ids, key=lambda x: score_lookup.get(x, 0), reverse=True)
+
+            if ids_sorted:  # we have candidates
+                best = ids_sorted[0]
+                deduped.append(best)
+
+        deduped_sorted = sorted(deduped, key=lambda x: score_lookup.get(x, 0), reverse=True)
+
+        # Step 3: select final images
+        final_selection = deduped_sorted[:needed_count]
+
+        if len(final_selection) < needed_count:
+            shortfall = needed_count - len(final_selection)
+
+            if len(unused_groups) == 0:
+                needed_count = len(final_selection)
+            else:
+                for i, (people_set, ids) in enumerate(unused_groups):
+                    if not ids:
+                        continue
+
+                    if shortfall == 0:
+                        break
+
+                    # Sort by score descending
+                    ids_sorted = sorted(ids, key=lambda x: score_lookup.get(x, 0), reverse=True)
+
+                    if ids_sorted:  # we have candidates
+                        best = ids_sorted[0]
+                        if best not in final_selection:
+                             final_selection.append(best)
+                             shortfall -= shortfall
+
+    except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
+
+        relevant_cluster_labels = []
         if 'cluster_label' in df.columns:
             relevant_cluster_labels = df[df['image_id'].isin(images_for_category)][
                 'cluster_label'].unique().tolist()
-
-        persons_ids_per_image = []
-        images_with_persons_data = []
-        for image_id in images_for_category:
-            img_info_row = df[df['image_id'] == image_id]
-            if img_info_row.empty:
-                persons_ids_per_image.append([])  # Image not in df, no person data
-                continue
-            current_persons_val = img_info_row['persons_ids'].values[0]
-            images_with_persons_data.append((image_id, current_persons_val))
-
-        selected_indices = []
-        selected_sets = []
-        current_union = set()
-
-        remaining = [(item[0],set(item[1])) for item in images_with_persons_data] # List of tuples (image_id, set_of_person_ids)
-
-        for _ in range(needed_count):
-            # Pick the set that adds the most new elements
-
-            new_people = [len(x[1] - current_union) for x in remaining]
-            if max(new_people) == 0:
-                current_union= set()
-            best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
-
-            selected_indices.append(best_index)
-            selected_sets.append(best_set)
-            current_union.update(best_set)
-
-            remaining = [item for item in remaining if item[0] != best_index]
-
-
-        # combs = combinations(images_with_persons_data, needed_count)
-        # combs= list(combs)
-        #
-        # if len(combs) > CONFIGS['MAX_PERSON_COMBINATION']:
-        #     sample_idxs = random.sample(range(len(combs)), CONFIGS['MAX_PERSON_COMBINATION'])
-        # else:
-        #     sample_idxs = range(len(combs))
-        #
-        # sample_uninon_sizes = np.zeros(len(sample_idxs), dtype=int)
-        # for iter_idx,idx  in enumerate(sample_idxs):
-        #     union_set = set(combs[idx][0][1])
-        #     for list_idx in range(1, len(combs[idx])):
-        #         union_set = union_set.union(set(combs[idx][list_idx][1]))
-        #     sample_uninon_sizes[iter_idx] = len(union_set)
-        #
-        # max_union_size_idx = np.argmax(sample_uninon_sizes)
-        # selected_combination = combs[sample_idxs[max_union_size_idx]]
-
-
-    except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
         result = select_by_cluster(relevant_cluster_labels, image_cluster_dict, needed_count)
         logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
         return list(set(result))
 
-    return selected_indices
+    return final_selection

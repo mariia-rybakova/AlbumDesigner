@@ -770,7 +770,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         image_cluster_dict=image_order_dict,
                         logger=logger
                     )
-
                 ai_images_selected.extend(selected_imgs)
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                     selected_imgs)
