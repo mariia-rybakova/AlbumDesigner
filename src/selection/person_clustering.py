@@ -141,68 +141,36 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
         if len(df) <= needed_count:
             return list(set(images_for_category))
 
-        score_lookup = df.set_index("image_id")["total_score"].to_dict()
-
+        persons_ids_per_image = []
         images_with_persons_data = []
         for image_id in images_for_category:
-            row = df[df["image_id"] == image_id]
-            if row.empty:
+            img_info_row = df[df['image_id'] == image_id]
+            if img_info_row.empty:
+                persons_ids_per_image.append([])  # Image not in df, no person data
                 continue
-            persons = row["persons_ids"].values[0]
-            images_with_persons_data.append((image_id, persons))
+            current_persons_val = img_info_row['persons_ids'].values[0]
+            images_with_persons_data.append((image_id, current_persons_val))
 
-        grouped = defaultdict(list)
+        selected_indices = []
+        selected_sets = []
+        current_union = set()
 
-        # Step 2: group images by people set (frozenset so it's hashable)
-        for img_id, people in images_with_persons_data:
-            grouped[frozenset(people)].append(img_id)
+        remaining = [(item[0], set(item[1])) for item in
+                     images_with_persons_data]  # List of tuples (image_id, set_of_person_ids)
 
-        deduped = [] # one best image per group
-        unused_groups = []  # whole groups we didn't pick from at all
-        grouped_items = list(grouped.items())
+        for _ in range(needed_count):
+            # Pick the set that adds the most new elements
 
-        # Step 3: pick best per group
-        for i, (people_set, ids )in enumerate(grouped_items):
-            if not ids:
-                continue
+            new_people = [len(x[1] - current_union) for x in remaining]
+            if max(new_people) == 0:
+                current_union = set()
+            best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
 
-            if len(deduped) >= needed_count:
-                unused_groups = grouped_items[i:]
-                break
+            selected_indices.append(best_index)
+            selected_sets.append(best_set)
+            current_union.update(best_set)
 
-            # Sort by score descending
-            ids_sorted = sorted(ids, key=lambda x: score_lookup.get(x, 0), reverse=True)
-
-            if ids_sorted:  # we have candidates
-                best = ids_sorted[0]
-                deduped.append(best)
-
-        deduped_sorted = sorted(deduped, key=lambda x: score_lookup.get(x, 0), reverse=True)
-
-        # Step 3: select final images
-        final_selection = deduped_sorted[:needed_count]
-
-        if len(final_selection) < needed_count:
-            shortfall = needed_count - len(final_selection)
-
-            if len(unused_groups) == 0:
-                needed_count = len(final_selection)
-            else:
-                for i, (people_set, ids) in enumerate(unused_groups):
-                    if not ids:
-                        continue
-
-                    if shortfall == 0:
-                        break
-
-                    # Sort by score descending
-                    ids_sorted = sorted(ids, key=lambda x: score_lookup.get(x, 0), reverse=True)
-
-                    if ids_sorted:  # we have candidates
-                        best = ids_sorted[0]
-                        if best not in final_selection:
-                             final_selection.append(best)
-                             shortfall -= shortfall
+            remaining = [item for item in remaining if item[0] != best_index]
 
     except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
 
@@ -214,4 +182,4 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
         logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
         return list(set(result))
 
-    return final_selection
+    return selected_indices
