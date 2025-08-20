@@ -5,26 +5,6 @@ from src.groups_operations.groups_splitting_merging import merge_illegal_group_b
 from utils.configs import CONFIGS
 
 
-SIMILAR_CLASSES_L1 = [
-    ['bride', 'bride getting dressed', 'getting hair-makeup', 'wedding dress', 'accessories'],
-    ['bride', 'groom'],
-    ['ceremony', 'walking the aisle'],
-    ['food', 'settings', 'invite', 'detail'],
-    ['dancing', 'entertainment'],
-    ]
-
-SIMILAR_CLASSES_L2 = [
-    ['bride', 'groom', 'bride and groom'],
-    ['bride', 'bride party'],
-    ['groom', 'groom party'],
-    ['ceremony', 'walking the aisle', 'speech'],
-    ['portrait', 'very large group', 'full party', 'large_portrait', 'small_portrait', 'couple'],
-    ['accessories', 'food', 'settings', 'invite', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit'],
-    ['groom', 'suit'],
-    ['bride and groom', 'kiss', 'rings', 'first dance']
-    ]
-
-
 def update_groups(group, merged, merge_group_key, illegal_group_key):
     if merge_group_key == group.name:
         return merged
@@ -104,44 +84,6 @@ def merge_groups(groups, illegal_group, illegal_group_key, selected_cluster, mer
     return groups
 
 
-def add_class_preference(merge_candidates):
-    """Modifies time difference based on content class pairs"""
-    for i, candidate in enumerate(merge_candidates):
-        illegal_group, group_key, selected_cluster, time_diff, merge_target_key = candidate
-        if not all([group_key, merge_target_key]):
-            continue
-
-        source_class = group_key[1].split('_')[0] if '_' in group_key[1] else group_key[1]
-        target_class = merge_target_key[1].split('_')[0] if '_' in merge_target_key[1] else merge_target_key[1]
-
-        multiplied = False
-        # Prefer merging similar classes
-        if source_class == target_class:
-            time_diff *= 0.2
-            multiplied = True
-
-        # Prefer merging related classes
-        if not multiplied:
-            for similar_list in SIMILAR_CLASSES_L1:
-                if source_class in similar_list and target_class in similar_list:
-                    time_diff *= 0.3
-                    multiplied = True
-                    break
-        if not multiplied:
-            for similar_list in SIMILAR_CLASSES_L2:
-                if source_class in similar_list and target_class in similar_list:
-                    time_diff *= 0.5
-
-        # Prefer not merging bride and groom classes with different size
-        if (source_class == 'bride' and target_class == 'groom' or
-            source_class == 'groom' and target_class == 'bride'):
-            photos_diff = abs(illegal_group.shape[0] - selected_cluster.shape[0])
-            time_diff *= (1 + photos_diff * 0.25)
-
-        merge_candidates[i] = (illegal_group, group_key, selected_cluster, time_diff, merge_target_key)
-    return merge_candidates
-
-
 def process_merging(groups_to_change, groups, merged_targets, logger):
     merging_candidates = list()
     current_merges = set()
@@ -179,7 +121,6 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
             selected_cluster, selected_time_difference, merge_target_key = None, float("inf"), None
         merging_candidates.append((illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))
 
-    merging_candidates = add_class_preference(merging_candidates)
     merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
     for illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key in merging_candidates:
         if selected_cluster is None:
