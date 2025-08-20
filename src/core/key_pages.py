@@ -63,10 +63,12 @@ def get_important_imgs(data_df, top=3):
                 first_page_ids = data_df.head(top)['image_id'].tolist()
 
     keyword = "bride and groom"
-    df_sorted = data_df.sort_values(by="general_time", ascending=False)
+    keyword_2 = "groom and bride"
+    not_keywords = "waiting"
+    df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
     for row in df_sorted.itertuples(index=False):
         if (
-                keyword.lower() in str(row.image_subquery_content).lower()
+                keyword.lower() in str(row.image_subquery_content).lower() or keyword_2.lower() in str(row.image_subquery_content).lower() and not not_keywords in str(row.persons_ids).lower()
         ):
             if row.image_id not in first_page_ids:
                last_page_ids.append(row.image_id)
