@@ -7,6 +7,25 @@ from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.metrics import silhouette_score
 
+SIMILAR_CLASSES_L1 = [
+    ['bride', 'bride getting dressed', 'getting hair-makeup', 'bride party'],
+    ['bride', 'groom'],
+    ['ceremony', 'walking the aisle'],
+    ['food', 'settings', 'invite', 'detail'],
+    ['dancing', 'entertainment'],
+    ]
+SIMILAR_CLASSES_L2 = [
+    ['bride', 'bride getting dressed', 'getting hair-makeup', 'wedding dress', 'accessories'],
+    ['bride', 'groom', 'bride and groom'],
+    ['bride', 'bride party'],
+    ['groom', 'groom party'],
+    ['ceremony', 'walking the aisle', 'speech'],
+    ['portrait', 'very large group', 'full party', 'large_portrait', 'small_portrait', 'couple'],
+    ['accessories', 'food', 'settings', 'invite', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit'],
+    ['groom', 'suit'],
+    ['bride and groom', 'kiss', 'rings', 'first dance']
+    ]
+
 
 def split_illegal_group(illegal_group, count):
     illegal_group_features = illegal_group['embedding'].values.tolist()
@@ -196,6 +215,49 @@ def merge_illegal_group(main_groups, illegal_group):
     return illegal_group, combine_groups, selected_cluster_content_index
 
 
+
+def add_class_preference(illegal_group, selected_group, time_diff):
+    """Modifies time difference based on content class pairs"""
+    if illegal_group is None or selected_group is None:
+        return time_diff
+
+    illegal_group_key = illegal_group['cluster_context'].iloc[0]
+    merge_target_key = selected_group['cluster_context'].iloc[0]
+    if not all([illegal_group_key, merge_target_key]):
+        return time_diff
+
+    source_class = illegal_group_key.split('_')[0] if '_' in illegal_group_key else illegal_group_key
+    target_class = merge_target_key.split('_')[0] if '_' in merge_target_key else merge_target_key
+
+    multiplied = False
+    # Prefer merging similar classes
+    if source_class == target_class:
+        time_diff *= 0.2
+        multiplied = True
+
+    # Prefer merging related classes
+    if not multiplied:
+        for similar_list in SIMILAR_CLASSES_L1:
+            if source_class in similar_list and target_class in similar_list:
+                time_diff *= 0.3
+                multiplied = True
+                break
+    if not multiplied:
+        for similar_list in SIMILAR_CLASSES_L2:
+            if source_class in similar_list and target_class in similar_list:
+                time_diff *= 0.5
+
+    bride_centric_list = SIMILAR_CLASSES_L1[0]
+    groom_centric_list = SIMILAR_CLASSES_L2[3]
+    # Prefer not merging bride and groom classes with different size
+    if (source_class in bride_centric_list and target_class in groom_centric_list or
+        source_class in groom_centric_list and target_class in bride_centric_list):
+        photos_diff = abs(illegal_group.shape[0] - selected_group.shape[0])
+        time_diff *= (1 + photos_diff * 0.25)
+
+    return time_diff
+
+
 def merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_spread=24):
     """
     Merge illegal group with the closest group by time that meets size requirements.
@@ -216,7 +278,8 @@ def merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_sprea
         time_diffs = np.abs(group_times - intended_group_time)
         # Get the minimum difference to any image in the group
         min_time_diff = np.min(time_diffs)
-        time_differences.append(min_time_diff)
+        updated_time_diff = add_class_preference(illegal_group, group, min_time_diff)
+        time_differences.append(updated_time_diff)
 
     time_differences = np.array(time_differences)
     sorted_indices = np.argsort(time_differences)
