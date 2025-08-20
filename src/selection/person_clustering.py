@@ -204,9 +204,6 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
                              final_selection.append(best)
                              shortfall -= shortfall
 
-        return final_selection
-
-
     except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
 
         relevant_cluster_labels = []
