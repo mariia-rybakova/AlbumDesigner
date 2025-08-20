@@ -85,7 +85,7 @@ def get_important_imgs(data_df, top=3):
         ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
         last_page_ids.extend([id for id in ids if id not in first_page_ids])
 
-    return first_page_ids, last_page_ids[:]
+    return first_page_ids, last_page_ids
 
 def choose_good_wedding_images(df, number_of_images, logger):
     first_page_ids, last_page_ids = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])

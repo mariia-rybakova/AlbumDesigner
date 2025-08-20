@@ -378,14 +378,14 @@ if __name__ == '__main__':
 
     #_input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46227780, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/227/46227780/njev8ankt8x9b7ynth', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/bxqwa2at_eq6resxfgqctxw7.json', 'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [7, 1], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46227780_c69bf3c0-43ea-4b96-be82-a7ae256281f1.100.10', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
 
-    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128,
-     'userId': 548224517, 'userJobId': 1069781153,
-     'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1,
-     'compositionPackageId': -1, 'designInfo': None,
-     'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/aqa34npt60-jil9d9ahgrljv.json',
-     'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [], 'density': 3},
-     'conditionId': 'AAD_46229128_c69bf3c0-43ea-4b96-be82-a7ae256281f1.98.148', 'timedOut': False,
-     'dependencyDeleted': False, 'retryCount': 0}
+    # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128,
+    #  'userId': 548224517, 'userJobId': 1069781153,
+    #  'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1,
+    #  'compositionPackageId': -1, 'designInfo': None,
+    #  'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/aqa34npt60-jil9d9ahgrljv.json',
+    #  'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [], 'density': 3},
+    #  'conditionId': 'AAD_46229128_c69bf3c0-43ea-4b96-be82-a7ae256281f1.98.148', 'timedOut': False,
+    #  'dependencyDeleted': False, 'retryCount': 0}
 
     # Debug with Plotting
     _images_path_karmel = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/{_input_request["projectId"]}/'
