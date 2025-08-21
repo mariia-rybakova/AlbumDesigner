@@ -526,7 +526,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
         orientation_time_categories = {
             'bride', 'groom', 'bride and groom', 'bride party', 'groom party', 'speech',
-            'full party', 'walking the aisle', 'bride getting dressed', 'getting hair-makeup',
+            'full party', 'walking the aisle',
             'first dance', 'cake cutting', 'ceremony', 'dancing'
         }
 
@@ -569,15 +569,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
 
-            is_small_group = (
-                    n_actual < CONFIGS['small_groups']
-                    and cluster_name not in CONFIGS['events_disallowing_small_images']
-            )
-
-            # if cluster_name  in ['other', 'None', 'couple'] or is_small_group:
-            #     logger.info("Ignoring None & None & Other!!")
-            #     continue
-
             # Get scores for each image
             scores,scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
 
@@ -600,8 +591,24 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     if iter_idx < need:
                         candidates_images_scores.append((row['image_id'], row['total_score']))
                 # pass
+            sorted_candidates_images_scores = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
+            available_img_ids = [image_id for image_id, _ in sorted_candidates_images_scores]
 
-            available_img_ids = [image_id for image_id, _ in candidates_images_scores]
+            if cluster_name in ['accessories', 'wedding dress']:
+                user_selected_ids = [
+                    image_id for image_id in available_img_ids
+                    if image_id in user_selected_photos_df['image_id'].values
+                ]
+                if len(user_selected_ids) !=0:
+                    ai_images_selected.extend(user_selected_ids[:need])
+                    category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
+                        user_selected_ids[:need])
+                    continue
+                else:
+                    ai_images_selected.extend(available_img_ids[:need])
+                    category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
+                        available_img_ids[:need])
+                continue
 
             user_selected_ids= [
                 image_id for image_id in available_img_ids
@@ -621,8 +628,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
             #remove the images that selected from the user
             scored_df = scored_df[scored_df['image_id'].isin(available_img_ids_wo_user)]
-
-
             scored_df['image_time_date'] = scored_df['image_time'].apply(lambda x: convert_to_timestamp(x))
             valid_images_df = identify_temporal_clusters(scored_df,'image_time_date', 20,4,logger)
 
@@ -648,6 +653,22 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(to_add)
                 continue
             # -------- Cluster-specific selection strategies --------
+            elif cluster_name in ['bride getting dressed','getting hair-makeup']:
+                    # Select only bride photos
+                    filtered = valid_images_df[valid_images_df["image_subquery_content"].str.contains("bride", case=False, na=False)]
+                    all_ids = [pid for sublist in filtered["persons_ids"] for pid in sublist]
+                    most_common_id = Counter(all_ids).most_common(1)[0][0]
+                    df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
+                    if len(df) <= need or len(df) - need <= 1 :
+                        selected_imgs = df.sort_values(by='total_score', ascending=False)['image_id'].values.tolist()[:need]
+                    else:
+                        selected_imgs = filter_similarity(need, df.reset_index(), cluster_name)
+
+                    ai_images_selected.extend(selected_imgs)
+                    category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected',
+                                                                                                  0) + len(selected_imgs)
+
+
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
                 df_with_time_cluster = cluster_by_time(valid_images_df)
@@ -734,6 +755,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                     selected_imgs)
             elif cluster_name in persons_categories:
+                if cluster_name == 'portrait':
+                    formal_query = ['Bride with her family posing for a formal group portrait in a neat arrangement',
+                         'Bride and groom standing still, looking directly at the camera, posed wedding portrait','Wedding couple with parents and siblings lined up in a traditional portrait',
+                         'Bride with bridesmaids and groomsmen posed for a formal group photo']
+                    valid_images_df = valid_images_df[valid_images_df["image_subquery_content"].isin(formal_query)]
+
                 df_scored  = valid_images_df.set_index('image_id')
                 candidates_images = valid_images_df['image_id'].values.tolist()
                 # Identify grayscale images

@@ -1,4 +1,3 @@
-import os
 import random
 import numpy as np
 import pandas as pd
@@ -11,7 +10,7 @@ from utils.configs import CONFIGS
 from sklearn.cluster import MiniBatchKMeans
 import math
 from itertools import combinations
-
+from collections import Counter
 # Assume CONFIGS dict is defined elsewhere
 # CONFIGS = {'FACE_FAR_THRESHOLD': ..., 'FACE_M_THRESHOLD': ..., etc.}
 
@@ -411,6 +410,8 @@ def select_images_by_time_and_style(needed_count: int, df: pd.DataFrame,cluster_
 
 
 def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.9):
+    if len(df) <= need:
+        return df['image_id'].values.tolist()
 
     embeddings = np.vstack(df['embedding'].values).astype('float32')
     n_clusters = math.ceil(len(df) / target_group_size)
