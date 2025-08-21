@@ -582,6 +582,9 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             need = images_allocation[cluster_name]
             has = len(scored_df)
 
+            if need == 0:
+                continue
+
             candidates_images_scores = [(image_id, score) for image_id,score in scores
                                        if score > selection_threshold[cluster_name]]
 
@@ -802,7 +805,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     selected_imgs)
             else:
                 clusters_ids = get_clusters(valid_images_df.reset_index())  # df was indexed earlier
-                selected_imgs = select_non_similar_images(cluster_name, clusters_ids, image_order_dict, need)
+                selected_imgs = select_non_similar_images(clusters_ids, image_order_dict, need)
                 ai_images_selected.extend(selected_imgs)
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                     selected_imgs)

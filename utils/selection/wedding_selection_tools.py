@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 from itertools import combinations_with_replacement
 
 from utils.configs import CONFIGS,spreads_required_per_category,min_images_per_category,priority_categories
@@ -93,36 +93,51 @@ def get_clusters(df):
         clusters_ids[class_id].append(image_id)
     return clusters_ids
 
-def select_non_similar_images(event,clusters_ids,image_order_dict,needed_count):
-    not_people_events = ['vehicle', 'settings', 'rings', 'entertainment', 'accessories', 'food',
-                         'wedding dress', 'suit', 'pet','speech', 'cake cutting']
+def select_non_similar_images(clusters_ids,image_order_dict,needed_count):
+    sorted_clusters = {}
+    for key, imgs in clusters_ids.items():
+        sorted_clusters[key] = sorted(
+            imgs, key=lambda img: image_order_dict.get(img, float('-inf')), reverse=True
+        )
+
+    # --- Step 2: rank clusters by their max score ---
+    cluster_order = sorted(
+        sorted_clusters.keys(),
+        key=lambda k: image_order_dict.get(sorted_clusters[k][0], float('-inf'))
+        if sorted_clusters[k] else float('-inf'),
+        reverse=True
+    )
+    # --- Step 3: convert each cluster to deque for efficient pops ---
+    cluster_deques = {k: deque(v) for k, v in sorted_clusters.items()}
+
     result = []
-    generators = {k: iter(v) for k, v in clusters_ids.items()}  # Create generators for each list
+    seen = set()
 
-
+    # --- Step 4: round-robin across clusters in priority order ---
     while needed_count > 0:
-        for key in generators:
+        progress = False
+        for key in cluster_order:
             if needed_count <= 0:
                 break
-            if needed_count < len(clusters_ids):
-                items_to_take = 1
-            # Check list size to determine how many to take
-            elif len(clusters_ids[key]) <= 5 and event in not_people_events:  # Small list: take at most 1
-                items_to_take = min(1, needed_count)
-            else:  # Large list: take up to the remaining needed count
-                list_size = len(clusters_ids[key])
-                items_to_take = max(1,round(list_size/ needed_count))
+            if not cluster_deques[key]:
+                continue
 
-            images_ranked = sorted(clusters_ids[key], key=lambda img: image_order_dict.get(img, float('inf')), reverse=True)
+            candidate = cluster_deques[key].popleft()
+            if candidate in seen:
+                continue
 
-            selected_items = images_ranked[:items_to_take]
-            clusters_ids[key] = [item for item in clusters_ids[key] if item not in selected_items]
+            result.append(candidate)
+            seen.add(candidate)
+            needed_count -= 1
+            progress = True
 
-            # Add the selected items to the result and update remaining needed count
-            result.extend(selected_items)
-            needed_count -= len(selected_items)
+        # if no cluster contributed this round → stop (no more usable images)
+        if not progress:
+            break
 
     return result
+
+
 
 
 
