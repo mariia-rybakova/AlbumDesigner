@@ -591,8 +591,24 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     if iter_idx < need:
                         candidates_images_scores.append((row['image_id'], row['total_score']))
                 # pass
+            sorted_candidates_images_scores = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
+            available_img_ids = [image_id for image_id, _ in sorted_candidates_images_scores]
 
-            available_img_ids = [image_id for image_id, _ in candidates_images_scores]
+            if cluster_name in ['accessories', 'wedding dress']:
+                user_selected_ids = [
+                    image_id for image_id in available_img_ids
+                    if image_id in user_selected_photos_df['image_id'].values
+                ]
+                if len(user_selected_ids) !=0:
+                    ai_images_selected.extend(user_selected_ids[:need])
+                    category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
+                        user_selected_ids[:need])
+                    continue
+                else:
+                    ai_images_selected.extend(available_img_ids[:need])
+                    category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
+                        available_img_ids[:need])
+                continue
 
             user_selected_ids= [
                 image_id for image_id in available_img_ids
