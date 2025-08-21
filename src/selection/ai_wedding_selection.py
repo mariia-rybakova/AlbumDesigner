@@ -599,7 +599,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     image_id for image_id in available_img_ids
                     if image_id in user_selected_photos_df['image_id'].values
                 ]
-                if len(user_selected_ids) !=0:
+                if len(user_selected_ids) != 0:
                     ai_images_selected.extend(user_selected_ids[:need])
                     category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                         user_selected_ids[:need])
@@ -646,7 +646,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             )
 
             # If enough remaining or too few to process more
-            if need <= 2 or has <= need:
+            if has <= need:
                 images = valid_images_df['image_id'].values.tolist()
                 to_add = images[:need]
                 ai_images_selected.extend(to_add)

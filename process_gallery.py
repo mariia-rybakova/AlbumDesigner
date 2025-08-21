@@ -353,16 +353,25 @@ if __name__ == '__main__':
     #                                  'density': 3},
     #                   'conditionId': 'AAD_46229128_18628955-182e-465d-bff4-3d4f6bdc120c.151.212', 'timedOut': False,
     #                   'dependencyDeleted': False, 'retryCount': 0}
+    #
+    # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310,
+    #                   'projectId': 32900972, 'userId': 576349956, 'userJobId': 1121483286,
+    #                   'base_url': 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u', 'photos': [],
+    #                   'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None,
+    #                   'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/84fuwtbvy0cwkmw5yhuflcat.json',
+    #                   'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [],
+    #                                  'density': 3},
+    #                   'conditionId': 'AAD_46229128_18628955-182e-465d-bff4-3d4f6bdc120c.151.212', 'timedOut': False,
+    #                   'dependencyDeleted': False, 'retryCount': 0}
 
-    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310,
-                      'projectId': 32900972, 'userId': 576349956, 'userJobId': 1121483286,
-                      'base_url': 'ptstorage_18://pictures/32/900/32900972/1teshu0uhg8u', 'photos': [],
-                      'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None,
-                      'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/84fuwtbvy0cwkmw5yhuflcat.json',
-                      'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [],
-                                     'density': 3},
-                      'conditionId': 'AAD_46229128_18628955-182e-465d-bff4-3d4f6bdc120c.151.212', 'timedOut': False,
-                      'dependencyDeleted': False, 'retryCount': 0}
+    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128,
+     'userId': 576349956, 'userJobId': 1121483286,
+     'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1,
+     'compositionPackageId': -1, 'designInfo': None,
+     'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/rvv0is1m_0-kh2shiovzpmfa.json',
+     'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [], 'density': 3},
+     'conditionId': 'AAD_46229128_02f2f069-a784-4f23-b3db-9714d3fa7446.193.318', 'timedOut': False,
+     'dependencyDeleted': False, 'retryCount': 0}
 
 
     #_input_request =  {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128, 'userId': 576349956, 'userJobId': 1121483286, 'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/_1ggmdmcjkgqrmzkie0yerot.json', 'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [4, 11], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46229128_fead6bde-73b6-4804-84d3-0f2f838a9855.236.98', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
