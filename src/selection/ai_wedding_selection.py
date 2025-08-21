@@ -755,6 +755,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
                     selected_imgs)
             elif cluster_name in persons_categories:
+                if cluster_name == 'portrait':
+                    formal_query = ['Bride with her family posing for a formal group portrait in a neat arrangement',
+                         'Bride and groom standing still, looking directly at the camera, posed wedding portrait','Wedding couple with parents and siblings lined up in a traditional portrait',
+                         'Bride with bridesmaids and groomsmen posed for a formal group photo']
+                    valid_images_df = valid_images_df[valid_images_df["image_subquery_content"].isin(formal_query)]
+
                 df_scored  = valid_images_df.set_index('image_id')
                 candidates_images = valid_images_df['image_id'].values.tolist()
                 # Identify grayscale images
