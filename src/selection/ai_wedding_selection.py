@@ -408,7 +408,7 @@ def calculate_optimal_selection(
             for config in focus_table.values()
         )
 
-
+        total_miss_spreads = max(0, total_miss_spreads-3)
         while total_over_spreads>1 and total_miss_spreads > 1:
             for event, config in focus_table.items():
                 if config['over_spreads'] > 1 and total_miss_spreads > 1:
