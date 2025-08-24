@@ -322,8 +322,10 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
 
 
 def check_page(photo_set, photos):
+    bride_centric_classes = ['bride', 'bride party', 'wedding dress', 'getting hair-makeup','bride getting dressed']
+    groom_centric_classes = ['groom','groom party','suit']
     if len(photo_set) == 1:
-        return [True, True]
+        return [True, True, False]
     else:
         colors = []
         photo_classes = []
@@ -333,7 +335,16 @@ def check_page(photo_set, photos):
             photo_classes.append(photo.photo_class)
         sameColor = all([color == colors[0] for color in colors])
         sameClass = all([photo_class == photo_classes[0] for photo_class in photo_classes])
-        return [sameColor, sameClass]
+        if not sameClass:
+            bride_centric = any([photo_class in bride_centric_classes for photo_class in photo_classes])
+            groom_centric = any([photo_class in groom_centric_classes for photo_class in photo_classes])
+            if bride_centric and groom_centric:
+                bride_groom_mix = True
+            else:
+                bride_groom_mix = False
+        else:
+            bride_groom_mix = False
+        return [sameColor, sameClass, bride_groom_mix]
 
 
 def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_penalty=0.5, color_mix=0.000000001,
@@ -350,6 +361,8 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * color_mix
             if not left_check[1]:
                 spread_scores[j] = spread_scores[j] * class_mix
+            if left_check[2]:
+                spread_scores[j] = spread_scores[j] * color_mix
             if layouts_df.at[spread[0], 'left_mixed']:
                 spread_scores[j] = spread_scores[j] * orientation_mix
             right_check = check_page(spread[2], photos)
@@ -357,6 +370,8 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * color_mix
             if not right_check[1]:
                 spread_scores[j] = spread_scores[j] * class_mix
+            if right_check[2]:
+                spread_scores[j] = spread_scores[j] * color_mix
             if layouts_df.at[spread[0], 'right_mixed']:
                 spread_scores[j] = spread_scores[j] * orientation_mix
             if not left_check[0] and not right_check[0]:
