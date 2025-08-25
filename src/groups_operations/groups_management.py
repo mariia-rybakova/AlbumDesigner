@@ -31,9 +31,39 @@ def get_lut_value(group_key, look_up_table, is_wedding):
     return group_value
 
 
+def get_groups_time(groups):
+    general_times_list = list()
+    group_key2time_list = dict()
+    for group_key, group in groups:
+        group_times = group['general_time'].values
+        general_times_list.extend(group_times)
+        group_key2time_list[group_key] = sorted(group_times)
+    return sorted(general_times_list), group_key2time_list
+
+
+def check_time_based_split_needed(general_times_list, group_time_list, group_key):
+    if len(group_time_list) < 2:
+        return False
+    if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'settings', 'food', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit']:
+        return False
+
+    for i in range(len(group_time_list) - 1):
+        start_time = group_time_list[i]
+        end_time = group_time_list[i + 1]
+
+        count_between = sum(start_time < t < end_time for t in general_times_list)
+
+        if count_between > 2:
+            print(f"Splitting needed for {group_key} between {start_time} and {end_time}")
+            return True
+    return False
+
+
 def handle_splitting(groups, group2images, look_up_table, is_wedding):
     # handle splitting
     count = 2
+
+    general_times_list, group_key2time_list = get_groups_time(groups)
 
     for group_key, imgs_number in group2images.items():
         if imgs_number < CONFIGS['max_img_split']:
@@ -41,11 +71,12 @@ def handle_splitting(groups, group2images, look_up_table, is_wedding):
 
         group_spread_size = get_lut_value(group_key, look_up_table, is_wedding)
         splitting_score = round(imgs_number / group_spread_size) if group_spread_size > 0 else 0
-        if ((splitting_score > CONFIGS['min_split_score']
+        if (((splitting_score > CONFIGS['min_split_score']
             or splitting_score == CONFIGS['min_split_score'] and group_spread_size > 5
             or splitting_score == 2 and group_spread_size >= 12
             or group_spread_size >= 24)
-                and 'cant_split' not in group_key[1]):
+                and 'cant_split' not in group_key[1])
+            or check_time_based_split_needed(general_times_list, group_key2time_list[group_key], group_key=group_key[1] if is_wedding else group_key[0].split("_")[0])):
             illegal_group = groups.get_group(group_key)
             if illegal_group.empty:
                 continue
