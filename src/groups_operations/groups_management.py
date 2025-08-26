@@ -55,7 +55,6 @@ def check_time_based_split_needed(general_times_list, group_time_list, group_key
         count_between = sum(start_time < t < end_time for t in general_times_list)
 
         if count_between > 2:
-            print(f"Splitting needed for {group_key} between {start_time} and {end_time}")
             split_points.append(start_time)
 
     if len(split_points) > 0:

@@ -165,7 +165,6 @@ def split_illegal_group_in_certain_point(illegal_group, split_points, count):
         return None, None
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
-    print(f"splitting groups: {content_cluster_origin} with time {split_points}")
 
     for i, split_time in enumerate(split_points):
         next_label = f'{content_cluster_origin}_split_{i + 1}_{count}'
@@ -312,7 +311,6 @@ def merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, 
         images_in_between = sum(illegal_max_time < t < group_min_time or group_max_time < t < illegal_min_time
                                 for t in general_times_list)
         if images_in_between > 2:
-            print(f"Merging skipping")
             continue  # Skip this group if more than 2 images are between the time ranges
 
         # Calculate the minimum time difference between the illegal group and this group
