@@ -47,6 +47,7 @@ def check_time_based_split_needed(general_times_list, group_time_list, group_key
     if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'settings', 'food', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit']:
         return False, None
 
+    split_points = list()
     for i in range(len(group_time_list) - 1):
         start_time = group_time_list[i]
         end_time = group_time_list[i + 1]
@@ -55,7 +56,11 @@ def check_time_based_split_needed(general_times_list, group_time_list, group_key
 
         if count_between > 2:
             print(f"Splitting needed for {group_key} between {start_time} and {end_time}")
-            return True, start_time
+            split_points.append(start_time)
+
+    if len(split_points) > 0:
+        return True, split_points
+
     return False, None
 
 
@@ -85,10 +90,10 @@ def handle_splitting(groups, group2images, look_up_table, is_wedding):
             split_try = True
 
         else:
-            if_split, min_time = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
+            if_split, split_points = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
                                                                group_key=group_key[1] if is_wedding else group_key[0].split("_")[0])
             if if_split:
-                updated_group, labels_count = split_illegal_group_in_certain_point(illegal_group, min_time, count)
+                updated_group, labels_count = split_illegal_group_in_certain_point(illegal_group, split_points, count)
                 count += 1
                 split_try = True
             else:

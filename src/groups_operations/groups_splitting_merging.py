@@ -160,18 +160,25 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
         return None, None
 
 
-def split_illegal_group_in_certain_point(illegal_group, min_time, count):
-    if illegal_group is None or illegal_group.empty:
+def split_illegal_group_in_certain_point(illegal_group, split_points, count):
+    if illegal_group is None or illegal_group.empty or split_points is None:
         return None, None
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
-    print(f"splitting groups: {content_cluster_origin} with time {min_time}")
+    print(f"splitting groups: {content_cluster_origin} with time {split_points}")
 
-    # Set cluster_context based on the min_time threshold
-    illegal_group.loc[illegal_group['general_time'] > min_time, 'cluster_context'] = f'{content_cluster_origin}_split_1_{count}'
-    illegal_group.loc[illegal_group['general_time'] <= min_time, 'cluster_context'] = f'{content_cluster_origin}_split_2_{count}'
+    for i, split_time in enumerate(split_points):
+        next_label = f'{content_cluster_origin}_split_{i + 1}_{count}'
+        illegal_group.loc[illegal_group['general_time'] <= split_time, 'cluster_context'] = next_label
 
-    return illegal_group, Counter(illegal_group['cluster_context'])
+        # Assign the remaining items to the last group after the final split point
+    last_label = f'{content_cluster_origin}_split_{len(split_points) + 1}_{count}'
+    illegal_group.loc[illegal_group['general_time'] > split_points[-1], 'cluster_context'] = last_label
+
+    # Count occurrences of each cluster_context
+    label_counts = Counter(illegal_group['cluster_context'])
+
+    return illegal_group, label_counts
 
 
 def merge_illegal_group(main_groups, illegal_group):
