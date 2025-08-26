@@ -569,6 +569,11 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
 
+
+            need = images_allocation[cluster_name]
+            if need == 0:
+                continue
+
             # Get scores for each image
             scores,scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
 
@@ -579,11 +584,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             if all(score <= 0 for _, score in scores):
                 continue
 
-            need = images_allocation[cluster_name]
             has = len(scored_df)
-
-            if need == 0:
-                continue
 
             candidates_images_scores = [(image_id, score) for image_id,score in scores
                                        if score > selection_threshold[cluster_name]]
