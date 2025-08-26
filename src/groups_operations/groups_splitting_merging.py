@@ -160,6 +160,20 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
         return None, None
 
 
+def split_illegal_group_in_certain_point(illegal_group, min_time, count):
+    if illegal_group is None or illegal_group.empty:
+        return None, None
+
+    content_cluster_origin = illegal_group['cluster_context'].values[0]
+    print(f"splitting groups: {content_cluster_origin} with time {min_time}")
+
+    # Set cluster_context based on the min_time threshold
+    illegal_group.loc[illegal_group['general_time'] > min_time, 'cluster_context'] = f'{content_cluster_origin}_split_1_{count}'
+    illegal_group.loc[illegal_group['general_time'] <= min_time, 'cluster_context'] = f'{content_cluster_origin}_split_2_{count}'
+
+    return illegal_group, Counter(illegal_group['cluster_context'])
+
+
 def merge_illegal_group(main_groups, illegal_group):
     clusters_features = [group['embedding'].values.copy() for group in main_groups]
 
