@@ -91,7 +91,7 @@ def handle_splitting(groups, group2images, look_up_table, is_wedding):
 
         else:
             if_split, split_points = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
-                                                               group_key=group_key[1] if is_wedding else group_key[0].split("_")[0])
+                                                                   group_key=group_key[1] if is_wedding else group_key[0].split("_")[0])
             if if_split:
                 updated_group, labels_count = split_illegal_group_in_certain_point(illegal_group, split_points, count)
                 count += 1
@@ -163,11 +163,15 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
                        time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and
                        merged_targets.get(cluster_key,0) + merged_targets.get(group_to_change_key, 0) < CONFIGS['merge_limit_times'] and
                        len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread']]
+        general_times_list, _ = get_groups_time(groups)
 
         if len(main_groups) > 0:
-            selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_spread=CONFIGS['max_imges_per_spread'])
-            selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
-            merge_target_key = (time_cluster_id, selected_cluster_content_index)
+            selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, max_images_per_spread=CONFIGS['max_imges_per_spread'])
+            if selected_cluster is not None:
+                selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
+                merge_target_key = (time_cluster_id, selected_cluster_content_index)
+            else:
+                selected_cluster, selected_time_difference, merge_target_key = None, float("inf"), None
         else:
             selected_cluster, selected_time_difference, merge_target_key = None, float("inf"), None
         merging_candidates.append((illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))

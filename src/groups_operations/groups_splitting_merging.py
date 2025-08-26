@@ -279,7 +279,7 @@ def add_class_preference(illegal_group, selected_group, time_diff):
     return time_diff
 
 
-def merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_spread=24):
+def merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, max_images_per_spread=24):
     """
     Merge illegal group with the closest group by time that meets size requirements.
 
@@ -290,38 +290,89 @@ def merge_illegal_group_by_time(main_groups, illegal_group, max_images_per_sprea
     Returns:
         tuple: (modified_illegal_group, combined_group, selected_cluster_content_index)
     """
+
+    # Calculate mean time of the illegal group
     intended_group_time = illegal_group['general_time'].values.mean()
-    # Calculate minimum time differences for each main group
+
+    # Calculate time range for the illegal group
+    illegal_min_time = illegal_group['general_time'].min()
+    illegal_max_time = illegal_group['general_time'].max()
+
     time_differences = []
+    valid_groups = []
+
     for group in main_groups:
-        # Calculate time differences between illegal group mean and all times in current group
+        # Calculate mean time and time range for the current group
         group_times = group['general_time'].values
-        time_diffs = np.abs(group_times - intended_group_time)
-        # Get the minimum difference to any image in the group
-        min_time_diff = np.min(time_diffs)
+        group_mean_time = group_times.mean()
+        group_min_time = group_times.min()
+        group_max_time = group_times.max()
+
+        # Check if there are more than 2 images in between the groups
+        images_in_between = sum(illegal_max_time < t < group_min_time or group_max_time < t < illegal_min_time
+                                for t in general_times_list)
+        if images_in_between > 2:
+            print(f"Merging skipping")
+            continue  # Skip this group if more than 2 images are between the time ranges
+
+        # Calculate the minimum time difference between the illegal group and this group
+        min_time_diff = np.min(np.abs(group_times - intended_group_time))
         updated_time_diff = add_class_preference(illegal_group, group, min_time_diff)
         time_differences.append(updated_time_diff)
+        valid_groups.append(group)
 
+    # If no valid groups are found, return None
+    if not valid_groups:
+        return None, None
+
+    # Sort by time differences and find the best group for merging
     time_differences = np.array(time_differences)
     sorted_indices = np.argsort(time_differences)
 
-    selected_cluster = None
-    selected_time_difference = None
-
-    # Try groups in order of temporal proximity
     for idx in sorted_indices:
-        selected_cluster = main_groups[idx]
+        selected_cluster = valid_groups[idx]
         len_combine_group = len(selected_cluster) + len(illegal_group)
 
         # Check if the combination meets size requirements
         if len_combine_group <= max_images_per_spread:
             selected_time_difference = time_differences[idx]
-            break
+            return selected_cluster, selected_time_difference
 
-    # If still no suitable group found, use the temporally closest group regardless of size
-    if selected_time_difference is None and len(sorted_indices) > 0:
-        closest_idx = sorted_indices[0]
-        selected_cluster = main_groups[closest_idx]
-        selected_time_difference = time_differences[closest_idx]
+    # If no suitable group is found, return None
+    return None, None
 
-    return selected_cluster, selected_time_difference
+    # intended_group_time = illegal_group['general_time'].values.mean()
+    # # Calculate minimum time differences for each main group
+    # time_differences = []
+    # for group in main_groups:
+    #     # Calculate time differences between illegal group mean and all times in current group
+    #     group_times = group['general_time'].values
+    #     time_diffs = np.abs(group_times - intended_group_time)
+    #     # Get the minimum difference to any image in the group
+    #     min_time_diff = np.min(time_diffs)
+    #     updated_time_diff = add_class_preference(illegal_group, group, min_time_diff)
+    #     time_differences.append(updated_time_diff)
+    #
+    # time_differences = np.array(time_differences)
+    # sorted_indices = np.argsort(time_differences)
+    #
+    # selected_cluster = None
+    # selected_time_difference = None
+    #
+    # # Try groups in order of temporal proximity
+    # for idx in sorted_indices:
+    #     selected_cluster = main_groups[idx]
+    #     len_combine_group = len(selected_cluster) + len(illegal_group)
+    #
+    #     # Check if the combination meets size requirements
+    #     if len_combine_group <= max_images_per_spread:
+    #         selected_time_difference = time_differences[idx]
+    #         break
+    #
+    # # If still no suitable group found, use the temporally closest group regardless of size
+    # if selected_time_difference is None and len(sorted_indices) > 0:
+    #     closest_idx = sorted_indices[0]
+    #     selected_cluster = main_groups[closest_idx]
+    #     selected_time_difference = time_differences[closest_idx]
+    #
+    # return selected_cluster, selected_time_difference
