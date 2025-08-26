@@ -1,7 +1,7 @@
 import pandas as pd
 
 from utils.album_tools import get_images_per_groups
-from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time
+from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time, split_illegal_group_in_certain_point
 from utils.configs import CONFIGS
 
 
@@ -31,12 +31,51 @@ def get_lut_value(group_key, look_up_table, is_wedding):
     return group_value
 
 
+def get_groups_time(groups):
+    general_times_list = list()
+    group_key2time_list = dict()
+    for group_key, group in groups:
+        group_times = group['general_time'].values
+        general_times_list.extend(group_times)
+        group_key2time_list[group_key] = sorted(group_times)
+    return sorted(general_times_list), group_key2time_list
+
+
+def check_time_based_split_needed(general_times_list, group_time_list, group_key):
+    if len(group_time_list) < 2:
+        return False, None
+    if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'settings', 'food', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit']:
+        return False, None
+
+    split_points = list()
+    for i in range(len(group_time_list) - 1):
+        start_time = group_time_list[i]
+        end_time = group_time_list[i + 1]
+
+        count_between = sum(start_time < t < end_time for t in general_times_list)
+
+        if count_between > 2:
+            print(f"Splitting needed for {group_key} between {start_time} and {end_time}")
+            split_points.append(start_time)
+
+    if len(split_points) > 0:
+        return True, split_points
+
+    return False, None
+
+
 def handle_splitting(groups, group2images, look_up_table, is_wedding):
     # handle splitting
-    count = 2
+    count = 0
+
+    general_times_list, group_key2time_list = get_groups_time(groups)
 
     for group_key, imgs_number in group2images.items():
         if imgs_number < CONFIGS['max_img_split']:
+            continue
+
+        illegal_group = groups.get_group(group_key)
+        if illegal_group.empty:
             continue
 
         group_spread_size = get_lut_value(group_key, look_up_table, is_wedding)
@@ -46,27 +85,39 @@ def handle_splitting(groups, group2images, look_up_table, is_wedding):
             or splitting_score == 2 and group_spread_size >= 12
             or group_spread_size >= 24)
                 and 'cant_split' not in group_key[1]):
-            illegal_group = groups.get_group(group_key)
-            if illegal_group.empty:
-                continue
-
             updated_group, labels_count = split_illegal_group_by_time(illegal_group, group_spread_size, count)
+            count += 1
+            split_try = True
 
-            if updated_group is None:
-                # we can't split this group
-                illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
-                updated_group = illegal_group
+        else:
+            if_split, split_points = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
+                                                               group_key=group_key[1] if is_wedding else group_key[0].split("_")[0])
+            if if_split:
+                updated_group, labels_count = split_illegal_group_in_certain_point(illegal_group, split_points, count)
+                count += 1
+                split_try = True
+            else:
+                updated_group = None
+                split_try = False
 
-            # Construct a list of tuples containing the name and data for each group
-            new_groups = [(name, group) for name, group in groups if name != group_key]
-            sub_group_cluster = updated_group.groupby(['time_cluster', 'cluster_context'])
-            for sub in sub_group_cluster:
-                new_groups.append(sub)
+        if not split_try:
+            continue
 
-            # Convert the list of groups to a DataFrameGroupBy object
-            groups = pd.concat([group for _, group in new_groups], ignore_index=True)
-            groups = groups.reset_index(drop=True)
-            groups = groups.groupby(['time_cluster', 'cluster_context'])
+        if updated_group is None:
+            # we can't split this group
+            illegal_group["cluster_context"] = illegal_group["cluster_context"] + "_cant_split"
+            updated_group = illegal_group
+
+        # Construct a list of tuples containing the name and data for each group
+        new_groups = [(name, group) for name, group in groups if name != group_key]
+        sub_group_cluster = updated_group.groupby(['time_cluster', 'cluster_context'])
+        for sub in sub_group_cluster:
+            new_groups.append(sub)
+
+        # Convert the list of groups to a DataFrameGroupBy object
+        groups = pd.concat([group for _, group in new_groups], ignore_index=True)
+        groups = groups.reset_index(drop=True)
+        groups = groups.groupby(['time_cluster', 'cluster_context'])
 
     return groups
 
