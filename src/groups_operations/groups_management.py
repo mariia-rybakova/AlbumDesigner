@@ -159,20 +159,20 @@ def merge_bride_groom(groups_to_change, groups, logger):
             time_cluster_id = group_to_change_key[0]
             main_groups = [group for cluster_key, group in groups if
                            time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and
+                           'cant_merge' not in cluster_key[1] and
                            len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread'] and
                            (illegal_class in bride_centric_classes and cluster_key[1].split("_")[0] in groom_centric_classes or
                            illegal_class in groom_centric_classes and cluster_key[1].split("_")[0] in bride_centric_classes)]
 
             if len(main_groups) > 0:
-                selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group,
-                                                                                         max_images_per_spread=CONFIGS[
-                                                                                             'max_imges_per_spread'])
+                general_times_list, _ = get_groups_time(groups)
+                selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group, general_times_list,
+                                                                                         max_images_per_spread=CONFIGS['max_imges_per_spread'])
                 selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
                 merge_target_key = (time_cluster_id, selected_cluster_content_index)
             else:
                 continue
-            merging_candidates.append(
-                (illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))
+            merging_candidates.append((illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))
 
     merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
     for illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key in merging_candidates:
@@ -217,6 +217,7 @@ def process_merging(groups_to_change, groups, merged_targets, logger):
         time_cluster_id = group_to_change_key[0]
         main_groups = [group for cluster_key, group in groups if
                        time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and
+                       'cant_merge' not in cluster_key[1] and
                        merged_targets.get(cluster_key,0) + merged_targets.get(group_to_change_key, 0) < CONFIGS['merge_limit_times'] and
                        len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread']]
         general_times_list, _ = get_groups_time(groups)
@@ -266,8 +267,7 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
 
         groups_to_change = dict()
         for group_key, imgs_number in group2images.items():
-            if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[
-                1]:  # and 'None' not in group_key[1]
+            if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[1]:
                 groups_to_change[group_key] = ('merge', 0)
         groups = merge_bride_groom(groups_to_change, groups, logger)
 
