@@ -5,11 +5,11 @@ from src.groups_operations.groups_splitting_merging import merge_illegal_group_b
 from utils.configs import CONFIGS
 
 
-def update_groups(group, merged, merge_group_key, illegal_group_key):
+def update_groups(group, merged, merge_group_key, illegal_group_key,reminder_group=None):
     if merge_group_key == group.name:
         return merged
     if illegal_group_key == group.name:
-        return None
+        return reminder_group
     return group
 
 
@@ -129,9 +129,66 @@ def merge_groups(groups, illegal_group, illegal_group_key, selected_cluster, mer
 
     groups = groups.apply(lambda x: update_groups(x, merged=combined_group,
                                                   merge_group_key=merge_target_key,
-                                                  illegal_group_key=illegal_group_key))
+                                                  illegal_group_key=illegal_group_key,reminder_group=None))
     groups = groups.reset_index(drop=True)
     groups = groups.groupby(['time_cluster', 'cluster_context'])
+    return groups
+
+def merge_bride_groom(groups_to_change, groups, logger):
+    bride_centric_classes = ['bride', 'bride party', 'wedding dress', 'getting hair-makeup', 'bride getting dressed']
+    groom_centric_classes = ['groom', 'groom party', 'suit']
+
+    merging_candidates = list()
+
+    for group_to_change_key, change_tuple in groups_to_change.items():
+
+        if change_tuple[0] != 'merge':
+            continue
+
+        # Check if group_to_change_key exists in groups
+        if group_to_change_key not in groups.groups:
+            continue
+        else:
+            illegal_group = groups.get_group(group_to_change_key)
+
+        if illegal_group.empty:
+            continue
+
+        illegal_class = group_to_change_key[1].split("_")[0]
+        if illegal_class in bride_centric_classes or illegal_class in groom_centric_classes:
+
+            time_cluster_id = group_to_change_key[0]
+            main_groups = [group for cluster_key, group in groups if
+                           time_cluster_id == cluster_key[0] and cluster_key != group_to_change_key and
+                           len(group) + len(illegal_group) <= CONFIGS['max_imges_per_spread'] and
+                           (illegal_class in bride_centric_classes and cluster_key[1].split("_")[0] in groom_centric_classes or
+                           illegal_class in groom_centric_classes and cluster_key[1].split("_")[0] in bride_centric_classes)]
+
+            if len(main_groups) > 0:
+                selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, illegal_group,
+                                                                                         max_images_per_spread=CONFIGS[
+                                                                                             'max_imges_per_spread'])
+                selected_cluster_content_index = selected_cluster['cluster_context'].iloc[0]
+                merge_target_key = (time_cluster_id, selected_cluster_content_index)
+            else:
+                continue
+            merging_candidates.append(
+                (illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key))
+
+    merging_candidates = sorted(merging_candidates, key=lambda x: x[3])
+    for illegal_group, group_to_change_key, selected_cluster, selected_time_difference, merge_target_key in merging_candidates:
+        if abs(len(illegal_group)-len(selected_cluster)) >= 2:
+            min_len = min(len(illegal_group), len(selected_cluster))
+            combined_group = pd.concat([illegal_group.head(min_len), selected_cluster.head(min_len)], ignore_index=False)
+            combined_group.loc[:, 'cluster_context'] = merge_target_key[1]+'_cant_merge'
+            reminder_group = pd.concat([illegal_group.tail(len(illegal_group)-min_len), selected_cluster.tail(len(selected_cluster)-min_len)], ignore_index=False)
+            groups = groups.apply(lambda x: update_groups(x, merged=combined_group,
+                                                          merge_group_key=merge_target_key,
+                                                          illegal_group_key=group_to_change_key, reminder_group=reminder_group))
+            groups = groups.reset_index(drop=True)
+            groups = groups.groupby(['time_cluster', 'cluster_context'])
+
+
     return groups
 
 
@@ -204,6 +261,14 @@ def process_illegal_groups(group2images, groups, look_up_table, is_wedding, logg
         groups = handle_splitting(groups, group2images, look_up_table, is_wedding)
         group2images = get_images_per_groups(groups)
 
+        groups_to_change = dict()
+        for group_key, imgs_number in group2images.items():
+            if imgs_number < CONFIGS['max_img_split'] and '_cant_merge' not in group_key[
+                1]:  # and 'None' not in group_key[1]
+                groups_to_change[group_key] = ('merge', 0)
+        groups = merge_bride_groom(groups_to_change, groups, logger)
+
+        group2images = get_images_per_groups(groups)
         # iteratively merging groups
         while True:
             # Build groups_to_change directly here
