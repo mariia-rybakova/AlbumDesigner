@@ -387,7 +387,7 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
                     photos_df.loc[row_index, 'group_size'] = len(reminder_group)
                 new_sub_index = photos_df['group_sub_index'].max() + 1
                 for row_index in merged_group.index:
-                    photos_df.loc[row_index, 'cluster_context'] = to_merge_group['cluster_context'].iloc[0]
+                    photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
                     photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + selected_cluster['groups_merged'].iloc[0]
                     photos_df.loc[row_index, 'group_size'] = len(merged_group)
                     photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
@@ -410,7 +410,7 @@ def process_wedding_merging(photos_df, logger=None):
     merge_regular_df = df_regular[(df_regular['group_size'] < CONFIGS['max_img_split']) &
                                  (df_regular['merge_allowed'] == True) &
                                  (df_regular['groups_merged'] < CONFIGS['merge_limit_times'])]
-    merge_df = pd.concat([merge_special_df, merge_regular_df], ignore_index=True)
+    merge_df = pd.concat([merge_special_df, merge_regular_df])
     merge_groups = merge_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     if merge_groups.ngroups == 0:
         return photos_df, False
