@@ -170,7 +170,7 @@ def split_illegal_group_in_certain_point(illegal_group, split_points, count):
         next_label = f'{content_cluster_origin}_split_{i + 1}_{count}'
         illegal_group.loc[illegal_group['general_time'] <= split_time, 'cluster_context'] = next_label
 
-        # Assign the remaining items to the last group after the final split point
+    # Assign the remaining items to the last group after the final split point
     last_label = f'{content_cluster_origin}_split_{len(split_points) + 1}_{count}'
     illegal_group.loc[illegal_group['general_time'] > split_points[-1], 'cluster_context'] = last_label
 
