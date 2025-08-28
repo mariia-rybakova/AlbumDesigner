@@ -299,7 +299,8 @@ def merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, 
 
     time_differences = []
     valid_groups = []
-
+    long_distance_groups=[]
+    long_time_differences = []
     for group in main_groups:
         # Calculate mean time and time range for the current group
         group_times = group['general_time'].values
@@ -311,6 +312,11 @@ def merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, 
         images_in_between = sum(illegal_max_time < t < group_min_time or group_max_time < t < illegal_min_time
                                 for t in general_times_list)
         if images_in_between > 2:
+            min_time_diff = np.min(np.abs(group_times - intended_group_time))
+            updated_time_diff = add_class_preference(illegal_group, group, min_time_diff)
+            long_time_differences.append(updated_time_diff)
+            long_distance_groups.append(group)
+
             continue  # Skip this group if more than 2 images are between the time ranges
 
         # Calculate the minimum time difference between the illegal group and this group
@@ -320,9 +326,11 @@ def merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, 
         valid_groups.append(group)
 
     # If no valid groups are found, return None
-    if not valid_groups:
+    if not valid_groups and long_distance_groups:
+        valid_groups = long_distance_groups
+        time_differences = long_time_differences
+    elif not valid_groups and not long_distance_groups:
         return None, None
-
     # Sort by time differences and find the best group for merging
     time_differences = np.array(time_differences)
     sorted_indices = np.argsort(time_differences)

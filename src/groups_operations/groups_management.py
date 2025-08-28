@@ -81,8 +81,10 @@ def handle_wedding_splitting(photos_df, look_up_table ,logger=None):
 def handle_wedding_bride_groom_merge(photos_df, logger=None):
     merge_df = photos_df[(photos_df['group_size'] < CONFIGS['max_img_split']) & ((photos_df['cluster_context'].isin(BRIDE_CENTRIC_CLASSES)) | (photos_df['cluster_context'].isin(GROOM_CENTRIC_CLASSES)))]
 
-    mask = photos_df.apply(tuple, axis=1).isin(merge_df.apply(tuple, axis=1))
-    targets_df = photos_df[~mask]
+    # mask = photos_df.apply(tuple, axis=1).isin(merge_df.apply(tuple, axis=1))
+    # targets_df = photos_df[~mask]
+
+    targets_df = photos_df.copy()
 
     merge_groups = merge_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
 
@@ -144,8 +146,11 @@ def process_wedding_merging(photos_df, logger=None):
     if merge_groups.ngroups == 0:
         return photos_df, False
 
-    mask = photos_df.apply(tuple, axis=1).isin(merge_df.apply(tuple, axis=1))
-    targets_df = photos_df[~mask]
+    # mask = photos_df.apply(tuple, axis=1).isin(merge_df.apply(tuple, axis=1))
+    # targets_df = photos_df[~mask]
+
+    targets_df = photos_df.copy()
+
     targets_df = targets_df[(targets_df['merge_allowed'] == True) & (targets_df['groups_merged'] < CONFIGS['merge_limit_times'])]
 
     general_times_list, _ = get_groups_time(photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']))
@@ -178,12 +183,12 @@ def process_wedding_merging(photos_df, logger=None):
 
         merged_group = pd.concat([to_merge_group, selected_cluster])
 
-        new_sub_index = photos_df['group_sub_index'].max() + 1
+        # new_sub_index = photos_df['group_sub_index'].max() + 1
         for row_index in merged_group.index:
             photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
             photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + selected_cluster['groups_merged'].iloc[0]
             photos_df.loc[row_index, 'group_size'] = len(merged_group)
-            photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
+            photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
             if photos_df.loc[row_index, 'groups_merged'] >= CONFIGS['merge_limit_times']:
                 photos_df.loc[row_index, 'merge_allowed'] = False
         current_merges.add(group_key)
