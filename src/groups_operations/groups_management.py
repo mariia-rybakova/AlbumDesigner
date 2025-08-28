@@ -391,8 +391,7 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
                     photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + selected_cluster['groups_merged'].iloc[0]
                     photos_df.loc[row_index, 'group_size'] = len(merged_group)
                     photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
-                    if photos_df.loc[row_index, 'groups_merged'] >= CONFIGS['merge_limit_times']:
-                        photos_df.loc[row_index, 'merge_allowed'] = False
+                    photos_df.loc[row_index, 'merge_allowed'] = False
                 current_merges.add(group_key)
                 current_merges.add(selected_key)
 
