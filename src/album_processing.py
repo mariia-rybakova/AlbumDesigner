@@ -6,7 +6,7 @@ from gc import collect
 from src.core.photos import get_photos_from_db
 from src.core.spreads import generate_filtered_multi_spreads
 from src.core.scores import add_ranking_score, assign_photos_order
-from src.groups_operations.groups_management import process_illegal_groups
+from src.groups_operations.groups_management import process_wedding_illegal_groups
 from utils.lookup_table_tools import get_lookup_table, get_current_spread_parameters, update_lookup_table_with_limit
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
 from utils.time_processing import sort_groups_by_time
@@ -155,8 +155,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger 
     # groups processing
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images, look_up_table = process_illegal_groups(group2images, original_groups,
-                                                                             look_up_table, is_wedding, logger)
+        updated_groups, group2images, look_up_table = process_wedding_illegal_groups(df, look_up_table, logger)
         illegal_time = (time.time() - start_time)
         logger.info(f'Illegal groups processing time: {illegal_time:.2f} seconds')
     else:
