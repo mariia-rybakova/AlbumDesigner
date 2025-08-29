@@ -235,7 +235,6 @@ def merge_illegal_group(main_groups, illegal_group):
     return illegal_group, combine_groups, selected_cluster_content_index
 
 
-
 def add_class_preference(illegal_group, selected_group, time_diff):
     """Modifies time difference based on content class pairs"""
     if illegal_group is None or selected_group is None:
