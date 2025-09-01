@@ -211,6 +211,148 @@ def generate_layouts_fromDesigns_df(designs,tolerance=0.05):
     return layouts_df
 
 
+def boxes2dict(boxes,item,tolerance,avg_portrait_area,avg_landscape_area):
+    num_boxes = len(boxes)
+
+    xs = [box['x'] for box in boxes]
+    ys = [box['y'] for box in boxes]
+    sorted_indices = np.lexsort((ys, xs))
+
+    boxes_s = [boxes[ind] for ind in sorted_indices]
+    boxes = boxes_s
+
+    if num_boxes == 0:
+        return {}  # Skip if there are no image boxes
+
+    # Initialize counts for each classification with left/right distinction
+    num_left_small_portrait = 0
+    num_right_small_portrait = 0
+    num_left_large_portrait = 0
+    num_right_large_portrait = 0
+    num_left_small_landscape = 0
+    num_right_small_landscape = 0
+    num_left_large_landscape = 0
+    num_right_large_landscape = 0
+    num_left_small_square = 0
+    num_right_small_square = 0
+    num_left_large_square = 0
+    num_right_large_square = 0
+    num_full_page_square = 0
+
+    left_box_ids = []
+    right_box_ids = []
+    left_portrait_ids = []
+    right_portrait_ids = []
+    left_landscape_ids = []
+    right_landscape_ids = []
+    left_square_ids = []
+    right_square_ids = []
+    boxes_areas = []
+
+    for box in boxes:
+        orientation, area = classify_box(box, tolerance)
+        position = 'left' if box['x'] < 0.5 else 'right'
+
+        boxes_areas.append({'id': box['id'], 'area': area})
+
+        if position == 'left':
+            left_box_ids.append(box['id'])
+            if orientation == 'portrait':
+                left_portrait_ids.append(box['id'])
+            elif orientation == 'landscape':
+                left_landscape_ids.append(box['id'])
+            elif 'square' in orientation:
+                left_square_ids.append(box['id'])
+        else:
+            right_box_ids.append(box['id'])
+            if orientation == 'portrait':
+                right_portrait_ids.append(box['id'])
+            elif orientation == 'landscape':
+                right_landscape_ids.append(box['id'])
+            elif 'square' in orientation:
+                right_square_ids.append(box['id'])
+
+        if orientation == 'portrait':
+            if area < avg_portrait_area:
+                if position == 'left':
+                    num_left_small_portrait += 1
+                else:
+                    num_right_small_portrait += 1
+            else:
+                if position == 'left':
+                    num_left_large_portrait += 1
+                else:
+                    num_right_large_portrait += 1
+        elif orientation == 'landscape':
+            if area < avg_landscape_area:
+                if position == 'left':
+                    num_left_small_landscape += 1
+                else:
+                    num_right_small_landscape += 1
+            else:
+                if position == 'left':
+                    num_left_large_landscape += 1
+                else:
+                    num_right_large_landscape += 1
+        elif orientation == 'small square':
+            if position == 'left':
+                num_left_small_square += 1
+            else:
+                num_right_small_square += 1
+        elif orientation == 'large square':
+            if position == 'left':
+                num_left_large_square += 1
+            else:
+                num_right_large_square += 1
+        elif orientation == 'full page square':
+            num_full_page_square += 1
+
+    # Determine if there are mixed orientations on the left or right side
+    left_portrait = num_left_small_portrait + num_left_large_portrait
+    right_portrait = num_right_small_portrait + num_right_large_portrait
+    left_landscape = num_left_small_landscape + num_left_large_landscape
+    right_landscape = num_right_small_landscape + num_right_large_landscape
+    left_square = num_left_small_square + num_left_large_square
+    right_square = num_right_small_square + num_right_large_square
+
+    left_mixed = (left_portrait > 0 and left_landscape > 0) or (left_portrait > 0 and left_square > 0) or (
+            left_landscape > 0 and left_square > 0)
+    right_mixed = (right_portrait > 0 and right_landscape > 0) or (right_portrait > 0 and right_square > 0) or (
+            right_landscape > 0 and right_square > 0)
+
+    # Store the results for the current ID
+    return {
+        "id": int(item),
+        "number of boxes": num_boxes,
+        "left_small_portrait": num_left_small_portrait,
+        "right_small_portrait": num_right_small_portrait,
+        "left_large_portrait": num_left_large_portrait,
+        "right_large_portrait": num_right_large_portrait,
+        "left_small_landscape": num_left_small_landscape,
+        "right_small_landscape": num_right_small_landscape,
+        "left_large_landscape": num_left_large_landscape,
+        "right_large_landscape": num_right_large_landscape,
+        "left_small_square": num_left_small_square,
+        "right_small_square": num_right_small_square,
+        "left_large_square": num_left_large_square,
+        "right_large_square": num_right_large_square,
+        "full_page_square": num_full_page_square,
+        "left_box_ids": left_box_ids,
+        "right_box_ids": right_box_ids,
+        "left_portrait_ids": left_portrait_ids,
+        "right_portrait_ids": right_portrait_ids,
+        "left_landscape_ids": left_landscape_ids,
+        "right_landscape_ids": right_landscape_ids,
+        "left_square_ids": left_square_ids,
+        "right_square_ids": right_square_ids,
+        "boxes_areas": boxes_areas,
+        "left_mixed": left_mixed,
+        "right_mixed": right_mixed,
+        "boxes_info": boxes_s,
+        "ordered_boxes": list(sorted_indices)
+    }
+
+
 def generate_layouts_df(data, id_list,tolerance=0.05):
 
 
@@ -243,146 +385,161 @@ def generate_layouts_df(data, id_list,tolerance=0.05):
     for item in data:
         if int(item) in id_list:
             boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
-            num_boxes = len(boxes)
+            
+            design_dict = boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area)
+            if not design_dict:
+                continue
+            else:
+                design_dict['is_mirrored'] = False
+                result.append(design_dict)
+                if len(design_dict['left_box_ids']) != len(design_dict['right_box_ids']):
+                    mirrored_boxes = [box.copy() for box in boxes]
+                    for mirrored_box in mirrored_boxes:
+                        mirrored_box['x'] = 1 - mirrored_box['x']
+                    design_dict_mirrored = boxes2dict(mirrored_boxes, item, tolerance, avg_portrait_area, avg_landscape_area)
+                    design_dict_mirrored['is_mirrored'] = True
+                    result.append(design_dict_mirrored)
 
-
-            xs = [box['x'] for box in boxes]
-            ys = [box['y'] for box in boxes]
-            sorted_indices = np.lexsort((ys, xs))
-
-            boxes_s = [boxes[ind] for ind in sorted_indices]
-            boxes = boxes_s
-
-            if num_boxes == 0:
-                continue  # Skip if there are no image boxes
-
-            # Initialize counts for each classification with left/right distinction
-            num_left_small_portrait = 0
-            num_right_small_portrait = 0
-            num_left_large_portrait = 0
-            num_right_large_portrait = 0
-            num_left_small_landscape = 0
-            num_right_small_landscape = 0
-            num_left_large_landscape = 0
-            num_right_large_landscape = 0
-            num_left_small_square = 0
-            num_right_small_square = 0
-            num_left_large_square = 0
-            num_right_large_square = 0
-            num_full_page_square = 0
-
-            left_box_ids = []
-            right_box_ids = []
-            left_portrait_ids = []
-            right_portrait_ids = []
-            left_landscape_ids = []
-            right_landscape_ids = []
-            left_square_ids = []
-            right_square_ids = []
-            boxes_areas = []
-
-            for box in boxes:
-                orientation, area = classify_box(box, tolerance)
-                position = 'left' if box['x'] < 0.5 else 'right'
-
-                boxes_areas.append({'id': box['id'], 'area': area})
-
-                if position == 'left':
-                    left_box_ids.append(box['id'])
-                    if orientation == 'portrait':
-                        left_portrait_ids.append(box['id'])
-                    elif orientation == 'landscape':
-                        left_landscape_ids.append(box['id'])
-                    elif 'square' in orientation:
-                        left_square_ids.append(box['id'])
-                else:
-                    right_box_ids.append(box['id'])
-                    if orientation == 'portrait':
-                        right_portrait_ids.append(box['id'])
-                    elif orientation == 'landscape':
-                        right_landscape_ids.append(box['id'])
-                    elif 'square' in orientation:
-                        right_square_ids.append(box['id'])
-
-                if orientation == 'portrait':
-                    if area < avg_portrait_area:
-                        if position == 'left':
-                            num_left_small_portrait += 1
-                        else:
-                            num_right_small_portrait += 1
-                    else:
-                        if position == 'left':
-                            num_left_large_portrait += 1
-                        else:
-                            num_right_large_portrait += 1
-                elif orientation == 'landscape':
-                    if area < avg_landscape_area:
-                        if position == 'left':
-                            num_left_small_landscape += 1
-                        else:
-                            num_right_small_landscape += 1
-                    else:
-                        if position == 'left':
-                            num_left_large_landscape += 1
-                        else:
-                            num_right_large_landscape += 1
-                elif orientation == 'small square':
-                    if position == 'left':
-                        num_left_small_square += 1
-                    else:
-                        num_right_small_square += 1
-                elif orientation == 'large square':
-                    if position == 'left':
-                        num_left_large_square += 1
-                    else:
-                        num_right_large_square += 1
-                elif orientation == 'full page square':
-                    num_full_page_square += 1
-
-            # Determine if there are mixed orientations on the left or right side
-            left_portrait = num_left_small_portrait + num_left_large_portrait
-            right_portrait = num_right_small_portrait + num_right_large_portrait
-            left_landscape = num_left_small_landscape + num_left_large_landscape
-            right_landscape = num_right_small_landscape + num_right_large_landscape
-            left_square = num_left_small_square + num_left_large_square
-            right_square = num_right_small_square + num_right_large_square
-
-            left_mixed = (left_portrait > 0 and left_landscape > 0) or (left_portrait > 0 and left_square > 0) or (
-                    left_landscape > 0 and left_square > 0)
-            right_mixed = (right_portrait > 0 and right_landscape > 0) or (right_portrait > 0 and right_square > 0) or (
-                    right_landscape > 0 and right_square > 0)
-
-            # Store the results for the current ID
-            result.append({
-                "id": int(item),
-                "number of boxes": num_boxes,
-                "left_small_portrait": num_left_small_portrait,
-                "right_small_portrait": num_right_small_portrait,
-                "left_large_portrait": num_left_large_portrait,
-                "right_large_portrait": num_right_large_portrait,
-                "left_small_landscape": num_left_small_landscape,
-                "right_small_landscape": num_right_small_landscape,
-                "left_large_landscape": num_left_large_landscape,
-                "right_large_landscape": num_right_large_landscape,
-                "left_small_square": num_left_small_square,
-                "right_small_square": num_right_small_square,
-                "left_large_square": num_left_large_square,
-                "right_large_square": num_right_large_square,
-                "full_page_square": num_full_page_square,
-                "left_box_ids": left_box_ids,
-                "right_box_ids": right_box_ids,
-                "left_portrait_ids": left_portrait_ids,
-                "right_portrait_ids": right_portrait_ids,
-                "left_landscape_ids": left_landscape_ids,
-                "right_landscape_ids": right_landscape_ids,
-                "left_square_ids": left_square_ids,
-                "right_square_ids": right_square_ids,
-                "boxes_areas": boxes_areas,
-                "left_mixed": left_mixed,
-                "right_mixed": right_mixed,
-                "boxes_info": boxes_s,
-                "ordered_boxes": list(sorted_indices)
-            })
+            # num_boxes = len(boxes)
+            #
+            #
+            # xs = [box['x'] for box in boxes]
+            # ys = [box['y'] for box in boxes]
+            # sorted_indices = np.lexsort((ys, xs))
+            #
+            # boxes_s = [boxes[ind] for ind in sorted_indices]
+            # boxes = boxes_s
+            #
+            # if num_boxes == 0:
+            #     continue  # Skip if there are no image boxes
+            #
+            # # Initialize counts for each classification with left/right distinction
+            # num_left_small_portrait = 0
+            # num_right_small_portrait = 0
+            # num_left_large_portrait = 0
+            # num_right_large_portrait = 0
+            # num_left_small_landscape = 0
+            # num_right_small_landscape = 0
+            # num_left_large_landscape = 0
+            # num_right_large_landscape = 0
+            # num_left_small_square = 0
+            # num_right_small_square = 0
+            # num_left_large_square = 0
+            # num_right_large_square = 0
+            # num_full_page_square = 0
+            #
+            # left_box_ids = []
+            # right_box_ids = []
+            # left_portrait_ids = []
+            # right_portrait_ids = []
+            # left_landscape_ids = []
+            # right_landscape_ids = []
+            # left_square_ids = []
+            # right_square_ids = []
+            # boxes_areas = []
+            #
+            # for box in boxes:
+            #     orientation, area = classify_box(box, tolerance)
+            #     position = 'left' if box['x'] < 0.5 else 'right'
+            #
+            #     boxes_areas.append({'id': box['id'], 'area': area})
+            #
+            #     if position == 'left':
+            #         left_box_ids.append(box['id'])
+            #         if orientation == 'portrait':
+            #             left_portrait_ids.append(box['id'])
+            #         elif orientation == 'landscape':
+            #             left_landscape_ids.append(box['id'])
+            #         elif 'square' in orientation:
+            #             left_square_ids.append(box['id'])
+            #     else:
+            #         right_box_ids.append(box['id'])
+            #         if orientation == 'portrait':
+            #             right_portrait_ids.append(box['id'])
+            #         elif orientation == 'landscape':
+            #             right_landscape_ids.append(box['id'])
+            #         elif 'square' in orientation:
+            #             right_square_ids.append(box['id'])
+            #
+            #     if orientation == 'portrait':
+            #         if area < avg_portrait_area:
+            #             if position == 'left':
+            #                 num_left_small_portrait += 1
+            #             else:
+            #                 num_right_small_portrait += 1
+            #         else:
+            #             if position == 'left':
+            #                 num_left_large_portrait += 1
+            #             else:
+            #                 num_right_large_portrait += 1
+            #     elif orientation == 'landscape':
+            #         if area < avg_landscape_area:
+            #             if position == 'left':
+            #                 num_left_small_landscape += 1
+            #             else:
+            #                 num_right_small_landscape += 1
+            #         else:
+            #             if position == 'left':
+            #                 num_left_large_landscape += 1
+            #             else:
+            #                 num_right_large_landscape += 1
+            #     elif orientation == 'small square':
+            #         if position == 'left':
+            #             num_left_small_square += 1
+            #         else:
+            #             num_right_small_square += 1
+            #     elif orientation == 'large square':
+            #         if position == 'left':
+            #             num_left_large_square += 1
+            #         else:
+            #             num_right_large_square += 1
+            #     elif orientation == 'full page square':
+            #         num_full_page_square += 1
+            #
+            # # Determine if there are mixed orientations on the left or right side
+            # left_portrait = num_left_small_portrait + num_left_large_portrait
+            # right_portrait = num_right_small_portrait + num_right_large_portrait
+            # left_landscape = num_left_small_landscape + num_left_large_landscape
+            # right_landscape = num_right_small_landscape + num_right_large_landscape
+            # left_square = num_left_small_square + num_left_large_square
+            # right_square = num_right_small_square + num_right_large_square
+            #
+            # left_mixed = (left_portrait > 0 and left_landscape > 0) or (left_portrait > 0 and left_square > 0) or (
+            #         left_landscape > 0 and left_square > 0)
+            # right_mixed = (right_portrait > 0 and right_landscape > 0) or (right_portrait > 0 and right_square > 0) or (
+            #         right_landscape > 0 and right_square > 0)
+            #
+            # # Store the results for the current ID
+            # result.append({
+            #     "id": int(item),
+            #     "number of boxes": num_boxes,
+            #     "left_small_portrait": num_left_small_portrait,
+            #     "right_small_portrait": num_right_small_portrait,
+            #     "left_large_portrait": num_left_large_portrait,
+            #     "right_large_portrait": num_right_large_portrait,
+            #     "left_small_landscape": num_left_small_landscape,
+            #     "right_small_landscape": num_right_small_landscape,
+            #     "left_large_landscape": num_left_large_landscape,
+            #     "right_large_landscape": num_right_large_landscape,
+            #     "left_small_square": num_left_small_square,
+            #     "right_small_square": num_right_small_square,
+            #     "left_large_square": num_left_large_square,
+            #     "right_large_square": num_right_large_square,
+            #     "full_page_square": num_full_page_square,
+            #     "left_box_ids": left_box_ids,
+            #     "right_box_ids": right_box_ids,
+            #     "left_portrait_ids": left_portrait_ids,
+            #     "right_portrait_ids": right_portrait_ids,
+            #     "left_landscape_ids": left_landscape_ids,
+            #     "right_landscape_ids": right_landscape_ids,
+            #     "left_square_ids": left_square_ids,
+            #     "right_square_ids": right_square_ids,
+            #     "boxes_areas": boxes_areas,
+            #     "left_mixed": left_mixed,
+            #     "right_mixed": right_mixed,
+            #     "boxes_info": boxes_s,
+            #     "ordered_boxes": list(sorted_indices)
+            # })
 
     layouts_df = pd.DataFrame(result)
 
