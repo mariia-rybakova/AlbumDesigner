@@ -50,8 +50,14 @@ def calculate_correlation_score(layout_id2data, photos, all_spreads_data):
         if not box_areas or not ranks or len(set(box_areas)) == 1 or len(set(ranks)) == 1:
             return 0.1  # Return a default correlation score (e.g., 0) if data is not suitable for correlation
 
+    # Normalization (maps ranks and areas to a 0-1 scale)
+    max_rank = max(ranks) if ranks else 1  # Avoid division by zero
+    max_area = max(box_areas) if box_areas else 1
+
+    normalized_ranks = [1 - (rank / max_rank) for rank in ranks]  # Lower ranks are better
+    normalized_areas = [area / max_area for area in box_areas]  # Larger areas are better
     # Calculate Pearson correlation coefficient
-    correlation, _ = pearsonr(ranks, box_areas)
+    correlation, _ = pearsonr(normalized_ranks, normalized_areas)
 
     return correlation / 2 + 0.5
 

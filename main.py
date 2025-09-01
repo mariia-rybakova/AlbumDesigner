@@ -19,6 +19,7 @@ from ptinfra.pt_queue import QReader, QWriter, Message
 from ptinfra import  AbortRequested
 
 
+from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.selection.auto_selection import ai_selection
 from src.core.key_pages import generate_first_last_pages
@@ -226,6 +227,9 @@ class ProcessStage(Stage):
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
             df = message.content.get('gallery_photos_info', pd.DataFrame())
+            ai_metadata = message.content.get('aiMetadata', {})
+            chosen_photos = ai_metadata.get('photoIds', [])
+            df = update_photos_ranks(df, chosen_photos)
             if df.empty:
                 self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
                 message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
