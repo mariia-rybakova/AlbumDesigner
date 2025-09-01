@@ -2,15 +2,16 @@ import random
 import numpy as np
 import pandas as pd
 import networkx as nx
+import math
+
 from collections import defaultdict
 from datetime import timedelta
-
 from utils.configs import CONFIGS
-
 from sklearn.cluster import MiniBatchKMeans
-import math
 from itertools import combinations
-from collections import Counter
+
+
+
 # Assume CONFIGS dict is defined elsewhere
 # CONFIGS = {'FACE_FAR_THRESHOLD': ..., 'FACE_M_THRESHOLD': ..., etc.}
 
@@ -470,6 +471,7 @@ def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.
     if len(selected_images) > need:
         selected_images = sorted(selected_images, key=lambda x: score_lookup[x], reverse=True)[:need]
 
+    #plot_clusters_to_pdf(df, selected_images, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46881120\{cluster_name}.pdf")
     return selected_images
 
 

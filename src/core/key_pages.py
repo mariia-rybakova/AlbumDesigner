@@ -68,7 +68,7 @@ def get_important_imgs(data_df, top=3):
 
     for row in df_sorted.itertuples(index=False):
         text = str(row.image_subquery_content).lower()
-        persons_ids = str(row.persons_ids).lower()
+        persons_ids = row.persons_ids
 
         # Check if any keyword is in the text
         has_keyword = any(k.lower() in text for k in keywords)
