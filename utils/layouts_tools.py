@@ -395,7 +395,7 @@ def generate_layouts_df(data, id_list,tolerance=0.05):
                 if len(design_dict['left_box_ids']) != len(design_dict['right_box_ids']):
                     mirrored_boxes = [box.copy() for box in boxes]
                     for mirrored_box in mirrored_boxes:
-                        mirrored_box['x'] = 1 - mirrored_box['x']
+                        mirrored_box['x'] = 1 - mirrored_box['x'] - mirrored_box['width']
                     design_dict_mirrored = boxes2dict(mirrored_boxes, item, tolerance, avg_portrait_area, avg_landscape_area)
                     design_dict_mirrored['is_mirrored'] = True
                     result.append(design_dict_mirrored)
