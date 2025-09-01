@@ -129,13 +129,26 @@ def get_info_protobufs(project_base_url, logger):
             # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
             #                                         how='left', on='image_id')
             bride_id, groom_id = np.nan, np.nan
-            bride_set = set(_flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+
+            from collections import Counter
+            bride_set = Counter(
+                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+            groom_set = Counter(
+                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
+
+            bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
+            groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
+
             main_row = gallery_info_df["main_persons"].dropna().iloc[0]
-            for pid in main_row:
-                if pid in bride_set:
-                    bride_id = pid
-                else:
-                    groom_id = pid
+
+            if groom_id not in main_row or bride_id not in main_row:
+                logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
+
+            # for pid in main_row:
+            #     if pid in bride_set:
+            #         bride_id = pid
+            #     else:
+            #         groom_id = pid
 
             gallery_info_df["bride_id"] = bride_id
             gallery_info_df["groom_id"] = groom_id
