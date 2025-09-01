@@ -72,7 +72,7 @@ def filter_by_majority(cluster_df,cluster_images, cluster_name, id_column='perso
     else:
         return df,cluster_images
 
-def cluster_by_time(df, eps=0.3, min_samples=2,metric='l1'):
+def cluster_by_time(df,logger, eps=0.3, min_samples=2,metric='l1'):
         """
         Cluster images based on their timestamps using DBSCAN
 
@@ -85,32 +85,30 @@ def cluster_by_time(df, eps=0.3, min_samples=2,metric='l1'):
         Returns:
         - DataFrame with added 'time_cluster' column
         """
-        processed_times = process_time(df['image_time_date'].tolist())
-        # Reshape for DBSCAN (needs 2D array)
-        time_values = np.array(processed_times).reshape(-1, 1)
+        try:
+            processed_times = process_time(df['image_time_date'].tolist())
+            # Reshape for DBSCAN (needs 2D array)
+            time_values = np.array(processed_times).reshape(-1, 1)
 
-        # Apply DBSCAN clustering
-        clustering = DBSCAN(eps=eps, min_samples=min_samples,metric=metric).fit(time_values)
-        labels = clustering.labels_
+            # Apply DBSCAN clustering
+            clustering = DBSCAN(eps=eps, min_samples=min_samples,metric=metric).fit(time_values)
+            labels = clustering.labels_
 
-        # Add cluster labels to DataFrame
-        df = df.copy()
-        df['sub_group_time_cluster'] = labels
+            # Add cluster labels to DataFrame
+            df = df.copy()
+            df['sub_group_time_cluster'] = labels
 
-        df = df.sort_values('image_time_date').reset_index(drop=True)
+            df = df.sort_values('image_time_date').reset_index(drop=True)
 
-        # Fix -1 labels by inheriting previous cluster
-        for i in range(0, len(df)):
-            if i == 0 and df.at[i, 'sub_group_time_cluster'] == -1:
-                prev_cluster = df.at[i + 1, 'sub_group_time_cluster']
-                if prev_cluster != -1:  # only assign if previous is valid
-                    df.at[i, 'sub_group_time_cluster'] = prev_cluster
-            elif df.at[i, 'sub_group_time_cluster'] == -1:
-                prev_cluster = df.at[i - 1, 'sub_group_time_cluster']
-                if prev_cluster != -1:  # only assign if previous is valid
-                    df.at[i, 'sub_group_time_cluster'] = prev_cluster
-                else:
-                    df.at[i, 'sub_group_time_cluster'] = df.at[i - 2, 'sub_group_time_cluster']
+            # Fix -1 labels by inheriting previous cluster
+            col = "sub_group_time_cluster"
+
+            s = df[col].replace(-1, pd.NA)  # treat -1 as missing
+            s = s.ffill().bfill()  # fill from previous; then fill start from next
+            df[col] = s.astype(df[col].dtype)
+
+        except Exception as e:
+            logger.error(f"Error in selection: {e}")
 
         return df
 
@@ -275,7 +273,7 @@ def load_event_mapping(csv_path: str,logger):
                 if col.lower().strip() == 'sub event':
                     continue
 
-                category = col.lower().strip()
+                category = col
                 value = str(row[col]).strip().lower()
 
                 if category not in event_mapping:
@@ -550,10 +548,10 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         event_mapping = load_event_mapping(CONFIGS['focus_csv_path'], logger)
 
         if len(focus)>0:
-            focus_table = event_mapping.get(focus[0], event_mapping['bride and groom'])
+            focus_table = event_mapping.get(focus[0], event_mapping['brideAndGroom'])
             relation_table = relations.get(focus[0], relations['brideAndGroom'])
         else:
-            focus_table = event_mapping['bride and groom']
+            focus_table = event_mapping['brideAndGroom']
             relation_table = relations['brideAndGroom']
 
         actual_number_images_dict = {
@@ -609,7 +607,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             available_img_ids = [image_id for image_id, _ in sorted_candidates]
             return scored_df, available_img_ids,False
 
-        bride_id, groom_id = None, None
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
             n_actual = len(cluster_df)
             category_picked.setdefault(cluster_name, {})
@@ -710,41 +707,29 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
-                df_with_time_cluster = cluster_by_time(valid_images_df)
+                df_with_time_cluster = cluster_by_time(valid_images_df, logger)
                 filtered_df = df_with_time_cluster
+                groom_id = int(df_with_time_cluster['groom_id'].to_list()[0])
+                bride_id = int(df_with_time_cluster['bride_id'].to_list()[0])
+                if cluster_name == 'bride':
+                    filtered_df = df_with_time_cluster[
+                        df_with_time_cluster['persons_ids'].apply(lambda x: x == [bride_id])
+                    ]
+                elif  cluster_name == 'groom':
+                    filtered_df = df_with_time_cluster[
+                        df_with_time_cluster['persons_ids'].apply(lambda x: x == [groom_id])
+                    ]
 
-                solo_counter = Counter(
-                    row[0] for row in df_with_time_cluster['persons_ids'] if len(row) == 1
-                )
+                elif cluster_name == "bride and groom":
+                    # Filter images that contain both top two IDs or have 2 faces or 2 bodies
+                    def has_both_ids_or_two_faces_bodies(row):
+                        ids_match = set(row['persons_ids']) == [groom_id,bride_id]
+                        has_two_faces = row.get('n_faces', 0) == 2
+                        has_two_bodies = row.get('num_bodies', 0) == 2
+                        return ids_match and (has_two_faces or has_two_bodies)
 
-                if cluster_name in ['bride', 'groom', 'bride and groom']:
-                    if solo_counter:
-                        if cluster_name in ["bride", "groom"]:
-                            # Use top solo person
-                            best_id = solo_counter.most_common(1)[0][0]
-                            if cluster_name == 'bride':
-                                bride_id = best_id
-                            else:
-                                groom_id = best_id
-
-                            filtered_df = df_with_time_cluster[
-                                df_with_time_cluster['persons_ids'].apply(lambda x: x == [best_id])
-                            ]
-
-                        elif cluster_name == "bride and groom":
-                            # Use top two solo persons (bride and groom)
-                            top_two_ids = [pid for pid, _ in solo_counter.most_common(2)]
-                            top_two_ids_set = set(top_two_ids)
-
-                            # Filter images that contain both top two IDs or have 2 faces or 2 bodies
-                            def has_both_ids_or_two_faces_bodies(row):
-                                ids_match = set(row['persons_ids']) == top_two_ids_set
-                                has_two_faces = row.get('n_faces', 0) == 2
-                                has_two_bodies = row.get('num_bodies', 0) == 2
-                                return ids_match and (has_two_faces or has_two_bodies)
-
-                            filtered_df = df_with_time_cluster[
-                                df_with_time_cluster.apply(has_both_ids_or_two_faces_bodies, axis=1)]
+                    filtered_df = df_with_time_cluster[
+                        df_with_time_cluster.apply(has_both_ids_or_two_faces_bodies, axis=1)]
 
                 elif cluster_name == 'bride party':
                      if bride_id:
@@ -761,8 +746,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
                         filtered_df = df_with_time_cluster[
                             df_with_time_cluster.apply(has_groom_in_photos, axis=1)]
-
-
 
                 df_clustered  = filtered_df.set_index('image_id')
                 color_candidates_df = df_clustered[df_clustered['image_color'] != 0]
@@ -873,6 +856,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         logger.info(f"Total images: {len(ai_images_selected)}")
 
     except Exception as e:
+        logger.error(f"Error in selection: {e}")
         return [] , f"Error in selection: {e}"
 
     return ai_images_selected,spreads_allocation, error_message
