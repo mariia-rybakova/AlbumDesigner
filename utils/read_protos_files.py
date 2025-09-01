@@ -1,6 +1,8 @@
 import io
 import numpy as np
 import pandas as pd
+
+from collections import Counter
 from ptinfra.azure.pt_file import PTFile
 from utils.protos import FaceVector_pb2 as face_vector
 from utils.protos import BGSegmentation_pb2 as meta_vector
@@ -170,23 +172,42 @@ def get_persons_ids(persons_file, logger):
         # Prepare lists for DataFrame columns
         photo_ids = []
         persons_ids_list = []
+        id_to_gender = {}
 
         # Extract persons information and prepare for DataFrame update
         for iden in identity_info:
             id = iden.identityNumeralId
             infos = iden.personInfo
+            gender = infos.gender
+            id_to_gender[id] = gender
             for im in infos.imagesInfo:
                 photo_ids.append(im.photoId)
                 persons_ids_list.append(id)
 
+        if persons_ids_list:  # Check if anyone was identified at all
+            id_counts = Counter(persons_ids_list)
+
+            most_common_persons = id_counts.most_common(2)
+
+            # Extract just the IDs from the tuples into a simple list
+            top_person_ids = [person[0] for person in most_common_persons]
+        else:
+            top_person_ids = []
+
         # Create a temporary DataFrame with the new person information
-        persons_info_df = pd.DataFrame({
+        temp_df = pd.DataFrame({
             'image_id': photo_ids,
             'persons_ids': persons_ids_list,
         })
 
-        # Aggregate persons_ids for each image_id
-        persons_info_df = persons_info_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
+        if not temp_df.empty:
+            persons_info_df = temp_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
+        else:
+            persons_info_df = pd.DataFrame(columns=['image_id', 'persons_ids'])
+
+        persons_info_df['main_persons'] = [top_person_ids for _ in range(len(persons_info_df))]
+        persons_info_df['persons_ids'] = persons_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
+
 
     except Exception as e:
         logger.error("Error reading persons info from file: {}".format(e))
@@ -270,7 +291,7 @@ def get_person_vectors(persons_file, logger):
 
         photo_df = pd.DataFrame(photo_data)
         # Fill missing 'number_bodies' with 0 if not provided in the photos data
-        photo_df['number_bodies'].fillna(0, inplace=True)
+        photo_df.fillna({'number_bodies': 0}, inplace=True)
 
     except Exception as ex:
         logger.error(f"Error reading person vectors from file: {ex}")

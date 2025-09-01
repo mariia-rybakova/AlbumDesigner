@@ -66,6 +66,23 @@ def process_content(row_dict):
     row_dict['cluster_context'] = cluster_class_label
     return row_dict
 
+
+def _flatten(iterables):
+    for x in iterables:
+        if isinstance(x, (list, tuple, set)):
+            for y in x:
+                yield y
+        elif pd.notna(x):
+            yield x
+
+def pick_from_set(candidates, allowed_set):
+    if not isinstance(candidates, (list, tuple, set)):
+        return np.nan
+    for c in candidates:
+        if c in allowed_set:
+            return c
+    return np.nan
+
 def get_info_protobufs(project_base_url, logger):
     try:
         start = datetime.now()
@@ -111,6 +128,27 @@ def get_info_protobufs(project_base_url, logger):
             gallery_info_df = gallery_info_df.apply(process_content, axis=1)
             # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
             #                                         how='left', on='image_id')
+            bride_id, groom_id = np.nan, np.nan
+            bride_set = set(_flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+            main_row = gallery_info_df["main_persons"].dropna().iloc[0]
+            for pid in main_row:
+                if pid in bride_set:
+                    bride_id = pid
+                else:
+                    groom_id = pid
+
+            gallery_info_df["bride_id"] = bride_id
+            gallery_info_df["groom_id"] = groom_id
+
+            gallery_info_df["main_persons"] = gallery_info_df["main_persons"].apply(
+                lambda x: x if isinstance(x, (list, tuple)) else []
+            )
+
+            gallery_info_df["persons_ids"] = gallery_info_df["main_persons"].apply(
+                lambda x: x if isinstance(x, (list, tuple)) else []
+            )
+
+
 
         # Get Query Content of each image
         if gallery_info_df is not None:
@@ -125,13 +163,9 @@ def get_info_protobufs(project_base_url, logger):
         gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
         logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
         # make sure it has list values not float nan
-        gallery_info_df['persons_ids'] = gallery_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
         # Cluster people by number of people inside the image
         gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
-
-
-
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
         return gallery_info_df, is_wedding, None
 

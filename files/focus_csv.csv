@@ -1,36 +1,33 @@
-sub event,"Bride and groom
-","Parents
-","Everyone else
-"
+sub event,brideAndGroom,parents,everyoneElse
+'dancing',3%,1%,8%
+'portrait',4%,4%,6%
+'full party',6%,6%,10%
+'other',0%,0%,0%
+None',0%,0%,0%
+'ceremony',6%,6%,6%
+'bride and groom',12%,16%,8%
+'couple',4%,4%,4%
+'kiss',3%,3%,3%
+'first dance',4%,6%,3%
+'walking the aisle',3%,4%,2%
+'bride party',3%,3%,4%
+'groom party',3%,3%,4%
+'bride getting dressed',3%,3%,2%
+'very large group',5%,4%,7%
+'detail',4%,1%,4%
+'getting hair-makeup',yes,yes,yes
+'entertainment',4%,2%,4%
+'speech',2%,2%,2%
+'invite',yes,yes,yes
+'rings',yes,yes,yes
+'cake cutting',1%,1%,1%
+'suit',yes,yes,yes
+'wedding dress',yes,yes,yes
 'bride',12%,14%,8%
 'groom',12%,14%,8%
-'bride and groom',12%,16%,8%
-'ceremony',6%,6%,6%
-'full party',6%,6%,10%
-'very large group',5%,4%,7%
-'couple',4%,4%,4%
-'detail',4%,1%,4%
-'entertainment',4%,2%,4%
-'first dance',4%,6%,3%
-'portrait',4%,4%,6%
-'bride getting dressed',3%,3%,2%
-'bride party',3%,3%,4%
-'dancing',3%,1%,8%
-'groom party',3%,3%,4%
-'kiss',3%,3%,3%
-'walking the aisle',3%,4%,2%
-'speech',2%,2%,2%
-'cake cutting',1%,1%,1%
-'food',yes,no,no
-'getting hair-makeup',yes,yes,yes
 'inside vehicle',yes,no,yes
-'invite',yes,yes,yes
 'pet',yes,no,yes
-'rings',yes,yes,yes
-'settings',yes,no,yes
-'suit',yes,yes,yes
 'vehicle',yes,yes,yes
-'wedding dress',yes,yes,yes
+'settings',yes,no,yes
+'food',yes,no,no
 'accessories',yes,no,yes
-'other',0%,0%,0%
-'None',0%,0%,0%
