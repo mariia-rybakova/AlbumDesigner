@@ -12,11 +12,14 @@ from utils.read_protos_files import get_image_embeddings,get_faces_info,get_pers
 from utils.image_queries import generate_query
 from ptinfra.azure.pt_file import PTFile
 import json
-
+from math import isnan
 
 def generate_dict_key(numbers, n_bodies):
-    if numbers == 0 and n_bodies == 0 or not numbers:
+    if (numbers == 0 and n_bodies == 0) or (not numbers):
         return 'No PEOPLE'
+    if isinstance(numbers, float):
+        if isnan(numbers):
+            return 'No PEOPLE'
 
     # Convert the string of numbers into a list
     try:
