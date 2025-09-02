@@ -3,8 +3,6 @@ import numpy as np
 
 from itertools import combinations, product, groupby
 
-from suds.sudsobject import items
-
 from utils.configs import CONFIGS
 import pandas as pd
 
