@@ -9,10 +9,10 @@ from datetime import timedelta
 from utils.configs import CONFIGS
 from sklearn.cluster import MiniBatchKMeans
 from itertools import combinations
-from sklearn_extra.cluster import KMedoids
+# from sklearn_extra.cluster import KMedoids
 # from testing_code.plotting import plot_clusters_to_pdf,plot_time_clusters_to_pdf
 from sklearn.preprocessing import StandardScaler
-
+from pyclustering.cluster.kmedoids import kmedoids as PycKMedoids
 
 
 def select_photos_with_scoring(groups, needed_count, cluster_name=None):
@@ -419,8 +419,25 @@ def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.
     # kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, batch_size=64)
     # labels = kmeans.fit_predict(embeddings)
 
-    kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
-    labels = kmedoids.fit_predict(embeddings)
+    # kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
+    # labels = kmedoids.fit_predict(embeddings)
+
+    # Deterministic initialization
+    random.seed(42)
+    initial_medoids = random.sample(range(len(embeddings)), n_clusters)
+
+    # pyclustering expects a list of points
+    kmedoids_instance = PycKMedoids(embeddings.tolist(), initial_medoids)
+    kmedoids_instance.process()
+
+    clusters = kmedoids_instance.get_clusters()  # list of lists with point indices
+    # medoid_indices = kmedoids_instance.get_medoids()  # (optional if you need medoids later)
+
+    # Build labels array to mirror sklearn interface
+    labels = np.empty(len(embeddings), dtype=int)
+    for cid, cluster in enumerate(clusters):
+        labels[cluster] = cid
+
 
     groups = {}
     for img_id, label in zip(df['image_id'], labels):
@@ -530,8 +547,23 @@ def filter_similarity_diverse(
         n_clusters = max(2, int(np.ceil(len(df) / target_group_size)))
 
         # Run KMedoids
-        kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
-        labels = kmedoids.fit_predict(features_scaled)
+        # kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
+        # labels = kmedoids.fit_predict(features_scaled)
+
+        random.seed(42)
+        initial_medoids = random.sample(range(len(features_scaled)), n_clusters)
+
+        # pyclustering expects a list of points
+        kmedoids_instance = PycKMedoids(features_scaled.tolist(), initial_medoids)
+        kmedoids_instance.process()
+
+        clusters = kmedoids_instance.get_clusters()  # list of lists with point indices
+        # medoid_indices = kmedoids_instance.get_medoids()  # (optional if you need medoids later)
+
+        # Build labels array to mirror sklearn interface
+        labels = np.empty(len(features_scaled), dtype=int)
+        for cid, cluster in enumerate(clusters):
+            labels[cluster] = cid
 
         df["joint_cluster"] = labels
 

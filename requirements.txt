@@ -17,4 +17,4 @@ protobuf==6.30.2
 networkx
 openpyxl
 reportlab
-scikit-learn-extra
+pyclustering
