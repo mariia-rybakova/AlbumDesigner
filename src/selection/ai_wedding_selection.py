@@ -12,7 +12,7 @@ from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 from src.selection.person_clustering import person_max_union_selection
-from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity,filter_similarity_diverse
+from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity
 
 
 def process_time(images_time):
