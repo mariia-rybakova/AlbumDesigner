@@ -900,8 +900,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         logger.info(f"Total images: {len(ai_images_selected)}")
 
     except Exception as e:
-        logger.error(f"Error in selection: {e}")
-        return [] , f"Error in selection: {e}"
+        logger.error(f"Error in smart_wedding_selection: {e}")
+        return [] , f"Error in smart_wedding_selection: {e}"
 
     return ai_images_selected,spreads_allocation, error_message
 
