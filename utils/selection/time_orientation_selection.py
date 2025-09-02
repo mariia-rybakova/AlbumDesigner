@@ -671,7 +671,7 @@ def filter_similarity_diverse(
         #                           margin=40, padding=20)
 
     except Exception as e:
-        logger.error(f"Error filter_similarity_diverse: {e}")
+        logger.error(f"Error filter_similarity_diverse cluster name {cluster_name}: {e}")
         return []
 
     return selected

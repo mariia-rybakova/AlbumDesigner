@@ -725,16 +725,18 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     all_ids = [pid for sublist in filtered["persons_ids"] for pid in sublist]
                     most_common_id = Counter(all_ids).most_common(1)[0][0]
                     df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
+                    df_with_time_cluster = time_clusters_fixed_span(df.reset_index(), logger)
+
                     if len(df) <= need or len(df) - need <= 1 :
                         if no_selection:
-                            preferred_color_ids  = df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
+                            preferred_color_ids  = df_with_time_cluster.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
                         else:
-                            preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
+                            preferred_color_ids = df_with_time_cluster.sort_values(by='total_score', ascending=False)[
                                                       'image_id'].values.tolist()[:need]
                     else:
                         #preferred_color_ids  = filter_similarity(need, df.reset_index(), cluster_name)
                         preferred_color_ids = filter_similarity_diverse(need=need,
-                                                                        df=df.reset_index(),
+                                                                        df=df_with_time_cluster.reset_index(),
                                                                         cluster_name=cluster_name, logger=logger,
                                                                         # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                                                         target_group_size=10)  # set e.g. 3 to balance portrait/landscape)
