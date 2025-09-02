@@ -12,11 +12,14 @@ from utils.read_protos_files import get_image_embeddings,get_faces_info,get_pers
 from utils.image_queries import generate_query
 from ptinfra.azure.pt_file import PTFile
 import json
-
+from math import isnan
 
 def generate_dict_key(numbers, n_bodies):
-    if numbers == 0 and n_bodies == 0 or not numbers:
+    if (numbers == 0 and n_bodies == 0) or (not numbers):
         return 'No PEOPLE'
+    if isinstance(numbers, float):
+        if isnan(numbers):
+            return 'No PEOPLE'
 
     # Convert the string of numbers into a list
     try:
@@ -129,13 +132,26 @@ def get_info_protobufs(project_base_url, logger):
             # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
             #                                         how='left', on='image_id')
             bride_id, groom_id = np.nan, np.nan
-            bride_set = set(_flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+
+            from collections import Counter
+            bride_set = Counter(
+                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+            groom_set = Counter(
+                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
+
+            bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
+            groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
+
             main_row = gallery_info_df["main_persons"].dropna().iloc[0]
-            for pid in main_row:
-                if pid in bride_set:
-                    bride_id = pid
-                else:
-                    groom_id = pid
+
+            if groom_id not in main_row or bride_id not in main_row:
+                logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
+
+            # for pid in main_row:
+            #     if pid in bride_set:
+            #         bride_id = pid
+            #     else:
+            #         groom_id = pid
 
             gallery_info_df["bride_id"] = bride_id
             gallery_info_df["groom_id"] = groom_id
@@ -291,27 +307,6 @@ def customize_box(image_info, box_info):
         crop_h = image_info['cropped_h']
 
         return crop_x, crop_y, crop_w, crop_h
-
-        # image_ar = crop_w / crop_h
-        #
-        # if image_ar > target_ar:
-        #     # Crop is too wide → reduce width
-        #     new_crop_w = crop_h * target_ar
-        #     dx = (crop_w - new_crop_w) / 2
-        #     adj_x = crop_x + dx
-        #     adj_y = crop_y
-        #     adj_w = new_crop_w
-        #     adj_h = crop_h
-        # else:
-        #     # Crop is too tall → reduce height
-        #     new_crop_h = crop_w / target_ar
-        #     dy = (crop_h - new_crop_h) / 2
-        #     adj_x = crop_x
-        #     adj_y = crop_y + dy
-        #     adj_w = crop_w
-        #     adj_h = new_crop_h
-        #
-        # return adj_x, adj_y, adj_w, adj_h
     else:
         image_ar = float(image_info['image_as'])
         if image_ar > target_ar:
@@ -332,6 +327,14 @@ def customize_box(image_info, box_info):
         return x, y, w, h
 
 
+def get_mirrored_boxes(boxes):
+    mirrored_boxes = [box.copy() for box in boxes]
+    for mirrored_box in mirrored_boxes:
+        if mirrored_box is not None and 'x' in mirrored_box and 'width' in mirrored_box:
+            mirrored_box['x'] = 1 - mirrored_box['x'] - mirrored_box['width']
+    return mirrored_boxes
+
+
 def assembly_output(output_list, message, images_df, first_last_pages_data_dict, logger):
     result_dict = dict()
     result_dict['compositions'] = list()
@@ -348,6 +351,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
     counter_comp_id = 0
     counter_image_id = 0
 
+    original_designs_data = message.content['designInfo']['designs']
     layouts_df = message.designsInfo['anyPagelayouts_df']
     box_id2data = message.designsInfo['anyPagebox_id2data']
     # adding the Album Cover
@@ -367,6 +371,10 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         first_page_data = first_last_pages_data_dict['firstPage']
         first_page_layouts_df = message.designsInfo['firstPage_layouts_df']
         design_id = first_page_layouts_df.loc[first_page_data['design_id']]['id']
+        if design_id > 0:
+            design_boxes = original_designs_data[str(design_id)]['boxes']
+        else:
+            design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
         left_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['left_box_ids']
         right_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
@@ -376,7 +384,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "styleId": message.designsInfo['defaultPackageStyleId'],
                                        "revisionCounter": 0,
                                        "copies": 1,
-                                       "boxes": None,
+                                       "boxes": design_boxes,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
@@ -414,13 +422,19 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                     for spread_index in range(number_of_spreads):
                         layout_id = group_data[spread_index][0]
 
+                        design_id = layouts_df.loc[layout_id]['id']
+                        if design_id > 0:
+                            design_boxes = original_designs_data[str(design_id)]['boxes']
+                        else:
+                            design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
+
                         result_dict['compositions'].append({"compositionId": counter_comp_id,
                                                        "compositionPackageId": message.content['compositionPackageId'],
-                                                       "designId": layouts_df.loc[layout_id]['id'],
+                                                       "designId": design_id,
                                                        "styleId": message.designsInfo['defaultPackageStyleId'],
                                                        "revisionCounter": 0,
                                                        "copies": 1,
-                                                       "boxes": None,
+                                                       "boxes": design_boxes,
                                                        "logicalSelectionsState": None})
 
                         cur_layout_info = layouts_df.loc[layout_id]['boxes_info']
@@ -468,6 +482,10 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         last_page_data = first_last_pages_data_dict['lastPage']
         last_page_layouts_df = message.designsInfo['lastPage_layouts_df']
         design_id = last_page_layouts_df.loc[last_page_data['design_id']]['id']
+        if design_id > 0:
+            design_boxes = original_designs_data[str(design_id)]['boxes']
+        else:
+            design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
         left_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['left_box_ids']
         right_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
@@ -477,7 +495,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "styleId": message.designsInfo['defaultPackageStyleId'],
                                             "revisionCounter": 0,
                                             "copies": 1,
-                                            "boxes": None,
+                                            "boxes": design_boxes,
                                             "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):

@@ -10,6 +10,7 @@ from ptinfra import get_logger
 
 from src.request_processing import read_messages
 
+from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.core.key_pages import generate_first_last_pages
 from utils.time_processing import process_image_time, get_time_clusters, merge_time_clusters_by_context
@@ -198,6 +199,12 @@ def process_message(message, logger):
         stage_start = datetime.now()
         # Extract gallery photo info safely
         df = message.content.get('gallery_photos_info', pd.DataFrame())
+        ai_metadata = message.content.get('aiMetadata', {})
+        if ai_metadata is not None:
+            chosen_photos = ai_metadata.get('photoIds', [])
+        else:
+            chosen_photos = []
+        df = update_photos_ranks(df, chosen_photos)
         if df.empty:
             logger.error(f"Gallery photos info DataFrame is empty for message {message}")
             message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"

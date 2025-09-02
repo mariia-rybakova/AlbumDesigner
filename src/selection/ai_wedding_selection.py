@@ -15,6 +15,8 @@ from src.selection.person_clustering import person_max_union_selection
 from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity,filter_similarity_diverse
 
 
+
+
 def process_time(images_time):
     general_times = list()
     first_image_time = images_time[0]
@@ -449,7 +451,7 @@ def calculate_optimal_selection(
             for config in focus_table.values()
         )
 
-        total_miss_spreads = max(0, total_miss_spreads-3)
+        total_miss_spreads = max(0, total_miss_spreads)
         while total_over_spreads>1 and total_miss_spreads > 1:
             for event, config in focus_table.items():
                 if config['over_spreads'] > 1 and total_miss_spreads > 1:

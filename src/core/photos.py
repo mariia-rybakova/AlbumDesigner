@@ -49,3 +49,10 @@ def get_photos_from_db(data_db, is_wedding):
 
     return photos
 
+
+def update_photos_ranks(data_db, chosen_photos):
+    if data_db is None or chosen_photos is None or len(chosen_photos) == 0:
+        return data_db
+    for photo_id in chosen_photos:
+        data_db.loc[data_db['image_id'] == photo_id, 'image_order'] = 0
+    return data_db
