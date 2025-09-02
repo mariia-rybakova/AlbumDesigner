@@ -144,7 +144,7 @@ def get_info_protobufs(project_base_url, logger):
                 lambda x: x if isinstance(x, (list, tuple)) else []
             )
 
-            gallery_info_df["persons_ids"] = gallery_info_df["main_persons"].apply(
+            gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
                 lambda x: x if isinstance(x, (list, tuple)) else []
             )
 
