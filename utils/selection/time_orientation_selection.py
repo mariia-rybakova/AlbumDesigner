@@ -664,11 +664,11 @@ def filter_similarity_diverse(
             remaining.sort(key=lambda x: score_lookup[x], reverse=True)
             selected.extend(remaining[: need - len(selected)])
 
-        plot_clusters_to_pdf(df, selected, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
-
-        plot_time_clusters_to_pdf(df, selected, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}_time.pdf",
-                                  img_ext=".jpg", thumb_size=(200, 200), cols=4,
-                                  margin=40, padding=20)
+        # plot_clusters_to_pdf(df, selected, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
+        #
+        # plot_time_clusters_to_pdf(df, selected, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}_time.pdf",
+        #                           img_ext=".jpg", thumb_size=(200, 200), cols=4,
+        #                           margin=40, padding=20)
 
     except Exception as e:
         logger.error(f"Error filter_similarity_diverse: {e}")
