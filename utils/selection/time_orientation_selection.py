@@ -9,11 +9,10 @@ from datetime import timedelta
 from utils.configs import CONFIGS
 from sklearn.cluster import MiniBatchKMeans
 from itertools import combinations
+from sklearn_extra.cluster import KMedoids
+# from testing_code.plotting import plot_clusters_to_pdf,plot_time_clusters_to_pdf
+from sklearn.preprocessing import StandardScaler
 
-
-
-# Assume CONFIGS dict is defined elsewhere
-# CONFIGS = {'FACE_FAR_THRESHOLD': ..., 'FACE_M_THRESHOLD': ..., etc.}
 
 
 def select_photos_with_scoring(groups, needed_count, cluster_name=None):
@@ -417,8 +416,11 @@ def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.
     embeddings = np.vstack(df['embedding'].values).astype('float32')
     n_clusters = math.ceil(len(df) / target_group_size)
 
-    kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, batch_size=64)
-    labels = kmeans.fit_predict(embeddings)
+    # kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, batch_size=64)
+    # labels = kmeans.fit_predict(embeddings)
+
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
+    labels = kmedoids.fit_predict(embeddings)
 
     groups = {}
     for img_id, label in zip(df['image_id'], labels):
@@ -471,8 +473,208 @@ def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.
     if len(selected_images) > need:
         selected_images = sorted(selected_images, key=lambda x: score_lookup[x], reverse=True)[:need]
 
-    #plot_clusters_to_pdf(df, selected_images, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46881120\{cluster_name}.pdf")
+    # plot_clusters_to_pdf(df, selected_images, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46881120\{cluster_name}.pdf")
+    #
+    # plot_time_clusters_to_pdf(df, selected_images, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46881120\{cluster_name}_time.pdf",
+    #                           img_ext=".jpg", thumb_size=(200, 200), cols=4,
+    #                           margin=40, padding=20)
+
+
     return selected_images
+
+
+def filter_similarity_diverse(
+    need: int,
+    df: pd.DataFrame,
+    cluster_name,
+    logger,
+    target_group_size: int = 10,
+) -> list[str]:
+    """
+    Uses your existing time clusters (sub_group_time_cluster),
+    your orientation column (image_oreintation/image_orientation),
+    and your image embeddings (image_embedding).
+    Returns a list of selected image_ids.
+    """
+    try:
+        is_not_scored = all(x == 1 for x in df['total_score'].to_list())
+        if is_not_scored:
+            score_lookup = dict(zip(df['image_id'], df['image_order']))
+        else:
+            score_lookup = dict(zip(df['image_id'], df['total_score']))
+
+        # Extract embeddings
+        embeddings = np.vstack(df['embedding'].values).astype('float32')
+
+        ori_ser = df["image_orientation"].astype(str).str.lower()
+
+        orientation_bin = (
+            ori_ser.map({"portrait": 0, "landscape": 1})
+            .fillna(1)  # e.g., "square", "unknown", NaN -> 1
+            .astype("int8")
+            .to_numpy()
+            .reshape(-1, 1)
+        )
+
+        # Time cluster as numeric (already categorical, can just scale)
+        time_cluster = df["sub_group_time_cluster"].values.reshape(-1, 1)
+
+        # Combine features
+        features = np.hstack([embeddings, orientation_bin, time_cluster])
+
+        # Scale combined features
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features)
+
+        # Decide number of clusters
+        n_clusters = max(2, int(np.ceil(len(df) / target_group_size)))
+
+        # Run KMedoids
+        kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
+        labels = kmedoids.fit_predict(features_scaled)
+
+        df["joint_cluster"] = labels
+
+        clusters = {}
+        for cid, grp in df.groupby("joint_cluster"):
+            clusters[cid] = grp["image_id"].tolist()
+
+        reverse = not is_not_scored
+        for cid in clusters:
+            clusters[cid] = sorted(clusters[cid], key=lambda x: score_lookup[x], reverse=reverse)
+
+        emb_lookup = dict(zip(df['image_id'], df['embedding']))
+
+        # 3) allocation
+        K = len(clusters)
+        alloc = {cid: 0 for cid in clusters}
+
+        # Per-cluster cap based on size (tune thresholds as you like)
+        def cluster_cap(sz: int) -> int:
+            if sz <= 7:     return 1  # tiny/small: only 1 (diversity)
+            if sz <= 12:    return 2  # medium: up to 2
+            if sz <= 20:    return 3  # large: up to 3
+            return 4  # very large: up to 4
+
+        caps = {cid: min(cluster_cap(len(clusters[cid])), len(clusters[cid])) for cid in clusters}
+
+        if K <= need:
+            # Baseline: one per cluster
+            for cid in alloc:
+                alloc[cid] = 1
+            remaining = need - K
+
+            # Greedy: keep giving extras to clusters with the most residual capacity, honoring caps
+            while remaining > 0:
+                residuals = [(cid, caps[cid] - alloc[cid]) for cid in clusters]
+                residuals = [(cid, r) for cid, r in residuals if r > 0]
+                if not residuals:
+                    break
+                # tie-break by residual, then by cluster size, then by top score
+                best_cid = max(
+                    residuals,
+                    key=lambda x: (x[1], len(clusters[x[0]]), score_lookup[clusters[x[0]][0]])
+                )[0]
+                alloc[best_cid] += 1
+                remaining -= 1
+        else:
+            # More clusters than needed: take the best 'need' clusters (top image score) — 1 each
+            top = sorted(clusters.keys(), key=lambda c: score_lookup[clusters[c][0]], reverse=True)[:need]
+            for cid in top:
+                alloc[cid] = 1
+
+        # ========= 4) selection (prefer different time bins + different subqueries; far by embedding) =========
+        selected: list[str] = []
+
+        # Lookups for time bin and subquery (optional)
+        time_lookup = dict(
+            zip(df["image_id"], df["sub_group_time_cluster"])) if "sub_group_time_cluster" in df.columns else {}
+        subq_lookup = dict(
+            zip(df["image_id"], df["image_subquery_content"])) if "image_subquery_content" in df.columns else {}
+
+        def min_emb_distance_to_selected(img_id: str) -> float:
+            if not selected:
+                return float("inf")
+            e = emb_lookup[img_id]
+            # cosine distance on normalized vectors = 1 - dot
+            return min(1.0 - float(np.dot(e, emb_lookup[sid])) for sid in selected)
+
+        # First pass: one per allocated cluster (top score)
+        for cid, k in alloc.items():
+            if k <= 0:
+                continue
+            first = clusters[cid][0]
+            selected.append(first)
+
+        # Extra picks per cluster
+        for cid, k in alloc.items():
+            if k <= 1:
+                continue
+
+            # Already-used time bins and subqueries in THIS cluster (based on what's selected from this cluster)
+            used_time_bins = set()
+            used_subqs = set()
+            for sid in selected:
+                # limit to this cluster’s already picked (fast check via membership)
+                if sid in clusters[cid]:
+                    if time_lookup:
+                        used_time_bins.add(time_lookup.get(sid))
+                    if subq_lookup:
+                        used_subqs.add(subq_lookup.get(sid))
+
+            # Candidates are the remaining images in this cluster (already sorted by score)
+            cands = [img for img in clusters[cid][1:] if img not in selected]
+
+            # Step A: prefer candidates from NEW time bins and NEW subqueries within the cluster
+            def candidate_priority(img: str):
+                tb = time_lookup.get(img, None)
+                sq = subq_lookup.get(img, None)
+                new_time = 0 if (tb in used_time_bins) else 1
+                new_subq = 0 if (sq in used_subqs) else 1
+                # Higher is better: prefer new time bin, then new subquery, then higher score
+                return (new_time, new_subq, score_lookup[img])
+
+            # For each extra slot in this cluster:
+            for _ in range(k - 1):
+                if not cands:
+                    break
+
+                # Rank by (new time bin?, new subquery?, score), then pick the one farthest by embedding
+                cands.sort(key=candidate_priority, reverse=True)
+                # Take top few by priority to limit distance checks (optional micro-optim)
+                shortlist = cands[: min(8, len(cands))]
+
+                pick = max(shortlist, key=min_emb_distance_to_selected)
+                selected.append(pick)
+
+                # Update used sets for this cluster
+                if time_lookup:
+                    used_time_bins.add(time_lookup.get(pick))
+                if subq_lookup:
+                    used_subqs.add(subq_lookup.get(pick))
+
+                # Remove from candidate pool
+                cands.remove(pick)
+
+        # Tidy to exact 'need'
+        if len(selected) > need:
+            selected = sorted(selected, key=lambda x: score_lookup[x], reverse=True)[:need]
+        elif len(selected) < need:
+            remaining = [img for cid in clusters for img in clusters[cid] if img not in selected]
+            remaining.sort(key=lambda x: score_lookup[x], reverse=True)
+            selected.extend(remaining[: need - len(selected)])
+
+        plot_clusters_to_pdf(df, selected, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
+
+        plot_time_clusters_to_pdf(df, selected, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}_time.pdf",
+                                  img_ext=".jpg", thumb_size=(200, 200), cols=4,
+                                  margin=40, padding=20)
+
+    except Exception as e:
+        logger.error(f"Error filter_similarity_diverse: {e}")
+        return []
+
+    return selected
 
 
 
