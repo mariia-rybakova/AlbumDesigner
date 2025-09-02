@@ -117,7 +117,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
                     best_spread[0][spread_id][2] = set([sub_group_photos[photo_id] for photo_id in spread[2]])
 
                 # TODO: add smart photos selection for boxes
-                best_spread = assign_photos_order(best_spread, layout_id2data, design_box_id2data)
+                best_spread = assign_photos_order(best_spread, layout_id2data, design_box_id2data, merge_pages=False)
 
                 if is_wedding:
                     local_result[str(group_name[0]) + '_' + group_name[1] + '*' + str(group_idx)] = best_spread

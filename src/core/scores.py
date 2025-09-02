@@ -120,55 +120,70 @@ def assign_photos_order_by_area(photos, boxes, portraits_total, landscapes_total
     return photos_order, portraits_total, landscapes_total
 
 
-def assign_photos_order(spreads, layout_id2data, design_box_id2data):
+def assign_part_photos_order(boxes, photos):
+    portraits_total = len([box for box in boxes if box['orientation'] == 'portrait'])
+    landscapes_total = len([box for box in boxes if box['orientation'] == 'landscape'])
+
+    area2boxes = dict()
+    for box in boxes:
+        cur_area = box['area']
+        if cur_area not in area2boxes:
+            area2boxes[cur_area] = list()
+        area2boxes[cur_area].append(box)
+
+    left_size = max([box['position'] for box in boxes if box['side'] == 0], default=0) + 1
+    right_size = max([box['position'] for box in boxes if box['side'] == 1], default=0) + 1
+    left_photos_order = [None] * left_size
+    right_photos_order = [None] * right_size
+
+    for area in sorted(area2boxes.keys(), reverse=True):
+        cur_boxes = area2boxes[area]
+        photos_order, portraits_total, landscapes_total = assign_photos_order_by_area(photos, cur_boxes,
+                                                                                      portraits_total,
+                                                                                      landscapes_total)
+        photos_order = sorted(photos_order, key=lambda x: x.general_time)
+        for idx, box_data in enumerate(cur_boxes):
+            cur_photo = photos_order[idx]
+            if box_data['side'] == 0:
+                left_photos_order[box_data['position']] = cur_photo
+            else:
+                right_photos_order[box_data['position']] = cur_photo
+
+        # Remove assigned photos from all_photos so they aren't reused
+        assigned_photos = [p for p in photos_order if p is not None]
+        if assigned_photos:
+            assigned_ids = set(id(p) for p in assigned_photos)
+            photos = [p for p in photos if id(p) not in assigned_ids]
+
+    return left_photos_order, right_photos_order
+
+
+def assign_photos_order(spreads, layout_id2data, design_box_id2data, merge_pages=False):
     for spread_idx, spread in enumerate(spreads[0]):
         layout_data = layout_id2data[spread[0]]
         left_boxes_ids = layout_data['left_box_ids']
         right_boxes_ids = layout_data['right_box_ids']
-        all_boxes = [{'id': bid,
+        left_page_boxes = [{'id': bid,
                       'side': 0,
                       'position': idx,
                       'area': design_box_id2data[bid]['area'],
                       'orientation': design_box_id2data[bid]['orientation']
                       } for idx, bid in enumerate(left_boxes_ids)]
-        all_boxes.extend([{'id': bid,
-                           'side': 1,
-                           'position': idx,
-                           'area': design_box_id2data[bid]['area'],
-                           'orientation': design_box_id2data[bid]['orientation']
-                           } for idx, bid in enumerate(right_boxes_ids)])
-        portraits_total = len([box for box in all_boxes if box['orientation'] == 'portrait'])
-        landscapes_total = len([box for box in all_boxes if box['orientation'] == 'landscape'])
+        right_page_boxes = [{'id': bid,
+                       'side': 1,
+                       'position': idx,
+                       'area': design_box_id2data[bid]['area'],
+                       'orientation': design_box_id2data[bid]['orientation']
+                       } for idx, bid in enumerate(right_boxes_ids)]
 
-        all_photos = sorted(list(spread[1]) + list(spread[2]), key=lambda x: (x.rank, x.general_time))
-
-        area2boxes = dict()
-        for box in all_boxes:
-            cur_area = box['area']
-            if cur_area not in area2boxes:
-                area2boxes[cur_area] = list()
-            area2boxes[cur_area].append(box)
-
-        left_photos_order = [None] * len(left_boxes_ids)
-        right_photos_order = [None] * len(right_boxes_ids)
-        for area in sorted(area2boxes.keys(), reverse=True):
-            cur_boxes = area2boxes[area]
-            photos_order, portraits_total, landscapes_total = assign_photos_order_by_area(all_photos, cur_boxes,
-                                                                                          portraits_total,
-                                                                                          landscapes_total)
-            photos_order = sorted(photos_order, key=lambda x: x.general_time)
-            for idx, box_data in enumerate(cur_boxes):
-                cur_photo = photos_order[idx]
-                if box_data['side'] == 0:
-                    left_photos_order[box_data['position']] = cur_photo
-                else:
-                    right_photos_order[box_data['position']] = cur_photo
-
-            # Remove assigned photos from all_photos so they aren't reused
-            assigned_photos = [p for p in photos_order if p is not None]
-            if assigned_photos:
-                assigned_ids = set(id(p) for p in assigned_photos)
-                all_photos = [p for p in all_photos if id(p) not in assigned_ids]
+        if merge_pages:
+            all_photos = sorted(list(spread[1]) + list(spread[2]), key=lambda x: (x.rank, x.general_time))
+            left_photos_order, right_photos_order = assign_part_photos_order(left_page_boxes + right_page_boxes, all_photos)
+        else:
+            left_page_photos = sorted(list(spread[1]), key=lambda x: (x.rank, x.general_time))
+            right_page_photos = sorted(list(spread[2]), key=lambda x: (x.rank, x.general_time))
+            left_photos_order, _ = assign_part_photos_order(left_page_boxes, left_page_photos)
+            _, right_photos_order = assign_part_photos_order(right_page_boxes, right_page_photos)
 
         spreads[0][spread_idx][1] = left_photos_order
         spreads[0][spread_idx][2] = right_photos_order
