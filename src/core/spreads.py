@@ -278,8 +278,8 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                                                            greedy_layouts['max_right_landscapes'] >= right_landscapes) & (
                                                            greedy_layouts['max_right_portraits'] >= right_portraits)]
                     for layout_idx, layout in possible_layouts.iterrows():
-                        greedy_single_spreads.append([layout_idx, set([item[0] for item in grouped_sequences[0]]),
-                                                      set([item[0] for item in grouped_sequences[1]]),
+                        greedy_single_spreads.append([layout_idx, set([photo_id for photo_id in spread_photos if photos[photo_id].color == left_condition]),
+                                                      set([photo_id for photo_id in spread_photos if photos[photo_id].color != left_condition]),
                                                       len(layout['left_square_ids'] + layout['right_square_ids'])])
             else:
                 greedy_single_spreads = []
