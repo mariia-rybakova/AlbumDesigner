@@ -200,7 +200,10 @@ def process_message(message, logger):
         # Extract gallery photo info safely
         df = message.content.get('gallery_photos_info', pd.DataFrame())
         ai_metadata = message.content.get('aiMetadata', {})
-        chosen_photos = ai_metadata.get('photoIds', [])
+        if ai_metadata is not None:
+            chosen_photos = ai_metadata.get('photoIds', [])
+        else:
+            chosen_photos = []
         df = update_photos_ranks(df, chosen_photos)
         if df.empty:
             logger.error(f"Gallery photos info DataFrame is empty for message {message}")
