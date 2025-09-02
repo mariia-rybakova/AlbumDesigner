@@ -1,7 +1,10 @@
 import random
 import numpy as np
 
-from itertools import combinations, product
+from itertools import combinations, product, groupby
+
+from suds.sudsobject import items
+
 from utils.configs import CONFIGS
 import pandas as pd
 
@@ -224,6 +227,70 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
         layouts = layout_df.loc[
             (layout_df['number of boxes'] == n_photos) & (layout_df['max portraits'] >= portraits) & (
                     layout_df['max landscapes'] >= landscapes)]
+
+        ### greedy attempt to find layout based on seperation of time, class and color
+
+        try:
+            if len(layouts) > 0 :
+                greedy_layouts = layouts.copy()
+
+                greedy_layouts['max_left_portraits'] = greedy_layouts[['left_portrait_ids', 'left_square_ids']].apply(
+                    lambda x: len(x['left_portrait_ids']) + len(x['left_square_ids']), axis=1)
+                greedy_layouts['max_left_landscapes'] = greedy_layouts[['left_landscape_ids', 'left_square_ids']].apply(
+                    lambda x: len(x['left_landscape_ids']) + len(x['left_square_ids']), axis=1)
+                greedy_layouts['max_right_portraits'] = greedy_layouts[['right_portrait_ids', 'right_square_ids']].apply(
+                    lambda x: len(x['right_portrait_ids']) + len(x['right_square_ids']), axis=1)
+                greedy_layouts['max_right_landscapes'] = greedy_layouts[['right_landscape_ids', 'right_square_ids']].apply(
+                    lambda x: len(x['right_landscape_ids']) + len(x['right_square_ids']), axis=1)
+
+                greedy_single_spreads = []
+                time_sequeces = [(photo_id, photos[photo_id].general_time, (photos[photo_id].original_context,photos[photo_id].color)) for photo_id in spread_photos]
+                time_sequeces = sorted(time_sequeces, key=lambda x: x[1])
+
+                grouped = groupby(time_sequeces, key=lambda x: x[2])
+
+                grouped_sequences = []
+                for key, group in grouped:
+                    grouped_sequences.append(list(group))
+                if len(grouped_sequences) == 2:
+                    left_landscapes = np.sum([photos[item[0]].ar > 1 for item in grouped_sequences[0]])
+                    left_portraits = len(grouped_sequences[0]) - left_landscapes
+                    right_landscapes = np.sum([photos[item[0]].ar > 1 for item in grouped_sequences[1]])
+                    right_portraits = len(grouped_sequences[1]) - right_landscapes
+
+                    possible_layouts = greedy_layouts[(greedy_layouts['max_left_landscapes'] >= left_landscapes) & (greedy_layouts['max_left_portraits'] >= left_portraits) & (greedy_layouts['max_right_landscapes'] >= right_landscapes) & (greedy_layouts['max_right_portraits'] >= right_portraits)]
+                    for layout_idx , layout in possible_layouts.iterrows():
+                        greedy_single_spreads.append([layout_idx, set([item[0] for item in grouped_sequences[0]]), set([item[0] for item in grouped_sequences[1]]), len(layout['left_square_ids'] + layout['right_square_ids'])])
+
+                colors = [photos[photo_id].color for photo_id in spread_photos]
+                if len(set(colors)) == 2:
+                    photos_color = np.array([photos[photo_id].color for photo_id in spread_photos])
+                    color_time = np.mean([photos[photo_id].general_time for photo_id in spread_photos if photos[photo_id].color])
+                    gray_time = np.mean([photos[photo_id].general_time for photo_id in spread_photos if not photos[photo_id].color])
+                    if gray_time > color_time:
+                        left_condition = True
+                    else:
+                        left_condition = False
+                    left_landscapes = np.sum([photos[item].ar > 1 and photos[item].color == left_condition for item in spread_photos])
+                    left_portraits = np.sum(photos_color==left_condition) - left_landscapes
+                    right_landscapes = np.sum([photos[item].ar > 1 and photos[item].color != left_condition for item in spread_photos])
+                    right_portraits = np.sum(photos_color!=left_condition) - right_landscapes
+                    possible_layouts = greedy_layouts[(greedy_layouts['max_left_landscapes'] >= left_landscapes) & (
+                                greedy_layouts['max_left_portraits'] >= left_portraits) & (
+                                                           greedy_layouts['max_right_landscapes'] >= right_landscapes) & (
+                                                           greedy_layouts['max_right_portraits'] >= right_portraits)]
+                    for layout_idx, layout in possible_layouts.iterrows():
+                        greedy_single_spreads.append([layout_idx, set([item[0] for item in grouped_sequences[0]]),
+                                                      set([item[0] for item in grouped_sequences[1]]),
+                                                      len(layout['left_square_ids'] + layout['right_square_ids'])])
+            else:
+                greedy_single_spreads = []
+        except Exception as e:
+            greedy_single_spreads = []
+            print(f"Greedy layout attempt failed with error {e}")
+
+
+
         spreads = []
         for layout in layouts.index:
             left_pages = list()
@@ -306,6 +373,7 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                 rem_right_landscapes
 
             single_spreads = []
+            single_spreads = greedy_single_spreads.copy()
             for idx, oriented_spread in enumerate(oriented_spreads):
                 rem_photos = rem_right_landscapes[idx].union(rem_right_portraits[idx])
                 landscape_left_combs = list(combinations(rem_photos, left_squares))
