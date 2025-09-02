@@ -6,7 +6,7 @@ from glob import glob
 
 class Photo:
     # class definition to hold all photo information required to calculate the layout score
-    def __init__(self, id, ar, color, rank, photo_class, cluster_label, general_time):
+    def __init__(self, id, ar, color, rank, photo_class, cluster_label, general_time, original_context=None):
         self.id = id
         self.ar = ar
         self.color = color
@@ -14,6 +14,7 @@ class Photo:
         self.photo_class = photo_class
         self.cluster_label = cluster_label
         self.general_time = general_time
+        self.original_context = original_context
 
     @classmethod
     def from_array(cls, array):
@@ -38,11 +39,11 @@ def get_photos_from_db(data_db, is_wedding):
         color = False if row['image_color'] == 0 else True
         aspect_ratio = row['image_as']
         rank_score = row['image_order']
-
+        original_context = row['original_context'] if 'original_context' in row else None
 
         photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
                             photo_class=class_contex, cluster_label=cluster_label,
-                            general_time=row['general_time']))
+                            general_time=row['general_time'], original_context=original_context))
 
 
     # photos = sorted(photos, key=lambda photo: photo.id)
