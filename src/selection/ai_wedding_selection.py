@@ -12,7 +12,7 @@ from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 from src.selection.person_clustering import person_max_union_selection
-from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity
+from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity,filter_similarity_diverse
 
 
 def process_time(images_time):
@@ -71,6 +71,30 @@ def filter_by_majority(cluster_df,cluster_images, cluster_name, id_column='perso
         return filtered_df, images_filtered
     else:
         return df,cluster_images
+
+
+def time_clusters_fixed_span(df,logger, time_col="image_time_date", minutes=4, out_col="sub_group_time_cluster"):
+    df = df.copy()
+    # df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
+    df = df.sort_values(time_col).reset_index(drop=True)
+
+    dt = pd.Timedelta(minutes=minutes)
+    cluster_id = 0
+    cluster_start = None
+    labels = []
+
+    for t in df[time_col]:
+        if cluster_start is None:
+            cluster_start = t
+            labels.append(cluster_id)
+            continue
+        if t - cluster_start > dt:
+            cluster_id += 1
+            cluster_start = t
+        labels.append(cluster_id)
+
+    df[out_col] = labels
+    return df
 
 def cluster_by_time(df,logger, eps=0.3, min_samples=2,metric='l1'):
         """
@@ -708,6 +732,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
                 df_with_time_cluster = cluster_by_time(valid_images_df, logger)
+                #df_with_time_cluster = time_clusters_fixed_span(valid_images_df, logger)
                 filtered_df = df_with_time_cluster
                 groom_id = int(df_with_time_cluster['groom_id'].to_list()[0])
                 bride_id = int(df_with_time_cluster['bride_id'].to_list()[0])
@@ -723,10 +748,14 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 elif cluster_name == "bride and groom":
                     # Filter images that contain both top two IDs or have 2 faces or 2 bodies
                     def has_both_ids_or_two_faces_bodies(row):
-                        ids_match = set(row['persons_ids']) == [groom_id,bride_id]
+
+                        ids = {str(v) for v in row.get("persons_ids", [])}
+                        target = {str(bride_id), str(groom_id)}
+                        #ids_match = set(row['persons_ids']) == [groom_id,bride_id]
+
                         has_two_faces = row.get('n_faces', 0) == 2
-                        has_two_bodies = row.get('num_bodies', 0) == 2
-                        return ids_match and (has_two_faces or has_two_bodies)
+                        has_two_bodies = row.get('number_bodies', 0) == 2
+                        return  target.issubset(ids) and (has_two_faces or has_two_bodies)
 
                     filtered_df = df_with_time_cluster[
                         df_with_time_cluster.apply(has_both_ids_or_two_faces_bodies, axis=1)]
@@ -776,6 +805,14 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
                 # Remove duplicates and finalize selection
                 preferred_color_ids  = filter_similarity(need, color_candidates_df.reset_index(),cluster_name)
+
+                # preferred_color_ids = filter_similarity_diverse( need=need,
+                #                                         df=color_candidates_df.reset_index(),
+                #                                         cluster_name=cluster_name,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                #                                         target_group_size=10,
+                #                                         threshold=0.995,        # strict for dupes in same time×orientation
+                #                                         per_time_cap=2,         # ≤2 per 4-min bin (tune)
+                #                                         per_orient_cap=None  )   # set e.g. 3 to balance portrait/landscape)
 
                 if preferred_color_ids is None:
                     continue
