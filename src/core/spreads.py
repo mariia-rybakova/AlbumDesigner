@@ -1,7 +1,7 @@
 import random
 import numpy as np
 
-from itertools import combinations, product, groupby
+from itertools import combinations, product, groupby, permutations
 
 from utils.configs import CONFIGS
 import pandas as pd
@@ -158,44 +158,122 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
     return partsAboveThresh, weightsAboveThresh
 
 
+def partitions_with_swaps(seq, sizes, m):
+    """
+    Generate all partitions of `seq` into len(sizes) groups of given sizes.
+    Order inside a group doesn't affect the cost.
+    Cost = minimal #adjacent swaps needed to restore the default consecutive split,
+           which equals the number of inversions between group labels along the
+           original index order.
+
+    Returns: list of (groups, swaps) where groups is a list of lists of elements.
+    """
+    n = len(seq)
+    assert sum(sizes) == n, "sizes must sum to len(seq)"
+    G = len(sizes)
+    indices = tuple(range(n))
+
+    # assignment over original positions: -1 = unassigned, else group id 0..G-1
+    assign = [-1] * n
+    assigned_positions = []  # list of positions already assigned
+    results = []
+
+    def add_inversions_for_new(pos, g):
+        """Count inversions introduced by assigning position `pos` -> group `g`,
+        against all previously assigned positions."""
+        inc = 0
+        for j in assigned_positions:
+            gj = assign[j]
+            if j < pos and gj > g:
+                inc += 1
+            elif j > pos and g > gj:
+                inc += 1
+        return inc
+
+    def backtrack(group_id, remaining_idx_set, swaps_so_far, groups_idx):
+        if swaps_so_far > m:
+            return
+        if group_id == G:
+            # Build concrete groups (keep each group's indices in ascending original order)
+            groups = []
+            for gi, idxs in enumerate(groups_idx):
+                groups.append([seq[i] for i in sorted(idxs)])
+            results.append((groups, swaps_so_far))
+            return
+
+        s = sizes[group_id]
+        rem_list = sorted(remaining_idx_set)
+        # choose s indices (as a set) for this group
+        for chosen in combinations(rem_list, s):
+            # assign them (order within chosen doesn't change cost since same label)
+            inc = 0
+            # assign one-by-one so we can update swaps incrementally
+            for pos in chosen:
+                assign[pos] = group_id
+                inc += add_inversions_for_new(pos, group_id)
+                assigned_positions.append(pos)
+
+            backtrack(
+                group_id + 1,
+                remaining_idx_set - set(chosen),
+                swaps_so_far + inc,
+                groups_idx + [chosen],
+            )
+
+            # undo
+            for pos in chosen:
+                assigned_positions.pop()  # last appended
+                assign[pos] = -1
+
+    backtrack(0, set(indices), 0, [])
+    # sort nicely (by swaps, then lexicographically)
+    results.sort(key=lambda x: (x[1], x[0]))
+    return results
+
+
 def listSingleCombinations(photos, layout_part,maxCombs):
     photos_ids = list(range(len(photos)))
     photos_ids = set(photos_ids)
-    l0_combs = list(combinations(photos_ids, layout_part[0]))
 
-    if len(l0_combs) > maxCombs:
-        sample_idxs = random.sample(range(len(l0_combs)), maxCombs)
-        l0_combs = [l0_combs[i] for i in sample_idxs]
-
-    l0_combs = [[set(l0_comb)] for l0_comb in l0_combs]
-    rem_photos = [photos_ids - l0_comb[0] for l0_comb in l0_combs]
-    layout_combs = l0_combs
-
-    for layout_index in range(1, len(layout_part) - 1):
-        merged_combs = []
-        merged_rem_photos = []
-        for comb_idx in range(len(layout_combs)):
-            next_combs = list(combinations(rem_photos[comb_idx], layout_part[layout_index]))
-            next_combs = [set(next_comb) for next_comb in next_combs]
-            if len(layout_combs)>maxCombs:
-                next_combs=[next_combs[0]]
-            single_comb = [layout_combs[comb_idx].copy() for _ in range(len(next_combs))]
-            single_rem_photos = [rem_photos[comb_idx].copy() for _ in range(len(next_combs))]
-            for single_idx in range(len(single_comb)):
-                single_comb[single_idx].append(next_combs[single_idx])
-                single_rem_photos[single_idx] = single_rem_photos[single_idx] - next_combs[single_idx]
-            merged_combs += single_comb
-            merged_rem_photos += single_rem_photos
-        layout_combs = merged_combs
-        rem_photos = merged_rem_photos
     if len(layout_part) > 1:
-        if len(layout_combs) > maxCombs:
-            #print(f"Sampling {maxCombs} combinations from {len(layout_combs)}")
-            sample_idxs = random.sample(range(len(layout_combs)), maxCombs)
-            layout_combs = [layout_combs[i] for i in sample_idxs]
-            # rem_photos = [rem_photos[i] for i in sample_idxs]
-        for comb_idx in range(len(layout_combs)):
-            layout_combs[comb_idx].append(rem_photos[comb_idx])
+        layout_combs = partitions_with_swaps(list(photos_ids), layout_part, 2)
+        layout_combs = [[set(part) for part in comb] for comb,v in layout_combs]
+    else:
+        l0_combs = list(combinations(photos_ids, layout_part[0]))
+
+        if len(l0_combs) > maxCombs:
+            sample_idxs = random.sample(range(len(l0_combs)), maxCombs)
+            l0_combs = [l0_combs[i] for i in sample_idxs]
+
+        l0_combs = [[set(l0_comb)] for l0_comb in l0_combs]
+        rem_photos = [photos_ids - l0_comb[0] for l0_comb in l0_combs]
+        layout_combs = l0_combs
+
+        for layout_index in range(1, len(layout_part) - 1):
+            merged_combs = []
+            merged_rem_photos = []
+            for comb_idx in range(len(layout_combs)):
+                next_combs = list(combinations(rem_photos[comb_idx], layout_part[layout_index]))
+                next_combs = [set(next_comb) for next_comb in next_combs]
+                if len(layout_combs)>maxCombs:
+                    next_combs=[next_combs[0]]
+                single_comb = [layout_combs[comb_idx].copy() for _ in range(len(next_combs))]
+                single_rem_photos = [rem_photos[comb_idx].copy() for _ in range(len(next_combs))]
+                for single_idx in range(len(single_comb)):
+                    single_comb[single_idx].append(next_combs[single_idx])
+                    single_rem_photos[single_idx] = single_rem_photos[single_idx] - next_combs[single_idx]
+                merged_combs += single_comb
+                merged_rem_photos += single_rem_photos
+            layout_combs = merged_combs
+            rem_photos = merged_rem_photos
+        if len(layout_part) > 1:
+            if len(layout_combs) > maxCombs:
+                #print(f"Sampling {maxCombs} combinations from {len(layout_combs)}")
+                sample_idxs = random.sample(range(len(layout_combs)), maxCombs)
+                layout_combs = [layout_combs[i] for i in sample_idxs]
+                # rem_photos = [rem_photos[i] for i in sample_idxs]
+            for comb_idx in range(len(layout_combs)):
+                layout_combs[comb_idx].append(rem_photos[comb_idx])
 
     return layout_combs
 
