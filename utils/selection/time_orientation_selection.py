@@ -499,6 +499,64 @@ def filter_similarity(need, df,cluster_name, target_group_size=10,threshold = 0.
     return selected_images
 
 
+def allocate_by_size(clusters, need, score_lookup,min_extra_size=7):
+    """
+    clusters: dict[cid] -> list of image_ids (sorted by score desc)
+    need: total images desired
+    min_extra_size: clusters with size >= this are eligible for extras first
+    """
+    sizes = {cid: len(ids) for cid, ids in clusters.items()}
+    total_images = sum(sizes.values())
+    need = min(need, total_images)
+
+    alloc = {cid: 0 for cid in clusters}
+    K = len(clusters)
+
+    # If more clusters than need: pick 1 from the best `need` clusters
+    if K > need:
+        top = sorted(clusters, key=lambda c: score_lookup[clusters[c][0]], reverse=True)[:need]
+        for cid in top:
+            alloc[cid] = 1
+        return alloc
+
+    # Base: 1 per non-empty cluster
+    for cid in clusters:
+        if sizes[cid] > 0:
+            alloc[cid] = 1
+
+    remaining = need - sum(alloc.values())
+    if remaining <= 0:
+        return alloc
+
+    # First pass: extras only to BIG clusters (size >= min_extra_size)
+    big = [c for c in clusters if sizes[c] >= min_extra_size]
+    big.sort(key=lambda c: (sizes[c], score_lookup[clusters[c][0]]), reverse=True)
+
+    i = 0
+    while remaining > 0 and big:
+        cid = big[i % len(big)]
+        if alloc[cid] < sizes[cid]:
+            alloc[cid] += 1
+            remaining -= 1
+            if alloc[cid] == sizes[cid]:  # cluster filled: remove from rotation
+                big.pop(i % len(big))
+                i = 0
+                continue
+        i += 1
+
+    # Fallback: if still remaining, allow any cluster with room (largest first)
+    if remaining > 0:
+        order = sorted(clusters, key=lambda c: (sizes[c], score_lookup[clusters[c][0]]), reverse=True)
+        j = 0
+        while remaining > 0 and any(alloc[c] < sizes[c] for c in order):
+            cid = order[j % len(order)]
+            if alloc[cid] < sizes[cid]:
+                alloc[cid] += 1
+                remaining -= 1
+            j += 1
+
+    return alloc
+
 def filter_similarity_diverse(
     need: int,
     df: pd.DataFrame,
@@ -513,6 +571,18 @@ def filter_similarity_diverse(
     Returns a list of selected image_ids.
     """
     try:
+        number_images = len(df)
+
+        if number_images <= 2 * need:
+            logger.info(
+                f"The number of images for {cluster_name} is 2× need or less (need={need}, images={number_images})")
+
+        if number_images <= need:
+            logger.info(
+                f"The number of images for {cluster_name} is same as needed so no filtering here (need={need}, images={number_images})")
+            return df["image_id"].tolist()
+
+
         is_not_scored = all(x == 1 for x in df['total_score'].to_list())
         if is_not_scored:
             score_lookup = dict(zip(df['image_id'], df['image_order']))
@@ -575,42 +645,47 @@ def filter_similarity_diverse(
             clusters[cid] = sorted(clusters[cid], key=lambda x: score_lookup[x], reverse=reverse)
 
         # 3) allocation
-        K = len(clusters)
-        alloc = {cid: 0 for cid in clusters}
 
-        # Per-cluster cap based on size (tune thresholds as you like)
-        def cluster_cap(sz: int) -> int:
-            if sz <= 7:     return 1  # tiny/small: only 1 (diversity)
-            if sz <= 12:    return 2  # medium: up to 2
-            if sz <= 20:    return 3  # large: up to 3
-            return 4  # very large: up to 4
 
-        caps = {cid: min(cluster_cap(len(clusters[cid])), len(clusters[cid])) for cid in clusters}
+        # K = len(clusters)
+        # alloc = {cid: 0 for cid in clusters}
+        #
+        # # Per-cluster cap based on size (tune thresholds as you like)
+        # def cluster_cap(sz: int) -> int:
+        #     if sz <= 7:     return 1  # tiny/small: only 1 (diversity)
+        #     if sz <= 12:    return 2  # medium: up to 2
+        #     if sz <= 20:    return 3  # large: up to 3
+        #     return 4  # very large: up to 4
+        #
+        # caps = {cid: min(cluster_cap(len(clusters[cid])), len(clusters[cid])) for cid in clusters}
+        # total_capacity = sum(caps.values())
+        #
+        # if K <= need:
+        #     # Baseline: one per cluster
+        #     for cid in alloc:
+        #         alloc[cid] = 1
+        #     remaining = need - K
+        #
+        #     # Greedy: keep giving extras to clusters with the most residual capacity, honoring caps
+        #     while remaining > 0:
+        #         residuals = [(cid, caps[cid] - alloc[cid]) for cid in clusters]
+        #         residuals = [(cid, r) for cid, r in residuals if r > 0]
+        #         if not residuals:
+        #             break
+        #         # tie-break by residual, then by cluster size, then by top score
+        #         best_cid = max(
+        #             residuals,
+        #             key=lambda x: (x[1], len(clusters[x[0]]), score_lookup[clusters[x[0]][0]])
+        #         )[0]
+        #         alloc[best_cid] += 1
+        #         remaining -= 1
+        # else:
+        #     # More clusters than needed: take the best 'need' clusters (top image score) — 1 each
+        #     top = sorted(clusters.keys(), key=lambda c: score_lookup[clusters[c][0]], reverse=True)[:need]
+        #     for cid in top:
+        #         alloc[cid] = 1
 
-        if K <= need:
-            # Baseline: one per cluster
-            for cid in alloc:
-                alloc[cid] = 1
-            remaining = need - K
-
-            # Greedy: keep giving extras to clusters with the most residual capacity, honoring caps
-            while remaining > 0:
-                residuals = [(cid, caps[cid] - alloc[cid]) for cid in clusters]
-                residuals = [(cid, r) for cid, r in residuals if r > 0]
-                if not residuals:
-                    break
-                # tie-break by residual, then by cluster size, then by top score
-                best_cid = max(
-                    residuals,
-                    key=lambda x: (x[1], len(clusters[x[0]]), score_lookup[clusters[x[0]][0]])
-                )[0]
-                alloc[best_cid] += 1
-                remaining -= 1
-        else:
-            # More clusters than needed: take the best 'need' clusters (top image score) — 1 each
-            top = sorted(clusters.keys(), key=lambda c: score_lookup[clusters[c][0]], reverse=True)[:need]
-            for cid in top:
-                alloc[cid] = 1
+        alloc = allocate_by_size(clusters, need, score_lookup)
 
 
         # DO Selection
