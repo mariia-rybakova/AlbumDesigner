@@ -240,6 +240,10 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                     lambda x: len(x['right_portrait_ids']) + len(x['right_square_ids']), axis=1)
                 greedy_layouts['max_right_landscapes'] = greedy_layouts[['right_landscape_ids', 'right_square_ids']].apply(
                     lambda x: len(x['right_landscape_ids']) + len(x['right_square_ids']), axis=1)
+                greedy_layouts['left_total_capacity'] = greedy_layouts.apply(
+                    lambda x: len(x['left_portrait_ids']) + len(x['left_landscape_ids']) + len(x['left_square_ids']), axis=1)
+                greedy_layouts['right_total_capacity'] = greedy_layouts.apply(
+                    lambda x: len(x['right_portrait_ids']) + len(x['right_landscape_ids']) + len(x['right_square_ids']), axis=1)
 
                 greedy_single_spreads = []
                 time_sequeces = [(photo_id, photos[photo_id].general_time, (photos[photo_id].original_context,photos[photo_id].color)) for photo_id in spread_photos]
@@ -256,7 +260,13 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                     right_landscapes = np.sum([photos[item[0]].ar > 1 for item in grouped_sequences[1]])
                     right_portraits = len(grouped_sequences[1]) - right_landscapes
 
-                    possible_layouts = greedy_layouts[(greedy_layouts['max_left_landscapes'] >= left_landscapes) & (greedy_layouts['max_left_portraits'] >= left_portraits) & (greedy_layouts['max_right_landscapes'] >= right_landscapes) & (greedy_layouts['max_right_portraits'] >= right_portraits)]
+                    mask = ((greedy_layouts['max_left_landscapes'] >= left_landscapes) &
+                            (greedy_layouts['max_left_portraits'] >= left_portraits) &
+                            (greedy_layouts['max_right_landscapes'] >= right_landscapes) &
+                            (greedy_layouts['max_right_portraits'] >= right_portraits) &
+                            ((left_landscapes + left_portraits) == greedy_layouts['left_total_capacity']) &
+                            ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity']))
+                    possible_layouts = greedy_layouts.loc[mask]
                     for layout_idx , layout in possible_layouts.iterrows():
                         greedy_single_spreads.append([layout_idx, set([item[0] for item in grouped_sequences[0]]), set([item[0] for item in grouped_sequences[1]]), len(layout['left_square_ids'] + layout['right_square_ids'])])
 
@@ -273,10 +283,15 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                     left_portraits = np.sum(photos_color==left_condition) - left_landscapes
                     right_landscapes = np.sum([photos[item].ar > 1 and photos[item].color != left_condition for item in spread_photos])
                     right_portraits = np.sum(photos_color!=left_condition) - right_landscapes
-                    possible_layouts = greedy_layouts[(greedy_layouts['max_left_landscapes'] >= left_landscapes) & (
-                                greedy_layouts['max_left_portraits'] >= left_portraits) & (
-                                                           greedy_layouts['max_right_landscapes'] >= right_landscapes) & (
-                                                           greedy_layouts['max_right_portraits'] >= right_portraits)]
+
+                    mask = ((greedy_layouts['max_left_landscapes'] >= left_landscapes) &
+                            (greedy_layouts['max_left_portraits'] >= left_portraits) &
+                            (greedy_layouts['max_right_landscapes'] >= right_landscapes) &
+                            (greedy_layouts['max_right_portraits'] >= right_portraits) &
+                            ((left_landscapes + left_portraits) == greedy_layouts['left_total_capacity']) &
+                            ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity']))
+                    possible_layouts = greedy_layouts.loc[mask]
+
                     for layout_idx, layout in possible_layouts.iterrows():
                         greedy_single_spreads.append([layout_idx, set([photo_id for photo_id in spread_photos if photos[photo_id].color == left_condition]),
                                                       set([photo_id for photo_id in spread_photos if photos[photo_id].color != left_condition]),
@@ -287,7 +302,7 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
             greedy_single_spreads = []
             print(f"Greedy layout attempt failed with error {e}")
 
-        greedy_single_spreads=[]
+        # greedy_single_spreads=[]
 
         spreads = []
         for layout in layouts.index:
