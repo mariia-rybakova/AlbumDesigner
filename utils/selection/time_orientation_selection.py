@@ -513,6 +513,13 @@ def filter_similarity_diverse(
     Returns a list of selected image_ids.
     """
     try:
+        number_images = len(df)
+
+        if number_images <= 2 * need:
+            logger.info(
+                f"The number of images for {cluster_name} is 2× need or less (need={need}, images={number_images})")
+
+
         is_not_scored = all(x == 1 for x in df['total_score'].to_list())
         if is_not_scored:
             score_lookup = dict(zip(df['image_id'], df['image_order']))
@@ -575,6 +582,8 @@ def filter_similarity_diverse(
             clusters[cid] = sorted(clusters[cid], key=lambda x: score_lookup[x], reverse=reverse)
 
         # 3) allocation
+
+
         K = len(clusters)
         alloc = {cid: 0 for cid in clusters}
 
@@ -586,6 +595,7 @@ def filter_similarity_diverse(
             return 4  # very large: up to 4
 
         caps = {cid: min(cluster_cap(len(clusters[cid])), len(clusters[cid])) for cid in clusters}
+        total_capacity = sum(caps.values())
 
         if K <= need:
             # Baseline: one per cluster
