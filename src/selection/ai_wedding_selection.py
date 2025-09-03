@@ -749,6 +749,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
                 #df_with_time_cluster = cluster_by_time(valid_images_df, logger)
+                original_pool = color_candidates_df.copy()
                 filtered_df = color_candidates_df
                 groom_id = int(filtered_df['groom_id'].to_list()[0])
                 bride_id = int(filtered_df['bride_id'].to_list()[0])
@@ -788,6 +789,30 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
                         filtered_df = filtered_df[
                             filtered_df.apply(has_groom_in_photos, axis=1)]
+
+                remaining = len(filtered_df)
+
+                if remaining == 0:
+                    # Nothing left — bring back half of the *entire* original pool (rounded down).
+                    bring_back = original_pool.head(len(original_pool) // 2)
+                    filtered_df = bring_back.copy()
+                else:
+                    filtered_out_df = original_pool[~original_pool['image_id'].isin(filtered_df['image_id'])]
+                    filtered_out = len(filtered_out_df)
+
+                    # Condition: filtered out > 80% of what remains
+                    if filtered_out > 0.8 * remaining:
+                        n_to_add = remaining // 2  # "half of the filtering"
+                        logger.info(
+                            f"We took out more than 80% from this cluster {cluster_name} so we get {n_to_add} images back from filtering")
+                        if n_to_add > 0:
+                            # Choose which to bring back:
+                            # Option A (deterministic, preserves original order)
+                            add_back = filtered_out_df.head(n_to_add)
+                            filtered_df = (
+                                pd.concat([filtered_df, add_back], ignore_index=True)
+                                .drop_duplicates(subset='image_id', keep='first')
+                            )
 
                 df_clustered  = filtered_df.set_index('image_id')
 
