@@ -287,7 +287,7 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
             greedy_single_spreads = []
             print(f"Greedy layout attempt failed with error {e}")
 
-
+        greedy_single_spreads=[]
 
         spreads = []
         for layout in layouts.index:
