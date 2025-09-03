@@ -7,10 +7,9 @@ import math
 from collections import defaultdict
 from datetime import timedelta
 from utils.configs import CONFIGS
-from sklearn.cluster import MiniBatchKMeans
 from itertools import combinations
-# from sklearn_extra.cluster import KMedoids
-# from testing_code.plotting import plot_clusters_to_pdf,plot_time_clusters_to_pdf
+
+#from testing_code.plotting import plot_clusters_to_pdf,plot_time_clusters_to_pdf
 from sklearn.preprocessing import StandardScaler
 from pyclustering.cluster.kmedoids import kmedoids as PycKMedoids
 
@@ -558,7 +557,7 @@ def filter_similarity_diverse(
         kmedoids_instance.process()
 
         clusters = kmedoids_instance.get_clusters()  # list of lists with point indices
-        # medoid_indices = kmedoids_instance.get_medoids()  # (optional if you need medoids later)
+        medoid_indices = kmedoids_instance.get_medoids()  # (optional if you need medoids later)
 
         # Build labels array to mirror sklearn interface
         labels = np.empty(len(features_scaled), dtype=int)
@@ -574,8 +573,6 @@ def filter_similarity_diverse(
         reverse = not is_not_scored
         for cid in clusters:
             clusters[cid] = sorted(clusters[cid], key=lambda x: score_lookup[x], reverse=reverse)
-
-        emb_lookup = dict(zip(df['image_id'], df['embedding']))
 
         # 3) allocation
         K = len(clusters)
@@ -615,90 +612,83 @@ def filter_similarity_diverse(
             for cid in top:
                 alloc[cid] = 1
 
-        # ========= 4) selection (prefer different time bins + different subqueries; far by embedding) =========
-        selected: list[str] = []
 
-        # Lookups for time bin and subquery (optional)
-        time_lookup = dict(
-            zip(df["image_id"], df["sub_group_time_cluster"])) if "sub_group_time_cluster" in df.columns else {}
-        subq_lookup = dict(
-            zip(df["image_id"], df["image_subquery_content"])) if "image_subquery_content" in df.columns else {}
+        # DO Selection
+        id_to_idx = dict(zip(df['image_id'], df.index))
 
-        def min_emb_distance_to_selected(img_id: str) -> float:
-            if not selected:
-                return float("inf")
-            e = emb_lookup[img_id]
-            # cosine distance on normalized vectors = 1 - dot
-            return min(1.0 - float(np.dot(e, emb_lookup[sid])) for sid in selected)
+        E = np.vstack(df['embedding'].values).astype('float32')
+        cosD = 1.0 - np.clip(E @ E.T, -1.0, 1.0)
 
-        # First pass: one per allocated cluster (top score)
-        for cid, k in alloc.items():
-            if k <= 0:
-                continue
-            first = clusters[cid][0]
-            selected.append(first)
+        # cluster id -> medoid global index (robust mapping)
+        cid_to_medoid_idx = {}
+        for cid, member_idx_array in df.groupby("joint_cluster").indices.items():
+            mids = [m for m in medoid_indices if m in member_idx_array]
+            cid_to_medoid_idx[cid] = mids[0] if mids else next(iter(member_idx_array))  # fallback
 
-        # Extra picks per cluster
-        for cid, k in alloc.items():
-            if k <= 1:
+        selected = []
+        for cid, ids in clusters.items():
+            m = alloc[cid]
+            if m <= 0:
                 continue
 
-            # Already-used time bins and subqueries in THIS cluster (based on what's selected from this cluster)
-            used_time_bins = set()
-            used_subqs = set()
-            for sid in selected:
-                # limit to this cluster’s already picked (fast check via membership)
-                if sid in clusters[cid]:
-                    if time_lookup:
-                        used_time_bins.add(time_lookup.get(sid))
-                    if subq_lookup:
-                        used_subqs.add(subq_lookup.get(sid))
+            # First pick for this cluster
+            #first_pick = ids[0]  # your list already sorted by score
+            # Alternative (medoid):
+            first_pick = df.iloc[cid_to_medoid_idx[cid]]["image_id"]
 
-            # Candidates are the remaining images in this cluster (already sorted by score)
-            cands = [img for img in clusters[cid][1:] if img not in selected]
+            if first_pick not in selected:
+                selected.append(first_pick)
 
-            # Step A: prefer candidates from NEW time bins and NEW subqueries within the cluster
-            def candidate_priority(img: str):
-                tb = time_lookup.get(img, None)
-                sq = subq_lookup.get(img, None)
-                new_time = 0 if (tb in used_time_bins) else 1
-                new_subq = 0 if (sq in used_subqs) else 1
-                # Higher is better: prefer new time bin, then new subquery, then higher score
-                return (new_time, new_subq, score_lookup[img])
+        # 3) Extra picks per cluster:
+        for cid, ids in clusters.items():
+            m = alloc[cid]
+            if m <= 1:
+                continue
 
-            # For each extra slot in this cluster:
-            for _ in range(k - 1):
+            # Indices (global) of members in this cluster
+            idxs = [id_to_idx[iid] for iid in ids]
+
+            # Already selected in this cluster (global idx)
+            already_idxs = {id_to_idx[iid] for iid in selected if iid in ids}
+
+            # Candidates are remaining (keep your score ordering)
+            cands = [iid for iid in ids if iid not in selected]
+            if not cands:
+                continue
+
+            # For each extra slot, pick the candidate with max(min distance) to already chosen in THIS cluster
+            for _ in range(m - 1):
                 if not cands:
                     break
 
-                # Rank by (new time bin?, new subquery?, score), then pick the one farthest by embedding
-                cands.sort(key=candidate_priority, reverse=True)
-                # Take top few by priority to limit distance checks (optional micro-optim)
-                shortlist = cands[: min(8, len(cands))]
+                if not already_idxs:
+                    # if somehow empty, seed with medoid or best score
+                    seed_id = ids[0]
+                    selected.append(seed_id)
+                    already_idxs.add(id_to_idx[seed_id])
+                    cands = [iid for iid in cands if iid != seed_id]
+                    continue
 
-                pick = max(shortlist, key=min_emb_distance_to_selected)
-                selected.append(pick)
+                # Compute min distance to already chosen within the same cluster
+                best_id, best_min_d = None, -1.0
+                for iid in cands:
+                    i = id_to_idx[iid]
+                    # distances to the chosen set (restrict to same cluster)
+                    dmin = min(cosD[i, j] for j in already_idxs)
+                    # tie-break by score if distances equal
+                    key = (dmin, score_lookup[iid])
+                    if key > (best_min_d, score_lookup[best_id] if best_id else -np.inf):
+                        best_id, best_min_d = iid, dmin
 
-                # Update used sets for this cluster
-                if time_lookup:
-                    used_time_bins.add(time_lookup.get(pick))
-                if subq_lookup:
-                    used_subqs.add(subq_lookup.get(pick))
+                if best_id is None:
+                    break
+                selected.append(best_id)
+                already_idxs.add(id_to_idx[best_id])
+                cands.remove(best_id)
 
-                # Remove from candidate pool
-                cands.remove(pick)
+        #plot_clusters_to_pdf(df, selected, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
 
-        # Tidy to exact 'need'
-        if len(selected) > need:
-            selected = sorted(selected, key=lambda x: score_lookup[x], reverse=True)[:need]
-        elif len(selected) < need:
-            remaining = [img for cid in clusters for img in clusters[cid] if img not in selected]
-            remaining.sort(key=lambda x: score_lookup[x], reverse=True)
-            selected.extend(remaining[: need - len(selected)])
-
-        # plot_clusters_to_pdf(df, selected, clusters, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
-        #
-        # plot_time_clusters_to_pdf(df, selected, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46881120', fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}_time.pdf",
+        # plot_time_clusters_to_pdf(df, selected, r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128', fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}_time.pdf",
         #                           img_ext=".jpg", thumb_size=(200, 200), cols=4,
         #                           margin=40, padding=20)
 
