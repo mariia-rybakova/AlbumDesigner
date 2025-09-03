@@ -818,7 +818,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 # Remove duplicates and finalize selection
                 #preferred_color_ids  = filter_similarity(need, color_candidates_df.reset_index(),cluster_name)
 
-                preferred_color_ids = filter_similarity_diverse( need=need,
+                preferred_color_ids = filter_similarity_diverse(need=need,
                                                         df=color_candidates_df.reset_index(),
                                                         cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                                         target_group_size=10)   # set e.g. 3 to balance portrait/landscape)
@@ -889,9 +889,13 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         ).head(1).index.tolist()
                     else:
                         # Need multiple, so ensure they are diverse
-                        final_grayscale_selection = filter_similarity(
-                            grayscale_need, grayscale_candidates_df.reset_index(), cluster_name
-                        )
+                        # final_grayscale_selection = filter_similarity(
+                        #     grayscale_need, grayscale_candidates_df.reset_index(), cluster_name
+                        # )
+                        final_grayscale_selection = filter_similarity_diverse(need=grayscale_need,
+                                                        df=grayscale_candidates_df.reset_index(),
+                                                        cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                                                        target_group_size=10)
 
             # --- Finalize selection for the cluster ---
             selected_ids = final_color_selection + final_grayscale_selection
