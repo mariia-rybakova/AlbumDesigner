@@ -1,4 +1,5 @@
 import random
+import pandas as pd
 from utils.configs import CONFIGS
 
 
@@ -143,13 +144,21 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
         df['persons_ids'].apply(lambda x: set(x).issuperset(unique_people_ids) if isinstance(x, list) else False)]
 
     if selected_images_df.empty:
-        logger.warning("Warning: No images found containing all unique people IDs. selectign based on max faces")
-        max_faces = df['n_faces'].max()
-        selected_images_df = df[df['n_faces'] == max_faces]
-        # return df, [], pd.DataFrame()
+        logger.warning("No images matched. Selecting top by n_faces.")
+        # Take top-N by number of faces
+        selected_images_df = df.nlargest(number_of_images, 'n_faces')
+    else:
+        # Keep your current priority by image_order first
+        selected_images_df = selected_images_df.nlargest(number_of_images, 'image_order')
 
-    # Select the top two images with the highest image_order
-    selected_images_df = selected_images_df.nlargest(number_of_images, 'image_order')
+        # If still fewer than required, fill the remaining by highest n_faces from the whole df (excluding already chosen)
+        if len(selected_images_df) < number_of_images:
+            remaining = number_of_images - len(selected_images_df)
+            chosen_ids = set(selected_images_df['image_id'].tolist())
+            fill_pool = df[~df['image_id'].isin(chosen_ids)]
+            fill_df = fill_pool.nlargest(remaining, 'n_faces')
+
+            selected_images_df = pd.concat([selected_images_df, fill_df], ignore_index=False).drop_duplicates(subset='image_id').head(number_of_images)
 
     if selected_images_df.empty:
         logger.warning("Warning: No images selected based on image_order.")
@@ -183,7 +192,7 @@ def generate_first_last_pages(message, df, logger):
         if message.content.get('is_wedding', True):
             df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df, number_of_images, logger)
         else:
-            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_non_wedding_images(df, number_of_images, logger)
+            df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 2*number_of_images, logger)
 
         cur_design_id = get_design_id(message.designsInfo[f'{page_type}_layouts_df'], number_of_images, logger)
 

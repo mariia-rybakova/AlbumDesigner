@@ -47,7 +47,7 @@ def get_group_photos_list(cur_group_photos, spread_params, logger):
     return cur_group_photos_list
 
 
-def process_group(group_name, group_images_df, spread_params, designs_info ,is_wedding, params, logger):
+def process_group(group_name, group_images_df, spread_params, designs_info, is_wedding, params, logger):
     layouts_df = designs_info['anyPagelayouts_df']
     layout_id2data = designs_info['anyPagelayout_id2data']
     design_box_id2data = designs_info['anyPagebox_id2data']
@@ -55,8 +55,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info ,is_w
 
     # logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
-
-        if 'dancing' in group_name[1]:
+        if is_wedding and 'dancing' in group_name[1]:
             group_images_df = group_images_df.sort_values(['image_as', 'image_time'])
         else:
             group_images_df = group_images_df.sort_values(['image_time'])
