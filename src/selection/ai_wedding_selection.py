@@ -708,15 +708,18 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     .to_dict()
                 )
 
-            color_candidates_df = valid_images_df[valid_images_df['image_color'] != 0]
-            grayscale_candidates_df = valid_images_df[valid_images_df['image_color'] == 0]
+            df_with_time_cluster = time_clusters_fixed_span(valid_images_df, logger)
+            color_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] != 0]
+            grayscale_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] == 0]
 
             # If enough remaining or too few to process more
+            has = len(df_with_time_cluster)
             if has <= need:
                 images = valid_images_df['image_id'].values.tolist()
                 to_add = images[:need]
                 ai_images_selected.extend(to_add)
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(to_add)
+                logger.info(f"it has less than needed so we select them all {cluster_name} no filtering")
                 continue
 
 
@@ -727,18 +730,18 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     all_ids = [pid for sublist in filtered["persons_ids"] for pid in sublist]
                     most_common_id = Counter(all_ids).most_common(1)[0][0]
                     df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
-                    df_with_time_cluster = time_clusters_fixed_span(df.reset_index(), logger)
 
                     if len(df) <= need or len(df) - need <= 1 :
+                        logger.info(f"this cluster {cluster_name} has no enough images related to bride less than needed we select them all no filtering")
                         if no_selection:
-                            preferred_color_ids  = df_with_time_cluster.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
+                            preferred_color_ids  = df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
                         else:
-                            preferred_color_ids = df_with_time_cluster.sort_values(by='total_score', ascending=False)[
+                            preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
                                                       'image_id'].values.tolist()[:need]
                     else:
                         #preferred_color_ids  = filter_similarity(need, df.reset_index(), cluster_name)
                         preferred_color_ids = filter_similarity_diverse(need=need,
-                                                                        df=df_with_time_cluster.reset_index(),
+                                                                        df=df.reset_index(),
                                                                         cluster_name=cluster_name, logger=logger,
                                                                         # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                                                         target_group_size=10)  # set e.g. 3 to balance portrait/landscape)
@@ -746,80 +749,77 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
                 #df_with_time_cluster = cluster_by_time(valid_images_df, logger)
-                df_with_time_cluster = time_clusters_fixed_span(valid_images_df, logger)
-                filtered_df = df_with_time_cluster
-                groom_id = int(df_with_time_cluster['groom_id'].to_list()[0])
-                bride_id = int(df_with_time_cluster['bride_id'].to_list()[0])
+                filtered_df = color_candidates_df
+                groom_id = int(filtered_df['groom_id'].to_list()[0])
+                bride_id = int(filtered_df['bride_id'].to_list()[0])
                 if cluster_name == 'bride':
-                    filtered_df = df_with_time_cluster[
-                        df_with_time_cluster['persons_ids'].apply(lambda x: x == [bride_id])
+                    filtered_df = filtered_df[
+                        filtered_df['persons_ids'].apply(lambda x: x == [bride_id])
                     ]
                 elif  cluster_name == 'groom':
-                    filtered_df = df_with_time_cluster[
-                        df_with_time_cluster['persons_ids'].apply(lambda x: x == [groom_id])
+                    filtered_df = filtered_df[
+                        filtered_df['persons_ids'].apply(lambda x: x == [groom_id])
                     ]
 
                 elif cluster_name == "bride and groom":
                     # Filter images that contain both top two IDs or have 2 faces or 2 bodies
                     def has_both_ids_or_two_faces_bodies(row):
-
                         ids = {str(v) for v in row.get("persons_ids", [])}
                         target = {str(bride_id), str(groom_id)}
                         has_two_faces = row.get('n_faces', 0) == 2
                         has_two_bodies = row.get('number_bodies', 0) == 2
                         return  target.issubset(ids) and (has_two_faces or has_two_bodies)
 
-                    filtered_df = df_with_time_cluster[
-                        df_with_time_cluster.apply(has_both_ids_or_two_faces_bodies, axis=1)]
+                    filtered_df = filtered_df[
+                        filtered_df.apply(has_both_ids_or_two_faces_bodies, axis=1)]
 
                 elif cluster_name == 'bride party':
                      if bride_id:
                         def has_bride_in_photos(row):
                             return bride_id in row['persons_ids']
 
-                        filtered_df = df_with_time_cluster[
-                            df_with_time_cluster.apply(has_bride_in_photos, axis=1)]
+                        filtered_df = filtered_df[
+                            filtered_df.apply(has_bride_in_photos, axis=1)]
 
                 elif cluster_name == 'groom party':
                     if groom_id:
                         def has_groom_in_photos(row):
                             return groom_id in row['persons_ids']
 
-                        filtered_df = df_with_time_cluster[
-                            df_with_time_cluster.apply(has_groom_in_photos, axis=1)]
+                        filtered_df = filtered_df[
+                            filtered_df.apply(has_groom_in_photos, axis=1)]
 
                 df_clustered  = filtered_df.set_index('image_id')
-                color_candidates_df = df_clustered[df_clustered['image_color'] != 0]
-                grayscale_candidates_df = df_clustered[df_clustered['image_color'] == 0]
 
                 if no_selection:
-                    preferred_color_ids = color_candidates_df.sort_values(
+                    preferred_color_ids = df_clustered.sort_values(
                         'image_order', ascending=True
                     ).index.tolist()
                 else:
-                    preferred_color_ids = color_candidates_df.sort_values(
+                    preferred_color_ids = df_clustered.sort_values(
                         'total_score', ascending=False
                     ).index.tolist()
 
                 if cluster_name == 'dancing' and need < len(preferred_color_ids):
-                    landscape_ids = df[(df['image_id'].isin(preferred_color_ids)) & (df['image_orientation'] == 'landscape')]['image_id'].values.tolist()
+                    df_clustered_reset = df_clustered.reset_index()
+                    landscape_ids = df_clustered_reset[(df_clustered_reset['image_id'].isin(preferred_color_ids)) & (df_clustered_reset['image_orientation'] == 'landscape')]['image_id'].values.tolist()
                     if len(landscape_ids) < need:
-                        non_landscape_df = color_candidates_df[~color_candidates_df.index.isin(landscape_ids)]
+                        non_landscape_df = df_clustered[~df_clustered.index.isin(landscape_ids)]
                         non_landscape_ids = non_landscape_df.index.tolist()
 
                         # Combine to reach the required number
                         selected_ids = landscape_ids + non_landscape_ids[:need - len(landscape_ids)]
                         preferred_color_ids = selected_ids
-                        color_candidates_df = df_clustered.loc[preferred_color_ids]
+                        df_clustered = df_clustered.loc[preferred_color_ids]
                     else:
                         preferred_color_ids = landscape_ids
-                        color_candidates_df = df_clustered.loc[preferred_color_ids]
+                        df_clustered = df_clustered.loc[preferred_color_ids]
 
                 # Remove duplicates and finalize selection
                 #preferred_color_ids  = filter_similarity(need, color_candidates_df.reset_index(),cluster_name)
 
                 preferred_color_ids = filter_similarity_diverse(need=need,
-                                                        df=color_candidates_df.reset_index(),
+                                                        df=df_clustered.reset_index(),
                                                         cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                                         target_group_size=10)   # set e.g. 3 to balance portrait/landscape)
 
