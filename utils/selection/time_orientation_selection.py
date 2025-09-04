@@ -619,14 +619,7 @@ def filter_similarity_diverse(
         features_scaled = scaler.fit_transform(features)
 
         # Decide number of clusters
-        has = len(df)
-
-        if has >= 4 * need:
-            n_clusters = math.ceil(has / (2 * need))
-        else:
-            n_clusters = max(2, int(np.ceil(len(df) / target_group_size)))
-
-        n_clusters = min(n_clusters, has)
+        n_clusters = max(2, int(np.ceil(len(df) / target_group_size)))
 
         random.seed(42)
         initial_medoids = random.sample(range(len(features_scaled)), n_clusters)
