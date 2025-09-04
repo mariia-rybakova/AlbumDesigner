@@ -573,14 +573,20 @@ def filter_similarity_diverse(
     try:
         number_images = len(df)
 
-        if number_images <= 2 * need:
-            logger.info(
-                f"The number of images for {cluster_name} is 2× need or less (need={need}, images={number_images})")
-
-        if number_images <= need:
-            logger.info(
-                f"The number of images for {cluster_name} is same as needed so no filtering here (need={need}, images={number_images})")
+        if number_images < need:
+            logger.info(f"No filtering number of avaiable images less than needed {cluster_name}")
             return df["image_id"].tolist()
+
+        """if 4time mores than needed then k moded over embedding only and small klusters"""
+
+        # if number_images <= 2 * need:
+        #     logger.info(
+        #         f"The number of images for {cluster_name} is 2× need or less (need={need}, images={number_images})")
+        #
+        # if number_images <= need:
+        #     logger.info(
+        #         f"The number of images for {cluster_name} is same as needed so no filtering here (need={need}, images={number_images})")
+        #     return df["image_id"].tolist()
 
 
         is_not_scored = all(x == 1 for x in df['total_score'].to_list())
@@ -613,11 +619,14 @@ def filter_similarity_diverse(
         features_scaled = scaler.fit_transform(features)
 
         # Decide number of clusters
-        n_clusters = max(2, int(np.ceil(len(df) / target_group_size)))
+        has = len(df)
 
-        # Run KMedoids
-        # kmedoids = KMedoids(n_clusters=n_clusters, random_state=42, method="pam")
-        # labels = kmedoids.fit_predict(features_scaled)
+        if has >= 4 * need:
+            n_clusters = math.ceil(has / (2 * need))
+        else:
+            n_clusters = max(2, int(np.ceil(len(df) / target_group_size)))
+
+        n_clusters = min(n_clusters, has)
 
         random.seed(42)
         initial_medoids = random.sample(range(len(features_scaled)), n_clusters)

@@ -647,7 +647,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 continue
 
             scored_df, available_img_ids,no_selection = get_candidate_images(cluster_df, cluster_name)
-            has = len(scored_df)
 
             if scored_df is None or len(available_img_ids) == 0:
                 continue
@@ -687,13 +686,21 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             #remove the images that selected from the user
             scored_df = scored_df[scored_df['image_id'].isin(available_img_ids_wo_user)]
             scored_df['image_time_date'] = scored_df['image_time'].apply(lambda x: convert_to_timestamp(x))
-            valid_images_df = identify_temporal_clusters(scored_df,'image_time_date', 20,4,logger)
+            min_keep = int(np.ceil(need * 3))
+
+            if len(scored_df) < min_keep:
+                valid_images_df = scored_df.copy()
+            else:
+                valid_images_df = identify_temporal_clusters(scored_df, 'image_time_date', 20, 4, logger)
+
             if valid_images_df.empty:
+                logger.info(f"There are no images to select for {cluster_name}")
                 continue
 
-            if len(valid_images_df) < need and len(valid_images_df) < has:
-                valid_images_df = scored_df.head(need)
-                has = len(valid_images_df)
+            df_with_time_cluster = time_clusters_fixed_span(valid_images_df, logger)
+            color_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] != 0]
+            grayscale_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] == 0]
+            has = len(df_with_time_cluster)
 
             if no_selection:
                 image_order_dict = (
@@ -708,12 +715,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     .to_dict()
                 )
 
-            df_with_time_cluster = time_clusters_fixed_span(valid_images_df, logger)
-            color_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] != 0]
-            grayscale_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] == 0]
-
             # If enough remaining or too few to process more
-            has = len(df_with_time_cluster)
+
             if has <= need:
                 images = valid_images_df['image_id'].values.tolist()
                 to_add = images[:need]
@@ -758,7 +761,10 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         filtered_df['persons_ids'].apply(lambda x: x == [bride_id])
                     ]
                 elif  cluster_name == 'groom':
-                    filtered_df = filtered_df[
+                    if len(color_candidates_df) < need * 2:
+                        filtered_df = filtered_df
+                    else:
+                        filtered_df = filtered_df[
                         filtered_df['persons_ids'].apply(lambda x: x == [groom_id])
                     ]
 
