@@ -17,6 +17,8 @@ def get_design_id(layout_df, number_of_boxes, logger):
 def get_important_imgs(data_df, top=3):
     first_page_ids = []
     last_page_ids = []
+    bride_id = data_df["bride_id"].values[0]
+    groom_id = data_df["groom_id"].values[0]
 
     first_cover_queries = [
         "an intimate portrait of just the bride and groom",
@@ -27,7 +29,9 @@ def get_important_imgs(data_df, top=3):
     filtered = data_df[
         (data_df["cluster_context"] == "bride and groom") &
         (data_df["image_subquery_content"].isin(first_cover_queries)) &
-        (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2))&
+        (data_df["persons_ids"].apply(
+    lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+       ))&
         (data_df["number_bodies"] == 2)
         ]
 
@@ -67,22 +71,25 @@ def get_important_imgs(data_df, top=3):
     queries_not_choose = ["waiting", "posing"]
     df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
 
+
     for row in df_sorted.itertuples(index=False):
         text = str(row.image_subquery_content).lower()
         persons_ids = row.persons_ids
+        content = row.cluster_context
+        if bride_id in persons_ids and groom_id in persons_ids:
+            # Check if any keyword is in the text
+            has_keyword = any(k.lower() in text for k in keywords)
 
-        # Check if any keyword is in the text
-        has_keyword = any(k.lower() in text for k in keywords)
+            # Check if none of the excluded keywords are in text or persons_text
+            has_no_excluded = all(q not in text for q in queries_not_choose)
+            oreint = row.image_orientation
 
-        # Check if none of the excluded keywords are in text or persons_text
-        has_no_excluded = all(q not in text for q in queries_not_choose)
+            if has_keyword and has_no_excluded and oreint != 'portrait' and content != "speech":
+                if row.image_id not in first_page_ids:
+                    last_page_ids.append(row.image_id)
 
-        if has_keyword and has_no_excluded:
-            if row.image_id not in first_page_ids:
-                last_page_ids.append(row.image_id)
-
-            if len(last_page_ids) >= top:
-                break
+                if len(last_page_ids) >= top:
+                    break
 
     if len(last_page_ids) < 1:
         last_q = [
@@ -90,7 +97,10 @@ def get_important_imgs(data_df, top=3):
             "bride and groom alone together after the wedding ceremony"
         ]
         filtered = data_df[
-            (df_sorted["image_subquery_content"].isin(last_q))
+            (df_sorted["image_subquery_content"].isin(last_q)) &
+            data_df["persons_ids"].apply(
+                lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+            )
             ]
         ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
         last_page_ids.extend([id for id in ids if id not in first_page_ids])
