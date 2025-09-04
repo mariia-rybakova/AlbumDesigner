@@ -573,7 +573,7 @@ def filter_similarity_diverse(
     try:
         number_images = len(df)
 
-        if number_images < need or number_images < need * 4:
+        if number_images < need:
             logger.info(f"No filtering number of avaiable images less than needed or 4 times needed {cluster_name}")
             return df["image_id"].tolist()
 
