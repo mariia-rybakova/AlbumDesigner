@@ -597,7 +597,30 @@ def filter_similarity_diverse(
 
         # Extract embeddings
         embeddings = np.vstack(df['embedding'].values).astype('float32')
+        
+        if number_images > 2*need:
+            random.seed(42)
+            initial_medoids = random.sample(range(len(embeddings)), min(max(int(need*1.5),4),number_images))
 
+            # pyclustering expects a list of points
+            kmedoids_instance = PycKMedoids(embeddings.tolist(), initial_medoids)
+            kmedoids_instance.process()
+
+            clusters = kmedoids_instance.get_clusters()  # list of lists with point indices
+            medoid_indices = kmedoids_instance.get_medoids()
+            df = df.iloc[medoid_indices]
+            df.reset_index(drop=True, inplace=True)
+            embeddings = np.vstack(df['embedding'].values).astype('float32')
+        elif number_images <= 2*need:
+            logger.warning(f'The number of images in class {cluster_name} is 2× need or less, suboptimal diversity filtering')
+
+
+        is_not_scored = all(x == 1 for x in df['total_score'].to_list())
+        if is_not_scored:
+            score_lookup = dict(zip(df['image_id'], df['image_order']))
+        else:
+            score_lookup = dict(zip(df['image_id'], df['total_score']))
+        
         ori_ser = df["image_orientation"].astype(str).str.lower()
 
         orientation_bin = (
