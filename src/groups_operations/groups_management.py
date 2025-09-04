@@ -4,7 +4,7 @@ from utils.album_tools import get_images_per_groups
 from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time, split_illegal_group_in_certain_point
 from utils.configs import CONFIGS
 
-BRIDE_CENTRIC_CLASSES = ['bride', 'bride party', 'wedding dress', 'getting hair-makeup', 'bride getting dressed']
+BRIDE_CENTRIC_CLASSES = ['bride', 'bride party', 'getting hair-makeup', 'bride getting dressed']
 GROOM_CENTRIC_CLASSES = ['groom', 'groom party', 'suit']
 
 
