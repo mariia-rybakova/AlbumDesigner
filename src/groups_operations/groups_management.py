@@ -95,7 +95,7 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
     for group_key, group in merge_groups:
         merge_targets = targets_df[(targets_df['time_cluster'] == group_key[0]) & (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread'])]
         merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-        main_groups = [m_group for m_key, m_group in merge_target_groups if m_key != group_key]
+        main_groups = [m_group for m_key, m_group in merge_target_groups if (m_key != group_key and (group_key[1] in BRIDE_CENTRIC_CLASSES and m_key[1] in GROOM_CENTRIC_CLASSES or group_key[1] in GROOM_CENTRIC_CLASSES and m_key[1] in BRIDE_CENTRIC_CLASSES))]
         selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
                                                                                  general_times_list,
                                                                                  max_images_per_spread=CONFIGS['max_imges_per_spread'])

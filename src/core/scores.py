@@ -127,6 +127,14 @@ def assign_part_photos_order(boxes, photos):
     area2boxes = dict()
     for box in boxes:
         cur_area = box['area']
+        added = False
+        for saved_area in area2boxes.keys():
+            if abs(cur_area - saved_area) < 0.01:
+                area2boxes[saved_area].append(box)
+                added = True
+                break
+        if added:
+            continue
         if cur_area not in area2boxes:
             area2boxes[cur_area] = list()
         area2boxes[cur_area].append(box)
