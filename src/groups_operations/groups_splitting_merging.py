@@ -112,6 +112,7 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
             return None, None
 
         # Create chunks of size `split_size`
+        illegal_group = illegal_group.sort_values(['image_as', 'general_time'], ascending=[False, True])
         chunks = [illegal_group.iloc[i:i + split_size] for i in range(0, n_samples, split_size)]
 
         # Assign unique cluster labels to each chunk
@@ -120,7 +121,7 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
             chunk.loc[:, 'cluster_context'] = f'{content_cluster_origin}_split_{i}_{count}'
 
         # Combine all chunks into a single DataFrame
-        updated_group = pd.concat(chunks, ignore_index=True)
+        updated_group = pd.concat(chunks)
         return updated_group, Counter(updated_group['cluster_context'])
 
     # Otherwise, use clustering to split
