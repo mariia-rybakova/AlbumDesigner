@@ -573,8 +573,8 @@ def filter_similarity_diverse(
     try:
         number_images = len(df)
 
-        if number_images < need:
-            logger.info(f"No filtering number of avaiable images less than needed {cluster_name}")
+        if number_images < need or number_images < need * 4:
+            logger.info(f"No filtering number of avaiable images less than needed or 4 times needed {cluster_name}")
             return df["image_id"].tolist()
 
         """if 4time mores than needed then k moded over embedding only and small klusters"""
