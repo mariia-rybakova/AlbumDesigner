@@ -381,6 +381,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
             design_boxes = original_designs_data[str(design_id)]['boxes']
         else:
             design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
+            design_id = -1 * design_id
         left_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['left_box_ids']
         right_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
@@ -433,6 +434,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                             design_boxes = original_designs_data[str(design_id)]['boxes']
                         else:
                             design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
+                            design_id = -1 * design_id
 
                         result_dict['compositions'].append({"compositionId": counter_comp_id,
                                                        "compositionPackageId": message.content['compositionPackageId'],
@@ -492,6 +494,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
             design_boxes = original_designs_data[str(design_id)]['boxes']
         else:
             design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
+            design_id = -1 * design_id
         left_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['left_box_ids']
         right_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
