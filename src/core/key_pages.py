@@ -20,10 +20,20 @@ def get_important_imgs(data_df,logger, top=3):
     bride_id = data_df["bride_id"].values[0]
     groom_id = data_df["groom_id"].values[0]
 
-    first_cover_queries = ['bride and groom smiling at each other', 'bride and groom posing for a portrait']
-    last_cover_queries = ['bride and groom dancing', 'bride and groom smiling at each other']
+    first_cover_queries = [
+        'bride and groom smiling at each other',
+        'bride and groom posing for a portrait'
+    ]
+    fallback_first_queries = [
+        'bride and groom during the ceremony',
+        'bride and groom kissing'
+    ]
+    last_cover_queries = [
+        'bride and groom dancing',
+        'bride and groom smiling at each other'
+    ]
 
-    first_filtered = data_df[
+    first_filtered_1 = data_df[
         (data_df["cluster_context"] == "bride and groom") &
         (data_df["image_subquery_content"].isin(first_cover_queries)) &
         (data_df["persons_ids"].apply(
@@ -32,41 +42,29 @@ def get_important_imgs(data_df,logger, top=3):
         (data_df["number_bodies"] == 2) &  (data_df["image_orientation"] == "landscape")
         ]
 
-    if len(first_filtered) == 0:
+    if first_filtered_1.empty:
         logger.info("We could'nt find a good  first cover from query 1")
-        q_2= ['bride and groom during the ceremony','bride and groom kissing']
-        first_filtered = data_df[
+        first_filtered_1 = data_df[
             (data_df["cluster_context"] == "bride and groom") &
-            (data_df["image_subquery_content"].isin(q_2)) &
+            (data_df["image_subquery_content"].isin(fallback_first_queries)) &
             (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
             (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
             ]
-    else:
-        ids = first_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-        if len(ids) >= top:
-            first_page_ids.extend(ids[:top])
-        else:
-            logger.info("We could'nt find a good  first cover from query 2")
-            # Strategy 2: Any image with "bride and groom" context
-            filtered_first = data_df[
-                (data_df["cluster_context"] == "bride and groom") &
-                (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-                (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
-                ]
-            ids = filtered_first.sort_values(by='image_order', ascending=True)["image_id"].tolist()
-            if len(ids) >= top:
-                first_page_ids.extend(ids[:top])
-            else:
-                # Strategy 3: Any image with "bride" in the main query
-                logger.info("We could'nt find cover for bride and groom we take from bride")
-                filtered = data_df[data_df["cluster_context"] == "bride"]
-                ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-                if len(ids) >= top:
-                    first_page_ids.extend(ids[:top])
-                else:
-                    first_page_ids = data_df.head(top)['image_id'].tolist()
 
+    if first_filtered_1.empty:
+        first_filtered_1 = data_df[
+            (data_df["cluster_context"] == "bride and groom") &
+            (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
+            (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+            ]
 
+    ids = first_filtered_1.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+    for i in range(top):
+        first_page_ids.extend(ids[i])
+        if i < len(ids) - 1:
+            break
+
+    # second cover image
     df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
 
     second_filtered = data_df[
@@ -79,10 +77,9 @@ def get_important_imgs(data_df,logger, top=3):
     #ids = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
     ids = second_filtered['image_id'].tolist()
     last_page_ids.extend([id for id in ids if id not in first_page_ids][:top])
-
     if len(last_page_ids) < 1:
-         if len(first_filtered) !=0:
-             ids = first_filtered["image_id"].tolist()
+         if len(first_filtered_1) !=0:
+             ids = first_filtered_1["image_id"].tolist()
              last_page_ids.extend([id for id in ids if id not in first_page_ids])
 
 
