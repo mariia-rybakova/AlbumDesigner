@@ -15,73 +15,85 @@ def get_design_id(layout_df, number_of_boxes, logger):
     return img_layouts[0]
 
 def get_important_imgs(data_df,logger, top=3):
-    first_page_ids = []
-    last_page_ids = []
-    bride_id = data_df["bride_id"].values[0]
-    groom_id = data_df["groom_id"].values[0]
+    try:
+        first_page_ids = []
+        last_page_ids = []
+        bride_id = data_df["bride_id"].values[0]
+        groom_id = data_df["groom_id"].values[0]
 
-    first_cover_queries = [
-        'bride and groom smiling at each other',
-        'bride and groom posing for a portrait'
-    ]
-    fallback_first_queries = [
-        'bride and groom during the ceremony',
-        'bride and groom kissing'
-    ]
-    last_cover_queries = [
-        'bride and groom dancing',
-        'bride and groom smiling at each other'
-    ]
-
-    first_filtered_1 = data_df[
-        (data_df["cluster_context"] == "bride and groom") &
-        (data_df["image_subquery_content"].isin(first_cover_queries)) &
-        (data_df["persons_ids"].apply(
-    lambda x: isinstance(x, list) and bride_id in x and groom_id in x
-       ))&
-        (data_df["number_bodies"] == 2) &  (data_df["image_orientation"] == "landscape")
+        first_cover_queries = [
+            'bride and groom smiling at each other',
+            'bride and groom posing for a portrait'
+        ]
+        fallback_first_queries = [
+            'bride and groom during the ceremony',
+            'bride and groom kissing'
+        ]
+        last_cover_queries = [
+            'bride and groom dancing',
+            'bride and groom smiling at each other'
         ]
 
-    if first_filtered_1.empty:
-        logger.info("We could'nt find a good  first cover from query 1")
         first_filtered_1 = data_df[
             (data_df["cluster_context"] == "bride and groom") &
-            (data_df["image_subquery_content"].isin(fallback_first_queries)) &
-            (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-            (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+            (data_df["image_subquery_content"].isin(first_cover_queries)) &
+            (data_df["persons_ids"].apply(
+        lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+           ))&
+            (data_df["number_bodies"] == 2) &  (data_df["image_orientation"] == "landscape")
             ]
 
-    if first_filtered_1.empty:
-        first_filtered_1 = data_df[
-            (data_df["cluster_context"] == "bride and groom") &
-            (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-            (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+        if first_filtered_1.empty:
+            logger.info("We could'nt find a good  first cover from query 1")
+            first_filtered_1 = data_df[
+                (data_df["cluster_context"] == "bride and groom") &
+                (data_df["image_subquery_content"].isin(fallback_first_queries)) &
+                (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
+                (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+                ]
+
+        if first_filtered_1.empty:
+            first_filtered_1 = data_df[
+                (data_df["cluster_context"] == "bride and groom") &
+                (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
+                (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+                ]
+
+        ids = first_filtered_1.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+        for i in range(top):
+            if i < len(ids) - 1:
+                break
+            first_page_ids.extend(ids[:i])
+
+        # second cover image
+        df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
+
+        second_filtered = data_df[
+            (df_sorted["image_subquery_content"].isin(last_cover_queries)) &
+            data_df["persons_ids"].apply(
+                lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+            )
             ]
 
-    ids = first_filtered_1.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-    for i in range(top):
-        first_page_ids.extend(ids[i])
-        if i < len(ids) - 1:
-            break
+        if second_filtered.empty:
+            if len(first_filtered_1) <= top:
+                second_filtered = data_df[
+                    (data_df["cluster_context"] == "bride and groom")
+                    ]
+                ids = second_filtered["image_id"].tolist()
+                last_page_ids.extend([id for id in ids if id not in first_page_ids])
+        else:
+            #ids = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+            ids = second_filtered['image_id'].tolist()
+            last_page_ids.extend([id for id in ids if id not in first_page_ids][:top])
+            if len(last_page_ids) < 1:
+                 if len(first_filtered_1) !=0:
+                     ids = first_filtered_1["image_id"].tolist()
+                     last_page_ids.extend([id for id in ids if id not in first_page_ids])
 
-    # second cover image
-    df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
-
-    second_filtered = data_df[
-        (df_sorted["image_subquery_content"].isin(last_cover_queries)) &
-        data_df["persons_ids"].apply(
-            lambda x: isinstance(x, list) and bride_id in x and groom_id in x
-        )
-        ]
-
-    #ids = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-    ids = second_filtered['image_id'].tolist()
-    last_page_ids.extend([id for id in ids if id not in first_page_ids][:top])
-    if len(last_page_ids) < 1:
-         if len(first_filtered_1) !=0:
-             ids = first_filtered_1["image_id"].tolist()
-             last_page_ids.extend([id for id in ids if id not in first_page_ids])
-
+    except Exception as e:
+        logger.error(f"Error inside the function get_important_imgs {e}")
+        return None, None
 
     return first_page_ids, last_page_ids
 
