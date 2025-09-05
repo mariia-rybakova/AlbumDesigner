@@ -60,10 +60,7 @@ def get_important_imgs(data_df,logger, top=3):
                 ]
 
         ids = first_filtered_1.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-        for i in range(top):
-            if i < len(ids) - 1:
-                break
-            first_page_ids.extend(ids[:i])
+        first_page_ids.extend(ids[:top])
 
         # second cover image
         df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
