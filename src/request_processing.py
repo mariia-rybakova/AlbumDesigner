@@ -172,7 +172,8 @@ def get_info_protobufs(project_base_url, logger):
             if model_version == 1:
                 gallery_info_df = generate_query(CONFIGS["queries_file"], gallery_info_df, num_workers=8)
             else:
-                gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
+                #gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
+                gallery_info_df = generate_query(CONFIGS["queries_file_v3"], gallery_info_df, num_workers=8)
 
         logger.debug("Number of images before cleaning the nan values: {}".format(len(gallery_info_df.index)))
         columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]

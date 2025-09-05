@@ -14,101 +14,82 @@ def get_design_id(layout_df, number_of_boxes, logger):
 
     return img_layouts[0]
 
-def get_important_imgs(data_df, top=3):
+def get_important_imgs(data_df,logger, top=3):
     first_page_ids = []
     last_page_ids = []
     bride_id = data_df["bride_id"].values[0]
     groom_id = data_df["groom_id"].values[0]
 
-    first_cover_queries = [
-        "an intimate portrait of just the bride and groom",
-        "creative and artistic wedding portrait of the bride and groom",
-        "a private moment captured between the bride and groom on their wedding day"
-    ]
+    first_cover_queries = ['bride and groom smiling at each other', 'bride and groom posing for a portrait']
+    last_cover_queries = ['bride and groom dancing', 'bride and groom smiling at each other']
 
-    filtered = data_df[
+    first_filtered = data_df[
         (data_df["cluster_context"] == "bride and groom") &
         (data_df["image_subquery_content"].isin(first_cover_queries)) &
         (data_df["persons_ids"].apply(
     lambda x: isinstance(x, list) and bride_id in x and groom_id in x
        ))&
-        (data_df["number_bodies"] == 2)
+        (data_df["number_bodies"] == 2) &  (data_df["image_orientation"] == "landscape")
         ]
 
-    if len(filtered) == 0:
-        q_2= ['Smiling bride and groom are Only in the photo','bride and groom holding hands', 'bride and groom with a fantastic standing looking to each other with beautiful scene','bride and groom ONLY with beautiful background']
-        filtered = data_df[
+    if len(first_filtered) == 0:
+        logger.info("We could'nt find a good  first cover from query 1")
+        q_2= ['bride and groom during the ceremony','bride and groom kissing']
+        first_filtered = data_df[
             (data_df["cluster_context"] == "bride and groom") &
             (data_df["image_subquery_content"].isin(q_2)) &
             (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-            (data_df["number_bodies"] == 2)
+            (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
             ]
-
-    ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-
-    if len(ids) >= top:
-        first_page_ids.extend(ids[:top])
     else:
-        # Strategy 2: Any image with "bride and groom" context
-        filtered = data_df[
-            (data_df["cluster_context"] == "bride and groom") &
-            (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-            (data_df["number_bodies"] == 2)
-            ]
-        ids = filtered.sort_values(by='image_order', ascending=True)["image_id"].tolist()
+        ids = first_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
         if len(ids) >= top:
             first_page_ids.extend(ids[:top])
         else:
-            # Strategy 3: Any image with "bride" in the main query
-            filtered = data_df[data_df["cluster_context"] == "bride"]
-            ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+            logger.info("We could'nt find a good  first cover from query 2")
+            # Strategy 2: Any image with "bride and groom" context
+            filtered_first = data_df[
+                (data_df["cluster_context"] == "bride and groom") &
+                (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
+                (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+                ]
+            ids = filtered_first.sort_values(by='image_order', ascending=True)["image_id"].tolist()
             if len(ids) >= top:
                 first_page_ids.extend(ids[:top])
             else:
-                first_page_ids = data_df.head(top)['image_id'].tolist()
+                # Strategy 3: Any image with "bride" in the main query
+                logger.info("We could'nt find cover for bride and groom we take from bride")
+                filtered = data_df[data_df["cluster_context"] == "bride"]
+                ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+                if len(ids) >= top:
+                    first_page_ids.extend(ids[:top])
+                else:
+                    first_page_ids = data_df.head(top)['image_id'].tolist()
 
-    keywords = ["bride and groom", "groom and bride","groom and brides dancing together solo"]
-    queries_not_choose = ["waiting", "posing"]
+
     df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
 
+    second_filtered = data_df[
+        (df_sorted["image_subquery_content"].isin(last_cover_queries)) &
+        data_df["persons_ids"].apply(
+            lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+        )
+        ]
 
-    for row in df_sorted.itertuples(index=False):
-        text = str(row.image_subquery_content).lower()
-        persons_ids = row.persons_ids
-        content = row.cluster_context
-        if bride_id in persons_ids and groom_id in persons_ids:
-            # Check if any keyword is in the text
-            has_keyword = any(k.lower() in text for k in keywords)
-
-            # Check if none of the excluded keywords are in text or persons_text
-            has_no_excluded = all(q not in text for q in queries_not_choose)
-            oreint = row.image_orientation
-
-            if has_keyword and has_no_excluded and oreint != 'portrait' and content != "speech":
-                if row.image_id not in first_page_ids:
-                    last_page_ids.append(row.image_id)
-
-                if len(last_page_ids) >= top:
-                    break
+    #ids = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
+    ids = second_filtered['image_id'].tolist()
+    last_page_ids.extend([id for id in ids if id not in first_page_ids][:top])
 
     if len(last_page_ids) < 1:
-        last_q = [
-            "bride and groom sharing a heartfelt laugh",
-            "bride and groom alone together after the wedding ceremony"
-        ]
-        filtered = data_df[
-            (df_sorted["image_subquery_content"].isin(last_q)) &
-            data_df["persons_ids"].apply(
-                lambda x: isinstance(x, list) and bride_id in x and groom_id in x
-            )
-            ]
-        ids = filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-        last_page_ids.extend([id for id in ids if id not in first_page_ids])
+         if len(first_filtered) !=0:
+             ids = first_filtered["image_id"].tolist()
+             last_page_ids.extend([id for id in ids if id not in first_page_ids])
+
 
     return first_page_ids, last_page_ids
 
 def choose_good_wedding_images(df, number_of_images, logger):
-    first_page_ids, last_page_ids = get_important_imgs(df, top=CONFIGS['top_imges_for_cover'])
+    first_page_ids, last_page_ids = get_important_imgs(df,logger, top=CONFIGS['top_imges_for_cover'])
 
     # if we didn't find the highest ranking images then we won't be able to get cover image
     if len(first_page_ids) >= number_of_images and len(last_page_ids) >= number_of_images:
