@@ -328,12 +328,18 @@ def customize_box(image_info, box_info):
         return x, y, w, h
 
 
+def sort_boxes(boxes):
+    sorted_boxes = sorted(boxes, key=lambda x: (x['x'], x['y']))
+    return sorted_boxes
+
+
 def get_mirrored_boxes(boxes):
     mirrored_boxes = [box.copy() for box in boxes]
     for mirrored_box in mirrored_boxes:
         if mirrored_box is not None and 'x' in mirrored_box and 'width' in mirrored_box:
             mirrored_box['x'] = 1 - mirrored_box['x'] - mirrored_box['width']
-    return mirrored_boxes
+
+    return sort_boxes(mirrored_boxes)
 
 
 def assembly_output(output_list, message, images_df, first_last_pages_data_dict, logger):
@@ -376,6 +382,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
             design_boxes = original_designs_data[str(design_id)]['boxes']
         else:
             design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
+            design_id = -1 * design_id
         left_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['left_box_ids']
         right_box_ids = first_page_layouts_df.loc[first_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids
@@ -428,6 +435,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                             design_boxes = original_designs_data[str(design_id)]['boxes']
                         else:
                             design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
+                            design_id = -1 * design_id
 
                         result_dict['compositions'].append({"compositionId": counter_comp_id,
                                                        "compositionPackageId": message.content['compositionPackageId'],
@@ -487,6 +495,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
             design_boxes = original_designs_data[str(design_id)]['boxes']
         else:
             design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
+            design_id = -1 * design_id
         left_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['left_box_ids']
         right_box_ids = last_page_layouts_df.loc[last_page_data['design_id']]['right_box_ids']
         all_box_ids = left_box_ids + right_box_ids

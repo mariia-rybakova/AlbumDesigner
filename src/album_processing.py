@@ -74,12 +74,13 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
             if filtered_spreads is None:
 
                 for divider in [2, 3, 4]:
-                    new_group_photos_list = get_group_photos_list(group_photos, spread_params, logger)
+                    new_spread_params = [spread_params[0] / divider, spread_params[1]]
+                    new_group_photos_list = get_group_photos_list(group_photos, new_spread_params, logger)
                     groups_filtered_spreads_list = list()
                     for cur_sub_group_photos in new_group_photos_list:
-                        logger.debug("Filtered spreads not found we try again with different params. Group: {}. Params: {}".format(group_name, [spread_params[0] / divider, spread_params[1]]))
+                        logger.debug("Filtered spreads not found we try again with different params. Group: {}. Params: {}".format(group_name, new_spread_params))
                         cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df,
-                                                                           [spread_params[0] / divider, spread_params[1]],params, logger)
+                                                                           new_spread_params,params, logger)
                         if cur_filtered_spreads is None:
                             groups_filtered_spreads_list = None
                             break

@@ -52,23 +52,21 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
     for comp in compositions:
         comp_id = comp['compositionId']
         design_id = comp['designId']
+        design_boxes = comp['boxes']
         placements = placements_by_comp.get(comp_id, [])
+        if design_boxes is None:
+            design_boxes = [box_id2data.get(placement['boxId']) for placement in placements]
         c.setFont("Helvetica", 10)
-        c.drawString(30, page_height - 30, f"Composition ID: {comp_id}")
-        for placement in placements:
+        c.drawString(30, page_height - 30, f"Composition ID: {comp_id}, Design ID: {design_id}")
+        for placement, box in zip(placements, design_boxes):
             photo_id = placement['photoId']
-            box_id = placement['boxId']
             all_images_names = os.listdir(images_path)
             all_images_with_this_name = [img for img in all_images_names if img.startswith(f"{photo_id}")]
             img_path = os.path.join(images_path, all_images_with_this_name[0])
-            box = box_id2data.get(box_id)
             if not box:
                 continue
             # Box coordinates and size (relative to page)
-            if design_id >= 0:
-                box_x = box['x'] * page_width
-            else:
-                box_x = (1 - box['x'] - box['width']) * page_width
+            box_x = box['x'] * page_width
             box_y = box['y'] * page_height
             box_w = box['width'] * page_width
             box_h = box['height'] * page_height
