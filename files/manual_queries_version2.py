@@ -55,11 +55,27 @@ wedding_events = {
     ],
 
     'portrait': [
-        "formal posed portrait of bride and groom",
-        "formal posed portrait of family or wedding party",
-        "informal portrait of couple during dinner",
-        "informal portrait of couple or guests while dancing",
-        "informal portrait of group laughing at reception",
+        # "formal posed portrait of bride and groom",
+        # "formal posed portrait of family or wedding party",
+        # "informal portrait of couple during dinner",
+        # "informal portrait of couple or guests while dancing",
+        # "informal portrait of group laughing at reception",
+        "formal studio-style wedding portrait, bride and groom centered, attendants standing still, bouquets held, symmetrical but there are no people behind them",
+        "formal family portrait with bride in white dress and groom in suit AND these people are standing still AND these people are facing cameraAND these people are arranged in one or two rows",
+
+        "ceremony backdrop formal portrait at altar",
+        "wedding aisle walk, couple in motion, feet stepping, dress movement, path centered",
+        "wedding reception candid, three guests lean into the camera, big smiles, casual posture, busy dance floor in background"
+        "candid wedding reception moment, people laughing or talking, some looking away, glasses in hands, natural light or mixed lighting",
+        "wedding dance floor candid, motion blur, mid-gesture, not everyone facing camera",
+        "couple during dinner in a candid moment, not centered, other guests visible, conversational",
+
+        "a group with people with bride and groom posing AND people behind them in background OR on the side of picture"
+        
+        
+        "informal group at reception, raised drinks, uneven spacing, unposed expressions",
+        "candid group selfie-like feel, casual posture, spontaneous",
+        "family with bride and groom group picture at night at the end of the wedding party"
         "unknown_portrait"
     ],
 
