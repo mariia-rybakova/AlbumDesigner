@@ -476,7 +476,12 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
             spreads += single_spreads
         if len(spreads) == 0:
             return None
+        if len(spreads) > params[2]:
+            # print(f"Sampling {params[2]} spreads from {len(spreads)}")
+            sample_idxs = random.sample(range(len(spreads)), params[2])
+            spreads = [spreads[i] for i in sample_idxs]
         multi_spreads.append(spreads)
+
     return multi_spreads
 
 
