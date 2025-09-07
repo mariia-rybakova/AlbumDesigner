@@ -860,14 +860,29 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             elif cluster_name in persons_categories:
                 original_valid_df = color_candidates_df
                 if cluster_name == 'portrait':
-                    formal_query = ['Bride with her family posing for a formal group portrait in a neat arrangement',
-                         'Bride and groom standing still, looking directly at the camera, posed wedding portrait','Wedding couple with parents and siblings lined up in a traditional portrait',
-                         'Bride with bridesmaids and groomsmen posed for a formal group photo']
-                    color_candidates_df = color_candidates_df[color_candidates_df["image_subquery_content"].isin(formal_query)]
+                    formal_query = ["formal studio-style wedding portrait, bride and groom centered, attendants standing still, bouquets held, symmetrical but there are no people behind them",
+                             "formal family portrait with bride in white dress and groom in suit AND these people are standing still AND these people are facing cameraAND these people are arranged in one or two rows"]
+                    #color_candidates_df = color_candidates_df[color_candidates_df["image_subquery_content"].isin(formal_query)]
+                    color_candidates_df = color_candidates_df[
+                        (color_candidates_df["image_subquery_content"].isin(formal_query)) &
+
+                        (color_candidates_df["persons_ids"].apply(
+                            lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+                        ))]
+
+
                     if len(color_candidates_df) == 0:
                           color_candidates_df = original_valid_df
                     elif len(valid_images_df) < need:
-                         remaining_df = original_valid_df[~original_valid_df['image_subquery_content'].isin(formal_query)]
+                         add_unformal = [ "family with bride and groom group picture at night at the end of the wedding party","a group with people with bride and groom posing AND people behind them in background OR on the side of picture"]
+                         #remaining_df = original_valid_df[~original_valid_df['image_subquery_content'].isin(formal_query)]
+                         remaining_df = original_valid_df[
+                        (original_valid_df["image_subquery_content"].isin(add_unformal)) &
+
+                        (original_valid_df["persons_ids"].apply(
+                            lambda x: isinstance(x, list) and bride_id in x and groom_id in x
+                        ))]
+
                          color_candidates_df = pd.concat([valid_images_df, remaining_df], ignore_index=True)
 
                 color_candidates_df  = color_candidates_df.set_index('image_id')
