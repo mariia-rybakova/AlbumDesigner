@@ -287,15 +287,23 @@ class ProcessStage(Stage):
                     raise Exception('cropping process not completed.')
 
                 df = df.merge(cropped_df, how='inner', on='image_id')
-                for key, value in first_last_pages_data_dict.items():
-                    if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key][
-                        'first_images_df'] is not None:
-                        if len(first_last_pages_data_dict[key]['last_images_df']) != 0 or len(
-                                first_last_pages_data_dict[key]['first_images_df']) != 0:
-                            first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(
-                                cropped_df, how='inner', on='image_id')
-                            first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(
-                                cropped_df, how='inner', on='image_id')
+
+                # for key, value in first_last_pages_data_dict.items():
+                #     if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key][
+                #         'first_images_df'] is not None:
+                #         if len(first_last_pages_data_dict[key]['last_images_df']) != 0 or len(
+                #                 first_last_pages_data_dict[key]['first_images_df']) != 0:
+                #             first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(
+                #                 cropped_df, how='inner', on='image_id')
+                #             first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(
+                #                 cropped_df, how='inner', on='image_id')
+
+                _IMAGE_DF_FIELDS = ("first_images_df", "last_images_df")
+                for page_key, page_data in first_last_pages_data_dict.items():
+                    for field in _IMAGE_DF_FIELDS:
+                        if field in page_data:
+                            if not page_data[field].empty:
+                                page_data[field] = page_data[field].merge(cropped_df, how="inner", on="image_id")
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
