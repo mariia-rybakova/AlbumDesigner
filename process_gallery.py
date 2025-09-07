@@ -247,12 +247,20 @@ def process_message(message, logger):
             raise Exception('cropping process not completed.')
 
         df = df.merge(cropped_df, how='inner', on='image_id')
-        for key, value in first_last_pages_data_dict.items():
-            if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key]['first_images_df'] is not None :
-                if len(first_last_pages_data_dict[key]['last_images_df']) != 0 or len(first_last_pages_data_dict[key]['first_images_df']) != 0:
-                    first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(cropped_df, how='inner', on='image_id')
-                    first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(cropped_df, how='inner', on='image_id')
+        # for key, value in first_last_pages_data_dict.items():
+        #     if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key]['first_images_df'] is not None :
+        #         if len(first_last_pages_data_dict[key]['last_images_df']) != 0 or len(first_last_pages_data_dict[key]['first_images_df']) != 0:
+        #             first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(cropped_df, how='inner', on='image_id')
+        #             first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(cropped_df, how='inner', on='image_id')
 
+        _IMAGE_DF_FIELDS = ("first_images_df", "last_images_df")
+        for page_key, page_data in first_last_pages_data_dict.items():
+            for field in _IMAGE_DF_FIELDS:
+                if field in page_data:
+                    if not page_data[field].empty:
+                        page_data[field] = page_data[field].merge(cropped_df, how="inner", on="image_id")
+
+        print("changed here")
         logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
         final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, logger)
@@ -382,6 +390,16 @@ if __name__ == '__main__':
      'conditionId': 'AAD_46229128_02f2f069-a784-4f23-b3db-9714d3fa7446.193.318', 'timedOut': False,
      'dependencyDeleted': False, 'retryCount': 0}
 
+
+    #_input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46670735, 'userId': 576349956, 'userJobId': 1121483286, 'base_url': 'ptstorage_32://pictures/46/670/46670735/dzuocpph6yf04wjgrd', 'photos': [], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/ssiw7t3nc0a00zrbif-dctkt.json', 'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46670735_693f072c-5647-408c-b5d3-41c839dcd4a9.203.152', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    # _input_request =  {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128,
+    #  'userId': 576349956, 'userJobId': 1121483286,
+    #  'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1,
+    #  'compositionPackageId': -1, 'designInfo': None,
+    #  'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/gaf_zfbkr0gfhwgrsrl297m5.json',
+    #  'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3},
+    #  'conditionId': 'AAD_46229128_b4887103-4c6c-420c-9d39-625cb2966e21.142.486', 'timedOut': False,
+    #  'dependencyDeleted': False, 'retryCount': 0}
 
     #_input_request =  {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128, 'userId': 576349956, 'userJobId': 1121483286, 'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/_1ggmdmcjkgqrmzkie0yerot.json', 'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [4, 11], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46229128_fead6bde-73b6-4804-84d3-0f2f838a9855.236.98', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
 
