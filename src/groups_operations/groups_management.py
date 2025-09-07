@@ -130,15 +130,16 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
     return photos_df
 
 
-def process_wedding_merging(photos_df, logger=None):
+def process_wedding_merging(photos_df, look_up_table,logger=None):
     mask_special = photos_df['cluster_context'].isin(['None', 'other'])
+    photos_df['group_spreads'] = photos_df.apply(lambda x: x['group_size'] / look_up_table[x['cluster_context']][0], axis=1)
     df_special = photos_df[mask_special].copy()
     df_regular = photos_df[~mask_special].copy()
 
-    merge_special_df = df_special[(df_special['group_size'] < CONFIGS['max_img_split']) &
+    merge_special_df = df_special[((df_special['group_size'] < CONFIGS['max_img_split']) | (df_special['group_spreads'] < 1)) &
                          (df_special['merge_allowed'] == True) &
                          (df_special['groups_merged'] < CONFIGS['none_limit_times'])]
-    merge_regular_df = df_regular[(df_regular['group_size'] < CONFIGS['max_img_split']) &
+    merge_regular_df = df_regular[((df_regular['group_size'] < CONFIGS['max_img_split'])  | (df_regular['group_spreads'] < 1)) &
                                  (df_regular['merge_allowed'] == True) &
                                  (df_regular['groups_merged'] < CONFIGS['merge_limit_times'])]
     merge_df = pd.concat([merge_special_df, merge_regular_df])
@@ -238,7 +239,7 @@ def process_wedding_illegal_groups(photos_df, look_up_table, logger=None, max_it
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
                 break
 
-            photos_df, was_merge = process_wedding_merging(photos_df, logger)
+            photos_df, was_merge = process_wedding_merging(photos_df,look_up_table, logger)
             if not was_merge:
                 break
 
