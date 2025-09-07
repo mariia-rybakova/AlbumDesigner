@@ -65,17 +65,17 @@ wedding_events = {
 
         "ceremony backdrop formal portrait at altar",
         "wedding aisle walk, couple in motion, feet stepping, dress movement, path centered",
-        "wedding reception candid, three guests lean into the camera, big smiles, casual posture, busy dance floor in background"
+        "wedding reception candid, three guests lean into the camera, big smiles, casual posture, busy dance floor in background",
         "candid wedding reception moment, people laughing or talking, some looking away, glasses in hands, natural light or mixed lighting",
         "wedding dance floor candid, motion blur, mid-gesture, not everyone facing camera",
         "couple during dinner in a candid moment, not centered, other guests visible, conversational",
 
-        "a group with people with bride and groom posing AND people behind them in background OR on the side of picture"
+        "a group with people with bride and groom posing AND people behind them in background OR on the side of picture",
         
         
         "informal group at reception, raised drinks, uneven spacing, unposed expressions",
         "candid group selfie-like feel, casual posture, spontaneous",
-        "family with bride and groom group picture at night at the end of the wedding party"
+        "family with bride and groom group picture at night at the end of the wedding party",
         "unknown_portrait"
     ],
 

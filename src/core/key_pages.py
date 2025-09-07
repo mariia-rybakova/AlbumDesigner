@@ -90,8 +90,8 @@ def get_important_imgs(data_df,logger, top=3):
                     (data_df["cluster_context"] == "bride and groom")
                     ]
                 second_filtered = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-                ids = second_filtered["image_id"].tolist()
-                last_page_ids.extend([id for id in ids if id !=  first_page_ids])
+                last_page_ids.extend([id for id in second_filtered if id !=  first_page_ids])
+                last_page_ids = last_page_ids[0]
         else:
             ids = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
             #ids = second_filtered['image_id'].tolist()
