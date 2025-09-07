@@ -13,9 +13,9 @@ def read_pkl_file(file):
 
 
 
-def classify_box(box, tolerance):
+def classify_box(box, tolerance,album_ar=2):
     # Adjust width and height based on 1:2 aspect ratio
-    adjusted_width = float(box['width'] * 2)
+    adjusted_width = float(box['width'] * album_ar)
     adjusted_height = float(box['height'])
 
     area = adjusted_width * adjusted_height
@@ -35,7 +35,7 @@ def classify_box(box, tolerance):
         return 'large square', area
 
 
-def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area):
+def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,album_ar=2):
     num_boxes = len(boxes)
 
     xs = [box['x'] for box in boxes]
@@ -177,7 +177,7 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area):
     }
 
 
-def generate_layouts_df(data, id_list, tolerance=0.05):
+def generate_layouts_df(data, id_list, tolerance=0.05,album_ar=2):
 
 
     # Initialize lists to hold areas for all portrait and landscape boxes
@@ -188,7 +188,7 @@ def generate_layouts_df(data, id_list, tolerance=0.05):
     for item in data:
         boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
         for box in boxes:
-            orientation, area = classify_box(box, tolerance)
+            orientation, area = classify_box(box, tolerance,album_ar)
             if orientation == 'portrait':
                 all_portrait_areas.append(area)
             elif orientation == 'landscape':
@@ -206,7 +206,7 @@ def generate_layouts_df(data, id_list, tolerance=0.05):
         if int(item) in id_list:
             boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
             
-            design_dict = boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area)
+            design_dict = boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,album_ar)
             if not design_dict:
                 continue
             else:
@@ -216,7 +216,7 @@ def generate_layouts_df(data, id_list, tolerance=0.05):
                     mirrored_boxes = [box.copy() for box in boxes]
                     for mirrored_box in mirrored_boxes:
                         mirrored_box['x'] = 1 - mirrored_box['x'] - mirrored_box['width']
-                    design_dict_mirrored = boxes2dict(mirrored_boxes, item, tolerance, avg_portrait_area, avg_landscape_area)
+                    design_dict_mirrored = boxes2dict(mirrored_boxes, item, tolerance, avg_portrait_area, avg_landscape_area,album_ar)
                     design_dict_mirrored['is_mirrored'] = True
                     result.append(design_dict_mirrored)
 

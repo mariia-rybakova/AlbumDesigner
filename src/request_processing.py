@@ -209,6 +209,11 @@ def read_messages(messages, logger):
                     # logger.info('Read designInfo from blob location: {}'.format(designInfo))
                     json_content['designInfo'] = designInfo
                     _msg.content['designInfo'] = designInfo
+                    album_ar = {}
+                    for part in ['firstPage', 'lastPage', 'anyPage']:
+                        if part in designInfo['parts']:
+                            album_ar[part] = designInfo['parts'][part]['varient']['productWidth']/designInfo['parts'][part]['varient']['productHeight']
+                    _msg.content['album_ar'] = album_ar
                 except Exception as e:
                     return None, 'Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e)
             else:
@@ -235,14 +240,14 @@ def read_messages(messages, logger):
                 if len(json_content['designInfo']['parts']['firstPage']['designIds']) > 0:
                     _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
                     _msg.pagesInfo['firstPage'] = True
-                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'])
+                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'],_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
                     _msg.designsInfo['firstPage_layouts_df'] = firstPage_layouts_df
 
             if 'lastPage' in json_content['designInfo']['parts']:
                 if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
                     _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
                     _msg.pagesInfo['lastPage'] = True
-                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'])
+                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'],_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
                     _msg.designsInfo['lastPage_layouts_df'] = lastPage_layouts_df
 
             if 'cover' in json_content['designInfo']['parts']:
@@ -256,7 +261,7 @@ def read_messages(messages, logger):
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
 
-            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'])
+            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'],_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
 
             proto_start = datetime.now()
 
@@ -299,8 +304,8 @@ def convert_int64_to_int(obj):
         return obj
 
 
-def customize_box(image_info, box_info):
-    target_ar = box_info['width'] / box_info['height'] * 2
+def customize_box(image_info, box_info,album_ar=2):
+    target_ar = box_info['width'] / box_info['height'] * album_ar
     if box_info['orientation'] == 'square':
         crop_x = image_info['cropped_x']
         crop_y = image_info['cropped_y']
@@ -342,7 +347,7 @@ def get_mirrored_boxes(boxes):
     return sort_boxes(mirrored_boxes)
 
 
-def assembly_output(output_list, message, images_df, first_last_pages_data_dict, logger):
+def assembly_output(output_list, message, images_df, first_last_pages_data_dict, album_ar = 2,logger=None):
     result_dict = dict()
     result_dict['compositions'] = list()
     result_dict['placementsTxt'] = list()
@@ -396,7 +401,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[box_id])
+            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[box_id],album_ar)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
                                             "compositionPackageId": message.content['compositionPackageId'],

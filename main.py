@@ -308,7 +308,8 @@ class ProcessStage(Stage):
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
 
-                final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, self.logger)
+                final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, message.content.get('album_ar',
+                                                                                                                   {'anyPage':2})['anyPage'],self.logger)
 
                 message.album_doc = final_response
                 processing_time = datetime.now() - start

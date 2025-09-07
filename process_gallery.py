@@ -248,7 +248,7 @@ def process_message(message, logger):
 
         df = df.merge(cropped_df, how='inner', on='image_id')
         # for key, value in first_last_pages_data_dict.items():
-        #     if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key]['first_images_df'] is not None :
+        #     if first_last_pages_data_dict[key].get('last_images_df',None) is not None or first_last_pages_data_dict[key].get('first_images_df',None) is not None :
         #         if len(first_last_pages_data_dict[key]['last_images_df']) != 0 or len(first_last_pages_data_dict[key]['first_images_df']) != 0:
         #             first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(cropped_df, how='inner', on='image_id')
         #             first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(cropped_df, how='inner', on='image_id')
@@ -260,10 +260,10 @@ def process_message(message, logger):
                     if not page_data[field].empty:
                         page_data[field] = page_data[field].merge(cropped_df, how="inner", on="image_id")
 
-        print("changed here")
         logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
-        final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, logger)
+        final_response = assembly_output(album_result, message, df, first_last_pages_data_dict,message.content.get('album_ar',
+                                                                                                                   {'anyPage':2})['anyPage'], logger)
 
         processing_time = datetime.now() - start
 
@@ -381,27 +381,11 @@ if __name__ == '__main__':
     #                   'conditionId': 'AAD_46229128_18628955-182e-465d-bff4-3d4f6bdc120c.151.212', 'timedOut': False,
     #                   'dependencyDeleted': False, 'retryCount': 0}
 
-    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128,
-     'userId': 576349956, 'userJobId': 1121483286,
-     'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1,
-     'compositionPackageId': -1, 'designInfo': None,
-     'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/rvv0is1m_0-kh2shiovzpmfa.json',
-     'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [], 'density': 3},
-     'conditionId': 'AAD_46229128_02f2f069-a784-4f23-b3db-9714d3fa7446.193.318', 'timedOut': False,
-     'dependencyDeleted': False, 'retryCount': 0}
-
-
-    #_input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46670735, 'userId': 576349956, 'userJobId': 1121483286, 'base_url': 'ptstorage_32://pictures/46/670/46670735/dzuocpph6yf04wjgrd', 'photos': [], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/ssiw7t3nc0a00zrbif-dctkt.json', 'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46670735_693f072c-5647-408c-b5d3-41c839dcd4a9.203.152', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
-    # _input_request =  {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128,
-    #  'userId': 576349956, 'userJobId': 1121483286,
-    #  'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1,
-    #  'compositionPackageId': -1, 'designInfo': None,
-    #  'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/gaf_zfbkr0gfhwgrsrl297m5.json',
-    #  'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3},
-    #  'conditionId': 'AAD_46229128_b4887103-4c6c-420c-9d39-625cb2966e21.142.486', 'timedOut': False,
-    #  'dependencyDeleted': False, 'retryCount': 0}
-
+    # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229129, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/229/46229129/66cam5evxasipdko4j', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/-gfmztztreqf2dwbzag7zmwn.json', 'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46229129_fd48ca38-1b12-4eae-9512-08a6cbb12af6.105.22', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/dgd6mspvukylkgkckicfkmd1.json', 'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46229128_46370b95-88f7-415c-9c5a-3ac6f154dd80.147.79', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46245951, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/245/46245951/ii52fnki40jq0i3xvu', 'photos': [], 'projectCategory': 0, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/diohv7hckkk0y-4xbyb11fj6.json', 'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46245951_13cf3cd5-7d8c-4a3a-a71f-3f27de9c8564.205.83', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
     #_input_request =  {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229128, 'userId': 576349956, 'userJobId': 1121483286, 'base_url': 'ptstorage_32://pictures/46/229/46229128/hbltfcpcopx67ta3tc', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/_1ggmdmcjkgqrmzkie0yerot.json', 'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [4, 11], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46229128_fead6bde-73b6-4804-84d3-0f2f838a9855.236.98', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
+    _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46229129, 'userId': 548224517, 'userJobId': 1069781153, 'base_url': 'ptstorage_32://pictures/46/229/46229129/66cam5evxasipdko4j', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/queuesdevaigeneratealbumdto/qbouirfp4egtj1xvokdo-gnx.json', 'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46229129_11d48baa-d000-40cc-a553-e4b989eb5503.174.88', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
 
     # _input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310,
     #                   'projectId': 36048323, 'userId': 576349956, 'userJobId': 1121483286,
@@ -428,8 +412,8 @@ if __name__ == '__main__':
     #_input_request = {'replyQueueName': 'devaigeneratealbumresponsedto', 'storeId': 32, 'accountId': 475310, 'projectId': 46227780, 'userId': 576349956, 'userJobId': 1121483286, 'base_url': 'ptstorage_32://pictures/46/227/46227780/njev8ankt8x9b7ynth', 'photos': [], 'projectCategory': 1, 'compositionPackageId': -1, 'designInfo': None, 'designInfoTempLocation': 'pictures/temp/devaigeneratealbumdto/43rqeed08u2xtk_vwexyl8ut.json', 'aiMetadata': {'photoIds': [], 'focus': ['brideAndGroom'], 'personIds': [], 'subjects': [], 'density': 3}, 'conditionId': 'AAD_46227780_e049886f-504e-42a9-8a2c-40d13b404436.127.172', 'timedOut': False, 'dependencyDeleted': False, 'retryCount': 0}
 
     # Debug with Plotting
-    _images_path_karmel = fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/{_input_request["projectId"]}/'
-    _output_pdf_path_karmel = fr'C:\Users\karmel\Desktop\AlbumDesigner\output/{_input_request["projectId"]}'
+    _images_path_karmel = fr'C:\Users\ZivRotman\PycharmProjects\logAnalysis\galleries_pbs2/{_input_request["projectId"]}/'
+    _output_pdf_path_karmel = fr'C:\temp'
     os.makedirs(_output_pdf_path_karmel, exist_ok=True)
     _output_pdf_path = os.path.join(_output_pdf_path_karmel, 'album1.pdf')
 
