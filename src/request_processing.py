@@ -209,7 +209,7 @@ def read_messages(messages, logger):
                     # logger.info('Read designInfo from blob location: {}'.format(designInfo))
                     json_content['designInfo'] = designInfo
                     _msg.content['designInfo'] = designInfo
-                    album_ar = {}
+                    album_ar = {'anyPage': 2}
                     for part in ['firstPage', 'lastPage', 'anyPage']:
                         if part in designInfo['parts']:
                             album_ar[part] = designInfo['parts'][part]['varient']['productWidth']/designInfo['parts'][part]['varient']['productHeight']
