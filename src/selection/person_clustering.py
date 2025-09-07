@@ -138,10 +138,6 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
 
 def person_max_union_selection(images_for_category, df, needed_count,image_cluster_dict, logger):
     try:
-        if len(df) <= needed_count:
-            logger.info("We dont enough portrait images we take them all without filtering")
-            return list(set(images_for_category))
-
         persons_ids_per_image = []
         images_with_persons_data = []
         for image_id in images_for_category:

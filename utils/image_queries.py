@@ -7,38 +7,65 @@ from utils import read_pkl_file
 def process_row(idx, row, loaded_tags_features):
     """
     Function to process a single row and return the necessary updates.
+    Returns (idx, best_tag, best_sub_tag) or (idx, None, None).
     """
-    image_features = row['embedding']
+    image_features = row.get('embedding', None)
 
-    if isinstance(image_features, list):
-        image_features = np.array(image_features)
+    # Normalize image_features -> 1D numpy vector
+    if image_features is None:
+        return idx, None, None
+    image_features = np.asarray(image_features, dtype=float).ravel()
+    if image_features.size == 0:
+        return idx, None, None
 
-    if image_features is None or image_features.size == 0:
-        return idx, None, None  # Mark for deletion
+    # Build a non-destructive search space (don't overwrite loaded_tags_features)
+    cluster_ctx = row.get('cluster_context', None)
+    if cluster_ctx is not None and cluster_ctx in loaded_tags_features:
+        search_space = {cluster_ctx: loaded_tags_features[cluster_ctx]}
+    else:
+        search_space = loaded_tags_features
 
     tags_similarities = {}
-    if 'cluster_context' in row:
-        if row['cluster_context'] in loaded_tags_features.keys():
-            sub_loaded_tags_features = {}
-            sub_loaded_tags_features[row['cluster_context']]  = loaded_tags_features[row['cluster_context']]
-            loaded_tags_features = sub_loaded_tags_features
 
-
-    for tag, sub_features in loaded_tags_features.items():
+    for tag, sub_features in search_space.items():
         sub_tags = {}
+
+        # sub_features is expected to be: {sub_tag: feature_values}
         for tag_feature, feature_values in sub_features.items():
-            similarity = feature_values @ image_features.T
-            max_query_similarity = np.max(similarity, axis=0)
+            F = np.asarray(feature_values, dtype=float)
+
+            # Handle both single-vector and matrix-of-vectors cases
+            if F.ndim == 1:
+                # (dim,) · (dim,) -> scalar similarity
+                if F.shape[0] != image_features.shape[0]:
+                    continue  # skip dim mismatch
+                max_query_similarity = float(np.dot(F, image_features))
+            elif F.ndim == 2:
+                # (num_queries, dim) @ (dim,) -> (num_queries,)
+                if F.shape[1] != image_features.shape[0]:
+                    continue  # skip dim mismatch
+                sims = F @ image_features
+                # ensure 1D vector
+                sims = np.asarray(sims).ravel()
+                if sims.size == 0:
+                    continue
+                max_query_similarity = float(np.max(sims))
+            else:
+                # unexpected shape; skip
+                continue
+
             sub_tags[tag_feature] = max_query_similarity
 
-        if sub_tags:  # Ensure sub_tags is not empty
+        if sub_tags:
+            # pick sub_tag with highest similarity (deterministic via key order on ties)
             highest_sub_tag = max(sub_tags, key=sub_tags.get)
             tags_similarities[tag] = (sub_tags[highest_sub_tag], highest_sub_tag)
 
-    if not tags_similarities:  # Handle edge case where no tags match
+    if not tags_similarities:
         return idx, None, None
 
-    # Get the most similar tag
+    # Get the most similar tag (primary: similarity score)
+    # If several tags tie exactly, Python's max is stable w.r.t. insertion order of dicts.
     max_value_tag = max(tags_similarities, key=lambda k: tags_similarities[k][0])
 
     return idx, max_value_tag, tags_similarities[max_value_tag][1]
