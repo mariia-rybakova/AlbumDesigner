@@ -139,6 +139,7 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
 def person_max_union_selection(images_for_category, df, needed_count,image_cluster_dict, logger):
     try:
         if len(df) <= needed_count:
+            logger.info("We dont enough portrait images we take them all without filtering")
             return list(set(images_for_category))
 
         persons_ids_per_image = []
@@ -172,6 +173,42 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
 
             remaining = [item for item in remaining if item[0] != best_index]
 
+        # remove the higher similar images
+        threshold = 0.95
+        if not selected_indices:
+            logger.info("We don't have any portrait images selected")
+            return []
+
+        orig_order = {img_id: i for i, (img_id, _) in enumerate(images_with_persons_data) if img_id in selected_indices}
+        items = [(img_id, persons, len(persons)) for img_id, persons in images_with_persons_data if img_id in selected_indices]
+        items.sort(key=lambda x: (-x[2], orig_order[x[0]]))
+        sub = df[df["image_id"].isin(selected_indices)][["image_id", "embedding"]]
+
+        emb_map = {}
+        for _, row in sub.iterrows():
+            emb = np.asarray(row["embedding"], dtype=float)
+            emb_map[row["image_id"]] = emb
+
+        kept_ids = []
+        kept_embs = []  # only embeddings that exist (unit vectors)
+
+        for img_id, persons, _cnt in items:
+            emb = emb_map.get(img_id, None)
+
+            if emb is not None and len(kept_embs) > 0:
+                # cosine sim with all previously kept (those that have embeddings)
+                K = np.vstack(kept_embs)  # shape: (k, d)
+                sims = K @ emb  # since all normalized
+                # If any kept image is too similar, DROP current (kept has >= people by sort)
+                if np.any(sims > threshold):
+                    continue
+
+            # otherwise keep it
+            kept_ids.append(img_id)
+            if emb is not None:
+                kept_embs.append(emb)
+
+
     except ValueError as e:  # e.g., if distance_threshold results in too many/few clusters or matrix issues
 
         relevant_cluster_labels = []
@@ -182,4 +219,4 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
         logger.error(f"Couldn't remove similar image using person clustering trying with content clustering  {e}")
         return list(set(result))
 
-    return selected_indices
+    return kept_ids
