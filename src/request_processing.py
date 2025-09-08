@@ -240,14 +240,14 @@ def read_messages(messages, logger):
                 if len(json_content['designInfo']['parts']['firstPage']['designIds']) > 0:
                     _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
                     _msg.pagesInfo['firstPage'] = True
-                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'],_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
+                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
                     _msg.designsInfo['firstPage_layouts_df'] = firstPage_layouts_df
 
             if 'lastPage' in json_content['designInfo']['parts']:
                 if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
                     _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
                     _msg.pagesInfo['lastPage'] = True
-                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'],_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
+                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
                     _msg.designsInfo['lastPage_layouts_df'] = lastPage_layouts_df
 
             if 'cover' in json_content['designInfo']['parts']:
@@ -261,7 +261,7 @@ def read_messages(messages, logger):
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
 
-            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'],_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
+            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
 
             proto_start = datetime.now()
 
@@ -304,7 +304,7 @@ def convert_int64_to_int(obj):
         return obj
 
 
-def customize_box(image_info, box_info,album_ar=2):
+def customize_box(image_info, box_info, album_ar=2):
     target_ar = box_info['width'] / box_info['height'] * album_ar
     if box_info['orientation'] == 'square':
         crop_x = image_info['cropped_x']

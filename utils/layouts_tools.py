@@ -13,7 +13,7 @@ def read_pkl_file(file):
 
 
 
-def classify_box(box, tolerance,album_ar=2):
+def classify_box(box, tolerance, album_ar=2):
     # Adjust width and height based on 1:2 aspect ratio
     adjusted_width = float(box['width'] * album_ar)
     adjusted_height = float(box['height'])
@@ -74,7 +74,7 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,alb
     boxes_areas = []
 
     for box in boxes:
-        orientation, area = classify_box(box, tolerance)
+        orientation, area = classify_box(box, tolerance, album_ar)
         position = 'left' if box['x'] < 0.5 else 'right'
 
         boxes_areas.append({'id': box['id'], 'area': area})
@@ -177,7 +177,7 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,alb
     }
 
 
-def generate_layouts_df(data, id_list, tolerance=0.05,album_ar=2):
+def generate_layouts_df(data, id_list, tolerance=0.05, album_ar=2):
 
 
     # Initialize lists to hold areas for all portrait and landscape boxes
@@ -188,7 +188,7 @@ def generate_layouts_df(data, id_list, tolerance=0.05,album_ar=2):
     for item in data:
         boxes = [box for box in data[item]['boxes'] if box['type'] == 0]  # Filter out text boxes
         for box in boxes:
-            orientation, area = classify_box(box, tolerance,album_ar)
+            orientation, area = classify_box(box, tolerance, album_ar)
             if orientation == 'portrait':
                 all_portrait_areas.append(area)
             elif orientation == 'landscape':
