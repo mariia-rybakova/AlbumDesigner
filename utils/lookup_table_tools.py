@@ -74,7 +74,8 @@ def get_lookup_table(group2images, is_wedding, logger=None,density=3):
             if group_id not in lookup_table:
                 lookup_table[group_id] = (10, 4)
 
-            lookup_table[group_id] = (max(1,min(max_per_spread, lookup_table[group_id][0]* density_factors[density])),lookup_table[group_id][1])
+            lookup_table[group_id] = (max(1, min(max_per_spread, lookup_table[group_id][0] * density_factors[density])),
+                                      max(0.25, min(3, lookup_table[group_id][1] * density_factors[density])))
 
 
 
