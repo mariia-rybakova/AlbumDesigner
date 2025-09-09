@@ -155,19 +155,23 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
         remaining = [(item[0], set(item[1])) for item in
                      images_with_persons_data]  # List of tuples (image_id, set_of_person_ids)
 
-        for _ in range(needed_count):
-            # Pick the set that adds the most new elements
+        if needed_count > len(images_for_category):
+            needed_count = len(images_for_category)
+            selected_indices = images_for_category
+        else:
+            for _ in range(needed_count):
+                # Pick the set that adds the most new elements
 
-            new_people = [len(x[1] - current_union) for x in remaining]
-            if max(new_people) == 0:
-                current_union = set()
-            best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
+                new_people = [len(x[1] - current_union) for x in remaining]
+                if max(new_people) == 0:
+                    current_union = set()
+                best_index, best_set = max(remaining, key=lambda x: len(x[1] - current_union))
 
-            selected_indices.append(best_index)
-            selected_sets.append(best_set)
-            current_union.update(best_set)
+                selected_indices.append(best_index)
+                selected_sets.append(best_set)
+                current_union.update(best_set)
 
-            remaining = [item for item in remaining if item[0] != best_index]
+                remaining = [item for item in remaining if item[0] != best_index]
 
         # remove the higher similar images
         threshold = 0.95
