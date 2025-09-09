@@ -61,7 +61,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
 
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
         # logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
-        cur_group_photos_list = get_group_photos_list(cur_group_photos, spread_params, logger)
+        cur_group_photos_list = [cur_group_photos] #get_group_photos_list(cur_group_photos, spread_params, logger)
         if len(cur_group_photos_list) > 1:
             logger.info('Group: {} with size: {} was split into {} parts.'.format(group_name, len(cur_group_photos), len(cur_group_photos_list)))
 
@@ -76,7 +76,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
 
                 for divider in [0.8, 0.6, 0.4, 0.2]:
                     new_spread_params = [round(spread_params[0] * divider), spread_params[1]]
-                    new_group_photos_list = get_group_photos_list(group_photos, new_spread_params, logger)
+                    new_group_photos_list = [cur_group_photos] # get_group_photos_list(group_photos, new_spread_params, logger)
                     groups_filtered_spreads_list = list()
                     for cur_sub_group_photos in new_group_photos_list:
                         logger.debug("Filtered spreads not found we try again with different params. Group: {}. Params: {}. Divider: {}.".format(group_name, new_spread_params, divider))
