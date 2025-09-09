@@ -60,6 +60,8 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
         c.drawString(30, page_height - 30, f"Composition ID: {comp_id}, Design ID: {design_id}")
         for placement, box in zip(placements, design_boxes):
             photo_id = placement['photoId']
+            if photo_id is None:
+                continue
             all_images_names = os.listdir(images_path)
             all_images_with_this_name = [img for img in all_images_names if img.startswith(f"{photo_id}")]
             img_path = os.path.join(images_path, all_images_with_this_name[0])

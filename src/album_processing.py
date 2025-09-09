@@ -3,7 +3,7 @@ import time
 import copy
 from gc import collect
 
-from src.core.photos import get_photos_from_db
+from src.core.photos import get_photos_from_db, Photo
 from src.core.spreads import generate_filtered_multi_spreads
 from src.core.scores import add_ranking_score, assign_photos_order
 from src.groups_operations.groups_management import process_wedding_illegal_groups
@@ -94,8 +94,17 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
                         final_groups_and_spreads = groups_filtered_spreads_list
                         break
                 if final_groups_and_spreads is None:
-                    logger.warning('It is hopeless. Skipping group: {}'.format(group_name))
-                    continue
+                    logger.info('Coundnt find spread for the group: {}. Adding dummy photo to photo list.'.format(group_name))
+                    dummy_photo = Photo(id=-1, ar=1.5, color=True, rank=1000000, photo_class='None', cluster_label=1,
+                                        general_time=1000000, original_context='None')
+                    group_photos.append(dummy_photo)
+                    filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params,params,logger)
+                    if filtered_spreads is not None:
+                        final_groups_and_spreads = [(group_photos, filtered_spreads)]
+                        logger.info('Spread created using dummy photo for the group: {}.'.format(group_name))
+                    else:
+                        logger.warning('It is hopeless. Skipping group: {}'.format(group_name))
+                        continue
             else:
                 final_groups_and_spreads = [(group_photos, filtered_spreads)]
 
