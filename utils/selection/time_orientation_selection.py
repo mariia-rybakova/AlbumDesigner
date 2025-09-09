@@ -598,7 +598,7 @@ def filter_similarity_diverse(
         # Extract embeddings
         embeddings = np.vstack(df['embedding'].values).astype('float32')
         
-        if number_images > 2*need:
+        if number_images > 2*need and number_images < 120:
             random.seed(42)
             initial_medoids = random.sample(range(len(embeddings)), min(max(int(need*1.5),4),number_images))
 
