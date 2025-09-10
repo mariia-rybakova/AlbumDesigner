@@ -7,19 +7,19 @@ from src.core.photos import get_photos_from_db, Photo
 from src.core.spreads import generate_filtered_multi_spreads
 from src.core.scores import add_ranking_score, assign_photos_order
 from src.groups_operations.groups_management import process_wedding_illegal_groups
-from utils.lookup_table_tools import get_lookup_table, get_current_spread_parameters, update_lookup_table_with_limit
+from utils.lookup_table_tools import (get_lookup_table, get_current_spread_parameters,
+                                      update_lookup_table_with_limit, update_lookup_table_with_layouts_size)
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
 from utils.time_processing import sort_groups_by_time
 from utils.configs import CONFIGS
 
 
-def get_group_photos_list(cur_group_photos, spread_params, logger):
+def get_group_photos_list(cur_group_photos, spread_params, largest_layout_size, logger):
     cur_group_photos_list = copy.deepcopy(list())
-    if ( (len(cur_group_photos) / (max(spread_params[0] - 2 * spread_params[1], 1)) >= 4) or
-            (math.ceil(len(cur_group_photos) / spread_params[0]) >= 3 and len(cur_group_photos) > 11) or
-            (len(cur_group_photos) / (max(spread_params[0] - 2 * spread_params[1], 1)) < 3 and len(cur_group_photos) > CONFIGS['max_imges_per_spread']) or
-            (spread_params[0] > 10 and math.ceil(len(cur_group_photos) / spread_params[0]) > 2)):
-        split_size = min(spread_params[0] * 3, max(spread_params[0], 11))
+
+    optimal_spread_param = min(largest_layout_size, spread_params[0])
+    if len(cur_group_photos) / (max(optimal_spread_param - 2 * spread_params[1], 1)) >= 4:
+        split_size = min(optimal_spread_param * 3, max(optimal_spread_param, 11))
         number_of_splits = math.ceil(len(cur_group_photos) / split_size)
         logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
 
@@ -35,11 +35,6 @@ def get_group_photos_list(cur_group_photos, spread_params, logger):
             end_idx = start_idx + current_size
             cur_group_photos_list.append(cur_group_photos[start_idx:end_idx])
             start_idx = end_idx
-
-        # for split_num in range(number_of_splits):
-        #     cur_group_photos_list.append(cur_group_photos[
-        #                                  split_num * split_size: min((split_num + 1) * split_size,
-        #                                                              len(cur_group_photos))])
     else:
         cur_group_photos_list.append(cur_group_photos)
 
@@ -51,6 +46,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
     layout_id2data = designs_info['anyPagelayout_id2data']
     design_box_id2data = designs_info['anyPagebox_id2data']
 
+    largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
 
     # logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
@@ -61,7 +57,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
 
         cur_group_photos = get_photos_from_db(group_images_df,is_wedding)
         # logger.info("Number of photos inside cur photos {} for group name {}".format(len(cur_group_photos), group_name))
-        cur_group_photos_list = [cur_group_photos] #get_group_photos_list(cur_group_photos, spread_params, logger)
+        cur_group_photos_list = get_group_photos_list(cur_group_photos, spread_params, largest_layout_size, logger)
         if len(cur_group_photos_list) > 1:
             logger.info('Group: {} with size: {} was split into {} parts.'.format(group_name, len(cur_group_photos), len(cur_group_photos_list)))
 
@@ -76,7 +72,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
 
                 for divider in [0.8, 0.6, 0.4, 0.2]:
                     new_spread_params = [round(spread_params[0] * divider), spread_params[1]]
-                    new_group_photos_list = [cur_group_photos] # get_group_photos_list(group_photos, new_spread_params, logger)
+                    new_group_photos_list = get_group_photos_list(group_photos, new_spread_params, largest_layout_size, logger)
                     groups_filtered_spreads_list = list()
                     for cur_sub_group_photos in new_group_photos_list:
                         logger.debug("Filtered spreads not found we try again with different params. Group: {}. Params: {}. Divider: {}.".format(group_name, new_spread_params, divider))
@@ -162,6 +158,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger 
     else:
         look_up_table = get_lookup_table(group2images,is_wedding,logger,density)
 
+    look_up_table = update_lookup_table_with_layouts_size(look_up_table, designs_info['anyPagelayouts_df'])
     # groups processing
     start_time = time.time()
     if is_wedding:

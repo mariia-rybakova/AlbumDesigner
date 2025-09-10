@@ -107,6 +107,14 @@ def get_current_spread_parameters(group_key, number_of_images, is_wedding, looku
     return group_params
 
 
+def update_lookup_table_with_layouts_size(lookup_table, layouts_df):
+    largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
+
+    for key, value in lookup_table.items():
+        lookup_table[key] = (min(value[0], largest_layout_size), value[1])
+    return lookup_table
+
+
 def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_total_spreads):
     # First pass: Calculate initial spreads per group and total spreads
     total_spreads = 0
