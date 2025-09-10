@@ -64,6 +64,8 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
                 continue
             all_images_names = os.listdir(images_path)
             all_images_with_this_name = [img for img in all_images_names if img.startswith(f"{photo_id}")]
+            if len(all_images_with_this_name) == 0:
+                continue
             img_path = os.path.join(images_path, all_images_with_this_name[0])
             if not box:
                 continue
@@ -165,13 +167,16 @@ def get_selection(message, logger):
             message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
             return message
 
-        modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-        density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
-        for event, pair in modified_lut.items():
-            modified_lut[event] = (min(24, max(1, pair[0] * density_factor)),
-                                   pair[1])  # Ensure base spreads are at least 1 and not above 24
-        message.content['modified_lut'] = modified_lut
+        if is_wedding:
+            modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
 
+            density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
+            for event, pair in modified_lut.items():
+                modified_lut[event] = (min(24, max(1, pair[0] * density_factor)), pair[1])  # Ensure base spreads are at least 1 and not above 24
+        else:
+            modified_lut = None
+
+        message.content['modified_lut'] = modified_lut
         ai_photos_selected, spreads_dict, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,
                                                   logger)
 

@@ -178,11 +178,14 @@ class SelectionStage(Stage):
                     updated_messages.append(_msg)
                     continue
 
-                modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-                density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
-                for event, pair in modified_lut.items():
-                    modified_lut[event] = (min(24, max(1, pair[0] * density_factor)),
-                                           pair[1])  # Ensure base spreads are at least 1 and not above 24
+                if is_wedding:
+                    modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
+
+                    density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
+                    for event, pair in modified_lut.items():
+                        modified_lut[event] = (min(24, max(1, pair[0] * density_factor)), pair[1])
+                else:
+                    modified_lut = None
                 _msg.content['modified_lut'] = modified_lut
 
                 ai_photos_selected,spreads_dict, errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
