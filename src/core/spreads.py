@@ -287,11 +287,11 @@ def greedy_combination_search(photos, layout_part, layout_df):
     portrait_photos_ids = list()
 
     for i in range(len(photos)):
-        if photos[i].ar > 1:
+        if photos[i].ar < 1:
+            portrait_photos_ids.append(photos_ids[i])
+        else:
             landscapes += 1
             landscape_photos_ids.append(photos_ids[i])
-        else:
-            portrait_photos_ids.append(photos_ids[i])
     portraits = n_photos - landscapes
     landscape_photos_ids = sorted(landscape_photos_ids, key=lambda x: photos[x].general_time)
     portrait_photos_ids = sorted(portrait_photos_ids, key=lambda x: photos[x].general_time)
@@ -380,11 +380,11 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
         landscapes = 0
 
         for i in range(len(spread_photos)):
-            if photos[spread_photos[i]].ar > 1:
+            if photos[spread_photos[i]].ar < 1:
+                portrait_set.add(spread_photos[i])
+            else:
                 landscapes += 1
                 landscape_set.add(spread_photos[i])
-            else:
-                portrait_set.add(spread_photos[i])
 
         portraits = n_photos - landscapes
 
