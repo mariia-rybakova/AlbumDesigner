@@ -74,7 +74,8 @@ def get_lookup_table(group2images, is_wedding, logger=None,density=3):
             if group_id not in lookup_table:
                 lookup_table[group_id] = (10, 4)
 
-            lookup_table[group_id] = (max(1,min(max_per_spread, lookup_table[group_id][0]* density_factors[density])),lookup_table[group_id][1])
+            lookup_table[group_id] = (max(1, min(max_per_spread, lookup_table[group_id][0] * density_factors[density])),
+                                      max(0.25, min(3, lookup_table[group_id][1] * density_factors[density])))
 
 
 
@@ -104,6 +105,14 @@ def get_current_spread_parameters(group_key, number_of_images, is_wedding, looku
         return max_images_per_spread, group_params[1]
 
     return group_params
+
+
+def update_lookup_table_with_layouts_size(lookup_table, layouts_df):
+    largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
+
+    for key, value in lookup_table.items():
+        lookup_table[key] = (min(value[0], largest_layout_size), value[1])
+    return lookup_table
 
 
 def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_total_spreads):

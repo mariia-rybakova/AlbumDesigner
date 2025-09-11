@@ -156,10 +156,13 @@ class SelectionStage(Stage):
                     _msg.content['gallery_photos_info'] = df.merge(_msg.content['gallery_photos_info'], how='inner', on='image_id')
                     updated_messages.append(_msg)
                     continue
-                photos = _msg.content.get('photos', [])
-                if len(photos) != 0:
-                    updated_messages.append(_msg)
-                    continue
+                available_photos = _msg.content.get('photos', [])
+                df = _msg.content.get('gallery_photos_info', pd.DataFrame())
+                if df.empty:
+                    raise Exception(f"Gallery photos info DataFrame is empty for message {_msg}")
+                if len(available_photos) != 0:
+                    df = df[df['image_id'].isin(available_photos)]
+                    _msg.content['gallery_photos_info'] = df
 
                 ten_photos = ai_metadata.get('photoIds', [])
                 people_ids = ai_metadata.get('personIds', [])
@@ -175,11 +178,14 @@ class SelectionStage(Stage):
                     updated_messages.append(_msg)
                     continue
 
-                modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-                density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
-                for event, pair in modified_lut.items():
-                    modified_lut[event] = (min(24, max(1, pair[0] * density_factor)),
-                                           pair[1])  # Ensure base spreads are at least 1 and not above 24
+                if is_wedding:
+                    modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
+
+                    density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
+                    for event, pair in modified_lut.items():
+                        modified_lut[event] = (min(24, max(1, pair[0] * density_factor)), pair[1])
+                else:
+                    modified_lut = None
                 _msg.content['modified_lut'] = modified_lut
 
                 ai_photos_selected,spreads_dict, errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
@@ -308,7 +314,8 @@ class ProcessStage(Stage):
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
 
-                final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, self.logger)
+                final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, message.content.get('album_ar',
+                                                                                                                   {'anyPage':2})['anyPage'],self.logger)
 
                 message.album_doc = final_response
                 processing_time = datetime.now() - start

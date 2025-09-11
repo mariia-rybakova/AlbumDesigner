@@ -132,7 +132,7 @@ def selectPartitions(photos_df, classSpreadParams,params,layouts_df):
 
     parts_len = [len(part) for part in filtered_parts]
     if len(parts_len) > 0 and np.max(parts_len) > np.min(parts_len) :
-        idxs = [idx for idx, part in enumerate(filtered_parts) if len(part) == np.min(parts_len)]
+        idxs = [idx for idx, part in enumerate(filtered_parts) if (len(part) - np.min(parts_len) <= 1 and len(part)<=2 and nPhotos < 16) or (len(part) == np.min(parts_len)) ]
         partsAboveThresh = [filtered_parts[idx] for idx in idxs]
         weightsAboveThresh = [filtered_weights[idx] for idx in idxs]
     else:
@@ -231,7 +231,7 @@ def partitions_with_swaps(seq, sizes, m):
     return results
 
 
-def listSingleCombinations(photos, layout_part,maxCombs):
+def listSingleCombinations(photos, layout_part, maxCombs):
     photos_ids = list(range(len(photos)))
     photos_ids = set(photos_ids)
 
@@ -278,6 +278,94 @@ def listSingleCombinations(photos, layout_part,maxCombs):
     return layout_combs
 
 
+def greedy_combination_search(photos, layout_part, layout_df):
+    photos_ids = list(range(len(photos)))
+
+    n_photos = len(photos)
+    landscapes = 0
+    landscape_photos_ids = list()
+    portrait_photos_ids = list()
+
+    for i in range(len(photos)):
+        if photos[i].ar < 1:
+            portrait_photos_ids.append(photos_ids[i])
+        else:
+            landscapes += 1
+            landscape_photos_ids.append(photos_ids[i])
+    portraits = n_photos - landscapes
+    landscape_photos_ids = sorted(landscape_photos_ids, key=lambda x: photos[x].general_time)
+    portrait_photos_ids = sorted(portrait_photos_ids, key=lambda x: photos[x].general_time)
+
+    spread_layouts_list = list()
+    for spread_size in layout_part:
+        layouts = layout_df.loc[(layout_df['number of boxes'] == spread_size)]
+        # &
+        # (len(layout_df['left_portrait_ids']) + len(layout_df['right_portrait_ids']) <= portraits) &
+        # (len(layout_df['left_landscape_ids']) + len(layout_df['right_landscape_ids']) <= landscapes)
+        list_of_single_row_layouts = []
+        for index, row in layouts.iterrows():
+            single_row_df = row.to_frame().T
+            list_of_single_row_layouts.append(single_row_df)
+        spread_layouts_list.append(list_of_single_row_layouts)
+
+    all_combinations_of_layouts = list(product(*spread_layouts_list))
+    if len(all_combinations_of_layouts) > 1000:
+        all_combinations_of_layouts = random.sample(all_combinations_of_layouts, 1000)
+
+    final_layout_combs_list = list()
+    for layouts_comb in all_combinations_of_layouts:
+        total_number_of_boxes = sum([int(cur_layout['number of boxes'].iloc[0]) for cur_layout in layouts_comb])
+        total_number_of_portraits = sum([len(cur_layout['left_portrait_ids'].iloc[0]) + len(cur_layout['right_portrait_ids'].iloc[0]) for cur_layout in layouts_comb])
+        total_number_of_landscapes = sum([len(cur_layout['left_landscape_ids'].iloc[0]) + len(cur_layout['right_landscape_ids'].iloc[0]) for cur_layout in layouts_comb])
+        if total_number_of_boxes != n_photos or total_number_of_portraits > portraits or total_number_of_landscapes > landscapes:
+            continue
+
+        cur_comb = [set() for _ in range(len(layouts_comb))]
+        portraits_idx = 0
+        landscapes_idx = 0
+        for cur_idx, cur_layout in enumerate(layouts_comb):
+            for _ in range(len(cur_layout['left_portrait_ids'].iloc[0]) + len(cur_layout['right_portrait_ids'].iloc[0])):
+                cur_comb[cur_idx].add(portrait_photos_ids[portraits_idx])
+                portraits_idx += 1
+        for cur_idx, cur_layout in enumerate(layouts_comb):
+            for _ in range(len(cur_layout['left_landscape_ids'].iloc[0]) + len(cur_layout['right_landscape_ids'].iloc[0])):
+                cur_comb[cur_idx].add(landscape_photos_ids[landscapes_idx])
+                landscapes_idx += 1
+
+        # add squares
+        for cur_idx, cur_layout in enumerate(layouts_comb):
+            while len(cur_comb[cur_idx]) < int(cur_layout['number of boxes'].iloc[0]):
+                if portraits_idx == len(portrait_photos_ids) and landscapes_idx == len(landscape_photos_ids):
+                    raise Exception('Something wrong. Not enough photos in greedy layouts search.')
+                elif portraits_idx == len(portrait_photos_ids):
+                    cur_comb[cur_idx].add(landscape_photos_ids[landscapes_idx])
+                    landscapes_idx += 1
+                elif landscapes_idx == len(landscape_photos_ids):
+                    cur_comb[cur_idx].add(portrait_photos_ids[portraits_idx])
+                    portraits_idx += 1
+                else:
+                    next_portrait = photos[portrait_photos_ids[portraits_idx]].general_time
+                    next_landscape = photos[landscape_photos_ids[landscapes_idx]].general_time
+                    if next_portrait < next_landscape:
+                        cur_comb[cur_idx].add(portrait_photos_ids[portraits_idx])
+                        portraits_idx += 1
+                    else:
+                        cur_comb[cur_idx].add(landscape_photos_ids[landscapes_idx])
+                        landscapes_idx += 1
+        final_layout_combs_list.append(cur_comb)
+
+    cleaned_comb_data = []
+    seen = set()
+
+    for inner_list in final_layout_combs_list:
+        frozen_inner_list = tuple(frozenset(s) for s in inner_list)
+
+        if frozen_inner_list not in seen:
+            seen.add(frozen_inner_list)
+            cleaned_comb_data.append(inner_list)
+    return cleaned_comb_data
+
+
 def layoutSingleCombination(singleClassComb, layout_df, photos,params):
     n_spreads = len(singleClassComb)
     multi_spreads = []
@@ -292,11 +380,11 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
         landscapes = 0
 
         for i in range(len(spread_photos)):
-            if photos[spread_photos[i]].ar > 1:
+            if photos[spread_photos[i]].ar < 1:
+                portrait_set.add(spread_photos[i])
+            else:
                 landscapes += 1
                 landscape_set.add(spread_photos[i])
-            else:
-                portrait_set.add(spread_photos[i])
 
         portraits = n_photos - landscapes
 
@@ -476,7 +564,12 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
             spreads += single_spreads
         if len(spreads) == 0:
             return None
+        if len(spreads) > params[2]:
+            # print(f"Sampling {params[2]} spreads from {len(spreads)}")
+            sample_idxs = random.sample(range(len(spreads)), params[2])
+            spreads = [spreads[i] for i in sample_idxs]
         multi_spreads.append(spreads)
+
     return multi_spreads
 
 
@@ -589,28 +682,26 @@ def eval_single_comb(comb, photo_times, cluster_labels):
 
 
 def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,logger):
-
-
-
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
     photos_df = photos_df.sort_values('general_time')
     layout_parts, weight_parts = selectPartitions(photos_df, spread_params,params,layouts_df=layouts_df)
-    #logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
+    # logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
     combs = []
     comb_weights = np.array([])
 
     photoTimes = [item.general_time for item in photos]
     cluster_labels = [item.cluster_label for item in photos]
-    #print("inside the genereatge filtered multi spreads")
-    #print(f"The MaxCombs is {CONFIGS['MaxCombs']} and MaxCombsLargeGroups {CONFIGS['MaxCombsLargeGroups']}")
+    # print("inside the genereatge filtered multi spreads")
     for i in range(len(layout_parts)):
-        #maxCombsParam = CONFIGS['MaxCombs'] if len(photos) <= CONFIGS['max_photos_group'] else CONFIGS['MaxCombsLargeGroups']
         maxCombsParam = params[2] if len(photos) <= params[5] else params[3]
 
         maxCombs = int(maxCombsParam / np.power(2, i))
-        single_combs = listSingleCombinations(photos, layout_parts[i],maxCombs)
-        #print(f"Single Combinations {len(single_combs)} and maxCombs {maxCombs}")
+        if len(photos) <= 8 and len(photos) / spread_params[0] <= 2:
+            single_combs = listSingleCombinations(photos, layout_parts[i],maxCombs)
+        else:
+            single_combs = greedy_combination_search(photos, layout_parts[i], layouts_df)
+        # print(f"Single Combinations {len(single_combs)} and maxCombs {maxCombs}")
 
         if len(single_combs) > maxCombs:
             #logger.info('combinations Found {}, sampled {} combinations foe evaluation'.format(len(single_combs), maxCombs))

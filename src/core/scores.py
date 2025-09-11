@@ -102,6 +102,9 @@ def assign_photos_order_by_area(photos, boxes, portraits_total, landscapes_total
             else:
                 print("Error: no more photos to add")
 
+    portraits_total = portraits_total - port_idx
+    landscapes_total = landscapes_total - land_idx
+
     for idx, box_data in enumerate(boxes):
         if box_data['orientation'] == 'square':
             if port_idx != len(photos_portrait) - portraits_total:
@@ -115,8 +118,7 @@ def assign_photos_order_by_area(photos, boxes, portraits_total, landscapes_total
             else:
                 print("Error: no more photos to add")
 
-    portraits_total = portraits_total - port_idx
-    landscapes_total = landscapes_total - land_idx
+
     return photos_order, portraits_total, landscapes_total
 
 

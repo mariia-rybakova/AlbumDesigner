@@ -198,6 +198,8 @@ def generate_first_last_pages(message, df, logger):
     # 1) Gather per-page layout metadata (min images and design_id)
     page_meta = {}
     for key in PAGE_KEYS:
+        if not message.pagesInfo.get(key):
+            continue
         layouts_df = message.designsInfo[f"{key}_layouts_df"]
         # minimal number of images required by any layout for that page
         n_images = int(layouts_df["number of boxes"].min())
@@ -209,29 +211,30 @@ def generate_first_last_pages(message, df, logger):
 
         page_meta[key] = {"n_images": n_images, "design_id": design_id}
 
-    if message.content.get('is_wedding', True):
-        df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,page_meta["firstPage"]["n_images"], logger)
-    else:
-        df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 2* page_meta["firstPage"]["n_images"], logger)
-
     if message.pagesInfo.get("firstPage"):
-            first_last_pages_data_dict["firstPage"]  = {
-                'design_id': page_meta["firstPage"]["design_id"],
-                'first_images_ids': [first_images_ids],
-                'first_images_df': first_imgs_df,
+        if message.content.get('is_wedding', True):
+            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,page_meta["firstPage"]["n_images"], logger)
+        else:
+            df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 2* page_meta["firstPage"]["n_images"], logger)
 
-            }
-    else:
-        logger.warning("For this album theres no first page cover image")
+        if message.pagesInfo.get("firstPage"):
+                first_last_pages_data_dict["firstPage"]  = {
+                    'design_id': page_meta["firstPage"]["design_id"],
+                    'first_images_ids': [first_images_ids],
+                    'first_images_df': first_imgs_df,
 
-    if message.pagesInfo.get('lastPage'):
-            first_last_pages_data_dict['lastPage'] = {
-                'design_id': page_meta["lastPage"]["design_id"],
-                'last_images_ids': [last_images_ids],
-                'last_images_df': last_imgs_df,
+                }
+        else:
+            logger.warning("For this album theres no first page cover image")
 
-            }
-    else:
-        logger.warning("For this album theres no last page cover image")
+        if message.pagesInfo.get('lastPage'):
+                first_last_pages_data_dict['lastPage'] = {
+                    'design_id': page_meta["lastPage"]["design_id"],
+                    'last_images_ids': [last_images_ids],
+                    'last_images_df': last_imgs_df,
+
+                }
+        else:
+            logger.warning("For this album theres no last page cover image")
 
     return df, first_last_pages_data_dict
