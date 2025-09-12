@@ -204,8 +204,9 @@ def generate_first_last_pages(message, df, logger):
         # minimal number of images required by any layout for that page
         n_images = int(layouts_df["number of boxes"].min())
         cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["number of boxes"] == n_images]
+
         if cover_layouts:
-            design_id = random.choice(cover_layouts)
+            design_id = cover_layouts[0]
         else:
             design_id = None
 
