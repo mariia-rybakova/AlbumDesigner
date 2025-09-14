@@ -164,6 +164,8 @@ class SelectionStage(Stage):
                     df = df[df['image_id'].isin(available_photos)]
                     _msg.content['gallery_photos_info'] = df
 
+                _msg.content['gallery_all_photos_info'] = df.copy()
+
                 ten_photos = ai_metadata.get('photoIds', [])
                 people_ids = ai_metadata.get('personIds', [])
                 focus = ai_metadata.get('focus', ['everyoneElse'])
@@ -262,7 +264,7 @@ class ProcessStage(Stage):
 
                 # Process time
                 sorted_df, image_id2general_time = process_image_time(sorted_df)
-                sorted_df['time_cluster'] = get_time_clusters(sorted_df['general_time'])
+                sorted_df['time_cluster'] = get_time_clusters(sorted_df , message.content.get('gallery_all_photos_info', None))
                 if message.content['is_wedding']:
                     sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], self.logger)
 
