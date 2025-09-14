@@ -278,7 +278,7 @@ def read_messages(messages, logger):
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
 
-            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
+            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'],do_mirror=True)
 
             proto_start = datetime.now()
 

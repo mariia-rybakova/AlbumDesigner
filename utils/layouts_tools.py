@@ -177,7 +177,7 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,alb
     }
 
 
-def generate_layouts_df(data, id_list, tolerance=0.05, album_ar=2):
+def generate_layouts_df(data, id_list, tolerance=0.05, album_ar=2,do_mirror=False):
 
 
     # Initialize lists to hold areas for all portrait and landscape boxes
@@ -212,7 +212,7 @@ def generate_layouts_df(data, id_list, tolerance=0.05, album_ar=2):
             else:
                 design_dict['is_mirrored'] = False
                 result.append(design_dict)
-                if len(design_dict['left_box_ids']) != len(design_dict['right_box_ids']):
+                if len(design_dict['left_box_ids']) != len(design_dict['right_box_ids']) and do_mirror:
                     mirrored_boxes = [box.copy() for box in boxes]
                     for mirrored_box in mirrored_boxes:
                         mirrored_box['x'] = 1 - mirrored_box['x'] - mirrored_box['width']
