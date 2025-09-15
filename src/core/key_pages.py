@@ -222,10 +222,11 @@ def generate_first_last_pages(message, df, logger):
             layouts_df = message.designsInfo[f"firstPage_layouts_df"]
             if not first_imgs_df.empty:
                 if first_imgs_df["image_orientation"].values[0] == "landscape":
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1]
+                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1 and (layout['right_large_landscape'] == 1 or layout["left_large_landscape"] == 1 or layout[
+                            "left_large_square"] == 1 or layout["right_large_square"]  == 1) ]
                     design_id = cover_layouts[0]
                 else:
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1]
+                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1 and (layout['left_large_portrait'] == 1 or layout["right_large_portrait"] == 1 or layout["left_large_square"] == 1 or layout["right_large_square"]== 1)]
                     design_id = cover_layouts[0]
 
                 first_last_pages_data_dict["firstPage"]  = {
@@ -242,10 +243,14 @@ def generate_first_last_pages(message, df, logger):
             # minimal number of images required by any layout for that page
             if not last_imgs_df.empty:
                 if last_imgs_df["image_orientation"].values[0] == "landscape":
-                   cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1]
-                   design_id = cover_layouts[0]
+                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1 and (
+                                layout['right_large_landscape'] == 1 or layout["left_large_landscape"] == 1 or layout[
+                            "left_large_square"] == 1 or layout["right_large_square"]== 1)]
+                    design_id = cover_layouts[0]
                 else:
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1]
+                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1 and (
+                                layout['left_large_portrait'] == 1 or layout["right_large_portrait"] == 1 or layout[
+                            "left_large_square"] == 1 or layout["right_large_square"]== 1)]
                     design_id = cover_layouts[0]
 
                 first_last_pages_data_dict['lastPage'] = {
