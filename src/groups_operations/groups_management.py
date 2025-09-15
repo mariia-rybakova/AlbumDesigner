@@ -21,7 +21,7 @@ def get_groups_time(groups):
 def check_time_based_split_needed(general_times_list, group_time_list, group_key):
     if len(group_time_list) < 2:
         return False, None
-    if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'settings', 'food', 'detail', 'vehicle', 'inside vehicle', 'rings', 'suit']:
+    if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'groom party', 'bride party', 'portrait']:
         return False, None
 
     split_points = list()
