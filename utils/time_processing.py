@@ -76,7 +76,7 @@ def get_time_clusters_dbscan(X):
         dbscan = DBSCAN(eps=1200, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
         clusters = dbscan.fit_predict(X)
         best_n = len(set(clusters))
-        if best_n <= 6:
+        if best_n <= 10:
             break
     return clusters, best_n
 

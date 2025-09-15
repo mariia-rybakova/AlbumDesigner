@@ -161,14 +161,23 @@ def get_info_protobufs(project_base_url, logger):
             else:
                 groom_id = np.nan
 
+            if np.isnan(bride_id) and not np.isnan(groom_id):
+                for person_id in main_row:
+                    if person_id != groom_id:
+                        bride_id = person_id
+                        break
+            elif np.isnan(groom_id) and not np.isnan(bride_id):
+                for person_id in main_row:
+                    if person_id != bride_id:
+                        groom_id = person_id
+                        break
+            elif np.isnan(bride_id) and np.isnan(groom_id):
+                if len(main_row) >= 2:
+                    bride_id = main_row[0]
+                    groom_id = main_row[1]
+
             if groom_id not in main_row or bride_id not in main_row:
                 logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
-
-            # for pid in main_row:
-            #     if pid in bride_set:
-            #         bride_id = pid
-            #     else:
-            #         groom_id = pid
 
             gallery_info_df["bride_id"] = bride_id
             gallery_info_df["groom_id"] = groom_id
