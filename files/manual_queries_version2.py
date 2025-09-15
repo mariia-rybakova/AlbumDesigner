@@ -5,7 +5,7 @@ wedding_events = {
         "bride and groom posing for a portrait",
         "bride and groom kissing",
         "bride and groom dancing",
-        "bride and groom not formal pose"
+        "bride and groom not formal pose",
         "unknown_bride_and_groom"
     ],
 
@@ -15,13 +15,14 @@ wedding_events = {
         "bride standing alone in wedding dress",
         "bride posing for photos",
         "bride close shot of her face",
-         "bride far shot of her full body",
+        "bride far shot of her full body",
+        "bride not in wedding dress and will get prepare for wedding",
         "unknown_bride"
     ],
 
     'groom': [
-        "groom only portrait",
-        "groom standing alone in suit",
+        "groom with good portraits",
+        "groom thoughtfully getting ready, tying his tie and putting on his suit with focus and anticipation for the big day",
         "groom posing for photos",
         "unknown_groom"
     ],
@@ -82,7 +83,7 @@ wedding_events = {
     'very large group': [
         "large group of wedding guests posing together",
         "all guests gathered around couple for photo",
-        "informal posing for guests and couple during the dinner or dancing"
+        "informal posing for guests and couple during the dinner or dancing",
         "unknown_very_large_group"
     ],
 
@@ -98,7 +99,7 @@ wedding_events = {
     'bride getting dressed': [
         "bride putting on wedding dress",
         "bridesmaids helping bride into dress",
-        "brides mother helping her to get dress"
+        "brides mother helping her to get dress",
         "bride adjusting her veil or train",
         "unknown_bride_getting_dressed"
     ],
@@ -174,7 +175,7 @@ wedding_events = {
         "bride’s shoes or sandals",
         "bracelets or jewelry detail",
         "groom’s watch or cufflinks",
-        "groom’s shoes"
+        "groom’s shoes",
         "invitation card with rings or jewelry",
         "unknown_accessories"
     ],
