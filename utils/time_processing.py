@@ -76,7 +76,7 @@ def get_time_clusters_dbscan(X):
         dbscan = DBSCAN(eps=1200, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
         clusters = dbscan.fit_predict(X)
         best_n = len(set(clusters))
-        if best_n <= 6:
+        if best_n <= 10:
             break
     return clusters, best_n
 
@@ -120,6 +120,11 @@ def get_time_clusters(selected_df,all_photos_df=None):
 
         # Recalculate best_n excluding noise points
         best_n = len(set(initial_clusters[initial_clusters != -1]))
+
+    # Remap cluster labels to start from 0
+    unique_clusters = np.unique(initial_clusters)
+    mapping = {old_label: new_label for new_label, old_label in enumerate(unique_clusters)}
+    initial_clusters = np.array([mapping[label] for label in initial_clusters])
 
     # Calculate mean time for each cluster
     cluster_means = {}
