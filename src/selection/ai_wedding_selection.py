@@ -349,7 +349,7 @@ def define_min_max_spreads(df,focus_table,n_actual_dict):
 
     if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
         return 15,18
-    elif total_images >= 1000 and total_people >= 70 and actual_events_have / actual_events_needed > 0.8:
+    elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
         return 23,26
     else:
         return 19,22
