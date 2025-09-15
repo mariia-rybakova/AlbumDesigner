@@ -139,10 +139,27 @@ def get_info_protobufs(project_base_url, logger):
             groom_set = Counter(
                 _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
 
-            bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
-            groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
-
             main_row = gallery_info_df["main_persons"].dropna().iloc[0]
+
+            # bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
+            # groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
+
+            if bride_set:
+                bride_candidates = [id for id, count in bride_set.most_common() if
+                                    count == bride_set.most_common(1)[0][1]]
+                bride_id = next((id for id in bride_candidates if id in main_row),
+                                bride_candidates[0]) if bride_candidates else np.nan
+            else:
+                bride_id = np.nan
+
+
+            if groom_set:
+                groom_candidates = [id for id, count in groom_set.most_common() if
+                                    count == groom_set.most_common(1)[0][1]]
+                groom_id = next((id for id in groom_candidates if id in main_row),
+                                groom_candidates[0]) if groom_candidates else np.nan
+            else:
+                groom_id = np.nan
 
             if groom_id not in main_row or bride_id not in main_row:
                 logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
@@ -261,7 +278,7 @@ def read_messages(messages, logger):
             _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
             _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
 
-            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
+            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'],do_mirror=True)
 
             proto_start = datetime.now()
 

@@ -81,10 +81,27 @@ def get_time_clusters_dbscan(X):
     return clusters, best_n
 
 
-def get_time_clusters(general_time_df):
+def get_time_clusters(selected_df,all_photos_df=None):
     # Cluster by time
+    general_time_df = selected_df[['general_time']]
     X = general_time_df.values.reshape(-1, 1)
-    initial_clusters, best_n = get_time_clusters_dbscan(X)
+    if all_photos_df is not None:
+        all_X = all_photos_df['image_time'].values.reshape(-1, 1)
+        initial_clusters, best_n = get_time_clusters_dbscan(all_X)
+
+        # Assign clusters to all_photos_df
+        all_photos_df['time_cluster'] = initial_clusters
+
+        # Map clusters to selected_df based on matching id
+        selected_df = selected_df.merge(
+            all_photos_df[['image_id', 'time_cluster']],
+            on='image_id',
+            how='left'
+        )
+        initial_clusters = selected_df['time_cluster'].values
+    else:
+
+        initial_clusters, best_n = get_time_clusters_dbscan(X)
 
     if -1 in initial_clusters:
         noise_mask = initial_clusters == -1
