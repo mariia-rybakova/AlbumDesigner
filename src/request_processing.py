@@ -360,7 +360,13 @@ def customize_box(image_info, box_info, album_ar=2):
 
 
 def sort_boxes(boxes):
-    sorted_boxes = sorted(boxes, key=lambda x: (x['y'], x['x']))
+    xs = [box['x'] for box in boxes]
+    ys = [box['y'] for box in boxes]
+    page_flag = [0 if box['x'] < 0.5 else 1 for box in boxes]
+
+    sorted_indices = np.lexsort((xs, ys, page_flag))
+
+    sorted_boxes = [boxes[ind] for ind in sorted_indices]
     return sorted_boxes
 
 
@@ -410,7 +416,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         first_page_layouts_df = message.designsInfo['firstPage_layouts_df']
         design_id = first_page_layouts_df.loc[first_page_data['design_id']]['id']
         if design_id > 0:
-            design_boxes = original_designs_data[str(design_id)]['boxes']
+            design_boxes = sort_boxes(original_designs_data[str(design_id)]['boxes'])
         else:
             design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
             design_id = -1 * design_id
@@ -463,8 +469,9 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
 
                         design_id = layouts_df.loc[layout_id]['id']
                         if design_id > 0:
-                            design_boxes = original_designs_data[str(design_id)]['boxes']
+                            design_boxes = sort_boxes(original_designs_data[str(design_id)]['boxes'])
                         else:
+                            print(counter_comp_id, design_id)
                             design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
                             design_id = -1 * design_id
 
@@ -526,7 +533,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         last_page_layouts_df = message.designsInfo['lastPage_layouts_df']
         design_id = last_page_layouts_df.loc[last_page_data['design_id']]['id']
         if design_id > 0:
-            design_boxes = original_designs_data[str(design_id)]['boxes']
+            design_boxes = sort_boxes(original_designs_data[str(design_id)]['boxes'])
         else:
             design_boxes = get_mirrored_boxes(original_designs_data[str(-1*design_id)]['boxes'])
             design_id = -1 * design_id
