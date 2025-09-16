@@ -12,8 +12,8 @@ from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 from src.selection.person_clustering import person_max_union_selection
-from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity,filter_similarity_diverse
-
+from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity
+from utils.selection.testing_selection import filter_similarity_diverse,filter_similarity_diverse_new
 
 
 
@@ -333,77 +333,43 @@ def load_event_mapping(csv_path: str,logger):
         logger.error(f"Error loading event mapping: {e}")
         return {}
 
+def define_min_max_spreads(df,focus_table,n_actual_dict):
+    total_images = sum(n_actual_dict.values())
+    total_people =  df['persons_ids'].explode().nunique()
+
+    actual_events_have = 0
+    actual_events_needed = 0
+    for event, config in focus_table.items():
+        if isinstance(config, dict) and 'value' in config:
+            if isinstance(config['value'], float):
+                if event in n_actual_dict.keys() and config['value'] > 0.0:
+                    actual_events_have  += 1
+                else:
+                    actual_events_needed += 1
+
+    if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
+        return 15,18
+    elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
+        return 23,26
+    else:
+        return 19,22
+
+
 def calculate_optimal_selection(
     n_actual_dict,
     image_lookup_table, #relation_table
     spreads_per_category_table, # LUT
     focus_table,
     density,
+    df,
     logger
     ):
     try:
-        MIN_TOTAL_SPREADS = 19
-        MAX_TOTAL_SPREADS = 22
-        total_images = sum(n_actual_dict.values())
-
-        # if total_images <= 250:
-        #     target_spreads = min(MIN_TOTAL_SPREADS + density - 1, MAX_TOTAL_SPREADS)
-        #     allocation = {key: {"spreads": 0, "images": 0} for key in n_actual_dict}
-        #     max_images_per_spread = 4
-        #     used_spreads = 0
-        #     used_images = 0
-        #
-        #     for category, image_count in n_actual_dict.items():
-        #         if category != 'None':  # Skip None for now
-        #             spreads = (image_count + 2) // 3  # General rule: ~3 images per spread
-        #             # Update allocation
-        #             allocation[category]["spreads"] = spreads
-        #             allocation[category]["images"] = min(image_count, spreads * max_images_per_spread)
-        #             used_spreads += spreads
-        #             used_images += allocation[category]["images"]
-        #
-        #     # Step 4: Handle "None" category
-        #     none_images = n_actual_dict.get('None', 0)
-        #     remaining_spreads = max(0, target_spreads - used_spreads)
-        #
-        #     if none_images > 0 and remaining_spreads > 0:
-        #         # Calculate images per spread for "None" based on density
-        #         images_per_spread = min(3 + (density - 1), max_images_per_spread)
-        #         # Total images to use from "None"
-        #         none_images_to_use = min(none_images, remaining_spreads * images_per_spread)
-        #         # Adjust spreads if necessary
-        #         none_spreads = max(1, (none_images_to_use + images_per_spread - 1) // images_per_spread)
-        #         none_spreads = min(none_spreads, remaining_spreads)
-        #         none_images_to_use = min(none_images, none_spreads * images_per_spread)
-        #
-        #         allocation['None']["spreads"] = none_spreads
-        #         allocation['None']["images"] = none_images_to_use
-        #
-        #     # Step 5: Validate total spreads
-        #     total_spreads = sum(info["spreads"] for info in allocation.values())
-        #     if total_spreads < MIN_TOTAL_SPREADS or total_spreads > MAX_TOTAL_SPREADS:
-        #         # Adjust "None" spreads if possible
-        #         if 'None' in allocation:
-        #             current_none_spreads = allocation['None']["spreads"]
-        #             if total_spreads < MIN_TOTAL_SPREADS and none_images > allocation['None']["images"]:
-        #                 extra_spreads = MIN_TOTAL_SPREADS - total_spreads
-        #                 allocation['None']["spreads"] += extra_spreads
-        #                 allocation['None']["images"] = min(none_images,
-        #                                                  allocation['None']["spreads"] * max_images_per_spread)
-        #             elif total_spreads > MAX_TOTAL_SPREADS:
-        #                 reduce_spreads = total_spreads - MAX_TOTAL_SPREADS
-        #                 allocation['None']["spreads"] = max(0, current_none_spreads - reduce_spreads)
-        #                 allocation['None']["images"] = min(none_images,
-        #                                                  allocation['None']["spreads"] * max_images_per_spread)
-        #
-        #     selection = {category: info["images"] for category, info in allocation.items()}
-        #     spreads = {category: info["spreads"] for category, info in allocation.items()}
-        #     return selection,spreads
 
 
-        TARGET_SPREADS = CONFIGS['max_total_spreads']
+        min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict)
 
-
+        TARGET_SPREADS = max_total_spreads
         density_factors = CONFIGS['density_factors']
         density_factor = density_factors.get(density, 1.0)
 
@@ -478,82 +444,6 @@ def calculate_optimal_selection(
             logger.warning(f"Unable to fill desired spreads. Total miss spreads: {total_miss_spreads}")
 
 
-        # important_events = ['bride', 'groom', 'bride and groom', 'bride party', 'groom party']
-        #
-        #
-        #
-        #
-        #
-        #
-        #
-        #
-        # percentages = {
-        #     event: config.get('value', 0)
-        #     for event, config in focus_table.items()
-        #     if config.get('type') == 'percentage' and event in n_actual_dict.keys()
-        # }
-        # total_assigned_percent = sum(percentages.values())
-        # rem_percent = 100.0 - total_assigned_percent
-        #
-        # if rem_percent > 0:
-        #     eligible_events = [e for e in important_events if e in percentages]
-        #     share = rem_percent / len(eligible_events)
-        #     for event in eligible_events:
-        #         percentages[event] += share
-
-        # spreads = {}
-        # selections = {}
-        # total_spreads = 0
-        #
-        # # Step 2: combined spread + selection logic
-        # for event in n_actual_dict:
-        #     config = focus_table.get(event, {})
-        #     n_actual = n_actual_dict[event]
-        #
-        #     if config.get('type') == 'no':
-        #         spreads[event] = 0
-        #         selections[event] = 0
-        #         continue
-        #
-        #     pct = percentages.get(event, 0)
-        #     base_spreads, std_spreads = spreads_per_category_table.get(event, (0, 0))
-        #     est_spreads = round(base_spreads + (pct / 100.0) * std_spreads)
-        #     est_spreads = max(est_spreads, 0)
-        #
-        #     base_images, _ = image_lookup_table.get(event, (0, 0))
-        #     est_selection = round(base_images * density_factor)
-        #
-        #     # Clip selection to real available images
-        #     final_selection = min(est_selection, n_actual)
-        #
-        #     # If not enough images, adjust spreads down
-        #     if final_selection < est_spreads and event not in ['None', 'other']:
-        #         est_spreads = max(1, min(final_selection, est_spreads))
-        #
-        #     spreads[event] = est_spreads
-        #     selections[event] = final_selection
-        #     total_spreads += est_spreads
-        #
-        # # Add spreads if count is too low
-        # while total_spreads < MIN_TOTAL_SPREADS:
-        #     # Prioritize adding to important, percentage-based events
-        #     candidates = sorted([e for e in important_events if e in percentages], key=lambda e: percentages[e],
-        #                         reverse=True)
-        #     if not candidates: break
-        #     spreads[candidates[0]] += 1
-        #     total_spreads += 1
-        #
-        # # Remove spreads if count is too high
-        # while total_spreads > MAX_TOTAL_SPREADS:
-        #     # Prioritize removing from least important, percentage-based events
-        #     candidates = sorted([e for e in percentages if spreads[e] > 0 and e not in important_events],
-        #                         key=lambda e: percentages[e])
-        #     if not candidates:  # Fallback to important events if necessary
-        #         candidates = sorted([e for e in important_events if spreads[e] > 1], key=lambda e: percentages[e])
-        #     if not candidates: break
-        #     spreads[candidates[0]] -= 1
-        #     total_spreads -= 1
-
     except Exception as e:
         logger.error(f"Error calculate_optimal_selection: {e}")
         return None,None
@@ -599,6 +489,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         wedding_lookup_table,
         focus_table,
         density,
+        df,
         logger
         )
 
@@ -743,11 +634,19 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                                                       'image_id'].values.tolist()[:need]
                     else:
                         #preferred_color_ids  = filter_similarity(need, df.reset_index(), cluster_name)
-                        preferred_color_ids = filter_similarity_diverse(need=need,
+                        # preferred_color_ids = filter_similarity_diverse(need=need,
+                        #                                                 df=df.reset_index(),
+                        #                                                 cluster_name=cluster_name, logger=logger,
+                        #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                        #                                                 target_group_size=10)
+
+                        preferred_color_ids = filter_similarity_diverse_new(need=need,
                                                                         df=df.reset_index(),
                                                                         cluster_name=cluster_name, logger=logger,
                                                                         # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                                                                        target_group_size=10)  # set e.g. 3 to balance portrait/landscape)
+                                                                        target_group_size=10)
+
+                        # set e.g. 3 to balance portrait/landscape)
 
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
@@ -848,11 +747,20 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
                 # Remove duplicates and finalize selection
                 #preferred_color_ids  = filter_similarity(need, color_candidates_df.reset_index(),cluster_name)
+                #
+                # preferred_color_ids = filter_similarity_diverse(need=need,
+                #                                         df=df_clustered.reset_index(),
+                #                                         cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                #                                         target_group_size=10)
 
-                preferred_color_ids = filter_similarity_diverse(need=need,
-                                                        df=df_clustered.reset_index(),
-                                                        cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                                                        target_group_size=10)   # set e.g. 3 to balance portrait/landscape)
+                preferred_color_ids = filter_similarity_diverse_new(need=need,
+                                                                df=df_clustered.reset_index(),
+                                                                cluster_name=cluster_name, logger=logger,
+                                                                # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                                                                target_group_size=10)
+
+
+                # set e.g. 3 to balance portrait/landscape)
 
                 if preferred_color_ids is None:
                     continue
@@ -943,10 +851,16 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         # final_grayscale_selection = filter_similarity(
                         #     grayscale_need, grayscale_candidates_df.reset_index(), cluster_name
                         # )
-                        final_grayscale_selection = filter_similarity_diverse(need=grayscale_need,
-                                                        df=grayscale_candidates_df.reset_index(),
-                                                        cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                                                        target_group_size=10)
+                        # final_grayscale_selection = filter_similarity_diverse(need=grayscale_need,
+                        #                                 df=grayscale_candidates_df.reset_index(),
+                        #                                 cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                        #                                 target_group_size=10)
+
+                        final_grayscale_selection = filter_similarity_diverse_new(need=grayscale_need,
+                                                                              df=grayscale_candidates_df.reset_index(),
+                                                                              cluster_name=cluster_name, logger=logger,
+                                                                              # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                                                                              target_group_size=10)
 
             # --- Finalize selection for the cluster ---
             selected_ids = final_color_selection + final_grayscale_selection

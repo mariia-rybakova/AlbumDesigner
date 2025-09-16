@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from collections import defaultdict
-from testing_code.plotting import plot_selected_to_pdf
+#from testing_code.plotting import plot_selected_to_pdf
 
 
 import random
@@ -287,7 +287,7 @@ def filter_similarity_diverse_old(
             key=lambda x: (tb_of[x], -score_lookup[x] if higher_is_better else score_lookup[x])
         )
 
-        plot_selected_to_pdf(df, selected_ids, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
+        #plot_selected_to_pdf(df, selected_ids, image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128', output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
 
         return selected_ids
 
@@ -694,10 +694,10 @@ def filter_similarity_diverse(
 
 
 
-    plot_selected_to_pdf(df, selected,
-                         image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128',
-                         output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
-
+    # plot_selected_to_pdf(df, selected,
+    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128',
+    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
+    #
 
     return selected
 
@@ -962,9 +962,9 @@ def filter_similarity_diverse_new(
             remaining_ids = [iid for iid in remaining_ids if iid != candidate]
 
 
-    plot_selected_to_pdf(df, chosen,
-                         image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128',
-                         output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
+    # plot_selected_to_pdf(df, chosen,
+    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229128',
+    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229128\{cluster_name}.pdf")
 
 
 
