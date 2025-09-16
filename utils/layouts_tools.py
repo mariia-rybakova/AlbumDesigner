@@ -40,7 +40,10 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,alb
 
     xs = [box['x'] for box in boxes]
     ys = [box['y'] for box in boxes]
-    sorted_indices = np.lexsort((ys, xs))
+    page_flag = [0 if box['x'] < 0.5 else 1 for box in boxes]
+    # sorted_indices = np.lexsort((ys, xs))
+
+    sorted_indices = np.lexsort((xs, ys, page_flag))
 
     boxes_s = [boxes[ind] for ind in sorted_indices]
     boxes = boxes_s
