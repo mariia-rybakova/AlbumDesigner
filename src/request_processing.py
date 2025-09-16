@@ -471,7 +471,6 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                         if design_id > 0:
                             design_boxes = sort_boxes(original_designs_data[str(design_id)]['boxes'])
                         else:
-                            print(counter_comp_id, design_id)
                             design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
                             design_id = -1 * design_id
 
