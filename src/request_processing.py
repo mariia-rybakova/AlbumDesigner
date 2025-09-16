@@ -360,7 +360,7 @@ def customize_box(image_info, box_info, album_ar=2):
 
 
 def sort_boxes(boxes):
-    sorted_boxes = sorted(boxes, key=lambda x: (x['x'], x['y']))
+    sorted_boxes = sorted(boxes, key=lambda x: (x['y'], x['x']))
     return sorted_boxes
 
 
