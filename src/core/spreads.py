@@ -293,8 +293,13 @@ def greedy_combination_search(photos, layout_part, layout_df):
             landscapes += 1
             landscape_photos_ids.append(photos_ids[i])
     portraits = n_photos - landscapes
-    landscape_photos_ids = sorted(landscape_photos_ids, key=lambda x: [photos[x].original_context, photos[x].general_time])
-    portrait_photos_ids = sorted(portrait_photos_ids, key=lambda x: [photos[x].original_context, photos[x].general_time])
+    context2photos_number = dict()
+    for photo in photos:
+        if photo.original_context not in context2photos_number:
+            context2photos_number[photo.original_context] = list()
+        context2photos_number[photo.original_context].append(photo.general_time)
+    landscape_photos_ids = sorted(landscape_photos_ids, key=lambda x: [np.mean(context2photos_number[photos[x].original_context]), photos[x].general_time])
+    portrait_photos_ids = sorted(portrait_photos_ids, key=lambda x: [np.mean(context2photos_number[photos[x].original_context]), photos[x].general_time])
 
     spread_layouts_list = list()
     for spread_size in layout_part:
@@ -577,14 +582,17 @@ def check_page(photo_set, photos):
     bride_centric_classes = ['bride', 'bride party', 'wedding dress', 'getting hair-makeup','bride getting dressed']
     groom_centric_classes = ['groom','groom party','suit']
     if len(photo_set) == 1:
-        return [True, True, False]
+        return [True, True, False, 1]
     else:
         colors = []
         photo_classes = []
+        contexts = []
         for photo_id in photo_set:
             photo = photos[photo_id]
             colors.append(photo.color)
             photo_classes.append(photo.photo_class)
+            contexts.append(photo.original_context)
+        number_of_unique_contexts = len(set(contexts))
         sameColor = all([color == colors[0] for color in colors])
         sameClass = all([photo_class == photo_classes[0] for photo_class in photo_classes])
         if not sameClass:
@@ -596,12 +604,12 @@ def check_page(photo_set, photos):
                 bride_groom_mix = False
         else:
             bride_groom_mix = False
-        return [sameColor, sameClass, bride_groom_mix]
+        return [sameColor, sameClass, bride_groom_mix, number_of_unique_contexts]
 
 
 def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_penalty=0.5, color_mix=0.000000001,
                        class_mix=0.01,
-                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.000000000000000001):
+                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.000000000000000001, context_mix_penalty=0.00001):
     #print(f"the CONFIGS['spread_score_threshold'] is {score_threshold}")
     filtered_multi_spreads = []
     for i in range(len(multi_spreads)):
@@ -615,6 +623,7 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * class_mix
             if left_check[2]:
                 spread_scores[j] = spread_scores[j] * color_mix
+            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, left_check[3] - 1)
             if layouts_df.at[spread[0], 'left_mixed']:
                 spread_scores[j] = spread_scores[j] * orientation_mix
             right_check = check_page(spread[2], photos)
@@ -626,6 +635,7 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * color_mix
             if layouts_df.at[spread[0], 'right_mixed']:
                 spread_scores[j] = spread_scores[j] * orientation_mix
+            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, right_check[3] - 1)
             if not left_check[0] and not right_check[0]:
                 # if two pages has gray colors give it much more worse
                 spread_scores[j] = spread_scores[j] * double_mix_color
