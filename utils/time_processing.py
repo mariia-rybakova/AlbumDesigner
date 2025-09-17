@@ -4,6 +4,7 @@ import numpy as np
 
 from statistics import median
 from datetime import datetime
+
 from sklearn.mixture import GaussianMixture
 from sklearn.cluster import DBSCAN
 
@@ -72,8 +73,17 @@ def get_time_clusters_gmm(X):
 
 
 def get_time_clusters_dbscan(X):
+    best_eps = 1200
+    for eps in [1200, 900, 600, 300]:
+        dbscan = DBSCAN(eps=eps, min_samples=3)  # eps is in minutes, adjust as needed
+        clusters = dbscan.fit_predict(X)
+        best_n = len(set(clusters))
+        if best_n >= 3:
+            best_eps = eps
+            break
+
     for min_samples_possible in [3, 5, 7]:
-        dbscan = DBSCAN(eps=1200, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
+        dbscan = DBSCAN(eps=best_eps, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
         clusters = dbscan.fit_predict(X)
         best_n = len(set(clusters))
         if best_n <= 10:
