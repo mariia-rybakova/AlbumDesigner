@@ -1,7 +1,7 @@
 # import numpy as np
 # import pandas as pd
 # from collections import defaultdict
-# from testing_code.plotting import plot_selected_to_pdf,plot_groups_to_pdf
+#from testing_code.plotting import plot_selected_to_pdf,plot_groups_to_pdf
 
 
 import random
@@ -1052,7 +1052,7 @@ def select_remove_similar(
     id_to_unit = dict(zip(df["image_id"], df["embedding"]))
 
     selected_mat = None  # np.ndarray of shape (k, d)
-    cos_thresh = 0.97
+    cos_thresh = 0.90
 
     def is_diverse(iid: str) -> bool:
         """Check cosine(candidate, ANY already selected) < cos_thresh."""
@@ -1089,9 +1089,9 @@ def select_remove_similar(
 
 
     # plot_selected_to_pdf(df, final_selected,
-    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46227780',
-    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46227780\{cluster_name}.pdf")
-    #
+    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229129',
+    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229129\{cluster_name}.pdf")
+
 
     return final_selected
 
