@@ -293,8 +293,8 @@ def greedy_combination_search(photos, layout_part, layout_df):
             landscapes += 1
             landscape_photos_ids.append(photos_ids[i])
     portraits = n_photos - landscapes
-    landscape_photos_ids = sorted(landscape_photos_ids, key=lambda x: photos[x].general_time)
-    portrait_photos_ids = sorted(portrait_photos_ids, key=lambda x: photos[x].general_time)
+    landscape_photos_ids = sorted(landscape_photos_ids, key=lambda x: [photos[x].original_context, photos[x].general_time])
+    portrait_photos_ids = sorted(portrait_photos_ids, key=lambda x: [photos[x].original_context, photos[x].general_time])
 
     spread_layouts_list = list()
     for spread_size in layout_part:
