@@ -571,7 +571,7 @@ def build_time_merged_groups(
     return merged_groups
 
 
-def allocate_prefer_larger(
+def allocate_prefer_larger_nneeeded(
     groups: dict,
     need: int,
     small_threshold: int = 5,
@@ -607,6 +607,80 @@ def allocate_prefer_larger(
             g_star = max(caps, key=lambda x: (x[1], sizes[x[0]]))[0]
             alloc[g_star] += min(remaining, sizes[g_star] - alloc[g_star])
             remaining = need - sum(alloc.values())
+
+    # ensure singles get zero
+    if "_SINGLES_" in groups:
+        alloc["_SINGLES_"] = 0
+
+    return alloc
+
+
+def allocate_prefer_larger(
+    groups: dict,
+    need: int,
+    small_threshold: int = 5,   # kept for compatibility; not used in this variant
+    ensure_one: bool = True,    # kept for compatibility; not used in this variant
+    base_per_group: int = 1,    # kept for compatibility; not used in this variant
+):
+    """
+    Smart allocation:
+      - Exclude '_SINGLES_' and groups with <2 items.
+      - Base: give 2 per valid group (largest-first) until need is close.
+      - Cap per group: size<=2 -> size; else -> max(2, size//2).
+      - Round-robin +1 across groups (largest-first) without exceeding caps.
+      - If caps prevent reaching `need`, return early (by design).
+    """
+    # 1) filter valid groups
+    valid = {g: idxs for g, idxs in groups.items()
+             if g != "_SINGLES_" and len(idxs) >= 2}
+    keys_all = list(groups.keys())
+    alloc = {g: 0 for g in keys_all}
+
+    if need <= 0 or not valid:
+        if "_SINGLES_" in groups:
+            alloc["_SINGLES_"] = 0
+        return alloc
+
+    sizes = {g: len(idxs) for g, idxs in valid.items()}
+    order = sorted(valid.keys(), key=lambda k: sizes[k], reverse=True)
+
+    # 2) per-group caps: don't take more than ~half (except tiny groups can be fully used)
+    caps = {}
+    for g, sz in sizes.items():
+        caps[g] = sz if sz <= 2 else max(2, sz // 2)
+
+    # 3) base pass: try to give 2 per group (largest-first), respecting caps & need
+    remaining = need
+    base = 2
+    base_demand = sum(min(base, caps[g]) for g in order)
+
+    if remaining <= base_demand:
+        # not enough to give base to all; give up to 2 (and cap) to largest groups first
+        for g in order:
+            if remaining == 0:
+                break
+            give = min(base, caps[g], remaining)
+            alloc[g] += give
+            remaining -= give
+    else:
+        # give base to all valid groups
+        for g in order:
+            give = min(base, caps[g])
+            alloc[g] += give
+            remaining -= give
+
+        # 4) round-robin +1 until need met or caps reached
+        while remaining > 0:
+            progressed = False
+            for g in order:
+                if remaining == 0:
+                    break
+                if alloc[g] < caps[g]:
+                    alloc[g] += 1
+                    remaining -= 1
+                    progressed = True
+            if not progressed:
+                break  # all groups at cap; stop early (acceptable)
 
     # ensure singles get zero
     if "_SINGLES_" in groups:
@@ -1089,9 +1163,9 @@ def select_remove_similar(
 
 
     # plot_selected_to_pdf(df, final_selected,
-    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46229129',
-    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46229129\{cluster_name}.pdf")
-
+    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46245951',
+    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46245951\{cluster_name}.pdf")
+    #
 
     return final_selected
 
