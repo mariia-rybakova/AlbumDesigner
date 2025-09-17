@@ -630,8 +630,11 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             # If enough remaining or too few to process more
 
             if has <= need:
-                images = valid_images_df['image_id'].values.tolist()
-                to_add = images[:need]
+                # images = valid_images_df['image_id'].values.tolist()
+                # to_add = images[:need]
+                # filter images based on people and query even if has less than need
+                to_add =  valid_images_df.assign(_pid=valid_images_df["persons_ids"].apply(tuple)).sort_values("image_order", ascending=True).drop_duplicates(subset=["_pid", "image_subquery_content"], keep="first").head(need)["image_id"].tolist()
+
                 ai_images_selected.extend(to_add)
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(to_add)
                 logger.info(f"it has less than needed so we select them all {cluster_name} no filtering")
