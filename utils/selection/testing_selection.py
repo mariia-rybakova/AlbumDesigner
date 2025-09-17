@@ -1,7 +1,7 @@
-import numpy as np
-import pandas as pd
-from collections import defaultdict
-#from testing_code.plotting import plot_selected_to_pdf
+# import numpy as np
+# import pandas as pd
+# from collections import defaultdict
+# from testing_code.plotting import plot_selected_to_pdf,plot_groups_to_pdf
 
 
 import random
@@ -504,79 +504,115 @@ def _time_bins_for_group(gdf: pd.DataFrame, m: int):
     return pd.Series(0, index=gdf.index)
 
 
-
-def allocate_prefer_larger(groups, need, small_threshold=5, ensure_one=True):
+def build_time_merged_groups(
+    df: pd.DataFrame,
+    time_col: str = "image_time_date",
+    cluster_col: str = "sub_group_time_cluster",
+    max_gap_minutes: int = 5,
+) -> dict:
     """
-    groups: {group_key: [row_idx, ...]}
-    Rule:
-      - Start with 1 per group (coverage) if ensure_one and capacity allows.
-      - Distribute the remainder proportionally to group size (largest remainder),
-        but in the first pass **only among groups with size > small_threshold**.
-      - Respect capacity (can’t exceed group size).
-      - If still short, allow filling remaining capacity anywhere (largest-first).
-    Returns: {group_key: m}
+    Returns a dict {new_group_key: [row_idx,...]} where:
+      - Original groups of size==1 are ignored initially.
+      - Remaining groups are ordered by time and merged if the gap between
+        last(current) and first(next) <= max_gap_minutes.
+      - If total capacity from merged non-singletons < total need (handled later),
+        you can append singleton groups back as spill capacity.
     """
-    sizes = {g: len(idx) for g, idx in groups.items()}
-    keys = list(sizes.keys())
-    G = len(keys)
-    if need <= 0 or G == 0:
-        return {g: 0 for g in keys}
+    # Ensure sorted by time
+    df_sorted = df.sort_values(time_col)
+    # Build original groups
+    orig_groups = {g: gdf.index.to_list() for g, gdf in df_sorted.groupby(cluster_col)}
 
-    # If need < #groups: give 1 to the largest `need` groups
-    if need < G:
-        alloc = {g: 0 for g in keys}
-        for g in sorted(keys, key=lambda k: sizes[k], reverse=True)[:need]:
-            alloc[g] = 1
-        return alloc
+    # Compute group first/last times
+    g_first = {}
+    g_last = {}
+    for g, idxs in orig_groups.items():
+        t = df.loc[idxs, time_col].sort_values()
+        g_first[g] = t.iloc[0]
+        g_last[g]  = t.iloc[-1]
 
-    # Coverage
-    alloc = {g: min(1, sizes[g]) for g in keys} if ensure_one else {g: 0 for g in keys}
-    remaining = need - sum(alloc.values())
-    if remaining <= 0:
-        return alloc
+    # Split non-singletons / singletons
+    non_single = [(g, idxs) for g, idxs in orig_groups.items() if len(idxs) >= 2]
+    singles    = [(g, idxs) for g, idxs in orig_groups.items() if len(idxs) == 1]
 
-    # Eligible big groups for proportional pass
-    big = [g for g in keys if sizes[g] > small_threshold and sizes[g] > alloc[g]]
-    cap_big = {g: sizes[g] - alloc[g] for g in big}
-    total_cap_big = sum(cap_big.values())
+    # Nothing to merge => return as-is
+    if not non_single:
+        # only singletons exist; return them (allocator may use them if needed)
+        return {f"S{i}": idxs for i, (_, idxs) in enumerate(singles)}
 
-    if total_cap_big > 0:
-        # Proportional by SIZE (not capacity ratio) gives more to very large groups
-        raw = {g: remaining * (sizes[g] / sum(sizes[h] for h in big)) for g in big}
-        floors = {g: int(np.floor(raw[g])) for g in big}
-        used = 0
-        for g in big:
-            take = min(floors[g], cap_big[g])
-            alloc[g] += take
-            used += take
-        leftover = remaining - used
+    # Sort non-singletons by their first time
+    non_single.sort(key=lambda x: g_first[x[0]])
 
-        if leftover > 0:
-            rema = {g: (raw[g] - floors[g]) for g in big}
-            for g in sorted(big, key=lambda k: rema[k], reverse=True):
-                if leftover == 0:
-                    break
-                if alloc[g] < sizes[g]:
-                    alloc[g] += 1
-                    leftover -= 1
-        remaining = need - sum(alloc.values())
+    # Merge consecutive close groups
+    dt = pd.Timedelta(minutes=max_gap_minutes)
+    merged = []
+    cur_key, cur_idxs = non_single[0]
+    cur_last = g_last[cur_key]
 
-    if remaining <= 0:
-        return alloc
+    for j in range(1, len(non_single)):
+        nxt_key, nxt_idxs = non_single[j]
+        gap = g_first[nxt_key] - cur_last
+        if gap <= dt:
+            # merge
+            cur_idxs = cur_idxs + nxt_idxs
+            cur_last = max(cur_last, g_last[nxt_key])
+        else:
+            merged.append(cur_idxs)
+            cur_key, cur_idxs = nxt_key, nxt_idxs
+            cur_last = g_last[cur_key]
+    merged.append(cur_idxs)
 
-    # Final fill anywhere by remaining capacity, largest-first
-    for g in sorted(keys, key=lambda k: sizes[k], reverse=True):
-        if remaining == 0:
+    # Package as dict
+    merged_groups = {f"M{i}": idxs for i, idxs in enumerate(merged)}
+
+    # Keep singles separate; caller can decide to append them only if needed.
+    # We'll return them alongside for convenience.
+    merged_groups["_SINGLES_"] = [idxs for _, idxs in singles]  # list of [idxs]
+    return merged_groups
+
+
+def allocate_prefer_larger(
+    groups: dict,
+    need: int,
+    small_threshold: int = 5,
+    ensure_one: bool = True,
+    base_per_group: int = 1,   # NEW, default keeps old behavior
+):
+    valid = {g: idxs for g, idxs in groups.items()
+             if g != "_SINGLES_" and len(idxs) >= 2}
+    if need <= 0 or not valid:
+        return {g: 0 for g in groups.keys()}
+
+    sizes = {g: len(idxs) for g, idxs in valid.items()}
+    order = sorted(valid.keys(), key=lambda k: sizes[k], reverse=True)
+
+    alloc = {g: 0 for g in groups.keys()}  # include all keys, default 0
+    remaining = need
+
+    # pass 1: give 2 per group (capped by group size)
+    for g in order:
+        if remaining < 2:
             break
-        cap = sizes[g] - alloc[g]
-        if cap <= 0:
-            continue
-        take = min(cap, remaining)
-        alloc[g] += take
+        take = min(2, sizes[g])
+        alloc[g] = take
         remaining -= take
 
-    return alloc
+    # pass 2: leftover (0 or 1 or more if some groups had size==1 filtered out)
+    if remaining > 0:
+        # give it all to the single largest group with remaining capacity
+        # (largest means size[g] - alloc[g] is big)
+        caps = [(g, sizes[g] - alloc[g]) for g in order]
+        caps = [x for x in caps if x[1] > 0]
+        if caps:
+            g_star = max(caps, key=lambda x: (x[1], sizes[x[0]]))[0]
+            alloc[g_star] += min(remaining, sizes[g_star] - alloc[g_star])
+            remaining = need - sum(alloc.values())
 
+    # ensure singles get zero
+    if "_SINGLES_" in groups:
+        alloc["_SINGLES_"] = 0
+
+    return alloc
 
 def prune_near_duplicates(ids, embeddings, scores, cos_thresh=0.97):
     """
@@ -610,7 +646,7 @@ def prune_near_duplicates(ids, embeddings, scores, cos_thresh=0.97):
 
         # cosine with all kept
         sims = kept_vecs @ v
-        if float(np.max(sims)) >= cos_thresh:
+        if float(np.any(sims)) >= cos_thresh:
             continue  # too similar, skip
         kept.append(iid)
         kept_vecs = np.vstack([kept_vecs, v])
@@ -624,10 +660,11 @@ def filter_similarity_diverse(
     logger,
     target_group_size: int = 10,  # kept for compatibility; no longer used for k-medoids
 ) -> list[str]:
-    cos_thresh = 0.97
+    cos_thresh = 0.90
     small_threshold = 7
 
     if len(df) <= need:
+        logger.info("we dont have enough images to filter so we took them all!")
         return  df['image_id'].tolist()
 
     is_not_scored = all(x == 1 for x in df['total_score'].tolist()) if 'total_score' in df.columns else True
@@ -656,9 +693,14 @@ def filter_similarity_diverse(
         keep_ids = prune_near_duplicates(ids, E, adj_scores, cos_thresh=cos_thresh)
         pruned_ids_per_group[g] = keep_ids
 
+    # plot_groups_to_pdf(groups, df, fr'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46227780/',
+    #                    fr"C:\Users\karmel\Desktop\AlbumDesigner\output\{cluster_name}.pdf",pruned_ids_per_group)
+
     # 3) allocate (use pruned capacities)
     pruned_groups = {g: [df.index[df['image_id'] == iid][0] for iid in ids]
                      for g, ids in pruned_ids_per_group.items()}
+
+
     alloc = allocate_prefer_larger(pruned_groups, need, small_threshold=small_threshold, ensure_one=True)
 
     # 4) pick by score within each group
@@ -973,3 +1015,168 @@ def filter_similarity_diverse_new(
 
 
 
+def select_remove_similar(
+    need: int,
+    df: pd.DataFrame,
+    cluster_name,
+    logger,
+    target_group_size: int = 10,  # kept for compatibility; no longer used for k-medoids
+) -> list[str]:
+    small_threshold = 7
+    rng = random.Random(42)
+
+    if len(df) <= need:
+        logger.info("we dont have enough images to filter so we took them all!")
+        return  df['image_id'].tolist()
+
+    is_not_scored = all(x == 1 for x in df['total_score'].tolist()) if 'total_score' in df.columns else True
+    if not is_not_scored:
+        score  = dict(zip(df['image_id'], df['total_score']))
+        higher  = True
+    else:
+        # Fallback
+        if 'image_order' not in df.columns:
+            # If neither present, assign a neutral 0 to keep stable ordering
+            score  = dict(zip(df['image_id'], [0] * len(df)))
+            higher  = True
+        else:
+            score  = dict(zip(df['image_id'], df['image_order']))
+            higher  = False  # lower image_order is better
+
+    # groups = {g: gdf.index.to_list() for g, gdf in df.groupby('sub_group_time_cluster')}
+    groups = build_time_merged_groups(df)
+    alloc = allocate_prefer_larger(groups, need, small_threshold=small_threshold, ensure_one=True)
+
+    final_selected = []
+
+    id_to_unit = dict(zip(df["image_id"], df["embedding"]))
+
+    selected_mat = None  # np.ndarray of shape (k, d)
+    cos_thresh = 0.97
+
+    def is_diverse(iid: str) -> bool:
+        """Check cosine(candidate, ANY already selected) < cos_thresh."""
+        nonlocal selected_mat
+        if selected_mat is None or selected_mat.size == 0:
+            return False
+        cand = id_to_unit[iid]
+        # dot with all selected (both unit), so equals cosine
+        sims = selected_mat @ cand
+        too_similar = (sims >= cos_thresh).any()
+        return too_similar
+
+    for g, idxs in groups.items():
+        m = alloc.get(g, 0)
+        if m <= 0 or not idxs:
+            continue
+
+        gdf = df.loc[idxs]
+
+        # your way: ids -> sort by score map
+        ids = gdf['image_id'].tolist()
+        ids_sorted = sorted(ids, key=lambda x: score[x], reverse=higher)
+
+        picked = 0
+        for iid in ids_sorted:
+            if picked >= m:
+                break
+            if not is_diverse(iid):
+                final_selected.append(iid)
+                picked += 1
+                # append to selected matrix
+                v = id_to_unit[iid].reshape(1, -1)
+                selected_mat = v if selected_mat is None else np.vstack([selected_mat, v])
+
+
+    # plot_selected_to_pdf(df, final_selected,
+    #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46227780',
+    #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46227780\{cluster_name}.pdf")
+    #
+
+    return final_selected
+
+
+
+    # 4) pick by score within each group
+    # clusters_ids = {}
+
+    # w_embed = 0.80
+    # w_time = 0.80
+    # w_orient = 0.20
+    #
+    # for g, idxs in groups.items():
+    #     if alloc[g] == 0:
+    #         continue
+    #     gdf = df.loc[idxs]
+    #     # another clustering based on embedding time and oreintation
+    #     E = np.vstack(gdf['embedding'].values).astype(np.float32)
+    #     d = E.shape[1]
+    #     E_scaled = E * np.sqrt(w_embed / max(d, 1))
+    #
+    #     ori_ser = gdf['image_orientation'].astype(str).str.lower() if 'image_orientation' in gdf.columns \
+    #         else pd.Series(['unknown'] * len(gdf), index=gdf.index)
+    #     ori_cats = pd.Categorical(ori_ser, categories=['portrait', 'landscape','unknown'])
+    #     codes = ori_cats.codes
+    #     unknown_idx = ori_cats.categories.get_loc('unknown')
+    #     codes = np.where(codes >= 0, codes, unknown_idx)  # map any -1 to 'unknown'
+    #     Ori = np.eye(len(ori_cats.categories), dtype=np.float32)[codes]
+    #     C_orient = Ori.shape[1]
+    #     Ori_scaled = Ori * np.sqrt(w_orient / max(C_orient, 1))
+    #
+    #     # time_raw = pd.to_numeric(gdf['sub_group_time_cluster'], errors='coerce').fillna(-1).astype(int).astype(str)
+    #     # time_cats = pd.Categorical(time_raw)  # categories present in THIS group
+    #     # T = np.eye(len(time_cats.categories), dtype=np.float32)[time_cats.codes]
+    #     # C_time = T.shape[1]
+    #     # T_scaled = T * np.sqrt(w_time / max(C_time, 1))
+    #
+    #     X = np.hstack([E_scaled, Ori_scaled]).astype(np.float32)
+    #
+    #     approx_k = max(1, int(np.ceil(len(gdf) / max(1, target_group_size))))
+    #     k = min(approx_k, len(gdf))
+    #     init_medoids = rng.sample(range(len(gdf)), k)
+    #
+    #     km = PycKMedoids(X.tolist(), init_medoids)
+    #     km.process()
+    #     clusters_idx_local = km.get_clusters()  # list of lists (local indices)
+    #
+    #     clusters_ids[g] = {}
+    #
+    #     for cid, locs in enumerate(clusters_idx_local):
+    #         ids = [gdf.iloc[i]['image_id'] for i in locs]
+    #         # sort by your scoring policy
+    #         ids_sorted = sorted(ids, key=lambda x: score[x], reverse=higher)
+    #         clusters_ids[g][cid] = ids_sorted
+    #
+    # clusters_for_alloc = {
+    #     (g, cid): ids
+    #     for g, d in clusters_ids.items()
+    #     for cid, ids in d.items()
+    # }
+    #
+    # # we do selection for the clusters as we decide alloc
+    # # alloc = allocate_prefer_larger(clusters_for_alloc, need, small_threshold=small_threshold, ensure_one=True)
+    #
+    # final_selected = []
+    # seen = set()
+    # for (g, cid), m in alloc.items():
+    #     if m <= 0:
+    #         continue
+    #     ids_sorted = clusters_ids.get(g, {}).get(cid, [])
+    #     if not ids_sorted:
+    #         continue
+    #
+    #     take = min(m, len(ids_sorted))
+    #
+    #     if take == 1:
+    #         chosen = [ids_sorted[0]]  # first
+    #     elif take == 2:
+    #         chosen = [ids_sorted[0], ids_sorted[-1]]  # first + last
+    #     else:
+    #         # spread out: first, evenly spaced mids, last
+    #         step = (len(ids_sorted) - 1) / (take - 1)
+    #         chosen = [ids_sorted[int(round(i * step))] for i in range(take)]
+    #
+    #     for iid in chosen:
+    #         if iid not in seen:
+    #             final_selected.append(iid)
+    #             seen.add(iid)
