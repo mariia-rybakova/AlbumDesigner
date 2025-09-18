@@ -40,8 +40,9 @@ def get_important_imgs(data_df,logger, top=3):
             (data_df["persons_ids"].apply(
         lambda x: isinstance(x, list) and bride_id in x and groom_id in x
            ))&
-            (data_df["number_bodies"] == 2) &  (data_df["image_orientation"] == "landscape")
+            (data_df["number_bodies"] == 2)
             ]
+
 
         if first_filtered_1.empty:
             logger.info("We could'nt find a good  first cover from query 1")
@@ -60,14 +61,14 @@ def get_important_imgs(data_df,logger, top=3):
                 (data_df["cluster_context"] == "bride and groom") &
                 (data_df["image_subquery_content"].isin(fallback_first_queries)) &
                 (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-                (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+                (data_df["number_bodies"] == 2)
                 ]
 
         if first_filtered_1.empty:
             first_filtered_1 = data_df[
                 (data_df["cluster_context"] == "bride and groom") &
                 (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-                (data_df["number_bodies"] == 2) & (data_df["image_orientation"] == "landscape")
+                (data_df["number_bodies"] == 2)
                 ]
 
         ids = first_filtered_1.sort_values(by='image_order', ascending=True)['image_id'].tolist()
