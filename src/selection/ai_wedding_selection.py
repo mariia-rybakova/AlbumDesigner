@@ -851,16 +851,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             if num_preferred_color >= need:
                 # Case A: Success with Color. We have enough.
                 final_color_selection = preferred_color_ids[:need]  # Take the best 'need'
-
-                # Now, swap one for a grayscale image for variety, if possible
-                if not grayscale_candidates_df.empty and need > 0:
-                    best_gray_id = grayscale_candidates_df.sort_values(
-                        'total_score', ascending=False
-                    ).index[0]
-                    final_grayscale_selection.append(best_gray_id)
-
-                    # Remove the last (lowest-ranked) color image to make space
-                    final_color_selection = preferred_color_ids[:need - 1]
             else:
                 # Case B: Insufficiency of Color. We need to fill the gap.
                 final_color_selection = preferred_color_ids  # Take all preferred color images
