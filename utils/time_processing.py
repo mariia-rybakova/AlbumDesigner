@@ -73,16 +73,17 @@ def get_time_clusters_gmm(X):
 
 
 def get_time_clusters_dbscan(X):
+    number_of_images = X.shape[0]
     best_eps = 1200
     for eps in [1200, 900, 600, 300]:
-        dbscan = DBSCAN(eps=eps, min_samples=3)  # eps is in minutes, adjust as needed
+        dbscan = DBSCAN(eps=eps, min_samples=int(number_of_images*0.03))  # eps is in minutes, adjust as needed
         clusters = dbscan.fit_predict(X)
         best_n = len(set(clusters))
-        if best_n >= 3:
+        if best_n >= 5 and -1 not in clusters or best_n >= 6:
             best_eps = eps
             break
 
-    for min_samples_possible in [3, 5, 7]:
+    for min_samples_possible in [int(number_of_images*0.03), int(number_of_images*0.05), int(number_of_images*0.07)]:
         dbscan = DBSCAN(eps=best_eps, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
         clusters = dbscan.fit_predict(X)
         best_n = len(set(clusters))
@@ -96,7 +97,7 @@ def get_time_clusters(selected_df,all_photos_df=None):
     general_time_df = selected_df[['general_time']]
     X = general_time_df.values.reshape(-1, 1)
     if all_photos_df is not None:
-        all_X = all_photos_df['image_time'].values.reshape(-1, 1)
+        all_X = all_photos_df['general_time'].values.reshape(-1, 1)
         initial_clusters, best_n = get_time_clusters_dbscan(all_X)
 
         # Assign clusters to all_photos_df

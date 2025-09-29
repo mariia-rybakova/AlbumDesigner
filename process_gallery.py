@@ -233,6 +233,8 @@ def process_message(message, logger):
 
         # Process time
         sorted_df, image_id2general_time = process_image_time(sorted_df)
+        if message.content.get('gallery_all_photos_info', None) is not None:
+            message.content['gallery_all_photos_info'], _ = process_image_time(message.content['gallery_all_photos_info'])
         sorted_df['time_cluster'] = get_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
         if message.content['is_wedding']:
             sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], logger)
