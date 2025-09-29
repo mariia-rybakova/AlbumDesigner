@@ -74,22 +74,66 @@ def get_time_clusters_gmm(X):
 
 def get_time_clusters_dbscan(X):
     number_of_images = X.shape[0]
-    best_eps = 1200
-    for eps in [1200, 900, 600, 300]:
-        dbscan = DBSCAN(eps=eps, min_samples=int(number_of_images*0.03))  # eps is in minutes, adjust as needed
-        clusters = dbscan.fit_predict(X)
-        best_n = len(set(clusters))
-        if best_n >= 5 and -1 not in clusters or best_n >= 6:
-            best_eps = eps
-            break
 
-    for min_samples_possible in [int(number_of_images*0.03), int(number_of_images*0.05), int(number_of_images*0.07)]:
-        dbscan = DBSCAN(eps=best_eps, min_samples=min_samples_possible)  # eps is in minutes, adjust as needed
-        clusters = dbscan.fit_predict(X)
-        best_n = len(set(clusters))
-        if best_n <= 10:
-            break
-    return clusters, best_n
+    def cluster_core(X_local):
+        n_local = X_local.shape[0]
+        best_eps = 1200
+        for eps in [1200, 900, 600, 300]:
+            dbscan = DBSCAN(eps=eps, min_samples=int(n_local * 0.03))
+            clusters_local = dbscan.fit_predict(X_local)
+            best_n_local = len(set(clusters_local))
+            if best_n_local >= 5 and -1 not in clusters_local or best_n_local >= 6:
+                best_eps = eps
+                break
+
+        for min_samples_possible in [int(n_local * 0.03), int(n_local * 0.05), int(n_local * 0.07)]:
+            dbscan = DBSCAN(eps=best_eps, min_samples=min_samples_possible)
+            clusters_local = dbscan.fit_predict(X_local)
+            best_n_local = len(set(clusters_local))
+            if best_n_local <= 10:
+                break
+        return clusters_local, best_n_local, best_eps
+
+    # If dataset is small enough, keep existing behavior
+    if number_of_images <= 5000:
+        clusters, best_n, _ = cluster_core(X)
+        return clusters, best_n
+
+    # Sample up to 5000 points, cluster them, then assign the rest by nearest clustered sample
+    rng = np.random.default_rng(0)
+    sample_size = 5000
+    sample_idx = rng.choice(number_of_images, size=sample_size, replace=False)
+    mask_sample = np.zeros(number_of_images, dtype=bool)
+    mask_sample[sample_idx] = True
+    rest_idx = np.where(~mask_sample)[0]
+
+    X_sample = X[sample_idx]
+    clusters_sample, best_n, _ = cluster_core(X_sample)
+
+    # Build final clusters array for all points
+    clusters_full = np.full(number_of_images, -1, dtype=int)
+    clusters_full[sample_idx] = clusters_sample
+
+    # Assign remaining points to nearest non-noise clustered samples
+    valid_sample_mask = clusters_sample != -1
+    if not np.any(valid_sample_mask):
+        # If all samples are noise, assign everything to a single cluster
+        clusters_full[:] = 0
+        best_n = 1
+        return clusters_full, best_n
+
+    X_valid = X_sample[valid_sample_mask].reshape(-1, 1)
+    labels_valid = clusters_sample[valid_sample_mask]
+
+    # Efficient nearest neighbor by absolute time distance
+    # Note: X is already shape (n,1). Broadcast to compute distances.
+    for idx in rest_idx:
+        distances = np.abs(X[idx] - X_valid).flatten()
+        nearest = np.argmin(distances)
+        clusters_full[idx] = labels_valid[nearest]
+
+    return clusters_full, best_n
+
 
 
 def get_time_clusters(selected_df,all_photos_df=None):
