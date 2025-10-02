@@ -246,7 +246,10 @@ def process_wedding_illegal_groups(photos_df, look_up_table, logger=None, max_it
 
             iteration += 1
     except Exception as ex:
-        logger.error(f"Unexpected error in process_illegal_groups: {str(ex)}")
+        import traceback
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        logger.error(f"Groups management error: {str(ex)}. Exception in function: {func}, line {lineno}, file {filename}")
         return None, None, None
 
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])

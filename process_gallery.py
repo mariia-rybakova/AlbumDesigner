@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import traceback
 
 from typing import Dict
 from datetime import datetime
@@ -196,9 +197,11 @@ def get_selection(message, logger):
         return message
 
     except Exception as e:
-        # self.logger.error(f"Error reading messages: {e}")
-        raise (e)
-        # return []
+        tb = traceback.extract_tb(e.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        logger.error(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
+        raise Exception(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
+
 
 def process_message(message, logger):
     # check if its single message or list
@@ -292,8 +295,10 @@ def process_message(message, logger):
                                                                           message.content.get('projectURL',True)))
 
     except Exception as e:
-        logger.error(f"Unexpected error in message processing: {e}")
-        raise Exception(f"Unexpected error in message processing: {e}")
+        tb = traceback.extract_tb(e.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        logger.error(f"Unexpected error in message processing: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
+        raise Exception(f"Unexpected error in message processing: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
 
     return final_response, message
 

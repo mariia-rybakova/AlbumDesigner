@@ -2,6 +2,7 @@ import os
 import copy
 import pandas as pd
 import numpy as np
+import traceback
 
 from functools import partial
 from datetime import datetime
@@ -212,8 +213,10 @@ def get_info_protobufs(project_base_url, logger):
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
         return gallery_info_df, is_wedding, None
 
-    except Exception as e:
-        return None, None, f'Error in reading protobufs: {e}'
+    except Exception as ex:
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        return None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
 
 
 def read_messages(messages, logger):
@@ -313,8 +316,10 @@ def read_messages(messages, logger):
             logger.info(
                 f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
-        except Exception as e:
-            return None, f'Error reading messages at reading stage: {e}'
+        except Exception as ex:
+            tb = traceback.extract_tb(ex.__traceback__)
+            filename, lineno, func, text = tb[-1]
+            return None, f'Error reading messages at reading stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
 
     return enriched_messages, None
 

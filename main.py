@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import base64
 import gzip
+import traceback
 
 import pandas as pd
 from typing import List, Union
@@ -74,7 +75,9 @@ def push_report_error(one_msg, az_connection_string, logger=None):
         if logger is not None:
             logger.info('Message was sent to the report queue {}'.format(result_doc))
     except Exception as ex:
-        raise Exception('Report queue error, message not sent, error: {}'.format(ex))
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        raise Exception(f'Report queue error, message not sent, error: {ex}. Exception in function: {func}, line {lineno}, file {filename}.')
 
 def push_report_msg(one_msg, az_connection_string, logger=None):
     '''Push result to the report queue'''
@@ -95,7 +98,9 @@ def push_report_msg(one_msg, az_connection_string, logger=None):
         if logger is not None:
             logger.info('Message was sent to the report queue {}'.format(result_doc))
     except Exception as ex:
-        raise Exception('Report queue error, message not sent, error: {}'.format(ex))
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        raise Exception(f'Report queue error, message not sent, error: {ex}. Exception in function: {func}, line {lineno}, file {filename}.')
 
 
 class ReadStage(Stage):
@@ -118,9 +123,11 @@ class ReadStage(Stage):
             if reading_error is not None:
                 self.logger.error(f"Error reading messages: {reading_error}")
                 raise Exception(f"Error reading messages: {reading_error}")
-        except Exception as e:
-            self.logger.error(f"Error reading messages: {e}")
-            raise Exception(f"Error reading messages: {e}")
+        except Exception as ex:
+            tb = traceback.extract_tb(ex.__traceback__)
+            filename, lineno, func, text = tb[-1]
+            self.logger.error(f"Error reading messages: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
+            raise Exception(f"Error reading messages: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
 
         handling_time = (datetime.now() - start) / max(len(messages), 1)
         read_time_list.append(handling_time)
@@ -205,10 +212,11 @@ class SelectionStage(Stage):
                 _msg.content['spreads_dict'] = spreads_dict
                 updated_messages.append(_msg)
 
-        except Exception as e:
-            # self.logger.error(f"Error reading messages: {e}")
-            raise(e)
-            # return []
+        except Exception as ex:
+            tb = traceback.extract_tb(ex.__traceback__)
+            filename, lineno, func, text = tb[-1]
+            self.logger.error(f"Error selection stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
+            raise Exception(f"Error selection stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
 
         handling_time = (datetime.now() - start) / max(len(messages), 1)
         read_time_list.append(handling_time)
@@ -332,9 +340,11 @@ class ProcessStage(Stage):
                                                                                   message.content.get('projectURL',
                                                                                                           True)))
 
-            except Exception as e:
-                self.logger.error(f"Unexpected error in message processing: {e}")
-                raise Exception(f"Unexpected error in message processing: {e}")
+            except Exception as ex:
+                tb = traceback.extract_tb(ex.__traceback__)
+                filename, lineno, func, text = tb[-1]
+                self.logger.error(f"Error processing stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
+                raise Exception(f"Error processing stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
 
         processing_time = (datetime.now() - whole_messages_start) / max(len(messages), 1)
         processing_time_list.append(processing_time)

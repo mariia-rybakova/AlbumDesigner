@@ -139,8 +139,11 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
 
         return local_result
 
-    except Exception as e:
-        logger.error(f"Error processing group_name {group_name}: {e}")
+    except Exception as ex:
+        import traceback
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        logger.error(f"Error processing group_name {group_name}: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
         return None
 
 
