@@ -4,8 +4,8 @@ from utils.album_tools import get_images_per_groups
 from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time, split_illegal_group_in_certain_point
 from utils.configs import CONFIGS
 
-BRIDE_CENTRIC_CLASSES = ['bride', 'bride party', 'getting hair-makeup', 'bride getting dressed']
-GROOM_CENTRIC_CLASSES = ['groom', 'groom party', 'suit']
+BRIDE_CENTRIC_CLASSES = [('bride', 'getting hair-makeup', 'bride getting dressed'), ('bride party',)]
+GROOM_CENTRIC_CLASSES = [('groom', 'suit'), ('groom party',)]
 
 
 def get_groups_time(groups):
@@ -90,42 +90,43 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
 
     general_times_list, _ = get_groups_time(photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']))
 
-    merge_candidates = list()
+    for cent_idx in range(len(BRIDE_CENTRIC_CLASSES)):
+        merge_candidates = list()
 
-    for group_key, group in merge_groups:
-        merge_targets = targets_df[(targets_df['time_cluster'] == group_key[0]) & (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread'])]
-        merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-        main_groups = [m_group for m_key, m_group in merge_target_groups if (m_key != group_key and (group_key[1] in BRIDE_CENTRIC_CLASSES and m_key[1] in GROOM_CENTRIC_CLASSES or group_key[1] in GROOM_CENTRIC_CLASSES and m_key[1] in BRIDE_CENTRIC_CLASSES))]
-        selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
-                                                                                 general_times_list,
-                                                                                 max_images_per_spread=CONFIGS['max_imges_per_spread'])
+        for group_key, group in merge_groups:
+            merge_targets = targets_df[(targets_df['time_cluster'] == group_key[0]) & (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread'])]
+            merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
+            main_groups = [m_group for m_key, m_group in merge_target_groups if (m_key != group_key and (group_key[1] in BRIDE_CENTRIC_CLASSES[cent_idx] and m_key[1] in GROOM_CENTRIC_CLASSES[cent_idx] or group_key[1] in GROOM_CENTRIC_CLASSES[cent_idx] and m_key[1] in BRIDE_CENTRIC_CLASSES[cent_idx]))]
+            selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
+                                                                                     general_times_list,
+                                                                                     max_images_per_spread=CONFIGS['max_imges_per_spread'])
 
-        if selected_cluster is not None:
-            merge_candidates.append((group_key,selected_cluster, selected_time_difference))
+            if selected_cluster is not None:
+                merge_candidates.append((group_key,selected_cluster, selected_time_difference))
 
-    merge_candidates = sorted(merge_candidates, key=lambda x: x[2])
-    current_merges = set()
-    for group_key, selected_cluster, selected_time_difference in merge_candidates:
-        to_merge_group = merge_groups.get_group(group_key)
-        selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0], selected_cluster['group_sub_index'].iloc[0])
-        if group_key in current_merges or selected_key in current_merges:
-            continue
-        if (group_key[1] in BRIDE_CENTRIC_CLASSES and selected_cluster['cluster_context'].iloc[0] in GROOM_CENTRIC_CLASSES) or (group_key[1] in GROOM_CENTRIC_CLASSES and selected_cluster['cluster_context'].iloc[0] in BRIDE_CENTRIC_CLASSES):
-            if abs(len(to_merge_group) - len(selected_cluster)) >= 2:
-                min_len = min(len(to_merge_group), len(selected_cluster))
-                merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])
-                reminder_group = pd.concat([to_merge_group.tail(len(to_merge_group)-min_len), selected_cluster.tail(len(selected_cluster)-min_len)])
-                for row_index in reminder_group.index:
-                    photos_df.loc[row_index, 'group_size'] = len(reminder_group)
-                new_sub_index = photos_df['group_sub_index'].max() + 1
-                for row_index in merged_group.index:
-                    photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
-                    photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + selected_cluster['groups_merged'].iloc[0]
-                    photos_df.loc[row_index, 'group_size'] = len(merged_group)
-                    photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
-                    photos_df.loc[row_index, 'merge_allowed'] = False
-                current_merges.add(group_key)
-                current_merges.add(selected_key)
+        merge_candidates = sorted(merge_candidates, key=lambda x: x[2])
+        current_merges = set()
+        for group_key, selected_cluster, selected_time_difference in merge_candidates:
+            to_merge_group = merge_groups.get_group(group_key)
+            selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0], selected_cluster['group_sub_index'].iloc[0])
+            if group_key in current_merges or selected_key in current_merges:
+                continue
+            if (group_key[1] in BRIDE_CENTRIC_CLASSES[cent_idx] and selected_cluster['cluster_context'].iloc[0] in GROOM_CENTRIC_CLASSES[cent_idx]) or (group_key[1] in GROOM_CENTRIC_CLASSES[cent_idx] and selected_cluster['cluster_context'].iloc[0] in BRIDE_CENTRIC_CLASSES[cent_idx]):
+                if abs(len(to_merge_group) - len(selected_cluster)) >= 2:
+                    min_len = min(len(to_merge_group), len(selected_cluster))
+                    merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])
+                    reminder_group = pd.concat([to_merge_group.tail(len(to_merge_group)-min_len), selected_cluster.tail(len(selected_cluster)-min_len)])
+                    for row_index in reminder_group.index:
+                        photos_df.loc[row_index, 'group_size'] = len(reminder_group)
+                    new_sub_index = photos_df['group_sub_index'].max() + 1
+                    for row_index in merged_group.index:
+                        photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
+                        photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + selected_cluster['groups_merged'].iloc[0]
+                        photos_df.loc[row_index, 'group_size'] = len(merged_group)
+                        photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
+                        photos_df.loc[row_index, 'merge_allowed'] = False
+                    current_merges.add(group_key)
+                    current_merges.add(selected_key)
 
     return photos_df
 

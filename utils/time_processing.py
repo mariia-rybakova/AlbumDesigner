@@ -261,6 +261,8 @@ def sort_groups_by_time(groups_list, logger):
                             right_page_photos = list(group_data[spread_index][2])
                             all_photos = left_page_photos + right_page_photos
                             for cur_photo in all_photos:
+                                if cur_photo.id == -1:
+                                    continue
                                 cur_photo_time = cur_photo.general_time
                                 photos_time_list.append(cur_photo_time)
             groups_time_list.append((group_dict, median(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
