@@ -344,6 +344,8 @@ label_list = [
     'settings',
     'speech',
     'suit',
+    'two brides',
+    'two grooms',
     'vehicle',
     'very large group',
     'walking the aisle',

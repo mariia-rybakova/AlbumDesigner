@@ -59,6 +59,9 @@ def map_cluster_label(cluster_label):
     if cluster_label == -1:
         return "None"
     elif cluster_label >= 0 and cluster_label < len(label_list):
+        context = label_list[cluster_label]
+        if context in ['two brides', 'two grooms']:
+            return 'bride and groom'
         return label_list[cluster_label]
     else:
         return "Unknown"

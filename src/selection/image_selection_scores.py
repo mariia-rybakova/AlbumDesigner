@@ -1,7 +1,6 @@
 import numpy as np
 
 from sklearn.metrics.pairwise import cosine_similarity
-from utils.configs import label_list
 
 
 
@@ -20,14 +19,6 @@ def calculate_similarity_scores(im_embedding, ten_photos_embeddings):
 
     return similarity_scores
 
-
-def map_cluster_label(cluster_label):
-    if cluster_label == -1:
-        return "None"
-    elif cluster_label >= 0 and cluster_label < len(label_list):
-        return label_list[cluster_label]
-    else:
-        return "Unknown"
 
 def calcuate_tags_score(tags_features, image_features):
     tags_scores = []
