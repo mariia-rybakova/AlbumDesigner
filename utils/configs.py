@@ -344,13 +344,13 @@ label_list = [
     'settings',
     'speech',
     'suit',
-    'two brides',
-    'two grooms',
     'vehicle',
     'very large group',
     'walking the aisle',
     'wedding dress',
-    'other'
+    'other',
+    'two brides',
+    'two grooms',
 ]
 
 # image selection
