@@ -56,6 +56,8 @@ def check_gallery_type(df):
 
 
 def map_cluster_label(cluster_label):
+    if type(cluster_label) is not int or cluster_label >= len(label_list):
+        return "None"
     if cluster_label == -1:
         return "None"
     elif cluster_label >= 0 and cluster_label < len(label_list):

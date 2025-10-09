@@ -252,7 +252,7 @@ def sort_groups_by_time(groups_list, logger):
                             left_page_photos = list(spread[1])
                             right_page_photos = list(spread[2])
                             all_photos = left_page_photos + right_page_photos
-                            times = [photo.general_time for photo in all_photos]
+                            times = [photo.general_time for photo in all_photos if photo]
                             return min(times) if times else float('inf')
                         group_data.sort(key=spread_time_key)
                         # After sorting, continue as before
@@ -261,7 +261,7 @@ def sort_groups_by_time(groups_list, logger):
                             right_page_photos = list(group_data[spread_index][2])
                             all_photos = left_page_photos + right_page_photos
                             for cur_photo in all_photos:
-                                if cur_photo.id == -1:
+                                if not cur_photo or cur_photo.id == -1:
                                     continue
                                 cur_photo_time = cur_photo.general_time
                                 photos_time_list.append(cur_photo_time)
