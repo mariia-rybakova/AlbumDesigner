@@ -79,7 +79,7 @@ def get_time_clusters_dbscan(X):
         n_local = X_local.shape[0]
         best_eps = 1200
         for eps in [1200, 900, 600, 300]:
-            dbscan = DBSCAN(eps=eps, min_samples=int(n_local * 0.03))
+            dbscan = DBSCAN(eps=eps, min_samples=max(1, int(n_local * 0.03)))
             clusters_local = dbscan.fit_predict(X_local)
             best_n_local = len(set(clusters_local))
             if best_n_local >= 5 and -1 not in clusters_local or best_n_local >= 6:
@@ -87,7 +87,7 @@ def get_time_clusters_dbscan(X):
                 break
 
         for min_samples_possible in [int(n_local * 0.03), int(n_local * 0.05), int(n_local * 0.07)]:
-            dbscan = DBSCAN(eps=best_eps, min_samples=min_samples_possible)
+            dbscan = DBSCAN(eps=best_eps, min_samples=max(1, min_samples_possible))
             clusters_local = dbscan.fit_predict(X_local)
             best_n_local = len(set(clusters_local))
             if best_n_local <= 10:
