@@ -313,7 +313,10 @@ def greedy_combination_search(photos, layout_part, layout_df):
             list_of_single_row_layouts.append(single_row_df)
         spread_layouts_list.append(list_of_single_row_layouts)
 
-    all_combinations_of_layouts = list(product(*spread_layouts_list))
+    if len(spread_layouts_list) >= 4:
+        all_combinations_of_layouts = [[sublist[0] for sublist in spread_layouts_list]]
+    else:
+        all_combinations_of_layouts = list(product(*spread_layouts_list))
     if len(all_combinations_of_layouts) > 1000:
         all_combinations_of_layouts = random.sample(all_combinations_of_layouts, 1000)
 
