@@ -645,38 +645,43 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             elif cluster_name in ['bride getting dressed','getting hair-makeup']:
                     # Select only bride photos
                     filtered = color_candidates_df[color_candidates_df["image_subquery_content"].str.contains("bride", case=False, na=False)]
-                    all_ids = [pid for sublist in filtered["persons_ids"] for pid in sublist]
-                    most_common_id = Counter(all_ids).most_common(1)[0][0]
-                    df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
+                    if len(filtered) > 0:
+                        all_ids = [pid for sublist in filtered["persons_ids"] for pid in sublist]
+                        most_common_id = Counter(all_ids).most_common(1)[0][0]
+                        df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
 
-                    if len(df) <= need or len(df) - need <= 1 :
-                        logger.info(f"this cluster {cluster_name} has no enough images related to bride less than needed we select them all no filtering")
-                        if no_selection:
-                            preferred_color_ids  = df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
+                        if len(df) <= need or len(df) - need <= 1 :
+                            logger.info(f"this cluster {cluster_name} has no enough images related to bride less than needed we select them all no filtering")
+                            if no_selection:
+                                preferred_color_ids  = df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
+                            else:
+                                preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
+                                                          'image_id'].values.tolist()[:need]
                         else:
-                            preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
-                                                      'image_id'].values.tolist()[:need]
+                            #preferred_color_ids  = filter_similarity(need, df.reset_index(), cluster_name)
+                            # preferred_color_ids = filter_similarity_diverse(need=need,
+                            #                                                 df=df.reset_index(),
+                            #                                                 cluster_name=cluster_name, logger=logger,
+                            #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                            #                                                 target_group_size=10)
+
+                            preferred_color_ids = select_remove_similar(need=need,
+                                                         df=df.reset_index(),
+                                                         cluster_name=cluster_name, logger=logger,
+                                                         # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                                                         target_group_size=10)
+
+                            # preferred_color_ids = filter_similarity_diverse_new(need=need,
+                            #                                                 df=df.reset_index(),
+                            #                                                 cluster_name=cluster_name, logger=logger,
+                            #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                            #                                                 target_group_size=10)
+
+                            # set e.g. 3 to balance portrait/landscape)
                     else:
-                        #preferred_color_ids  = filter_similarity(need, df.reset_index(), cluster_name)
-                        # preferred_color_ids = filter_similarity_diverse(need=need,
-                        #                                                 df=df.reset_index(),
-                        #                                                 cluster_name=cluster_name, logger=logger,
-                        #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                        #                                                 target_group_size=10)
-
-                        preferred_color_ids = select_remove_similar(need=need,
-                                                     df=df.reset_index(),
-                                                     cluster_name=cluster_name, logger=logger,
-                                                     # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                                                     target_group_size=10)
-
-                        # preferred_color_ids = filter_similarity_diverse_new(need=need,
-                        #                                                 df=df.reset_index(),
-                        #                                                 cluster_name=cluster_name, logger=logger,
-                        #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                        #                                                 target_group_size=10)
-
-                        # set e.g. 3 to balance portrait/landscape)
+                        df = color_candidates_df
+                        preferred_color_ids = df.sort_values(by='image_order', ascending=True)[
+                            'image_id'].values.tolist()[:need]
 
             elif cluster_name in orientation_time_categories:
                 # Cluster by time and find most solo person
