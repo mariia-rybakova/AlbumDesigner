@@ -112,35 +112,27 @@ def get_important_imgs(data_df,logger, top=3):
             queries_fallback=fallback_first_queries,  # reuse same fallback list if desired
             time_cluster_value=last_tc,
         )
-        return first_page_ids[0], last_page_ids[0]
+        if len(first_page_ids) == 0  or len(last_page_ids) == 0:
+            logger.error("No images selected for Cover images.")
+            return [], []
+
+        return [first_page_ids[0]], [last_page_ids[0]]
 
     except Exception as e:
         logger.error(f"Error inside the function get_important_imgs {e}")
         return None, None
 
-    return first_page_ids, last_page_ids
 
-def choose_good_wedding_images(df, number_of_images, logger):
+def choose_good_wedding_images(df,logger):
     first_page_ids, last_page_ids = get_important_imgs(df,logger, top=CONFIGS['top_imges_for_cover'])
-
-    # if we didn't find the highest ranking images then we won't be able to get cover image
-    # if len(first_page_ids) >= number_of_images and len(last_page_ids) >= number_of_images:
-    #     # Select 2 distinct images
-    #     first_cover_img_ids = random.sample(first_page_ids, number_of_images)
-    #     last_cover_img_ids = random.sample(last_page_ids, number_of_images)
-
     # Get rows corresponding to selected images
-    first_cover_image_df = df[df['image_id'].isin([first_page_ids])]
-    last_cover_image_df = df[df['image_id'].isin([last_page_ids])]
+    first_cover_image_df = df[df['image_id'].isin(first_page_ids)]
+    last_cover_image_df = df[df['image_id'].isin(last_page_ids)]
 
     # Remove selected images from main dataframe
-    df = df[~df['image_id'].isin([first_page_ids]+[last_page_ids])]
-
+    df = df[~df['image_id'].isin(first_page_ids+last_page_ids)]
 
     return df, first_page_ids, first_cover_image_df, last_page_ids, last_cover_image_df
-    # else:
-    #     logger.error("Image Cover not selected for wedding")
-    #     return df, None, None, None, None
 
 
 def choose_good_non_wedding_images(df, number_of_images, logger):
@@ -206,27 +198,10 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
 def generate_first_last_pages(message, df, logger):
     first_last_pages_data_dict = dict()
-    # PAGE_KEYS = ("firstPage", "lastPage")
-    # # 1) Gather per-page layout metadata (min images and design_id)
-    # page_meta = {}
-    # for key in PAGE_KEYS:
-    #     if not message.pagesInfo.get(key):
-    #         continue
-    #     layouts_df = message.designsInfo[f"{key}_layouts_df"]
-    #     # minimal number of images required by any layout for that page
-    #     n_images = int(layouts_df["number of boxes"].min())
-    #     cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["number of boxes"] == n_images]
-    #
-    #     if cover_layouts:
-    #         design_id = cover_layouts[0]
-    #     else:
-    #         design_id = None
-    #
-    #     page_meta[key] = {"n_images": n_images, "design_id": design_id}
 
     if message.pagesInfo.get("firstPage"):
         if message.content.get('is_wedding', True):
-            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,1, logger)
+            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,logger)
         else:
             df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 1, logger)
 
@@ -243,7 +218,7 @@ def generate_first_last_pages(message, df, logger):
 
                 first_last_pages_data_dict["firstPage"]  = {
                     'design_id': design_id,
-                    'first_images_ids': [first_images_ids],
+                    'first_images_ids': first_images_ids,
                     'first_images_df': first_imgs_df,
 
                 }
@@ -267,7 +242,7 @@ def generate_first_last_pages(message, df, logger):
 
                 first_last_pages_data_dict['lastPage'] = {
                         'design_id': design_id,
-                        'last_images_ids': [last_images_ids],
+                        'last_images_ids': last_images_ids,
                         'last_images_df': last_imgs_df,
 
                 }
