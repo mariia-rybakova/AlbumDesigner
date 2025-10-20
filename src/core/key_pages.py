@@ -14,10 +14,65 @@ def get_design_id(layout_df, number_of_boxes, logger):
 
     return img_layouts[0]
 
+
+def _pick_time_cluster(df, position="first"):
+    if df.empty:
+        return None
+    return df["time_cluster"].min() if position == "first" else df["time_cluster"].max()
+
+def _select_by_priority(df, queries_primary, queries_fallback, time_cluster_value):
+    """
+    Priority:
+      1) landscape @ time_cluster_value with queries_primary
+      2) landscape @ time_cluster_value with queries_fallback
+      3) portrait  @ time_cluster_value with queries_primary
+      4) portrait  @ time_cluster_value with queries_fallback
+    Returns a list of image_ids (ordered by query priority).
+    """
+    if time_cluster_value is None:
+        return []
+
+    def pick(orientation, queries):
+        sub = df[
+            (df["image_orientation"] == orientation) &
+            (df["time_cluster"] == time_cluster_value) &
+            (df["image_subquery_content"].isin(queries))
+        ].copy()
+
+        if sub.empty:
+            return []
+
+        # Sort by query priority
+        sub["q_order"] = pd.Categorical(
+            sub["image_subquery_content"], categories=queries, ordered=True
+        )
+        sub = sub.sort_values(["q_order"])
+        return sub["image_id"].tolist()
+
+    # Try in order
+    for orientation, queries in [
+        ("landscape", queries_primary),
+        ("landscape", queries_fallback),
+        ("portrait",  queries_primary),
+        ("portrait",  queries_fallback),
+    ]:
+        picked = pick(orientation, queries)
+        if picked:
+            return picked
+
+    picked = df[
+        (df["time_cluster"] == time_cluster_value) &
+        (df["image_subquery_content"].isin(["unknown_bride_and_groom"]))
+        ].copy()
+
+    if picked.empty:
+        return []
+    else:
+        return picked["image_id"].tolist()
+
+
 def get_important_imgs(data_df,logger, top=3):
     try:
-        first_page_ids = []
-        last_page_ids = []
         bride_id = data_df["bride_id"].values[0]
         groom_id = data_df["groom_id"].values[0]
 
@@ -34,74 +89,30 @@ def get_important_imgs(data_df,logger, top=3):
             'bride and groom smiling at each other'
         ]
 
-        first_filtered_1 = data_df[
+        ############################################################
+        base = data_df[
             (data_df["cluster_context"] == "bride and groom") &
-            (data_df["image_subquery_content"].isin(first_cover_queries)) &
-            (data_df["persons_ids"].apply(
-        lambda x: isinstance(x, list) and bride_id in x and groom_id in x
-           ))&
-            (data_df["number_bodies"] == 2)
-            ]
+            (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and bride_id in x and groom_id in x))
+            ].copy()
 
+        # 2) FIRST cover: earliest time_cluster
+        first_tc = _pick_time_cluster(base, position="first")
+        first_page_ids = _select_by_priority(
+            base,
+            queries_primary=first_cover_queries,
+            queries_fallback=fallback_first_queries,
+            time_cluster_value=first_tc,
+        )
 
-        if first_filtered_1.empty:
-            logger.info("We could'nt find a good  first cover from query 1")
-            first_filtered_1 = data_df[
-            (data_df["cluster_context"] == "bride and groom") &
-            (data_df["image_subquery_content"].isin(first_cover_queries)) &
-            (data_df["persons_ids"].apply(
-        lambda x: isinstance(x, list) and bride_id in x and groom_id in x
-           ))&
-            (data_df["number_bodies"] == 2)
-            ]
-
-        if first_filtered_1.empty:
-            logger.info("We could'nt find a good  first cover from query 1")
-            first_filtered_1 = data_df[
-                (data_df["cluster_context"] == "bride and groom") &
-                (data_df["image_subquery_content"].isin(fallback_first_queries)) &
-                (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-                (data_df["number_bodies"] == 2)
-                ]
-
-        if first_filtered_1.empty:
-            first_filtered_1 = data_df[
-                (data_df["cluster_context"] == "bride and groom") &
-                (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and len(x) == 2)) &
-                (data_df["number_bodies"] == 2)
-                ]
-
-        ids = first_filtered_1.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-        first_page_ids.extend(ids[:top])
-        first_page_ids = first_page_ids[0]
-
-        # second cover image
-        df_sorted = data_df.sort_values(by="image_time_date", ascending=False)
-
-        second_filtered = data_df[
-            (df_sorted["image_subquery_content"].isin(last_cover_queries)) &
-            data_df["persons_ids"].apply(
-                lambda x: isinstance(x, list) and bride_id in x and groom_id in x
-            )
-            ]
-
-        if second_filtered.empty:
-            if len(first_filtered_1) <= top:
-                second_filtered = data_df[
-                    (data_df["cluster_context"] == "bride and groom")
-                    ]
-                second_filtered = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-                last_page_ids.extend([id for id in second_filtered if id !=  first_page_ids])
-                last_page_ids = last_page_ids[0]
-        else:
-            ids = second_filtered.sort_values(by='image_order', ascending=True)['image_id'].tolist()
-            #ids = second_filtered['image_id'].tolist()
-            last_page_ids.extend([id for id in ids if id != first_page_ids][:top])
-            if len(last_page_ids) < 1:
-                 if len(first_filtered_1) !=0:
-                     ids = first_filtered_1["image_id"].tolist()
-                     last_page_ids.extend([id for id in ids if id != first_page_ids])
-            last_page_ids = last_page_ids[0]
+        # 3) LAST cover: latest time_cluster
+        last_tc = _pick_time_cluster(base, position="last")
+        last_page_ids = _select_by_priority(
+            base,
+            queries_primary=last_cover_queries,
+            queries_fallback=fallback_first_queries,  # reuse same fallback list if desired
+            time_cluster_value=last_tc,
+        )
+        return first_page_ids[0], last_page_ids[0]
 
     except Exception as e:
         logger.error(f"Error inside the function get_important_imgs {e}")
