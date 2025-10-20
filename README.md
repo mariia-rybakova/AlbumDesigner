@@ -83,6 +83,8 @@ This approach ensures that all detected people remain in the cropped image while
 3. **Install the required packages**
 
 4. **Run the `albumDesignService.py` file**
+5. install pip install --force git+https://github.com/pic-time/python-infra
+
 
 
 # Testing 
