@@ -71,10 +71,15 @@ def _select_by_priority(df, queries_primary, queries_fallback, time_cluster_valu
         return picked["image_id"].tolist()
 
 
-def get_important_imgs(data_df,logger, top=3):
+def get_important_imgs(data_df,bride_groom_df,logger, top=3):
     try:
-        bride_id = data_df["bride_id"].values[0]
-        groom_id = data_df["groom_id"].values[0]
+        if not bride_groom_df.empty and bride_groom_df is not None:
+            chosen_df = bride_groom_df.copy()
+        else:
+            chosen_df = data_df.copy()
+
+        bride_id = chosen_df["bride_id"].values[0]
+        groom_id = chosen_df["groom_id"].values[0]
 
         first_cover_queries = [
             'bride and groom smiling at each other',
@@ -90,9 +95,9 @@ def get_important_imgs(data_df,logger, top=3):
         ]
 
         ############################################################
-        base = data_df[
-            (data_df["cluster_context"] == "bride and groom") &
-            (data_df["persons_ids"].apply(lambda x: isinstance(x, list) and bride_id in x and groom_id in x))
+        base = chosen_df[
+            (chosen_df["cluster_context"] == "bride and groom") &
+            (chosen_df["persons_ids"].apply(lambda x: isinstance(x, list) and bride_id in x and groom_id in x))
             ].copy()
 
         # 2) FIRST cover: earliest time_cluster
@@ -123,11 +128,16 @@ def get_important_imgs(data_df,logger, top=3):
         return None, None
 
 
-def choose_good_wedding_images(df,logger):
-    first_page_ids, last_page_ids = get_important_imgs(df,logger, top=CONFIGS['top_imges_for_cover'])
-    # Get rows corresponding to selected images
-    first_cover_image_df = df[df['image_id'].isin(first_page_ids)]
-    last_cover_image_df = df[df['image_id'].isin(last_page_ids)]
+def choose_good_wedding_images(df,bride_groom_df,logger):
+    first_page_ids, last_page_ids = get_important_imgs(df,bride_groom_df,logger, top=CONFIGS['top_imges_for_cover'])
+
+    if not bride_groom_df.empty or bride_groom_df is not None:
+        first_cover_image_df = bride_groom_df[bride_groom_df['image_id'].isin(first_page_ids)]
+        last_cover_image_df = bride_groom_df[bride_groom_df['image_id'].isin(last_page_ids)]
+    else:
+        # Get rows corresponding to selected images
+        first_cover_image_df = df[df['image_id'].isin(first_page_ids)]
+        last_cover_image_df = df[df['image_id'].isin(last_page_ids)]
 
     # Remove selected images from main dataframe
     df = df[~df['image_id'].isin(first_page_ids+last_page_ids)]
@@ -201,7 +211,7 @@ def generate_first_last_pages(message, df, logger):
 
     if message.pagesInfo.get("firstPage"):
         if message.content.get('is_wedding', True):
-            df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,logger)
+                 df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df, message.content.get('bride and groom') ,logger)
         else:
             df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 1, logger)
 
