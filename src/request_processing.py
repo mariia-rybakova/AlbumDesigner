@@ -1,227 +1,118 @@
-import os
-import copy
 import pandas as pd
 import numpy as np
 import traceback
 
-from functools import partial
 from datetime import datetime
 
-from utils.configs import CONFIGS,label_list
+from utils.configs import CONFIGS
 from utils.layouts_tools import generate_layouts_df, get_layouts_data
-from utils.read_protos_files import get_image_embeddings,get_faces_info,get_persons_ids,get_clusters_info,get_photo_meta,get_person_vectors
-from utils.image_queries import generate_query
+from utils.read_protos_files import get_info_protobufs
 from ptinfra.azure.pt_file import PTFile
+from ptinfra.utils.gallery import Gallery
 import json
-from math import isnan
 
-def generate_dict_key(numbers, n_bodies):
-    if (numbers == 0 and n_bodies == 0) or (not numbers):
-        return 'No PEOPLE'
-    if isinstance(numbers, float):
-        if isnan(numbers):
-            return 'No PEOPLE'
 
-    # Convert the string of numbers into a list
-    try:
-        id_list = eval(numbers) if isinstance(numbers, str) else numbers
-    except:
-        return "Invalid_numbers"
+def read_layouts_data(message, json_content):
+    if 'designInfo' in json_content and json_content['designInfo'] is None:
+        if 'designInfoTempLocation' in json_content:
+            try:
+                fb = PTFile(json_content['designInfoTempLocation'])
+                fileBytes = fb.read_blob()
+                designInfo = json.loads(fileBytes.decode('utf-8'))
+                # logger.info('Read designInfo from blob location: {}'.format(designInfo))
+                json_content['designInfo'] = designInfo
+                message.content['designInfo'] = designInfo
+                album_ar = {'anyPage': 2}
+                for part in ['firstPage', 'lastPage', 'anyPage']:
+                    if part in designInfo['parts']:
+                        album_ar[part] = designInfo['parts'][part]['varient']['productWidth'] / \
+                                         designInfo['parts'][part]['varient']['productHeight']
+                message.content['album_ar'] = album_ar
+            except Exception as e:
+                return None, 'Error reading designInfo from blob location {}, error: {}'.format(
+                    json_content['designInfoTempLocation'], e)
+        else:
+            return None, 'Incorrect message structure: {}. Skipping.'.format(json_content)
 
-    # Calculate the count based on the list length or n_bodies
-    count = max(len(id_list), n_bodies) if isinstance(id_list, list) else n_bodies
+    message.pagesInfo = dict()
+    message.designsInfo = dict()
+    message.designsInfo['defaultPackageStyleId'] = json_content['designInfo']['defaultPackageStyleId']
 
-    # Determine the suffix
-    suffix = "person" if count == 1 else "pple"
-
-    # Combine count, suffix, and the numbers joined by underscores
-    key = f"{count}_{suffix}_" + "_".join(map(str, id_list))
-    return key
-
-def check_gallery_type(df):
-    count = 0
-    for idx, row in df.iterrows():  # Unpack the tuple into idx (index) and row (data)
-        content_class = row['image_class']
-        if pd.isna(content_class):
-            continue
-        if content_class == -1:
-            count += 1
-
-    number_images = len(df)
-
-    if number_images > 0 and count / number_images > 0.6:  # Ensure no division by zero
-        return False
+    if 'anyPage' in json_content['designInfo']['parts'] and len(
+            json_content['designInfo']['parts']['anyPage']['designIds']) > 0:
+        message.designsInfo['anyPageIds'] = json_content['designInfo']['parts']['anyPage']['designIds']
     else:
-        return True
+        message.error = 'no anyPage in designInfo. Skipping.'
+        return None, 'No anyPage in designInfo. Skipping message..'
+
+    first_page_layouts_df = None
+    last_page_layouts_df = None
+    if 'firstPage' in json_content['designInfo']['parts']:
+        if len(json_content['designInfo']['parts']['firstPage']['designIds']) > 0:
+            message.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
+            message.pagesInfo['firstPage'] = True
+            first_page_layouts_df = generate_layouts_df(json_content['designInfo']['designs'],
+                                                       message.designsInfo['firstPageDesignIds'],
+                                                       album_ar=message.content.get('album_ar', {'anyPage': 2})['anyPage'])
+            message.designsInfo['firstPage_layouts_df'] = first_page_layouts_df
+
+    if 'lastPage' in json_content['designInfo']['parts']:
+        if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
+            message.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
+            message.pagesInfo['lastPage'] = True
+            last_page_layouts_df = generate_layouts_df(json_content['designInfo']['designs'],
+                                                      message.designsInfo['lastPageDesignIds'],
+                                                      album_ar=message.content.get('album_ar', {'anyPage': 2})['anyPage'])
+            message.designsInfo['lastPage_layouts_df'] = last_page_layouts_df
+
+    if 'cover' in json_content['designInfo']['parts']:
+        if len(json_content['designInfo']['parts']['cover']['designIds']) > 0:
+            message.designsInfo['coverDesignIds'] = json_content['designInfo']['parts']['cover']['designIds']
+            message.pagesInfo['cover'] = True
+
+            # coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
+            # _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
+
+    message.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content[
+        'designInfo'] else 1
+    message.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content[
+        'designInfo'] else CONFIGS['max_total_spreads']
+
+    any_page_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], message.designsInfo['anyPageIds'],
+                                             album_ar=message.content.get('album_ar', {'anyPage': 2})['anyPage'],
+                                             do_mirror=True)
+
+    if not any_page_layouts_df.empty:
+        message.designsInfo['anyPagelayouts_df'] = any_page_layouts_df
+        layout_id2data, box_id2data = get_layouts_data(any_page_layouts_df, first_page_layouts_df, last_page_layouts_df)
+        message.designsInfo['anyPagelayout_id2data'] = layout_id2data
+        message.designsInfo['anyPagebox_id2data'] = box_id2data
+
+    return message
 
 
-def map_cluster_label(cluster_label):
-    if type(cluster_label) is not int or cluster_label >= len(label_list):
-        return "None"
-    if cluster_label == -1:
-        return "None"
-    elif cluster_label >= 0 and cluster_label < len(label_list):
-        context = label_list[cluster_label]
-        if context in ['two brides', 'two grooms']:
-            return 'bride and groom'
-        return label_list[cluster_label]
-    else:
-        return "Unknown"
+def add_scenes_info(gallery_info_df, project_base_url):
+    photos_metadata = Gallery(project_base_url)
 
-def process_content(row_dict):
-    row_dict = copy.deepcopy(row_dict)
-    cluster_class = row_dict.get('cluster_class')
-    cluster_class_label = map_cluster_label(cluster_class)
-    row_dict['cluster_context'] = cluster_class_label
-    return row_dict
+    image_id2scene_image_order = dict()
+    image_iter = 0
+    for scene_idx, scene in enumerate(photos_metadata.scenes):
+        for photo in scene.photos:
+            try:
+                filename = photo.get_filename()
+                image_id2scene_image_order[np.int64(filename.split('.')[0])] = (scene_idx, image_iter)
+                image_iter += 1
+            except Exception as e:
+                pass
 
+    mapped = gallery_info_df['image_id'].map(image_id2scene_image_order)
+    mapped_df = pd.DataFrame(mapped.tolist(), columns=['scene_order', 'image_order'])
+    for col in ['scene_order', 'image_order']:
+        gallery_info_df[col] = mapped_df[col].combine_first(gallery_info_df[col])
 
-def _flatten(iterables):
-    for x in iterables:
-        if isinstance(x, (list, tuple, set)):
-            for y in x:
-                yield y
-        elif pd.notna(x):
-            yield x
+    gallery_info_df[['scene_order', 'image_order']] = gallery_info_df[['scene_order', 'image_order']].astype('Int64')
 
-def pick_from_set(candidates, allowed_set):
-    if not isinstance(candidates, (list, tuple, set)):
-        return np.nan
-    for c in candidates:
-        if c in allowed_set:
-            return c
-    return np.nan
-
-def get_info_protobufs(project_base_url, logger):
-    try:
-        start = datetime.now()
-        image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
-        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
-        persons_file = os.path.join(project_base_url, 'persons_info.pb')
-        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
-        segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
-        person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
-        files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
-
-        # List of functions to run in parallel
-        functions = [
-            partial(get_image_embeddings, image_file),
-            partial(get_faces_info, faces_file),
-            partial(get_persons_ids, persons_file),
-            partial(get_clusters_info, cluster_file),
-            partial(get_photo_meta, segmentation_file),
-            partial(get_person_vectors, person_vector_file)
-        ]
-
-        results = []
-        for idx, func in enumerate(functions):
-            result = func(logger)
-            if result is None:
-                return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
-            elif result.empty or result.shape[0] == 0:
-                return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
-            results.append(result)
-
-        gallery_info_df = results[0]
-        for res in results[1:]:
-            gallery_info_df = pd.merge(gallery_info_df, res, on="image_id", how="outer")
-
-        # Convert only the specified columns to 'Int64' (nullable integer type)
-        columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
-        gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
-
-        is_wedding = check_gallery_type(gallery_info_df)
-
-        if is_wedding:
-            # make Cluster column
-            gallery_info_df = gallery_info_df.apply(process_content, axis=1)
-            # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
-            #                                         how='left', on='image_id')
-            bride_id, groom_id = np.nan, np.nan
-
-            from collections import Counter
-            bride_set = Counter(
-                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
-            groom_set = Counter(
-                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
-
-            main_row = gallery_info_df["main_persons"].dropna().iloc[0]
-
-            # bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
-            # groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
-
-            if bride_set:
-                bride_candidates = [id for id, count in bride_set.most_common() if
-                                    count == bride_set.most_common(1)[0][1]]
-                bride_id = next((id for id in bride_candidates if id in main_row),
-                                bride_candidates[0]) if bride_candidates else np.nan
-            else:
-                bride_id = np.nan
-
-
-            if groom_set:
-                groom_candidates = [id for id, count in groom_set.most_common() if
-                                    count == groom_set.most_common(1)[0][1]]
-                groom_id = next((id for id in groom_candidates if id in main_row),
-                                groom_candidates[0]) if groom_candidates else np.nan
-            else:
-                groom_id = np.nan
-
-            if np.isnan(bride_id) and not np.isnan(groom_id):
-                for person_id in main_row:
-                    if person_id != groom_id:
-                        bride_id = person_id
-                        break
-            elif np.isnan(groom_id) and not np.isnan(bride_id):
-                for person_id in main_row:
-                    if person_id != bride_id:
-                        groom_id = person_id
-                        break
-            elif np.isnan(bride_id) and np.isnan(groom_id):
-                if len(main_row) >= 2:
-                    bride_id = main_row[0]
-                    groom_id = main_row[1]
-
-            if groom_id not in main_row or bride_id not in main_row:
-                logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
-
-            gallery_info_df["bride_id"] = bride_id
-            gallery_info_df["groom_id"] = groom_id
-
-            gallery_info_df["main_persons"] = gallery_info_df["main_persons"].apply(
-                lambda x: x if isinstance(x, (list, tuple)) else []
-            )
-
-            gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
-                lambda x: x if isinstance(x, (list, tuple)) else []
-            )
-
-
-
-        # Get Query Content of each image
-        if gallery_info_df is not None:
-            model_version = gallery_info_df.iloc[0]['model_version']
-            if model_version == 1:
-                gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
-            else:
-                #gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
-                gallery_info_df = generate_query(CONFIGS["queries_file_v3"], gallery_info_df, num_workers=8)
-
-        logger.debug("Number of images before cleaning the nan values: {}".format(len(gallery_info_df.index)))
-        columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
-        gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
-        logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
-        # make sure it has list values not float nan
-
-        # Cluster people by number of people inside the image
-        gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
-        logger.debug("Time for reading files: {}".format(datetime.now() - start))
-        return gallery_info_df, is_wedding, None
-
-    except Exception as ex:
-        tb = traceback.extract_tb(ex.__traceback__)
-        filename, lineno, func, text = tb[-1]
-        return None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+    return gallery_info_df
 
 
 def read_messages(messages, logger):
@@ -234,86 +125,28 @@ def read_messages(messages, logger):
         if not (type(json_content) is dict or type(json_content) is list):
             logger.warning('Incorrect message format: {}.'.format(json_content))
         logger.info('Received message: {}/{}'.format(json_content, _msg))
-        if 'designInfo' in json_content and json_content['designInfo'] is None:
-            if 'designInfoTempLocation' in json_content:
-                try:
-                    fb = PTFile(json_content['designInfoTempLocation'])
-                    fileBytes = fb.read_blob()
-                    designInfo = json.loads(fileBytes.decode('utf-8'))
-                    # logger.info('Read designInfo from blob location: {}'.format(designInfo))
-                    json_content['designInfo'] = designInfo
-                    _msg.content['designInfo'] = designInfo
-                    album_ar = {'anyPage': 2}
-                    for part in ['firstPage', 'lastPage', 'anyPage']:
-                        if part in designInfo['parts']:
-                            album_ar[part] = designInfo['parts'][part]['varient']['productWidth']/designInfo['parts'][part]['varient']['productHeight']
-                    _msg.content['album_ar'] = album_ar
-                except Exception as e:
-                    return None, 'Error reading designInfo from blob location {}, error: {}'.format(json_content['designInfoTempLocation'], e)
-            else:
-                return None, 'Incorrect message structure: {}. Skipping.'.format(json_content)
 
-        if 'photos' not in json_content or 'base_url' not in json_content or 'designInfo' not in json_content:
+        if 'photos' not in json_content or 'base_url' not in json_content:
             return None, 'There are missing fields in input request: {}. Skipping.'.format(json_content)
 
         try:
-            project_url = json_content['base_url']
-
-            _msg.pagesInfo = dict()
-            _msg.designsInfo = dict()
-            _msg.designsInfo['defaultPackageStyleId'] = json_content['designInfo']['defaultPackageStyleId']
-
-            if 'anyPage' in json_content['designInfo']['parts'] and len(json_content['designInfo']['parts']['anyPage']['designIds'])>0:
-                _msg.designsInfo['anyPageIds'] = json_content['designInfo']['parts']['anyPage']['designIds']
-            else:
-                _msg.error = 'no anyPage in designInfo. Skipping.'
-                return None, 'No anyPage in designInfo. Skipping message..'
-            firstPage_layouts_df = None
-            lastPage_layouts_df = None
-            if 'firstPage' in json_content['designInfo']['parts']:
-                if len(json_content['designInfo']['parts']['firstPage']['designIds']) > 0:
-                    _msg.designsInfo['firstPageDesignIds'] = json_content['designInfo']['parts']['firstPage']['designIds']
-                    _msg.pagesInfo['firstPage'] = True
-                    firstPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['firstPageDesignIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
-                    _msg.designsInfo['firstPage_layouts_df'] = firstPage_layouts_df
-
-            if 'lastPage' in json_content['designInfo']['parts']:
-                if len(json_content['designInfo']['parts']['lastPage']['designIds']) > 0:
-                    _msg.designsInfo['lastPageDesignIds'] = json_content['designInfo']['parts']['lastPage']['designIds']
-                    _msg.pagesInfo['lastPage'] = True
-                    lastPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['lastPageDesignIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'])
-                    _msg.designsInfo['lastPage_layouts_df'] = lastPage_layouts_df
-
-            if 'cover' in json_content['designInfo']['parts']:
-                if len(json_content['designInfo']['parts']['cover']['designIds']) > 0:
-                    _msg.designsInfo['coverDesignIds'] = json_content['designInfo']['parts']['cover']['designIds']
-                    _msg.pagesInfo['cover'] = True
-
-                    # coverPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['coverDesignIds'])
-                    # _msg.designsInfo['coverPage_layouts_df'] = coverPage_layouts_df
-
-            _msg.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content['designInfo'] else 1
-            _msg.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content['designInfo'] else CONFIGS['max_total_spreads']
-
-            anyPage_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], _msg.designsInfo['anyPageIds'], album_ar=_msg.content.get('album_ar', {'anyPage':2})['anyPage'],do_mirror=True)
+            message = read_layouts_data(_msg, json_content)
+            _msg = message
+            json_content = _msg.content
 
             proto_start = datetime.now()
-
-            # check if its wedding here! and added to the message
+            project_url = json_content['base_url']
             gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger)
             if pt_error is not None:
                 return None, pt_error
-
-
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
-            if not gallery_info_df.empty and not anyPage_layouts_df.empty:
+            # add scenes info to gallery_info_df
+            gallery_info_df = add_scenes_info(gallery_info_df, project_url)
+
+            if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
-                _msg.designsInfo['anyPagelayouts_df'] = anyPage_layouts_df
-                layout_id2data, box_id2data = get_layouts_data(anyPage_layouts_df, firstPage_layouts_df, lastPage_layouts_df)
-                _msg.designsInfo['anyPagelayout_id2data'] = layout_id2data
-                _msg.designsInfo['anyPagebox_id2data'] = box_id2data
                 enriched_messages.append(_msg)
             else:
                 return None, 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
