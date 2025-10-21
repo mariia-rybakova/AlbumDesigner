@@ -24,7 +24,7 @@ from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.selection.auto_selection import ai_selection
 from src.core.key_pages import generate_first_last_pages
-from utils.time_processing import process_image_time, get_time_clusters, merge_time_clusters_by_context
+from utils.time_processing import process_gallery_time
 from src.album_processing import album_processing
 from src.request_processing import read_messages, assembly_output
 from utils.configs import CONFIGS
@@ -280,12 +280,7 @@ class ProcessStage(Stage):
                 sorted_df = df.sort_values(by="image_order", ascending=False)
 
                 # Process time
-                sorted_df, image_id2general_time = process_image_time(sorted_df)
-                if message.content.get('gallery_all_photos_info', None) is not None:
-                    message.content['gallery_all_photos_info'], _ = process_image_time(message.content['gallery_all_photos_info'])
-                sorted_df['time_cluster'] = get_time_clusters(sorted_df , message.content.get('gallery_all_photos_info', None))
-                if message.content['is_wedding']:
-                    sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], self.logger)
+                message, sorted_df = process_gallery_time(message, sorted_df, self.logger)
 
                 df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
 
@@ -462,16 +457,18 @@ class MessageProcessor:
 
             dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                       max_dequeue_allowed=1000)
-            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                    max_dequeue_allowed=1000)
-            azure_input_q = RoundRobinReader([dev_queue, dev3_queue, ep_queue])
+
+            azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
 
             # azure_input_q = dev_queue
 
         elif prefix == 'production':
             self.logger.info('PRODUCTION environment set, queue name: ' + input_queue)
-            azure_input_q = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
+            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                    max_dequeue_allowed=1000)
+            prod_queue = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                          max_dequeue_allowed=1000)
+            azure_input_q = RoundRobinReader([prod_queue, ep_queue])
         else:
             self.logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
             azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],

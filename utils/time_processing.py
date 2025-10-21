@@ -8,6 +8,8 @@ from datetime import datetime
 from sklearn.mixture import GaussianMixture
 from sklearn.cluster import DBSCAN
 
+from ptinfra.utils.gallery import Gallery
+
 
 def convert_to_timestamp(time_integer):
     try:
@@ -54,9 +56,8 @@ def process_image_time(data_df):
     processed_df = data_df.merge(processed_df[['image_id', 'general_time']], how='left', on='image_id')
 
     sorted_by_time_df = processed_df.sort_values(by="general_time", ascending=True)
-    image_id2general_time = dict(zip(processed_df['image_id'], processed_df['general_time']))
 
-    return sorted_by_time_df, image_id2general_time
+    return sorted_by_time_df
 
 
 def get_time_clusters_gmm(X):
@@ -133,7 +134,6 @@ def get_time_clusters_dbscan(X):
         clusters_full[idx] = labels_valid[nearest]
 
     return clusters_full, best_n
-
 
 
 def get_time_clusters(selected_df,all_photos_df=None):
@@ -231,6 +231,58 @@ def merge_time_clusters_by_context(sorted_df, context_clusters_list, logger=None
         if logger is not None:
             logger.warning(f"Issue in merge_time_clusters_by_context: {ex}. Returning df without changes.")
         return sorted_df
+
+
+def check_time_correctness(time_list):
+    if len(time_list) <= 5:
+        return True
+    time_list.sort()
+    if time_list[-1] - time_list[0] <= 1800:
+        return False
+    for i in range(len(time_list) - 5):
+        if time_list[i + 5] - time_list[i] <= 1:
+            return False
+    return True
+
+
+def get_artificial_images_time(base_url):
+    photos_metadata = Gallery(base_url)
+
+    image_id2artificial_time = dict()
+    artificial_time = 0
+    for scene in photos_metadata.scenes:
+        for photo in scene.photos:
+            try:
+                filename = photo.get_filename()
+                image_id2artificial_time[np.int64(filename.split('.')[0])] = artificial_time
+                artificial_time += 10
+            except Exception as e:
+                pass
+        artificial_time += 1800
+    return image_id2artificial_time
+
+
+def process_gallery_time(message, sorted_df, logger):
+    sorted_df = process_image_time(sorted_df)
+    if message.content.get('gallery_all_photos_info', None) is not None:
+        message.content['gallery_all_photos_info'] = process_image_time(message.content['gallery_all_photos_info'])
+
+    # check if gallery has time info
+    general_time = sorted_df['general_time'].tolist()
+    if not check_time_correctness(general_time):
+        logger.warning("Time info is not correct. Using artificial time.")
+        image_id2artificial_time = get_artificial_images_time(message.content['base_url'])
+        sorted_df['general_time'] = sorted_df['image_id'].map(image_id2artificial_time).fillna(sorted_df['general_time'])
+        sorted_df = sorted_df.sort_values(by="general_time", ascending=True)
+
+    sorted_df['time_cluster'] = get_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
+    if message.content['is_wedding']:
+        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], logger)
+
+    image_id2general_time = dict(zip(sorted_df['image_id'], sorted_df['general_time']))
+    return message, sorted_df
+
+
 
 def sort_groups_by_time(groups_list, logger):
     try:

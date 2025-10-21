@@ -1,9 +1,18 @@
 import io
+import os
+import traceback
+from datetime import datetime
+from functools import partial
+
 import numpy as np
 import pandas as pd
 
 from collections import Counter
 from ptinfra.azure.pt_file import PTFile
+
+from utils.reading_tools import generate_dict_key, check_gallery_type, process_content, _flatten
+from utils.configs import CONFIGS
+from utils.image_queries import generate_query
 from utils.protos import FaceVector_pb2 as face_vector
 from utils.protos import BGSegmentation_pb2 as meta_vector
 from utils.protos import PersonInfo_pb2 as person_info
@@ -298,3 +307,135 @@ def get_person_vectors(persons_file, logger):
         return None
 
     return photo_df
+
+
+def get_info_protobufs(project_base_url, logger):
+    try:
+        start = datetime.now()
+        image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
+        faces_file = os.path.join(project_base_url, 'ai_face_vectors.pb')
+        persons_file = os.path.join(project_base_url, 'persons_info.pb')
+        cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
+        segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
+        person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
+        files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
+
+        # List of functions to run in parallel
+        functions = [
+            partial(get_image_embeddings, image_file),
+            partial(get_faces_info, faces_file),
+            partial(get_persons_ids, persons_file),
+            partial(get_clusters_info, cluster_file),
+            partial(get_photo_meta, segmentation_file),
+            partial(get_person_vectors, person_vector_file)
+        ]
+
+        results = []
+        for idx, func in enumerate(functions):
+            result = func(logger)
+            if result is None:
+                return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
+            elif result.empty or result.shape[0] == 0:
+                return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
+            results.append(result)
+
+        gallery_info_df = results[0]
+        for res in results[1:]:
+            gallery_info_df = pd.merge(gallery_info_df, res, on="image_id", how="outer")
+
+        # Convert only the specified columns to 'Int64' (nullable integer type)
+        columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
+        gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
+
+        is_wedding = check_gallery_type(gallery_info_df)
+
+        if is_wedding:
+            # make Cluster column
+            gallery_info_df = gallery_info_df.apply(process_content, axis=1)
+            # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
+            #                                         how='left', on='image_id')
+            bride_id, groom_id = np.nan, np.nan
+
+            from collections import Counter
+            bride_set = Counter(
+                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+            groom_set = Counter(
+                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
+
+            main_row = gallery_info_df["main_persons"].dropna().iloc[0]
+
+            # bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
+            # groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
+
+            if bride_set:
+                bride_candidates = [id for id, count in bride_set.most_common() if
+                                    count == bride_set.most_common(1)[0][1]]
+                bride_id = next((id for id in bride_candidates if id in main_row),
+                                bride_candidates[0]) if bride_candidates else np.nan
+            else:
+                bride_id = np.nan
+
+
+            if groom_set:
+                groom_candidates = [id for id, count in groom_set.most_common() if
+                                    count == groom_set.most_common(1)[0][1]]
+                groom_id = next((id for id in groom_candidates if id in main_row),
+                                groom_candidates[0]) if groom_candidates else np.nan
+            else:
+                groom_id = np.nan
+
+            if np.isnan(bride_id) and not np.isnan(groom_id):
+                for person_id in main_row:
+                    if person_id != groom_id:
+                        bride_id = person_id
+                        break
+            elif np.isnan(groom_id) and not np.isnan(bride_id):
+                for person_id in main_row:
+                    if person_id != bride_id:
+                        groom_id = person_id
+                        break
+            elif np.isnan(bride_id) and np.isnan(groom_id):
+                if len(main_row) >= 2:
+                    bride_id = main_row[0]
+                    groom_id = main_row[1]
+
+            if groom_id not in main_row or bride_id not in main_row:
+                logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
+
+            gallery_info_df["bride_id"] = bride_id
+            gallery_info_df["groom_id"] = groom_id
+
+            gallery_info_df["main_persons"] = gallery_info_df["main_persons"].apply(
+                lambda x: x if isinstance(x, (list, tuple)) else []
+            )
+
+            gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
+                lambda x: x if isinstance(x, (list, tuple)) else []
+            )
+
+
+
+        # Get Query Content of each image
+        if gallery_info_df is not None:
+            model_version = gallery_info_df.iloc[0]['model_version']
+            if model_version == 1:
+                gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
+            else:
+                #gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
+                gallery_info_df = generate_query(CONFIGS["queries_file_v3"], gallery_info_df, num_workers=8)
+
+        logger.debug("Number of images before cleaning the nan values: {}".format(len(gallery_info_df.index)))
+        columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
+        gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
+        logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
+        # make sure it has list values not float nan
+
+        # Cluster people by number of people inside the image
+        gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
+        logger.debug("Time for reading files: {}".format(datetime.now() - start))
+        return gallery_info_df, is_wedding, None
+
+    except Exception as ex:
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        return None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'

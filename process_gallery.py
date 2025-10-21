@@ -16,7 +16,7 @@ from src.request_processing import read_messages
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.core.key_pages import generate_first_last_pages
-from utils.time_processing import process_image_time, get_time_clusters, merge_time_clusters_by_context
+from utils.time_processing import process_gallery_time
 from src.album_processing import album_processing
 from src.request_processing import assembly_output
 from src.selection.auto_selection import ai_selection
@@ -246,12 +246,7 @@ def process_message(message, logger):
         sorted_df = df.sort_values(by="image_order", ascending=False)
 
         # Process time
-        sorted_df, image_id2general_time = process_image_time(sorted_df)
-        if message.content.get('gallery_all_photos_info', None) is not None:
-            message.content['gallery_all_photos_info'], _ = process_image_time(message.content['gallery_all_photos_info'])
-        sorted_df['time_cluster'] = get_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
-        if message.content['is_wedding']:
-            sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], logger)
+        message, sorted_df = process_gallery_time(message, sorted_df, logger)
 
         df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, logger)
 
