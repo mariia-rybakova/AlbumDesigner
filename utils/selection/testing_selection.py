@@ -1096,7 +1096,7 @@ def select_remove_similar(
     logger,
     target_group_size: int = 10,  # kept for compatibility; no longer used for k-medoids
 ) -> list[str]:
-    print(f"remove similar images for {cluster_name}")
+    #print(f"remove similar images for {cluster_name}")
     small_threshold = 7
     rng = random.Random(42)
 
@@ -1170,7 +1170,7 @@ def select_remove_similar(
     #                      image_dir=r'C:\Users\karmel\Desktop\AlbumDesigner\dataset\newest_wedding_galleries/46245951',
     #                      output_pdf=fr"C:\Users\karmel\Desktop\AlbumDesigner\output\46245951\{cluster_name}.pdf")
     #
-    print("here")
+    #print("here")
     return final_selected
 
 

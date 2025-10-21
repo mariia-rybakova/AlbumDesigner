@@ -551,7 +551,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             return scored_df, available_img_ids,False
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
-            print("Cluster name", cluster_name)
+            # print("Cluster name", cluster_name)
             # if cluster_name != "getting hair-makeup":
             #     continue
             n_actual = len(cluster_df)
