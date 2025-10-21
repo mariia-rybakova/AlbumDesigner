@@ -448,16 +448,18 @@ class MessageProcessor:
 
             dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                       max_dequeue_allowed=1000)
-            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                    max_dequeue_allowed=1000)
-            azure_input_q = RoundRobinReader([dev_queue, dev3_queue, ep_queue])
+
+            azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
 
             # azure_input_q = dev_queue
 
         elif prefix == 'production':
             self.logger.info('PRODUCTION environment set, queue name: ' + input_queue)
-            azure_input_q = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
+            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                    max_dequeue_allowed=1000)
+            prod_queue = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                          max_dequeue_allowed=1000)
+            azure_input_q = RoundRobinReader([prod_queue, ep_queue])
         else:
             self.logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
             azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
