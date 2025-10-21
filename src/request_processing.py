@@ -280,7 +280,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[box_id],album_ar)
+            x, y, w, h = customize_box(first_page_data['first_images_df'], box_id2data[box_id],album_ar)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
                                             "compositionPackageId": message.content['compositionPackageId'],
@@ -396,7 +396,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(last_page_data['last_images_df'].iloc[idx], box_id2data[box_id],album_ar)
+            x, y, w, h = customize_box(last_page_data['last_images_df'], box_id2data[box_id],album_ar)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                                  "compositionId": counter_comp_id,
                                                  "compositionPackageId": message.content['compositionPackageId'],

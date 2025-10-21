@@ -551,10 +551,20 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             return scored_df, available_img_ids,False
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
+            # print("Cluster name", cluster_name)
+            # if cluster_name != "getting hair-makeup":
+            #     continue
             n_actual = len(cluster_df)
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
             need = images_allocation[cluster_name]
+
+            if n_actual <= 2 and need == 1:
+                ai_images_selected.extend(cluster_df["image_id"].values.tolist()[:need])
+                category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(
+                    cluster_df["image_id"].values.tolist()[:need])
+                continue
+
             if need == 0:
                 continue
 

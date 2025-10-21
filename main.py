@@ -210,6 +210,15 @@ class SelectionStage(Stage):
                 _msg.content['gallery_photos_info'] = filtered_df
                 _msg.content['photos'] = ai_photos_selected
                 _msg.content['spreads_dict'] = spreads_dict
+
+                if _msg.pagesInfo.get("firstPage"):
+                    if _msg.content.get('is_wedding', True):
+                        all_bride_groom = df[
+                            (df["cluster_context"] == "bride and groom")]
+                        _msg.content['bride and groom'] = all_bride_groom
+                else:
+                    _msg.content['bride and groom'] = None
+
                 updated_messages.append(_msg)
 
         except Exception as ex:
