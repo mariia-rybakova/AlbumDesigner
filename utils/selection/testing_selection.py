@@ -1140,6 +1140,9 @@ def select_remove_similar(
         return too_similar
 
     for g, idxs in groups.items():
+        if len(idxs) == 0 or g == '_SINGLES_':
+            continue
+
         m = alloc.get(g, 0)
         if m <= 0 or not idxs:
             continue

@@ -92,8 +92,10 @@ def _select_by_priority_from_subset(df_subset, queries_primary, queries_fallback
 
 def get_important_imgs(data_df, bride_groom_df, logger):
     try:
-        if not bride_groom_df.empty and bride_groom_df is not None:
-            chosen_df = bride_groom_df.copy()
+        if bride_groom_df:
+            chosen_df = data_df.copy()
+            if not bride_groom_df.empty:
+                chosen_df = bride_groom_df.copy()
         else:
             chosen_df = data_df.copy()
 
@@ -144,9 +146,13 @@ def get_important_imgs(data_df, bride_groom_df, logger):
 def choose_good_wedding_images(df, bride_groom_df, logger):
     first_page_ids, last_page_ids = get_important_imgs(df, bride_groom_df, logger)
 
-    if not bride_groom_df.empty or bride_groom_df is not None:
-        first_cover_image_df = bride_groom_df[bride_groom_df['image_id'].isin(first_page_ids)]
-        last_cover_image_df = bride_groom_df[bride_groom_df['image_id'].isin(last_page_ids)]
+    if bride_groom_df:
+        if not bride_groom_df.empty:
+            first_cover_image_df = bride_groom_df[bride_groom_df['image_id'].isin(first_page_ids)]
+            last_cover_image_df = bride_groom_df[bride_groom_df['image_id'].isin(last_page_ids)]
+        else:
+            first_cover_image_df = df[df['image_id'].isin(first_page_ids)]
+            last_cover_image_df = df[df['image_id'].isin(last_page_ids)]
     else:
         # Get rows corresponding to selected images
         first_cover_image_df = df[df['image_id'].isin(first_page_ids)]
