@@ -91,19 +91,23 @@ def read_layouts_data(message, json_content):
     return message
 
 
-def add_scenes_info(gallery_info_df, project_base_url):
-    photos_metadata = Gallery(project_base_url)
+def add_scenes_info(gallery_info_df, project_base_url, logger):
+    try:
+        photos_metadata = Gallery(project_base_url)
 
-    image_id2scene_image_order = dict()
-    image_iter = 0
-    for scene_idx, scene in enumerate(photos_metadata.scenes):
-        for photo in scene.photos:
-            try:
-                filename = photo.get_filename()
-                image_id2scene_image_order[np.int64(filename.split('.')[0])] = (scene_idx, image_iter)
-                image_iter += 1
-            except Exception as e:
-                pass
+        image_id2scene_image_order = dict()
+        image_iter = 0
+        for scene_idx, scene in enumerate(photos_metadata.scenes):
+            for photo in scene.photos:
+                try:
+                    filename = photo.get_filename()
+                    image_id2scene_image_order[np.int64(filename.split('.')[0])] = (scene_idx, image_iter)
+                    image_iter += 1
+                except Exception as e:
+                    pass
+    except Exception as e:
+        logger.error(f"Error reading scenes info from gallery: {e}")
+        return gallery_info_df
 
     mapped = gallery_info_df['image_id'].map(image_id2scene_image_order)
     mapped_df = pd.DataFrame(mapped.tolist(), columns=['scene_order', 'image_order'])
@@ -142,7 +146,7 @@ def read_messages(messages, logger):
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
 
             # add scenes info to gallery_info_df
-            gallery_info_df = add_scenes_info(gallery_info_df, project_url)
+            gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
 
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
