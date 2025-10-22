@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get clean \
@@ -19,6 +19,14 @@ RUN apt-get -y install \
     zip \
     python3-pip \
     unzip
+
+
+ENV PYTHONWARNINGS="ignore"
+ENV VENV_PATH=/opt/venv
+RUN python3 -m venv $VENV_PATH
+
+ENV PATH="$VENV_PATH/bin:$PATH"
+
 #Set working directory to app
 WORKDIR /usr/app
 
@@ -26,14 +34,14 @@ WORKDIR /usr/app
 COPY ./requirements.txt ./
 
 #Install requirements.txt
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN $VENV_PATH/bin/pip install --upgrade pip
+RUN $VENV_PATH/bin/pip install --no-cache-dir -r requirements.txt
 #RUN pip install --force-reinstall git+https://github.com/pic-time/python-infra.git
 
 #Copy rest of files over to working directory
 COPY ./setup.py /usr/app/setup.py
 COPY ./ptinfra /usr/app/ptinfra
-RUN pip install ./
+RUN $VENV_PATH/bin/pip install ./
 
 COPY ./ /usr/app/
 
