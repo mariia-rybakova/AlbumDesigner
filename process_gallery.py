@@ -220,7 +220,8 @@ def process_message(message, logger):
     logger.debug("Params for this Gallery are: {}".format(params))
 
     df = message.content.get('gallery_photos_info', pd.DataFrame())
-    df_serializable = df.copy()  # Make a copy to avoid modifying original
+    bride_and_groom_df = message.content.get('bride and groom', pd.DataFrame())
+    df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
     df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
     q = mp.Queue()

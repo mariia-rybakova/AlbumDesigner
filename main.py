@@ -263,7 +263,8 @@ class ProcessStage(Stage):
                 message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
                 raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
 
-            df_serializable = df.copy()  # Make a copy to avoid modifying original
+            bride_and_groom_df = message.content.get('bride and groom', pd.DataFrame())
+            df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
 
