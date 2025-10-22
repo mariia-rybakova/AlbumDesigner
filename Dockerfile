@@ -18,6 +18,7 @@ RUN apt-get -y install \
     vim \
     zip \
     python3-pip \
+    python3-venv \
     unzip
 
 
