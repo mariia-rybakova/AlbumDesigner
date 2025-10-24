@@ -136,7 +136,7 @@ def get_time_clusters_dbscan(X):
     return clusters_full, best_n
 
 
-def get_time_clusters(selected_df,all_photos_df=None):
+def build_time_clusters(selected_df, all_photos_df=None):
     # Cluster by time
     general_time_df = selected_df[['general_time']]
     X = general_time_df.values.reshape(-1, 1)
@@ -196,6 +196,14 @@ def get_time_clusters(selected_df,all_photos_df=None):
     return clusters
 
 
+def generate_time_clusters(message, sorted_df, logger):
+    sorted_df['time_cluster'] = build_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
+    if message.content['is_wedding']:
+        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], logger)
+
+    return sorted_df
+
+
 def merge_time_clusters_by_context(sorted_df, context_clusters_list, logger=None):
     """
     Modifies time clusters based on context clusters.
@@ -239,9 +247,13 @@ def check_time_correctness(time_list):
     time_list.sort()
     if time_list[-1] - time_list[0] <= 1800:
         return False
+    good_interval_count = 0
     for i in range(len(time_list) - 5):
         if time_list[i + 5] - time_list[i] <= 1:
             return False
+        good_interval_count += 1
+        if good_interval_count > 10:
+            break
     return True
 
 
@@ -262,26 +274,19 @@ def get_artificial_images_time(base_url):
     return image_id2artificial_time
 
 
-def process_gallery_time(message, sorted_df, logger):
-    sorted_df = process_image_time(sorted_df)
-    if message.content.get('gallery_all_photos_info', None) is not None:
-        message.content['gallery_all_photos_info'] = process_image_time(message.content['gallery_all_photos_info'])
+def process_gallery_time(message, gallery_info_df, logger):
+    if gallery_info_df is not None:
+        gallery_info_df = process_image_time(gallery_info_df)
 
     # check if gallery has time info
-    general_time = sorted_df['general_time'].tolist()
+    general_time = gallery_info_df['general_time'].tolist()
     if not check_time_correctness(general_time):
         logger.warning("Time info is not correct. Using artificial time.")
         image_id2artificial_time = get_artificial_images_time(message.content['base_url'])
-        sorted_df['general_time'] = sorted_df['image_id'].map(image_id2artificial_time).fillna(sorted_df['general_time'])
-        sorted_df = sorted_df.sort_values(by="general_time", ascending=True)
+        gallery_info_df['general_time'] = gallery_info_df['image_id'].map(image_id2artificial_time).fillna(gallery_info_df['general_time'])
+        gallery_info_df = gallery_info_df.sort_values(by="general_time", ascending=True)
 
-    sorted_df['time_cluster'] = get_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
-    if message.content['is_wedding']:
-        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], logger)
-
-    image_id2general_time = dict(zip(sorted_df['image_id'], sorted_df['general_time']))
-    return message, sorted_df
-
+    return gallery_info_df
 
 
 def sort_groups_by_time(groups_list, logger):

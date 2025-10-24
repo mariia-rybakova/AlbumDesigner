@@ -7,6 +7,7 @@ from datetime import datetime
 from utils.configs import CONFIGS
 from utils.layouts_tools import generate_layouts_df, get_layouts_data
 from utils.read_protos_files import get_info_protobufs
+from utils.time_processing import process_gallery_time
 from ptinfra.azure.pt_file import PTFile
 from ptinfra.utils.gallery import Gallery
 import json
@@ -147,6 +148,9 @@ def read_messages(messages, logger):
 
             # add scenes info to gallery_info_df
             gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
+
+            # add time data
+            gallery_info_df = process_gallery_time(_msg, gallery_info_df, logger)
 
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df

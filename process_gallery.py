@@ -16,7 +16,7 @@ from src.request_processing import read_messages
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.core.key_pages import generate_first_last_pages
-from utils.time_processing import process_gallery_time
+from utils.time_processing import generate_time_clusters
 from src.album_processing import album_processing
 from src.request_processing import assembly_output
 from src.selection.auto_selection import ai_selection
@@ -246,8 +246,8 @@ def process_message(message, logger):
         # Sorting the DataFrame by "image_order" column
         sorted_df = df.sort_values(by="image_order", ascending=False)
 
-        # Process time
-        message, sorted_df = process_gallery_time(message, sorted_df, logger)
+        # generate time clusters for the gallery photos
+        sorted_df = generate_time_clusters(message, sorted_df, logger)
 
         df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, logger)
 
