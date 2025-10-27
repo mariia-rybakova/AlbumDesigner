@@ -150,7 +150,9 @@ def read_messages(messages, logger):
             gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
 
             # add time data
+
             gallery_info_df,is_artificial_time = process_gallery_time(_msg, gallery_info_df, logger)
+
 
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
