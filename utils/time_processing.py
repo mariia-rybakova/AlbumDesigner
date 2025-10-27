@@ -278,15 +278,17 @@ def process_gallery_time(message, gallery_info_df, logger):
     if gallery_info_df is not None:
         gallery_info_df = process_image_time(gallery_info_df)
 
+    is_artificial_time = False
     # check if gallery has time info
     general_time = gallery_info_df['general_time'].tolist()
     if not check_time_correctness(general_time):
+        is_artificial_time = True
         logger.warning("Time info is not correct. Using artificial time.")
         image_id2artificial_time = get_artificial_images_time(message.content['base_url'])
         gallery_info_df['general_time'] = gallery_info_df['image_id'].map(image_id2artificial_time).fillna(gallery_info_df['general_time'])
         gallery_info_df = gallery_info_df.sort_values(by="general_time", ascending=True)
 
-    return gallery_info_df
+    return gallery_info_df, is_artificial_time
 
 
 def sort_groups_by_time(groups_list, logger):

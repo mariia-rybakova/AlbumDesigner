@@ -3,9 +3,9 @@
 # from collections import defaultdict
 #from testing_code.plotting import plot_selected_to_pdf,plot_groups_to_pdf
 
-
+import re
 import random
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
@@ -15,7 +15,7 @@ try:
 except Exception:
     _HAS_PYCLUST = False
 
-
+#from experiments.plotting import plot_groups_to_pdf
 
 def _normalize_rows(E: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(E, axis=1, keepdims=True)
@@ -615,6 +615,94 @@ def allocate_prefer_larger_nneeeded(
     return alloc
 
 
+def allocate_prefer_larger_artificial(
+    groups: Dict[str, List[int]],
+    need: int,
+    small_threshold: int = 5,   # kept only for signature compatibility; unused
+    ensure_one: bool = True,    # kept only for signature compatibility; unused
+    base_per_group: int = 1,    # kept only for signature compatibility; unused
+) -> Dict[str, int]:
+    """
+    Allocation strategy:
+
+    1) Exclude '_SINGLES_' and empty groups from allocation.
+    2) Base pass: give 1 per group (largest-first if need < #groups).
+    3) If more needed, add +1 per step to the largest groups (by size), respecting group capacity.
+    4) Special small-few rule:
+         - If (#groups <= 3) AND (every group size <= 4) AND (need > 4):
+             -> allocate exactly 1 per group and STOP (sum can be < need).
+       If need <= 4, ignore the special rule and fulfill normally.
+
+    Notes:
+    - Capacity per group = its size (we don't cap to 1/2 sizes here).
+    - Any group named '_SINGLES_' is always assigned 0.
+    - The returned allocation may sum to < need in the special small-few case, by design.
+    """
+    # Initialize alloc for all keys
+    alloc = {g: 0 for g in groups.keys()}
+
+    # Filter valid groups (ignore _SINGLES_ and empties)
+    valid = {g: idxs for g, idxs in groups.items()
+             if g != "_SINGLES_" and len(idxs) > 0}
+
+    # Early exits
+    if need <= 0 or not valid:
+        if "_SINGLES_" in alloc:
+            alloc["_SINGLES_"] = 0
+        return alloc
+
+    sizes = {g: len(idxs) for g, idxs in valid.items()}
+    order = sorted(valid.keys(), key=lambda k: sizes[k], reverse=True)
+    num_groups = len(order)
+    max_size = max(sizes.values()) if sizes else 0
+
+    # ---------- Special small-few scenario ----------
+    if num_groups <= 3 and max_size <= 4 and need > 4:
+        # Take 1 from each (up to capacity), then stop.
+        for g in order:
+            if sizes[g] >= 1:
+                alloc[g] = 1
+        if "_SINGLES_" in alloc:
+            alloc["_SINGLES_"] = 0
+        return alloc
+
+    # ---------- Normal path ----------
+    remaining = need
+
+    # Base: 1 per group
+    if remaining >= num_groups:
+        # give 1 to all groups with capacity
+        for g in order:
+            if sizes[g] >= 1:
+                alloc[g] = 1
+        remaining -= sum(1 for g in order if sizes[g] >= 1)
+    else:
+        # need < #groups -> give 1 to the largest groups first
+        for g in order:
+            if remaining == 0:
+                break
+            if sizes[g] >= 1:
+                alloc[g] = 1
+                remaining -= 1
+
+    # Top-up: +1 to largest groups while capacity remains
+    while remaining > 0:
+        progressed = False
+        for g in order:
+            if remaining == 0:
+                break
+            if alloc[g] < sizes[g]:
+                alloc[g] += 1
+                remaining -= 1
+                progressed = True
+        if not progressed:
+            break  # all groups at capacity; cannot satisfy more
+
+    if "_SINGLES_" in alloc:
+        alloc["_SINGLES_"] = 0
+
+    return alloc
+
 def allocate_prefer_larger(
     groups: dict,
     need: int,
@@ -738,7 +826,7 @@ def filter_similarity_diverse(
     small_threshold = 7
 
     if len(df) <= need:
-        logger.info("we dont have enough images to filter so we took them all!")
+        logger.info(f"{cluster_name} we dont have enough images to filter so we took them all!")
         return  df['image_id'].tolist()
 
     is_not_scored = all(x == 1 for x in df['total_score'].tolist()) if 'total_score' in df.columns else True
@@ -1088,8 +1176,69 @@ def filter_similarity_diverse_new(
     return chosen[:need]
 
 
+def _sanitize_key(text: str) -> str:
+    """Safe key: letters/digits/_ only (handy for filenames/alloc keys)."""
+    if text is None:
+        return "NA"
+    text = str(text)
+    text = text.strip()
+    if text == "" or text.lower() == "nan":
+        return "NA"
+    # replace spaces and non-word with underscores
+    text = re.sub(r"\W+", "_", text)
+    return text
+
+def _chunk_by_window(df, order_cols=None, window_size=10, label="W"):
+    if order_cols is None:
+        order_cols = [c for c in ["scene_order", "image_time_date"] if c in df.columns] or None
+    df_sorted = df.sort_values(order_cols) if order_cols else df
+    idxs = df_sorted.index.to_list()
+    groups = {}
+    for i in range(0, len(idxs), window_size):
+        groups[f"{label}{i//window_size}"] = idxs[i:i+window_size]
+    return groups
+
+def _chunk_by_scene_cluster(
+    df: pd.DataFrame,
+    *,
+    scene_col: str = "scene_order",
+    cluster_col: str = "cluster_label",
+    order_cols: Optional[List[str]] = None,
+    window_size: int = 10,
+    label_prefix: str = "WIN",
+) -> Dict[str, List[int]]:
+    """
+    Split a single-scene dataframe into windows of size `window_size`,
+    but first partition by `cluster_label` so each cluster forms its own
+    contiguous windows.
+
+    Returns:
+        { f"{label_prefix}_{cluster}_{w}": [row_idx,...], ... }
+    """
+    if order_cols is None:
+        order_cols = [c for c in (scene_col, "image_time_date") if c in df.columns]
+
+    # Sort once for deterministic order within each cluster
+    df_sorted = df.sort_values(order_cols) if order_cols else df
+
+    # If no cluster column (or all missing), just chunk the whole scene
+    if cluster_col not in df_sorted.columns or df_sorted[cluster_col].isna().all():
+        return _chunk_by_window(df_sorted, order_cols=order_cols, window_size=window_size, label=label_prefix)
+
+    groups: Dict[str, List[int]] = {}
+    # Group by cluster within the scene
+    for cl, gdf in df_sorted.groupby(cluster_col, dropna=False, sort=True):
+        cl_key = _sanitize_key(cl)
+        idxs = gdf.index.to_list()
+        # Window within this cluster
+        for w, start in enumerate(range(0, len(idxs), window_size)):
+            win = idxs[start:start + window_size]
+            groups[f"{label_prefix}_{cl_key}_{w}"] = win
+
+    return groups
 
 def select_remove_similar(
+    is_artificial_time:bool,
     need: int,
     df: pd.DataFrame,
     cluster_name,
@@ -1118,9 +1267,77 @@ def select_remove_similar(
             score  = dict(zip(df['image_id'], df['image_order']))
             higher  = False  # lower image_order is better
 
-    # groups = {g: gdf.index.to_list() for g, gdf in df.groupby('sub_group_time_cluster')}
-    groups = build_time_merged_groups(df)
-    alloc = allocate_prefer_larger(groups, need, small_threshold=small_threshold, ensure_one=True)
+    if is_artificial_time:
+        scene_col = "scene_order"
+        groups = {}
+
+        if scene_col in df.columns:
+            # how many scenes?
+            n_scenes = df[scene_col].nunique(dropna=True)
+
+            if n_scenes >= 2:
+                # group by scene and then by cluster label
+                if scene_col not in df.columns:
+                    raise KeyError(f"'{scene_col}' not in df")
+
+                df2 = df.copy()
+                df2["_orig_idx_"] = df2.index
+
+                # Sorting for deterministic order inside groups
+                sort_cols = [scene_col]
+                if "image_time_date" and "image_time_date" in df2.columns:
+                    sort_cols.append("image_time_date")
+                sort_cols.append("_orig_idx_")
+                df2 = df2.sort_values(sort_cols)
+
+                use_cluster = ("cluster_label" in df2.columns) and (~df2["cluster_label"].isna()).any()
+
+                groups: Dict[str, List[int]] = {}
+
+                if use_cluster:
+                    # scene -> cluster
+                    for s_val, sgdf in df2.groupby(scene_col, sort=True, dropna=False):
+                        for c_val, cgdf in sgdf.groupby("cluster_label", sort=True, dropna=False):
+                            scene_key = _sanitize_key(s_val)
+                            cl_key = _sanitize_key(c_val)
+                            key = f"SCN_{scene_key}__CL_{cl_key}"
+                            groups[key] = cgdf["_orig_idx_"].tolist()
+                else:
+                    # fallback: scene only
+                    for s_val, sgdf in df2.groupby(scene_col, sort=True, dropna=False):
+                        scene_key = _sanitize_key(s_val)
+                        key = f"SCN_{scene_key}"
+                        groups[key] = sgdf["_orig_idx_"].tolist()
+
+            else:
+                # Only one scene -> chunk windows of 10 (contiguous order by scene/time/index)
+                order_cols = [scene_col] + (["image_time_date"] if "image_time_date" in df.columns else [])
+                groups = _chunk_by_scene_cluster(
+                    df,
+                    scene_col=scene_col,
+                    cluster_col="cluster_label",
+                    order_cols=order_cols,
+                    window_size=20,
+                    label_prefix="WIN"
+                )
+
+        alloc = allocate_prefer_larger_artificial(groups, need, small_threshold=small_threshold, ensure_one=True)
+    else:
+        # groups = {g: gdf.index.to_list() for g, gdf in df.groupby('sub_group_time_cluster')}
+        groups = build_time_merged_groups(df)
+        alloc = allocate_prefer_larger(groups, need, small_threshold=small_threshold, ensure_one=True)
+
+    # pdf_path = plot_groups_to_pdf(
+    #     groups=groups,  # your {group_key: [row_idx,...]}
+    #     alloc=alloc,  # your {group_key: k_to_select}
+    #     df=df,  # must contain 'image_id'
+    #     images_dir=r"C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset/47981912",  # folder with files named like <image_id>.jpg/png/...
+    #     cluster_name=cluster_name,
+    #     cluster_label='cluster_label',
+    #     output_dir=r"C:\Users\user\Desktop\PicTime\AlbumDesigner\output\47981912",  # optional; defaults to images_dir
+    #     cols=5, rows=6,  # 30 thumbs per page
+    # )
+    # print("PDF written to:", pdf_path)
 
     final_selected = []
 
