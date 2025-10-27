@@ -150,11 +150,12 @@ def read_messages(messages, logger):
             gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
 
             # add time data
-            gallery_info_df = process_gallery_time(_msg, gallery_info_df, logger)
+            gallery_info_df, artificial_time = process_gallery_time(_msg, gallery_info_df, logger)
 
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
+                _msg.content['is_artificial_time'] = artificial_time
                 enriched_messages.append(_msg)
             else:
                 return None, 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)

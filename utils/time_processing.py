@@ -247,13 +247,9 @@ def check_time_correctness(time_list):
     time_list.sort()
     if time_list[-1] - time_list[0] <= 1800:
         return False
-    good_interval_count = 0
     for i in range(len(time_list) - 5):
         if time_list[i + 5] - time_list[i] <= 1:
             return False
-        good_interval_count += 1
-        if good_interval_count > 10:
-            break
     return True
 
 
@@ -278,6 +274,8 @@ def process_gallery_time(message, gallery_info_df, logger):
     if gallery_info_df is not None:
         gallery_info_df = process_image_time(gallery_info_df)
 
+    artificial_time = False
+
     # check if gallery has time info
     general_time = gallery_info_df['general_time'].tolist()
     if not check_time_correctness(general_time):
@@ -285,8 +283,9 @@ def process_gallery_time(message, gallery_info_df, logger):
         image_id2artificial_time = get_artificial_images_time(message.content['base_url'])
         gallery_info_df['general_time'] = gallery_info_df['image_id'].map(image_id2artificial_time).fillna(gallery_info_df['general_time'])
         gallery_info_df = gallery_info_df.sort_values(by="general_time", ascending=True)
+        artificial_time = True
 
-    return gallery_info_df
+    return gallery_info_df, artificial_time
 
 
 def sort_groups_by_time(groups_list, logger):
