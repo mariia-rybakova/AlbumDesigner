@@ -472,7 +472,7 @@ def calculate_optimal_selection(
     return selections,spreads
 
 def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_features,density,
-                            logger):
+                            is_artificial_time,logger):
     try:
         error_message = None
         ai_images_selected = []
@@ -638,18 +638,13 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 )
 
             # If enough remaining or too few to process more
-
             if has <= need:
-                # images = valid_images_df['image_id'].values.tolist()
-                # to_add = images[:need]
                 # filter images based on people and query even if has less than need
                 to_add =  valid_images_df.assign(_pid=valid_images_df["persons_ids"].apply(tuple)).sort_values("image_order", ascending=True).drop_duplicates(subset=["_pid", "image_subquery_content"], keep="first").head(need)["image_id"].tolist()
-
                 ai_images_selected.extend(to_add)
                 category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(to_add)
                 logger.info(f"it has less than needed so we select them all {cluster_name} no filtering")
                 continue
-
 
             # -------- Cluster-specific selection strategies --------
             elif cluster_name in ['bride getting dressed','getting hair-makeup']:
@@ -668,26 +663,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                                 preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
                                                           'image_id'].values.tolist()[:need]
                         else:
-                            #preferred_color_ids  = filter_similarity(need, df.reset_index(), cluster_name)
-                            # preferred_color_ids = filter_similarity_diverse(need=need,
-                            #                                                 df=df.reset_index(),
-                            #                                                 cluster_name=cluster_name, logger=logger,
-                            #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                            #                                                 target_group_size=10)
-
-                            preferred_color_ids = select_remove_similar(need=need,
+                            preferred_color_ids = select_remove_similar(is_artificial_time,need=need,
                                                          df=df.reset_index(),
                                                          cluster_name=cluster_name, logger=logger,
                                                          # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                                          target_group_size=10)
 
-                            # preferred_color_ids = filter_similarity_diverse_new(need=need,
-                            #                                                 df=df.reset_index(),
-                            #                                                 cluster_name=cluster_name, logger=logger,
-                            #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                            #                                                 target_group_size=10)
-
-                            # set e.g. 3 to balance portrait/landscape)
                     else:
                         df = color_candidates_df
                         preferred_color_ids = df.sort_values(by='image_order', ascending=True)[
@@ -791,21 +772,11 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         df_clustered = df_clustered.loc[preferred_color_ids]
 
                 # Remove duplicates and finalize selection
-                #preferred_color_ids  = filter_similarity(need, color_candidates_df.reset_index(),cluster_name)
-                #
-                preferred_color_ids = select_remove_similar(need=need,
+                preferred_color_ids = select_remove_similar(is_artificial_time,need=need,
                                         df=df_clustered.reset_index(),
                                         cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                         target_group_size=10)
-                #
-                # preferred_color_ids = filter_similarity_diverse_new(need=need,
-                #                                                 df=df_clustered.reset_index(),
-                #                                                 cluster_name=cluster_name, logger=logger,
-                #                                                 # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                #                                                 target_group_size=10)
 
-
-                # set e.g. 3 to balance portrait/landscape)
 
                 if preferred_color_ids is None:
                     continue
@@ -815,8 +786,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 if cluster_name == 'portrait':
                     formal_query = ["formal studio-style wedding portrait, bride and groom centered, attendants standing still, bouquets held, symmetrical but there are no people behind them",
                                     "formal family portrait with bride in white dress and groom in suit AND these people are standing still AND these people are facing cameraAND these people are arranged in one or two rows"]
-
-                    #color_candidates_df = color_candidates_df[color_candidates_df["image_subquery_content"].isin(formal_query)]
                     color_candidates_df = color_candidates_df[
                         (color_candidates_df["image_subquery_content"].isin(formal_query)) &
                         (color_candidates_df["persons_ids"].apply(
@@ -828,7 +797,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                           color_candidates_df = original_valid_df
                     elif len(color_candidates_df) < need:
                          add_unformal = ["family with bride and groom group picture at night at the end of the wedding party","a group with people with bride and groom posing AND people behind them in background OR on the side of picture"]
-                         #remaining_df = original_valid_df[~original_valid_df['image_subquery_content'].isin(formal_query)]
                          remaining_df = original_valid_df[
                         (original_valid_df["image_subquery_content"].isin(add_unformal)) &
                         (original_valid_df["persons_ids"].apply(
@@ -869,7 +837,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             else:
                 # Case B: Insufficiency of Color. We need to fill the gap.
                 final_color_selection = preferred_color_ids  # Take all preferred color images
-
                 grayscale_need = need - num_preferred_color
 
                 if grayscale_need > 0 and not grayscale_candidates_df.empty:
@@ -883,25 +850,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         ).head(1).index.tolist()
                     else:
                         # Need multiple, so ensure they are diverse
-                        # final_grayscale_selection = filter_similarity(
-                        #     grayscale_need, grayscale_candidates_df.reset_index(), cluster_name
-                        # )
-                        # final_grayscale_selection = filter_similarity_diverse(need=grayscale_need,
-                        #                                 df=grayscale_candidates_df.reset_index(),
-                        #                                 cluster_name=cluster_name,logger=logger ,# df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                        #                                 target_group_size=10)
-
-                        final_grayscale_selection = select_remove_similar(need=grayscale_need,
+                        final_grayscale_selection = select_remove_similar(is_artificial_time,need=grayscale_need,
                                                      df=grayscale_candidates_df.reset_index(),
                                                      cluster_name=cluster_name, logger=logger,
                                                      # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
                                                      target_group_size=10)
 
-                        # final_grayscale_selection = filter_similarity_diverse_new(need=grayscale_need,
-                        #                                                       df=grayscale_candidates_df.reset_index(),
-                        #                                                       cluster_name=cluster_name, logger=logger,
-                        #                                                       # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                        #                                                       target_group_size=10)
 
             # --- Finalize selection for the cluster ---
             selected_ids = final_color_selection + final_grayscale_selection
