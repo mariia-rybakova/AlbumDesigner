@@ -197,8 +197,9 @@ class SelectionStage(Stage):
                     modified_lut = None
                 _msg.content['modified_lut'] = modified_lut
 
-                ai_photos_selected,spreads_dict, errors = ai_selection(df, ten_photos, people_ids,focus,tags,is_wedding,density,
-                          self.logger)
+                is_artificial_time = _msg.content['is_artificial_time']
+                ai_photos_selected,spreads_dict, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
+                                                  self.logger)
 
                 if errors:
                     self.logger.error(f"Error for Selection images for this message {_msg}")
