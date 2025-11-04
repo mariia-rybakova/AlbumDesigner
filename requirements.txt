@@ -18,3 +18,4 @@ networkx
 openpyxl
 reportlab
 pyclustering
+qdrant-client
