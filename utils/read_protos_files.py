@@ -309,7 +309,7 @@ def get_person_vectors(persons_file, logger):
     return photo_df
 
 
-def get_info_protobufs(project_base_url, logger):
+def get_info_protobufs(project_base_url, logger,clip_df=None):
     try:
         start = datetime.now()
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
@@ -322,13 +322,17 @@ def get_info_protobufs(project_base_url, logger):
 
         # List of functions to run in parallel
         functions = [
-            partial(get_image_embeddings, image_file),
             partial(get_faces_info, faces_file),
             partial(get_persons_ids, persons_file),
             partial(get_clusters_info, cluster_file),
             partial(get_photo_meta, segmentation_file),
             partial(get_person_vectors, person_vector_file)
         ]
+        
+        if clip_df is None:
+            functions.insert(0, partial(get_image_embeddings, image_file))
+        
+        
 
         results = []
         for idx, func in enumerate(functions):
@@ -338,6 +342,9 @@ def get_info_protobufs(project_base_url, logger):
             elif result.empty or result.shape[0] == 0:
                 return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
             results.append(result)
+
+        if clip_df is not None:
+            results.insert(0, clip_df)
 
         gallery_info_df = results[0]
         for res in results[1:]:

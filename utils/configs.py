@@ -42,6 +42,16 @@ CONFIGS = {'DEBUG': True,
            'merge_limit_times': 3,
            'none_limit_times': 5,
 
+            #Qdrant
+            "QDRANT_HOST": "10.0.44.13",
+            "QDRANT_COLLECTION": {1:"ImageEmbedding_V1",
+                                  2:"ImageEmbedding_V2",},
+            #mongo DB
+            "DB_NAME": "aimongo",
+            "STATUS_COLLECTION_NAME": "aiprojectstatusdal",
+            "DB_CONNECTION_STRING_VAR": "MongoConnectionString",
+
+
            #selection
            'content_threads': 4,
            'small_groups': 3,

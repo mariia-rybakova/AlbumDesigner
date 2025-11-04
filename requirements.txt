@@ -19,3 +19,4 @@ openpyxl
 reportlab
 pyclustering
 qdrant-client
+pymongo==4.7.2

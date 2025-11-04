@@ -11,7 +11,9 @@ from utils.time_processing import process_gallery_time
 from ptinfra.azure.pt_file import PTFile
 from ptinfra.utils.gallery import Gallery
 import json
-
+from bson.objectid import ObjectId
+from qdrant_client import QdrantClient, models
+from pymongo import MongoClient
 
 def read_layouts_data(message, json_content):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -119,8 +121,42 @@ def add_scenes_info(gallery_info_df, project_base_url, logger):
 
     return gallery_info_df
 
+def fetch_vectors_from_qdrant(client: QdrantClient, collection_name: str, project_id: str):
+    """
+    Fetch all vectors and their "id" from a Qdrant collection where "projectId" matches the given project_id.
 
-def read_messages(messages, logger):
+    Args:
+        client (QdrantClient): The Qdrant client instance.
+        collection_name (str): The name of the Qdrant collection.
+        project_id (str): The project ID to filter vectors.
+
+    Returns:
+        list: A list of dictionaries containing vectors and their "id".
+    """
+    vectors_with_ids = {}
+    offset = None
+
+    while True:
+        response = client.scroll(
+            collection_name=collection_name,
+            filter={
+                "must": [
+                    {"key": "projectId", "match": {"value": project_id}}
+                ]
+            },
+            limit=100,  # Adjust the batch size as needed
+            offset=offset
+        )
+        for point in response.points:
+            vectors_with_ids[point.id] = point.vector
+        if response.next_page_offset is None:
+            break
+        offset = response.next_page_offset
+
+    return vectors_with_ids
+
+
+def read_messages(messages, project_status_collection, qdrant_client, logger):
     enriched_messages = []
 
     for _msg in messages:
@@ -141,7 +177,45 @@ def read_messages(messages, logger):
 
             proto_start = datetime.now()
             project_url = json_content['base_url']
-            gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger)
+            project_id = json_content['projectId']
+            # Fetch the document from the collection
+            try:
+                if isinstance(project_id, int):
+                    doc = project_status_collection.find_one({"projectId": project_id},
+                                                                  {"isInVectorDB": 1, "imageModelVersion": 1})
+                else:
+                    doc = project_status_collection.find_one({"_id": ObjectId(project_id)},
+                                                                  {"isInVectorDB": 1, "imageModelVersion": 1})
+                is_in_vector_db = doc.get("isInVectorDB") if doc else None
+                image_model_version = doc.get("imageModelVersion") if doc else None
+            except Exception as ex:
+                logger.warning(f"Failed to read one message: {ex}")
+                is_in_vector_db = None
+                image_model_version = None
+
+            # Retrieve the isInVectorDB field
+
+            if is_in_vector_db is not None and is_in_vector_db == 1:
+                logger.info(f'Project {project_id} has isInVectorDB = 1, loading Clip embeddings from qdrant')
+                collection_name = CONFIGS["QDRANT_COLLECTION"][image_model_version]
+                try:
+                    clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, str(project_id))
+                    clip_version = image_model_version
+                    clip_df = pd.DataFrame([
+                        {"image_id": photo_id, "embedding": data["embedding"]}
+                        for photo_id, data in clip_dict.items()
+                    ])
+                except Exception as ex:
+                    _msg.error_info += str(ex)
+                    _msg.error = True
+                    raise Exception('Qdrant fetch error: {}'.format(ex))
+            else:
+                clip_df = None
+
+
+
+
+            gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
             if pt_error is not None:
                 return None, pt_error
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")

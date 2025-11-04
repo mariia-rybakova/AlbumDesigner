@@ -19,6 +19,8 @@ from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, QWriter, Message
 from ptinfra import  AbortRequested
 
+from qdrant_client import QdrantClient, models
+from pymongo import MongoClient
 
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
@@ -108,6 +110,26 @@ class ReadStage(Stage):
                  logger=None):
         super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=1)
         self.logger = logger
+        try:
+            connection_string = get_variable(CONFIGS["DB_CONNECTION_STRING_VAR"])
+            client = MongoClient(connection_string)
+            db = client[CONFIGS["DB_NAME"]]
+            self.project_status_collection = db[CONFIGS["STATUS_COLLECTION_NAME"]]
+        except Exception as ex:
+            self.logger.error(f"Failed to connect to database: {ex}")
+        try:
+            self.qdrant_client = QdrantClient(host=CONFIGS["QDRANT_HOST"],
+                                              port=6333,
+                                              # The HTTP port is often used for general access if not explicitly setting grpc_port
+                                              grpc_port=6334,  # Explicitly define the gRPC port
+                                              prefer_grpc=True
+                                              # This forces the client to use gRPC for large operations like upsert
+                                              )
+            self.logger.info(f'Initialize qdrant client, host {CONFIGS["QDRANT_HOST"]}, port 6333, grpc_port 6334')
+        except Exception as ex:
+            self.logger.error(f"Failed to connect to Qdrant: {ex}")
+
+
 
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
@@ -119,7 +141,7 @@ class ReadStage(Stage):
         start = datetime.now()
         # Read messages using a helper function
         try:
-            messages, reading_error = read_messages(messages, self.logger)
+            messages, reading_error = read_messages(messages,self.project_status_collection,self.qdrant_client, self.logger)
             if reading_error is not None:
                 self.logger.error(f"Error reading messages: {reading_error}")
                 raise Exception(f"Error reading messages: {reading_error}")
