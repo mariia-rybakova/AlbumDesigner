@@ -205,28 +205,28 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
                 is_in_vector_db = None
                 image_model_version = None
 
-                # Retrieve the isInVectorDB field
+            # Retrieve the isInVectorDB field
 
-                if is_in_vector_db is not None and is_in_vector_db == True:
-                    logger.info(
-                        f'Project {project_id} has isInVectorDB = True, loading Clip embeddings from qdrant')
-                    collection_name = CONFIGS["QDRANT_COLLECTION"][image_model_version]
-                    try:
-                        clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, project_id,
-                                                              logger=logger)
-                        clip_version = image_model_version
-                        clip_df = pd.DataFrame([
-                            {"image_id": photo_id, "embedding": data["embedding"]}
-                            for photo_id, data in clip_dict.items()
-                        ])
-                    except Exception as ex:
-                        _msg.error_info += str(ex)
-                        _msg.error = True
-                        raise Exception('Qdrant fetch error: {}'.format(ex))
-                else:
-                    clip_df = None
+            if is_in_vector_db is not None and is_in_vector_db == True:
+                logger.info(
+                    f'Project {project_id} has isInVectorDB = True, loading Clip embeddings from qdrant')
+                collection_name = CONFIGS["QDRANT_COLLECTION"][image_model_version]
+                try:
+                    clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, project_id,
+                                                          logger=logger)
+                    clip_version = image_model_version
+                    clip_df = pd.DataFrame([
+                        {"image_id": photo_id, "embedding": data["embedding"]}
+                        for photo_id, data in clip_dict.items()
+                    ])
+                except Exception as ex:
+                    _msg.error_info += str(ex)
+                    _msg.error = True
+                    raise Exception('Qdrant fetch error: {}'.format(ex))
+            else:
+                clip_df = None
 
-                _msg.clip_version = clip_version
+            _msg.clip_version = clip_version
 
 
             gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
