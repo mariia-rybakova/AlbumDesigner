@@ -18,5 +18,5 @@ networkx
 openpyxl
 reportlab
 pyclustering
-qdrant-client
+qdrant-client==1.15.1
 pymongo==4.7.2
