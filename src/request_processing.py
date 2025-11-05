@@ -215,6 +215,7 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
                     clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, project_id,
                                                           logger=logger)
                     clip_version = image_model_version
+                    _msg.clip_version = clip_version
                     clip_df = pd.DataFrame([
                         {"image_id": photo_id, "embedding": data["embedding"]}
                         for photo_id, data in clip_dict.items()
@@ -226,7 +227,7 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
             else:
                 clip_df = None
 
-            _msg.clip_version = clip_version
+
 
 
             gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
