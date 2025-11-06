@@ -11,7 +11,9 @@ from utils.time_processing import process_gallery_time
 from ptinfra.azure.pt_file import PTFile
 from ptinfra.utils.gallery import Gallery
 import json
-
+from bson.objectid import ObjectId
+from qdrant_client import QdrantClient, models
+from pymongo import MongoClient
 
 def read_layouts_data(message, json_content):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -119,8 +121,46 @@ def add_scenes_info(gallery_info_df, project_base_url, logger):
 
     return gallery_info_df
 
+def fetch_vectors_from_qdrant(client: QdrantClient, collection_name: str, project_id: int, logger=None) -> dict:
+    """
+    Fetch all vectors and their "id" from a Qdrant collection where "projectId" matches the given project_id.
+    """
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-def read_messages(messages, logger):
+    vectors_with_ids = {}
+    offset = None
+
+    logger.info(f'Start fetching vectors from Qdrant collection {collection_name} for projectId {project_id}')
+
+    while True:
+        response = client.scroll(
+            collection_name=collection_name,
+            limit=100,
+            offset=offset,
+            with_vectors=True,
+            with_payload=False,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="projectId",
+                        match=MatchValue(value=project_id)
+                    )
+                ]
+            )
+        )
+
+        for point in response[0]:
+            vectors_with_ids[point.id] = point.vector
+
+        if response[1] is None:
+            break
+        offset = response[1]
+
+    logger.info(f'Fetched {len(vectors_with_ids)} vectors from Qdrant')
+    return vectors_with_ids
+
+
+def read_messages(messages, project_status_collection, qdrant_client, logger):
     enriched_messages = []
 
     for _msg in messages:
@@ -141,7 +181,56 @@ def read_messages(messages, logger):
 
             proto_start = datetime.now()
             project_url = json_content['base_url']
-            gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger)
+            project_id = json_content['projectId']
+            # Fetch the document from the collection
+            try:
+                logger.info(f"Fetch the document from the collection {project_status_collection}")
+                if isinstance(project_id, int):
+                    doc = project_status_collection.find_one({"_id": project_id},
+                                                                  {"isInVectorDatabase": 1, "imageModelVersion": 1})
+                else:
+                    doc = project_status_collection.find_one({"_id": ObjectId(project_id)},
+                                                                  {"isInVectorDatabase": 1, "imageModelVersion": 1})
+
+                if doc is None:
+                    logger.info(f"doc not found for project_id {project_id}")
+                    is_in_vector_db = None
+                    image_model_version = None
+                else:
+                    logger.info(f"doc found for project_id {project_id}: {doc}")
+                    is_in_vector_db = doc.get("isInVectorDatabase")
+                    image_model_version = doc.get("imageModelVersion")
+            except Exception as ex:
+                logger.warning(f"Failed to read one message: {ex}")
+                is_in_vector_db = None
+                image_model_version = None
+
+            # Retrieve the isInVectorDB field
+
+            if is_in_vector_db is not None and is_in_vector_db == True:
+                logger.info(
+                    f'Project {project_id} has isInVectorDB = True, loading Clip embeddings from qdrant')
+                collection_name = CONFIGS["QDRANT_COLLECTION"][image_model_version]
+                try:
+                    clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, project_id,
+                                                          logger=logger)
+                    clip_version = image_model_version
+                    _msg.clip_version = clip_version
+                    clip_df = pd.DataFrame([
+                        {"image_id": photo_id, "embedding": data["embedding"]}
+                        for photo_id, data in clip_dict.items()
+                    ])
+                except Exception as ex:
+                    _msg.error_info += str(ex)
+                    _msg.error = True
+                    raise Exception('Qdrant fetch error: {}'.format(ex))
+            else:
+                clip_df = None
+
+
+
+
+            gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
             if pt_error is not None:
                 return None, pt_error
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
@@ -287,7 +376,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[box_id],album_ar)
+            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)],album_ar)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
                                             "compositionPackageId": message.content['compositionPackageId'],
@@ -361,7 +450,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                             if image_info is None or image_info.empty:
                                 continue
                             else:
-                                x, y, w, h = customize_box(image_info.iloc[0], box_id2data[box_id],album_ar)
+                                x, y, w, h = customize_box(image_info.iloc[0], box_id2data[(design_id,box_id)],album_ar)
                             result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
                                                             "compositionId" : counter_comp_id,
                                                             "compositionPackageId": message.content['compositionPackageId'],
@@ -403,7 +492,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(last_page_data['last_images_df'].iloc[idx], box_id2data[box_id],album_ar)
+            x, y, w, h = customize_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)],album_ar)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                                  "compositionId": counter_comp_id,
                                                  "compositionPackageId": message.content['compositionPackageId'],

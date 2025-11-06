@@ -176,14 +176,14 @@ def assign_photos_order(spreads, layout_id2data, design_box_id2data, merge_pages
         left_page_boxes = [{'id': bid,
                       'side': 0,
                       'position': idx,
-                      'area': design_box_id2data[bid]['area'],
-                      'orientation': design_box_id2data[bid]['orientation']
+                      'area': design_box_id2data[(layout_data['layout_id'],bid)]['area'],
+                      'orientation': design_box_id2data[(layout_data['layout_id'],bid)]['orientation']
                       } for idx, bid in enumerate(left_boxes_ids)]
         right_page_boxes = [{'id': bid,
                        'side': 1,
                        'position': idx,
-                       'area': design_box_id2data[bid]['area'],
-                       'orientation': design_box_id2data[bid]['orientation']
+                       'area': design_box_id2data[(layout_data['layout_id'],bid)]['area'],
+                       'orientation': design_box_id2data[(layout_data['layout_id'],bid)]['orientation']
                        } for idx, bid in enumerate(right_boxes_ids)]
 
         if merge_pages:

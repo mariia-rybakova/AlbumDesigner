@@ -259,6 +259,7 @@ def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df
 
             if df_id == 0:
                 layout_id2data[idx] = {
+                    'layout_id': layout['id'],
                     'boxes_areas': layout_boxes,
                     'left_box_ids': left_boxes_ids,
                     'right_box_ids': right_boxes_ids
@@ -279,17 +280,23 @@ def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df
                 left_square_ids = ast.literal_eval(left_square_ids)
                 right_square_ids = ast.literal_eval(right_square_ids)
             for box_id in left_portrait_ids + right_portrait_ids:
-                box_id2data[box_id] = {'orientation': 'portrait'}
+                if (layout['id'],box_id) in box_id2data:
+                    print(f"Warning: box id {(layout['id'],box_id)} already exists in box_id2data. Overwriting orientation to 'portrait'.")
+                box_id2data[(layout['id'],box_id)] = {'orientation': 'portrait'}
             for box_id in left_landscape_ids + right_landscape_ids:
-                box_id2data[box_id] = {'orientation': 'landscape'}
+                if (layout['id'],box_id) in box_id2data:
+                    print(f"Warning: box id {(layout['id'],box_id)} already exists in box_id2data. Overwriting orientation to 'landscape'.")
+                box_id2data[(layout['id'],box_id)] = {'orientation': 'landscape'}
             for box_id in left_square_ids + right_square_ids:
-                box_id2data[box_id] = {'orientation': 'square'}
+                if (layout['id'],box_id) in box_id2data:
+                    print(f"Warning: box id {(layout['id'],box_id)} already exists in box_id2data. Overwriting orientation to 'square'.")
+                box_id2data[(layout['id'],box_id)] = {'orientation': 'square'}
 
             # get boxes areas
             for item in layout_boxes:
                 box_id = item['id']
                 area = item['area']
-                box_id2data[box_id]['area'] = area
+                box_id2data[(layout['id'],box_id)]['area'] = area
 
             # get boxes info
             boxes_info = layout['boxes_info']
@@ -297,9 +304,9 @@ def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df
                 boxes_info = ast.literal_eval(boxes_info)
             for item in boxes_info:
                 box_id = item['id']
-                box_id2data[box_id]['x'] = item['x']
-                box_id2data[box_id]['y'] = item['y']
-                box_id2data[box_id]['width'] = item['width']
-                box_id2data[box_id]['height'] = item['height']
+                box_id2data[(layout['id'],box_id)]['x'] = item['x']
+                box_id2data[(layout['id'],box_id)]['y'] = item['y']
+                box_id2data[(layout['id'],box_id)]['width'] = item['width']
+                box_id2data[(layout['id'],box_id)]['height'] = item['height']
 
     return layout_id2data, box_id2data
