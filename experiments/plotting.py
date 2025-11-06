@@ -37,6 +37,7 @@ def plot_groups_to_pdf(
     cluster_name: str,
     cluster_label: str,
     output_dir: os.PathLike = None,
+    selected_images:list=[],
     *,
     cols: int = 5,
     rows: int = 6,
@@ -60,7 +61,7 @@ def plot_groups_to_pdf(
     thumbs_per_page = cols * rows
     pdf_path = str((output_dir / f"groups_preview_{cluster_name}_{cluster_label}.pdf").resolve())
 
-    # Flatten "_SINGLES_" into standard keys
+    # Normalise "_SINGLES_" into standard keys
     groups_norm: Dict[str, List[int]] = {}
     for gk, idxs in groups.items():
         if gk == "_SINGLES_":
@@ -68,6 +69,9 @@ def plot_groups_to_pdf(
                 groups_norm[f"S{i}"] = list(sub)
         else:
             groups_norm[gk] = list(idxs)
+
+    # Convert selected_images to a set of ints for O(1) lookup
+    selected_set = set(map(int, selected_images)) if selected_images else set()
 
     with PdfPages(pdf_path) as pdf:
         for gk, idxs in groups_norm.items():
@@ -77,14 +81,14 @@ def plot_groups_to_pdf(
             group_df = df.loc[idxs]
             k_select = min(int(alloc.get(gk, 0)), len(group_df))
 
-            # Build (image_id, time, path)
+            # Build (image_id, time, path, label)
             image_info = []
             for _, row in group_df.iterrows():
-                image_id = str(row["image_id"])
+                image_id = int(row["image_id"])  # keep as int for comparison
                 image_time = str(row.get("image_time_date", ""))
                 path = _resolve_image_path(images_dir, image_id)
                 label = row["cluster_label"]
-                image_info.append((image_id, image_time, path,label))
+                image_info.append((image_id, image_time, path, label))
 
             # Paginate through group
             for page_i, chunk in enumerate(_chunk_iterable(image_info, thumbs_per_page), 1):
@@ -106,8 +110,11 @@ def plot_groups_to_pdf(
                         continue
 
                     global_idx = (page_i - 1) * thumbs_per_page + ax_idx
-                    image_id, image_time, path,label = chunk[ax_idx]
-                    is_selected = global_idx < k_select
+                    image_id, image_time, path, label = chunk[ax_idx]
+
+                    # ----- selection flags -----
+                    is_selected_by_alloc = global_idx < k_select
+                    is_user_selected = image_id in selected_set
 
                     # === Show image ===
                     if path and path.exists():
@@ -130,11 +137,21 @@ def plot_groups_to_pdf(
                         fontsize=6, ha="center", va="top", transform=ax.transAxes, color="dimgray"
                     )
 
-                    # === Borders ===
+                    # === Borders (red for alloc‑selected) ===
                     ax.set_frame_on(True)
                     for spine in ax.spines.values():
-                        spine.set_linewidth(3 if is_selected else 0.8)
-                        spine.set_color("tab:red" if is_selected else "gray")
+                        spine.set_linewidth(3 if is_selected_by_alloc else 0.8)
+                        spine.set_color("tab:red" if is_selected_by_alloc else "gray")
+
+                    # === Green rectangle overlay for user‑selected images ===
+                    if is_user_selected:
+                        # Create a rectangle that exactly covers the image area
+                        rect = plt.Rectangle(
+                            (0, 0), 1, 1, transform=ax.transAxes,
+                            facecolor="green", edgecolor="green",
+                            linewidth=4, alpha=0.3, zorder=10
+                        )
+                        ax.add_patch(rect)
 
                 plt.tight_layout(pad=tight_layout_pad, rect=[0, 0, 1, 0.95])
                 pdf.savefig(fig, dpi=150)

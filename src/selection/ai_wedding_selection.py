@@ -12,8 +12,9 @@ from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from utils.time_processing import convert_to_timestamp
 from src.selection.person_clustering import person_max_union_selection
-from utils.selection.time_orientation_selection import select_images_by_time_and_style,identify_temporal_clusters,filter_similarity
-from utils.selection.testing_selection import filter_similarity_diverse,filter_similarity_diverse_new,select_remove_similar
+from utils.selection.time_orientation_selection import identify_temporal_clusters
+#from utils.selection.filtering_selection import select_remove_similar
+from utils.selection.refactoring import select_remove_similar
 
 
 
@@ -551,7 +552,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             return scored_df, available_img_ids,False
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
-            # print("Cluster name", cluster_name)
+            print("Cluster name", cluster_name)
             # if cluster_name != "getting hair-makeup":
             #     continue
             n_actual = len(cluster_df)
@@ -639,6 +640,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
             # If enough remaining or too few to process more
             if has <= need:
+                #Change hereeeeeee apply filtering
                 # filter images based on people and query even if has less than need
                 to_add =  valid_images_df.assign(_pid=valid_images_df["persons_ids"].apply(tuple)).sort_values("image_order", ascending=True).drop_duplicates(subset=["_pid", "image_subquery_content"], keep="first").head(need)["image_id"].tolist()
                 ai_images_selected.extend(to_add)
@@ -872,47 +874,4 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
     return ai_images_selected,spreads_allocation, error_message
 
 
-# # Get scores for each image
-# scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
-#
-# if scores is None:
-#     continue
-#
-# # Skip cluster if all scores are zero or below threshold
-# if all(score <= 0 for _, score in scores):
-#     continue
-#
-# has = len(scored_df)
-#
-# candidates_images_scores = [(image_id, score) for image_id, score in scores
-#                             if score > selection_threshold[cluster_name]]
-#
-# if len(candidates_images_scores) < need and len(candidates_images_scores) < has:
-#     candidates_images_scores = []
-#     for iter_idx, (index, row) in enumerate(scored_df.iterrows()):
-#         if iter_idx < need:
-#             candidates_images_scores.append((row['image_id'], row['total_score']))
-#     # pass
-# sorted_candidates_images_scores = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
-# available_img_ids = [image_id for image_id, _ in sorted_candidates_images_scores]
 
-#
-# grayscale_images = [img for img in images_filtered if df_clustered.at[img, 'image_color'] == 0]
-#                 num_grayscale = len(grayscale_images)
-#                 gray_needed = random.choice([1, 2]) if num_grayscale > CONFIGS['grays_scale_limit'] else (
-#                     1 if grayscale_images else 0)
-#
-#                 # Select grayscale images
-#                 selected_gray_image = []
-#                 if gray_needed:
-#                     gray_df = df_clustered.loc[grayscale_images].sort_values(by='total_score', ascending=False)
-#                     selected_gray_image = gray_df.head(gray_needed).index.tolist()
-#                     ai_images_selected.extend(selected_gray_image)
-#                     need -= len(selected_gray_image)
-#
-#                 colored_images = [
-#                     img for img in images_filtered
-#                     if img not in grayscale_images and img not in selected_gray_image
-#                 ]
-#
-#                 filtered_colored_df = df_clustered.loc[colored_images]
