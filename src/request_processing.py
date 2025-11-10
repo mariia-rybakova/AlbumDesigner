@@ -217,11 +217,11 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
                     clip_version = image_model_version
                     _msg.clip_version = clip_version
                     clip_df = pd.DataFrame([
-                        {"image_id": photo_id, "embedding": data["embedding"]}
+                        {"image_id": photo_id, "embedding": data}
                         for photo_id, data in clip_dict.items()
                     ])
+                    clip_df['model_version'] = image_model_version
                 except Exception as ex:
-                    _msg.error_info += str(ex)
                     _msg.error = True
                     raise Exception('Qdrant fetch error: {}'.format(ex))
             else:
