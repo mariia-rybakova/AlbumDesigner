@@ -1379,7 +1379,7 @@ def select_remove_similar(
                 final_selected.append(iid)
                 picked += 1
                 # append to selected matrix
-                v = id_to_unit[iid].reshape(1, -1)
+                v = np.asarray(id_to_unit[iid]).reshape(1, -1)
                 selected_mat = v if selected_mat is None else np.vstack([selected_mat, v])
 
 
