@@ -15,6 +15,8 @@ from bson.objectid import ObjectId
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 
+from experiments.plotting import plot_selected_rows_to_pdf
+
 def read_layouts_data(message, json_content):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
         if 'designInfoTempLocation' in json_content:
@@ -120,6 +122,82 @@ def add_scenes_info(gallery_info_df, project_base_url, logger):
     gallery_info_df[['scene_order', 'image_order']] = gallery_info_df[['scene_order', 'image_order']].astype('Int64')
 
     return gallery_info_df
+
+
+def identify_kiss_ceremony(df, logger=None):
+
+    # allowed values
+    cluster_context_allowed = [None, "kiss", "ceremony"]
+    query_allowed = ["kiss", "ceremony"]
+    subquery_allowed = [
+        "bride and groom kissing romantically",
+        "wedding kiss at ceremony",
+        "officiant leading wedding ceremony",
+    ]
+
+    # --- normalize strings ---
+    df = df.copy()
+    df["ts"] = pd.to_datetime(df["image_time_date"], errors="coerce")
+    df["cluster_context_norm"] = df["cluster_context"].astype(str).str.lower().replace("none", None)
+    df["query_norm"] = df["image_query_content"].astype(str).str.lower().str.strip()
+    df["subquery_norm"] = df["image_subquery_content"].astype(str).str.lower().str.strip()
+
+    # --- filter dataframe using list membership like your mask style ---
+    df_filtered = df[
+        df["cluster_context"].apply(lambda x: x in cluster_context_allowed)
+        & df["image_query_content"].apply(lambda x: x in query_allowed)
+        & df["image_subquery_content"].apply(lambda x: x in subquery_allowed)
+        ]
+
+    # --- 1️⃣ get the ceremony group and ceremony time window ---
+    ceremony_df = df[df["cluster_context"] == "ceremony"]
+    ceremony_start = ceremony_df["ts"].min()
+    ceremony_end = ceremony_df["ts"].max()
+
+    if pd.isna(ceremony_start) or pd.isna(ceremony_end):
+        selected_rows = df.iloc[0:0]  # empty
+    else:
+        # --- 2️⃣ find the image(s) where subquery == "officiant leading wedding ceremony" ---
+        officiant_df = df[df["image_subquery_content"] == "officiant leading wedding ceremony"]
+        officiant_df = officiant_df[officiant_df["ts"].between(ceremony_start, ceremony_end)]
+
+        if officiant_df.empty:
+            selected_rows = df.iloc[0:0]
+        else:
+            # --- 3️⃣ find images containing "kiss" (from your allowed lists) ---
+            kiss_df = df_filtered[
+                df["image_subquery_content"].apply(
+                    lambda x: "kiss" in str(x).lower()
+                )
+                | df["image_query_content"].apply(
+                    lambda x: "kiss" in str(x).lower()
+                )
+                ]
+
+            last_officiant_ts = officiant_df["ts"].max()
+
+            if pd.isna(last_officiant_ts):
+                kiss_near_officiant_df = kiss_df.iloc[0:0]  # no anchors -> empty
+            else:
+                start = last_officiant_ts - pd.Timedelta(minutes=6)
+                end = last_officiant_ts + pd.Timedelta(minutes=6)
+
+                # If you also want to keep it inside the ceremony window, add the second condition
+                kiss_near_officiant_df = kiss_df[
+                    kiss_df["ts"].between(start, end, inclusive="both")
+                    & kiss_df["ts"].between(ceremony_start, ceremony_end, inclusive="both")
+                    ]
+
+            # --- 5️⃣ mark and save ---
+            df.loc[kiss_near_officiant_df.index, "cluster_context"] = "may kiss bride"
+            selected_rows = kiss_near_officiant_df
+
+    plot_selected_rows_to_pdf(selected_rows)
+    print("plotting done")
+
+    return df
+
+
 
 def fetch_vectors_from_qdrant(client: QdrantClient, collection_name: str, project_id: int, logger=None) -> dict:
     """
@@ -228,8 +306,6 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
                 clip_df = None
 
 
-
-
             gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
             if pt_error is not None:
                 return None, pt_error
@@ -239,9 +315,10 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
             gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
 
             # add time data
-
             gallery_info_df,is_artificial_time = process_gallery_time(_msg, gallery_info_df, logger)
 
+            # detect Ceremony kiss photos
+            gallery_info_df = identify_kiss_ceremony(gallery_info_df, logger=logger)
 
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
@@ -253,6 +330,11 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
 
             logger.info(
                 f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
+
+
+
+
+
 
         except Exception as ex:
             tb = traceback.extract_tb(ex.__traceback__)
