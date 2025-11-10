@@ -415,21 +415,21 @@ def select_remove_similar(
                 final_selected.append(iid)
                 picked += 1
                 # append to selected matrix
-                v = id_to_unit[iid].reshape(1, -1)
+                v = np.array(id_to_unit[iid]).reshape(1, -1)
                 selected_mat = v if selected_mat is None else np.vstack([selected_mat, v])
 
-    pdf_path = plot_groups_to_pdf(
-        groups=groups,  # your {group_key: [row_idx,...]}
-        alloc=alloc,  # your {group_key: k_to_select}
-        df=df,  # must contain 'image_id'
-        images_dir=r"C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset/47981912",
-        # folder with files named like <image_id>.jpg/png/...
-        cluster_name=cluster_name,
-        cluster_label='cluster_label',
-        output_dir=r"C:\Users\user\Desktop\PicTime\AlbumDesigner\output\47981912",  # optional; defaults to images_dir
-        cols=5, rows=6,
-        selected_images=final_selected# 30 thumbs per page
-    )
-    print("PDF written to:", pdf_path)
+    # pdf_path = plot_groups_to_pdf(
+    #     groups=groups,  # your {group_key: [row_idx,...]}
+    #     alloc=alloc,  # your {group_key: k_to_select}
+    #     df=df,  # must contain 'image_id'
+    #     images_dir=r"C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset/47981912",
+    #     # folder with files named like <image_id>.jpg/png/...
+    #     cluster_name=cluster_name,
+    #     cluster_label='cluster_label',
+    #     output_dir=r"C:\Users\user\Desktop\PicTime\AlbumDesigner\output\47981912",  # optional; defaults to images_dir
+    #     cols=5, rows=6,
+    #     selected_images=final_selected# 30 thumbs per page
+    # )
+    # print("PDF written to:", pdf_path)
     return final_selected
 

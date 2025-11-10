@@ -387,8 +387,6 @@ def calculate_optimal_selection(
     logger
     ):
     try:
-
-
         min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict)
 
         TARGET_SPREADS = max_total_spreads
