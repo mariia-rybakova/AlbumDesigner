@@ -124,7 +124,64 @@ def add_scenes_info(gallery_info_df, project_base_url, logger):
     return gallery_info_df
 
 
+
+def is_ceremony_gallery_sat(df: pd.DataFrame, logger=None):
+    """
+    SAT = gallery eligible to run the kiss-detection logic.
+
+    Rules:
+      1) Ceremony start/end must be valid and in logical order (end >= start).
+      2) Ceremony start and end occur on the same calendar day.
+      3) All ceremony images occur on the same calendar day (not just min/max).
+
+    Returns:
+      (eligible: bool, reason: str)
+    """
+    if df.empty:
+        return False, "Empty dataframe"
+
+    # normalize/parse
+    tmp = df.copy()
+    if "image_time_date" not in tmp.columns or "cluster_context" not in tmp.columns:
+        return False, "Missing required columns"
+
+    tmp["ts"] = pd.to_datetime(tmp["image_time_date"], errors="coerce")
+    ceremony_df = tmp[tmp["cluster_context"] == "ceremony"]
+
+    if ceremony_df.empty:
+        return False, "No ceremony images"
+
+    ceremony_start = ceremony_df["ts"].min()
+    ceremony_end = ceremony_df["ts"].max()
+
+    if pd.isna(ceremony_start) or pd.isna(ceremony_end):
+        return False, "Ceremony timestamps contain NaT"
+
+    if ceremony_end < ceremony_start:
+        return False, "Ceremony end precedes start"
+
+    # same-day check for start/end
+    if  pd.Series([ceremony_start, ceremony_end]).dt.date.nunique() != 1:
+        return False, "Ceremony spans multiple days (min/max day mismatch)"
+
+    # all ceremony images on same day
+    if ceremony_df["ts"].nunique() == 1:
+        return False, "Not all ceremony images share the same day"
+
+    if logger:
+        logger.info(
+            "Ceremony SAT: start=%s end=%s count=%d",
+            ceremony_start, ceremony_end, len(ceremony_df)
+        )
+    return True, "OK"
+
 def identify_kiss_ceremony(df, logger=None):
+    eligible, reason = is_ceremony_gallery_sat(df, logger=logger)
+    if not eligible:
+        if logger:
+            logger.warning("Gallery not SAT: %s", reason)
+
+        return df
 
     # allowed values
     cluster_context_allowed = [None, "kiss", "ceremony"]
