@@ -14,8 +14,7 @@ import json
 from bson.objectid import ObjectId
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
-
-from experiments.plotting import plot_selected_rows_to_pdf
+#from experiments.plotting import plot_selected_rows_to_pdf
 
 def read_layouts_data(message, json_content):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -249,8 +248,8 @@ def identify_kiss_ceremony(df, logger=None):
             df.loc[kiss_near_officiant_df.index, "cluster_context"] = "may kiss bride"
             selected_rows = kiss_near_officiant_df
 
-    plot_selected_rows_to_pdf(selected_rows)
-    print("plotting done")
+    # plot_selected_rows_to_pdf(selected_rows)
+    # print("plotting done")
 
     return df
 

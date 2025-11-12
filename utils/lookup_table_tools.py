@@ -37,7 +37,7 @@ wedding_lookup_table = {
     'inside vehicle':(2,0.5),
     'rings': (3, 0.5),
     'suit': (3, 0.5),
-    'may kiss bride': (2, 0.5),
+    'may kiss bride': (1, 0.2),
 }
 
 non_wedding_lookup_table = {
