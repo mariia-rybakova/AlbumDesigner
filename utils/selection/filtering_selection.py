@@ -1237,6 +1237,7 @@ def _chunk_by_scene_cluster(
 
     return groups
 
+
 def select_remove_similar(
     is_artificial_time:bool,
     need: int,

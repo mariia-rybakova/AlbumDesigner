@@ -207,7 +207,9 @@ relations = {'brideAndGroom':{
     'vehicle': (2,0.01),
     'inside vehicle':(2,0.01),
     'suit':(1, 0.5),
-    'rings':(1,0.5)
+    'rings':(1,0.5),
+    'may kiss bride': (1, 0.2),
+
 
 },
     'parents': {
@@ -248,7 +250,8 @@ relations = {'brideAndGroom':{
         'vehicle': (2, 0.01),
         'inside vehicle': (2, 0.01),
         'suit': (0, 0.5),
-        'rings': (1, 0.5)
+        'rings': (1, 0.5),
+        'may kiss bride': (1, 0.2),
 
     }
 ,'everyoneElse':{
@@ -288,7 +291,8 @@ relations = {'brideAndGroom':{
     'vehicle': (1,0.01),
     'inside vehicle':(1,0.01),
     'suit':(1, 0.5),
-    'rings': (1, 0.5)
+    'rings': (1, 0.5),
+    'may kiss bride': (1, 0.2),
 
 }}
 

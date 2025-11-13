@@ -37,6 +37,7 @@ def plot_groups_to_pdf(
     cluster_name: str,
     cluster_label: str,
     output_dir: os.PathLike = None,
+    selected_images:list=[],
     *,
     cols: int = 5,
     rows: int = 6,
@@ -60,7 +61,7 @@ def plot_groups_to_pdf(
     thumbs_per_page = cols * rows
     pdf_path = str((output_dir / f"groups_preview_{cluster_name}_{cluster_label}.pdf").resolve())
 
-    # Flatten "_SINGLES_" into standard keys
+    # Normalise "_SINGLES_" into standard keys
     groups_norm: Dict[str, List[int]] = {}
     for gk, idxs in groups.items():
         if gk == "_SINGLES_":
@@ -68,6 +69,9 @@ def plot_groups_to_pdf(
                 groups_norm[f"S{i}"] = list(sub)
         else:
             groups_norm[gk] = list(idxs)
+
+    # Convert selected_images to a set of ints for O(1) lookup
+    selected_set = set(map(int, selected_images)) if selected_images else set()
 
     with PdfPages(pdf_path) as pdf:
         for gk, idxs in groups_norm.items():
@@ -77,14 +81,14 @@ def plot_groups_to_pdf(
             group_df = df.loc[idxs]
             k_select = min(int(alloc.get(gk, 0)), len(group_df))
 
-            # Build (image_id, time, path)
+            # Build (image_id, time, path, label)
             image_info = []
             for _, row in group_df.iterrows():
-                image_id = str(row["image_id"])
+                image_id = int(row["image_id"])  # keep as int for comparison
                 image_time = str(row.get("image_time_date", ""))
                 path = _resolve_image_path(images_dir, image_id)
                 label = row["cluster_label"]
-                image_info.append((image_id, image_time, path,label))
+                image_info.append((image_id, image_time, path, label))
 
             # Paginate through group
             for page_i, chunk in enumerate(_chunk_iterable(image_info, thumbs_per_page), 1):
@@ -106,8 +110,11 @@ def plot_groups_to_pdf(
                         continue
 
                     global_idx = (page_i - 1) * thumbs_per_page + ax_idx
-                    image_id, image_time, path,label = chunk[ax_idx]
-                    is_selected = global_idx < k_select
+                    image_id, image_time, path, label = chunk[ax_idx]
+
+                    # ----- selection flags -----
+                    is_selected_by_alloc = global_idx < k_select
+                    is_user_selected = image_id in selected_set
 
                     # === Show image ===
                     if path and path.exists():
@@ -130,14 +137,128 @@ def plot_groups_to_pdf(
                         fontsize=6, ha="center", va="top", transform=ax.transAxes, color="dimgray"
                     )
 
-                    # === Borders ===
+                    # === Borders (red for alloc‑selected) ===
                     ax.set_frame_on(True)
                     for spine in ax.spines.values():
-                        spine.set_linewidth(3 if is_selected else 0.8)
-                        spine.set_color("tab:red" if is_selected else "gray")
+                        spine.set_linewidth(3 if is_selected_by_alloc else 0.8)
+                        spine.set_color("tab:red" if is_selected_by_alloc else "gray")
+
+                    # === Green rectangle overlay for user‑selected images ===
+                    if is_user_selected:
+                        # Create a rectangle that exactly covers the image area
+                        rect = plt.Rectangle(
+                            (0, 0), 1, 1, transform=ax.transAxes,
+                            facecolor="green", edgecolor="green",
+                            linewidth=4, alpha=0.3, zorder=10
+                        )
+                        ax.add_patch(rect)
 
                 plt.tight_layout(pad=tight_layout_pad, rect=[0, 0, 1, 0.95])
                 pdf.savefig(fig, dpi=150)
                 plt.close(fig)
+
+    return pdf_path
+
+
+def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
+                                  images_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\46245951',output_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\output\46245951',
+                                  cols=5,
+                                  rows=6,
+                                  facecolor="white",
+                                  dpi=150,
+                                  pdf_name="bride_kiss.pdf"):
+    images_dir = Path(images_dir)
+    output_dir = Path(output_dir) if output_dir is not None else images_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    thumbs_per_page = cols * rows
+    pdf_path = str((output_dir / pdf_name).resolve())
+    if selected_rows is None or selected_rows.empty:
+        return pdf_path
+
+    def _plot_meta(ax, image_id, image_time, img_query, img_subquery, img_context):
+        meta_lines = [
+            f"ID: {image_id}",
+            f"Time: {image_time}",
+            f"Query: {img_query}",
+            f"Sub: {img_subquery}",
+            f"Context: {'None' if pd.isna(img_context) else img_context}",
+        ]
+        # Put the block a bit lower and reserve bottom margin at the figure level
+        ax.text(
+            0.5, -0.12, "\n".join(meta_lines),
+            fontsize=7, ha="center", va="top",
+            transform=ax.transAxes, family="monospace", linespacing=1.15, wrap=True
+        )
+
+    with PdfPages(pdf_path) as pdf:
+        fig = None
+        axes = None
+        total = len(selected_rows)
+
+        for i, (_, row) in enumerate(selected_rows.iterrows(), start=1):
+            # New page
+            if (i - 1) % thumbs_per_page == 0:
+                if fig is not None:
+                    plt.tight_layout(pad=1.2, rect=[0, 0.20, 1, 0.94])  # extra bottom for text
+                    pdf.savefig(fig, dpi=dpi)
+                    plt.close(fig)
+
+                # Slightly larger thumbs than before (clearer, but not huge)
+                fig, axes = plt.subplots(rows, cols,
+                                         figsize=(cols * 2.4, rows * 3.0),
+                                         facecolor=facecolor)
+                axes = np.array(axes).reshape(rows, cols)
+                page_idx = (i - 1) // thumbs_per_page + 1
+                total_pages = math.ceil(total / thumbs_per_page)
+                fig.suptitle(f"Selected Bride Kiss Images — Page {page_idx}/{total_pages}",
+                             fontsize=14, fontweight="bold")
+
+                for ax in axes.ravel():
+                    ax.axis("on")  # keep spines for borders
+                    ax.set_xticks([]);
+                    ax.set_yticks([])  # hide tick marks
+                    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+
+            # Cell
+            cell = (i - 1) % thumbs_per_page
+            ax = axes.ravel()[cell]
+
+            # Data
+            image_id = int(row["image_id"])
+            image_time = str(row.get("image_time_date", ""))
+            path = _resolve_image_path(images_dir, image_id)
+            label = row.get("cluster_label", "")
+            img_query = str(row.get("image_query_content", ""))
+            img_subquery = str(row.get("image_subquery_content", ""))
+            img_context = row.get("cluster_context", None)
+
+            # Image
+            if path and path.exists():
+                try:
+                    with Image.open(path) as im:
+                        ax.imshow(im)
+                except (UnidentifiedImageError, OSError):
+                    ax.text(0.5, 0.5, "Unreadable", ha="center", va="center", fontsize=9)
+            else:
+                ax.text(0.5, 0.5, "Missing", ha="center", va="center", fontsize=9)
+
+            # Title above image
+            ax.set_title(f"{i}. {image_id} | {label}", fontsize=9, pad=2)
+
+            # Metadata block (5 separate lines) under image
+            _plot_meta(ax, image_id, image_time, img_query, img_subquery, img_context)
+
+            # Clean border (thin gray)
+            for spine in ax.spines.values():
+                spine.set_linewidth(0.9)
+                spine.set_color("gray")
+
+            # Save page if needed
+            if (i % thumbs_per_page == 0) or (i == total):
+                plt.tight_layout(pad=1.2, rect=[0, 0.20, 1, 0.94])
+                pdf.savefig(fig, dpi=dpi)
+                plt.close(fig)
+                fig = None
 
     return pdf_path
