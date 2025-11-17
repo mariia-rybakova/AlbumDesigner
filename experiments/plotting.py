@@ -161,12 +161,12 @@ def plot_groups_to_pdf(
 
 
 def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
-                                  images_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\46245951',output_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\output\46245951',
+                                  images_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\46227780',output_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\output\46227780',
                                   cols=5,
                                   rows=6,
                                   facecolor="white",
                                   dpi=150,
-                                  pdf_name="bride_kiss.pdf"):
+                                  pdf_name="parents.pdf"):
     images_dir = Path(images_dir)
     output_dir = Path(output_dir) if output_dir is not None else images_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -176,13 +176,14 @@ def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
     if selected_rows is None or selected_rows.empty:
         return pdf_path
 
-    def _plot_meta(ax, image_id, image_time, img_query, img_subquery, img_context):
+    def _plot_meta(ax, image_id, image_time, img_query, img_subquery, img_context,parents):
         meta_lines = [
             f"ID: {image_id}",
             f"Time: {image_time}",
             f"Query: {img_query}",
             f"Sub: {img_subquery}",
             f"Context: {'None' if pd.isna(img_context) else img_context}",
+            f"parents: {parents}",
         ]
         # Put the block a bit lower and reserve bottom margin at the figure level
         ax.text(
@@ -211,7 +212,7 @@ def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
                 axes = np.array(axes).reshape(rows, cols)
                 page_idx = (i - 1) // thumbs_per_page + 1
                 total_pages = math.ceil(total / thumbs_per_page)
-                fig.suptitle(f"Selected Bride Kiss Images — Page {page_idx}/{total_pages}",
+                fig.suptitle(f"Selected Parents Images — Page {page_idx}/{total_pages}",
                              fontsize=14, fontweight="bold")
 
                 for ax in axes.ravel():
@@ -232,6 +233,7 @@ def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
             img_query = str(row.get("image_query_content", ""))
             img_subquery = str(row.get("image_subquery_content", ""))
             img_context = row.get("cluster_context", None)
+            parents = row.get("parent_category", "")
 
             # Image
             if path and path.exists():
@@ -247,7 +249,7 @@ def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
             ax.set_title(f"{i}. {image_id} | {label}", fontsize=9, pad=2)
 
             # Metadata block (5 separate lines) under image
-            _plot_meta(ax, image_id, image_time, img_query, img_subquery, img_context)
+            _plot_meta(ax, image_id, image_time, img_query, img_subquery, img_context,parents)
 
             # Clean border (thin gray)
             for spine in ax.spines.values():

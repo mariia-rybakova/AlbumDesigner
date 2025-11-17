@@ -18,6 +18,7 @@ from utils.protos import BGSegmentation_pb2 as meta_vector
 from utils.protos import PersonInfo_pb2 as person_info
 from utils.protos  import ContentCluster_pb2 as content_cluster
 from utils.protos import PersonVector_pb2 as person_vector
+from utils.protos import SocialCircle_pb2 as social_circle
 
 
 def get_image_embeddings(file, logger):
@@ -182,13 +183,28 @@ def get_persons_ids(persons_file, logger):
         photo_ids = []
         persons_ids_list = []
         id_to_gender = {}
+        person_rows = []
 
         # Extract persons information and prepare for DataFrame update
         for iden in identity_info:
             id = iden.identityNumeralId
             infos = iden.personInfo
             gender = infos.gender
+            age = infos.age
+
             id_to_gender[id] = gender
+            best_photo = infos.bestPhoto
+
+            person_rows.append(
+                {
+                    "identity_id": iden.identityNumeralId,
+                    "age": age,
+                    "gender": gender,
+                    "best_photo_id": best_photo,
+                }
+            )
+
+
             for im in infos.imagesInfo:
                 photo_ids.append(im.photoId)
                 persons_ids_list.append(id)
@@ -217,12 +233,14 @@ def get_persons_ids(persons_file, logger):
         persons_info_df['main_persons'] = [top_person_ids for _ in range(len(persons_info_df))]
         persons_info_df['persons_ids'] = persons_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
 
+        # add social dataframe to person dataframe
+        person_df = pd.DataFrame(person_rows)
 
     except Exception as e:
         logger.error("Error reading persons info from file: {}".format(e))
         return None
 
-    return persons_info_df
+    return persons_info_df,person_df
 
 
 def get_clusters_info(cluster_file, logger):
@@ -308,6 +326,50 @@ def get_person_vectors(persons_file, logger):
 
     return photo_df
 
+def get_social_circle(social_circle_file, logger):
+    try:
+        social_info_bytes = PTFile(social_circle_file)  # Load file
+        if not social_info_bytes.exists():
+            return None
+        social_info_bytes = social_info_bytes.read_blob()
+        social_descriptor = social_circle.SocialCircleMessageWrapper()
+        social_descriptor.ParseFromString(social_info_bytes)
+
+        if social_descriptor.WhichOneof("versions") == 'v1':
+            message_data = social_descriptor.v1
+        else:
+            logger.error('There is no appropriate version of Social Circle message.')
+            raise ValueError('There is no appropriate version of  Social Circle message.')
+
+        # --- 1. Access the v1 version ---
+        data_v1 = message_data
+
+        # --- 2. Extract social circles ---
+        social_circles = data_v1.socialCircles
+
+        circle_data = []
+
+        for idx, circle in enumerate(social_circles):
+            # identityNumeralId is a list<int32>
+            ids = list(circle.identityNumeralId) if circle.identityNumeralId else []
+
+            circle_data.append({
+                "circle_index": idx,
+                "identity_ids": ids,
+                "num_ids": len(ids)
+            })
+
+        social_df = pd.DataFrame(circle_data)
+
+        # Optional: if there are no circles, create empty DataFrame
+        if social_df.empty:
+            social_df = pd.DataFrame(columns=["circle_index", "identity_ids", "num_ids"])
+
+    except Exception as ex:
+        logger.error(f"Error reading social circle file from file: {ex}")
+        return None
+
+    return social_df
 
 def get_info_protobufs(project_base_url, logger,clip_df=None):
     try:
@@ -318,6 +380,7 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
         cluster_file = os.path.join(project_base_url, 'content_cluster.pb')
         segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
         person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
+
         files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
 
         # List of functions to run in parallel
@@ -326,17 +389,27 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
             partial(get_persons_ids, persons_file),
             partial(get_clusters_info, cluster_file),
             partial(get_photo_meta, segmentation_file),
-            partial(get_person_vectors, person_vector_file)
+            partial(get_person_vectors, person_vector_file),
+
         ]
         
         if clip_df is None:
             functions.insert(0, partial(get_image_embeddings, image_file))
-        
-        
+
+        persons_details_df = None
 
         results = []
         for idx, func in enumerate(functions):
             result = func(logger)
+
+            # handle special case where function returns (df, extra)
+            if isinstance(result, tuple):
+                df, extra = result
+                result = df
+
+                # assume this is get_persons_ids; store extra as persons_details_df
+                persons_details_df = extra
+
             if result is None:
                 return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
             elif result.empty or result.shape[0] == 0:
@@ -420,8 +493,6 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
                 lambda x: x if isinstance(x, (list, tuple)) else []
             )
 
-
-
         # Get Query Content of each image
         if gallery_info_df is not None:
             model_version = gallery_info_df.iloc[0]['model_version']
@@ -440,9 +511,14 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
         # Cluster people by number of people inside the image
         gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
-        return gallery_info_df, is_wedding, None
+
+        # get social circle of the project
+        social_circle_file = os.path.join(project_base_url, 'social_circles.pb')
+        social_circle_df = get_social_circle(social_circle_file,logger)
+
+        return gallery_info_df, is_wedding,social_circle_df,persons_details_df, None
 
     except Exception as ex:
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
-        return None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+        return None, None,None,None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
