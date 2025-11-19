@@ -11,7 +11,7 @@ wedding_lookup_table = {
     'full party': (4, 0.5),
     'large_portrait': (2, 0.5),
     'small_portrait': (5, 0.5),
-    'portrait': (5, 0.5),
+    'portrait': (2, 0.5),
     'very large group': (2, 0.5),
     'walking the aisle': (4, 0.75),
     'bride getting dressed': (9, 1),
@@ -37,8 +37,11 @@ wedding_lookup_table = {
     'inside vehicle':(2,0.5),
     'rings': (3, 0.5),
     'suit': (3, 0.5),
-    'may kiss bride': (1, 0.2),
-}
+    'may kiss bride': (1, 0.9),
+    'bride and groom with parents': (2, 0.9),
+    'groom with his parents': (1, 0.9),
+    'bride with her parents': (1, 0.9),
+    }
 
 non_wedding_lookup_table = {
     '1':(2,0.4),

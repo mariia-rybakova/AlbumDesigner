@@ -483,7 +483,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             'first dance', 'cake cutting', 'ceremony', 'dancing'
         }
 
-        persons_categories = {'portrait', 'very large group','speech'}
+        persons_categories = {'portrait', 'very large group','speech',"bride and groom with parents", "groom with his parents","bride with her parents"}
 
         # Load configs and mapping
         event_mapping = load_event_mapping(CONFIGS['focus_csv_path'], logger)
