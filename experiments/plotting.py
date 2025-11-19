@@ -171,8 +171,8 @@ from PIL import Image, UnidentifiedImageError
 
 
 def plot_selected_rows_to_pdf(selected_rows: pd.DataFrame,
-                              images_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\46229128',
-                              output_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\output\46229128',
+                              images_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\47981912',
+                              output_dir=r'C:\Users\user\Desktop\PicTime\AlbumDesigner\output\47981912',
                               cols=5,
                               rows=5,  # Reduced slightly to give more breathing room per page
                               facecolor="white",

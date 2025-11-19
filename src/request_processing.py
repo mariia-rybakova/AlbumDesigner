@@ -321,6 +321,9 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
         Updated gallery_info_df (copy) with 'cluster_context' changed
         from 'portrait' to 'portrait with parent' where relevant.
     """
+    if social_circle_df is None:
+        logger.info(f'No social circle data found to identify parents')
+        return gallery_info_df
 
     df = gallery_info_df.copy()
 
@@ -363,8 +366,9 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
 
     for _, row in social_circle_df.iterrows():
         ids = row.get("identity_ids") or []
-        if len(ids) == 2:
-            couple_pairs.add(frozenset(ids))
+        # here only for the couple
+        # if len(ids) == 2:
+        couple_pairs.update(ids)
 
     AGE_TOLERANCE = 10.0
 
@@ -384,12 +388,12 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
 
         persons_set = set(persons_ids)
 
-        # exactly 4 distinct people
-        if len(persons_set) != 4:
+        # exactly 4 distinct people or 3 people
+        if len(persons_set) != 4 and len(persons_set) != 3:
             return None
 
         # must contain both bride & groom
-        if bride_id not in persons_set or groom_id not in persons_set:
+        if bride_id not in persons_set and groom_id not in persons_set:
             return None
 
         # get the other two
@@ -398,17 +402,25 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
             # should not happen if len(persons_set) == 4, but be safe
             return None
 
-        pair = frozenset(remaining)
-
-        # check if this pair is a known "couple" from social circles
-        if pair not in couple_pairs:
-            return None
+        pair = set(remaining)
 
         parent_age_1 = id_to_age.get(remaining[0])
         parent_age_2 = id_to_age.get(remaining[1])
 
+        parent_gender_1 = id_to_gender.get(remaining[0])
+        parent_gender_2 = id_to_gender.get(remaining[1])
+
+        # check if this pair is a known "couple" from social circles
+        if not (pair & couple_pairs) or (parent_gender_1 == parent_gender_2):
+            return None
+
         if abs(parent_age_1 - (bride_age + 20.0)) <= AGE_TOLERANCE or  abs(parent_age_2 - (groom_age + 20.0)) <= AGE_TOLERANCE or abs(parent_age_2 - (bride_age + 20.0)) <= AGE_TOLERANCE or abs(parent_age_1 - (groom_age + 20.0)) <= AGE_TOLERANCE:
-          return  "bride and groom with parents"
+            if bride_id in persons_set and groom_id not in persons_set:
+                 return "bride with her parents"
+            elif bride_id not in persons_set and groom_id in persons_set:
+                 return "groom with his parents"
+            else:
+                return  "bride and groom with parents"
         else:
             return None
 
@@ -416,7 +428,11 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
     portrait_df["parent_category"] = portrait_df["persons_ids"].apply(classify_persons)
 
 
-    to_print = portrait_df[portrait_df["parent_category"] ==  "bride and groom with parents"]
+    to_print = portrait_df[
+    (portrait_df["parent_category"] == "bride and groom with parents") |
+    (portrait_df["parent_category"] == "bride with her parents") |
+    (portrait_df["parent_category"] == "groom with his parents")
+    ]
     plot_selected_rows_to_pdf(to_print)
     print("plotting done")
 
