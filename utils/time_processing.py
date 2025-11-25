@@ -199,12 +199,12 @@ def build_time_clusters(selected_df, all_photos_df=None):
 def generate_time_clusters(message, sorted_df, logger):
     sorted_df['time_cluster'] = build_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
     if message.content['is_wedding']:
-        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], logger)
+        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'],True, logger)
 
     return sorted_df
 
 
-def merge_time_clusters_by_context(sorted_df, context_clusters_list, logger=None):
+def merge_time_clusters_by_context(sorted_df, context_clusters_list, merge_all=True, logger=None):
     """
     Modifies time clusters based on context clusters.
     For each context cluster in the list, sets the same time cluster for all rows with that context cluster.
@@ -230,9 +230,15 @@ def merge_time_clusters_by_context(sorted_df, context_clusters_list, logger=None
             if len(context_group) > 0:
                 # Find the most common time cluster in this context group
                 most_common_time = context_group['time_cluster'].mode().iloc[0]
-
+                
+                time_cluster_mask = df['time_cluster'].isin(context_group['time_cluster'].unique())
+                
                 # Update time cluster for all rows with this context cluster
-                df.loc[mask, 'time_cluster'] = most_common_time
+                if merge_all:
+                    df.loc[time_cluster_mask, 'time_cluster'] = most_common_time
+                else:
+                    df.loc[mask, 'time_cluster'] = most_common_time
+
 
         return df
     except Exception as ex:

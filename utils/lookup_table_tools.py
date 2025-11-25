@@ -19,7 +19,7 @@ wedding_lookup_table = {
     'cake cutting': (6, 1),
     'ceremony': (5, 1),
     'couple': (6, 1),
-    'dancing': (24, 1),
+    'dancing': (24, 4),
     'entertainment': (2, 0.5),
     'kiss': (4, 0.5),
     'pet': (4, 0.5),
