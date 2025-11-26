@@ -483,8 +483,8 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             'first dance', 'cake cutting', 'ceremony', 'dancing'
         }
 
-        persons_categories = {'portrait', 'very large group','speech',"bride and groom with parents", "groom with his parents","bride with her parents"}
-
+        persons_categories = {'portrait', 'very large group','speech'}
+        parents_categories = {"parents portrait"}
         # Load configs and mapping
         event_mapping = load_event_mapping(CONFIGS['focus_csv_path'], logger)
 
@@ -550,9 +550,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             return scored_df, available_img_ids,False
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
-            print("Cluster name", cluster_name)
-            # if cluster_name != "getting hair-makeup":
-            #     continue
             n_actual = len(cluster_df)
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
@@ -823,6 +820,16 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     image_cluster_dict=image_order_dict,
                     logger=logger
                 )
+
+
+            elif cluster_name in parents_categories:
+                BGP = "bride and groom with parents"
+                BWP = "bride with her parents"
+                GWP = "groom with his parents"
+
+
+
+
             else:
                 clusters_ids = get_clusters(color_candidates_df.reset_index())  # df was indexed earlier
                 preferred_color_ids = select_non_similar_images(clusters_ids, image_order_dict, need)

@@ -224,14 +224,12 @@ def identify_kiss_ceremony(df, logger=None):
             selected_rows = df.iloc[0:0]
         else:
             # --- 3️⃣ find images containing "kiss" (from your allowed lists) ---
-            kiss_df = df_filtered[
-                df["image_subquery_content"].apply(
-                    lambda x: "kiss" in str(x).lower()
-                )
-                | df["image_query_content"].apply(
-                    lambda x: "kiss" in str(x).lower()
-                )
-                ]
+            kiss_mask = (
+                    df_filtered["image_subquery_content"].str.lower().str.contains("kiss", na=False)
+                    | df_filtered["image_query_content"].str.lower().str.contains("kiss", na=False)
+            )
+
+            kiss_df = df_filtered[kiss_mask]
 
             last_officiant_ts = officiant_df["ts"].max()
 
@@ -344,11 +342,11 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
     bride_age = id_to_age.get(bride_id)
     groom_age = id_to_age.get(groom_id)
 
-    all_person_ids = (
-        df["persons_ids"]
-        .dropna()
-        .explode()
-    )
+    # all_person_ids = (
+    #     df["persons_ids"]
+    #     .dropna()
+    #     .explode()
+    # )
 
     # # Filter out bride & groom
     # all_person_ids = all_person_ids[~all_person_ids.isin([bride_id, groom_id])]
@@ -414,7 +412,7 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
         if not (pair & couple_pairs) or (parent_gender_1 == parent_gender_2):
             return None
 
-        if abs(parent_age_1 - (bride_age + 20.0)) <= AGE_TOLERANCE or  abs(parent_age_2 - (groom_age + 20.0)) <= AGE_TOLERANCE or abs(parent_age_2 - (bride_age + 20.0)) <= AGE_TOLERANCE or abs(parent_age_1 - (groom_age + 20.0)) <= AGE_TOLERANCE:
+        if abs(parent_age_1 - (bride_age + 15.0)) <= AGE_TOLERANCE or  abs(parent_age_2 - (groom_age + 15.0)) <= AGE_TOLERANCE or abs(parent_age_2 - (bride_age + 15.0)) <= AGE_TOLERANCE or abs(parent_age_1 - (groom_age + 15.0)) <= AGE_TOLERANCE:
             if bride_id in persons_set and groom_id not in persons_set:
                  return "bride with her parents"
             elif bride_id not in persons_set and groom_id in persons_set:
@@ -428,24 +426,21 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
     portrait_df["parent_category"] = portrait_df["persons_ids"].apply(classify_persons)
 
 
-    to_print = portrait_df[
-    (portrait_df["parent_category"] == "bride and groom with parents") |
-    (portrait_df["parent_category"] == "bride with her parents") |
-    (portrait_df["parent_category"] == "groom with his parents")
-    ]
-    plot_selected_rows_to_pdf(to_print)
-    print("plotting done")
+    # to_print = portrait_df[
+    # (portrait_df["parent_category"] == "bride and groom with parents") |
+    # (portrait_df["parent_category"] == "bride with her parents") |
+    # (portrait_df["parent_category"] == "groom with his parents")
+    # ]
+    # plot_selected_rows_to_pdf(to_print)
+    # print("plotting done")
 
 
     # update cluster_context where a category was found
     mask = portrait_df["parent_category"].notna()
-    portrait_df.loc[mask, "cluster_context"] = portrait_df.loc[mask, "parent_category"]
+    portrait_df.loc[mask, "cluster_context"] = "parents portrait"
 
-    # push changes back into main df
-    df.update(portrait_df)
-
-    # optional: drop helper column if it ends up in df
-    df.drop(columns=["parent_category"], inplace=True, errors="ignore")
+    df.loc[portrait_df.index, ["parent_category", "cluster_context"]] = portrait_df[
+        ["parent_category", "cluster_context"]]
 
     if logger:
         updated_count = int(mask.sum())

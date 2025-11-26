@@ -38,9 +38,10 @@ wedding_lookup_table = {
     'rings': (3, 0.5),
     'suit': (3, 0.5),
     'may kiss bride': (1, 0.9),
-    'bride and groom with parents': (2, 0.9),
-    'groom with his parents': (1, 0.9),
-    'bride with her parents': (1, 0.9),
+    'bride and groom with parents': (3, 0.9),
+    'groom with his parents': (2, 0.9),
+    'bride with her parents': (2, 0.9),
+    'parents portrait': (3, 0.9)
     }
 
 non_wedding_lookup_table = {

@@ -212,6 +212,7 @@ relations = {'brideAndGroom':{
     'bride and groom with parents': (1, 0.2),
     'groom with his parents': (1, 0.2),
     'bride with her parents': (1, 0.2),
+    'parents portrait': (1, 0.2)
 
 
 },
@@ -258,6 +259,7 @@ relations = {'brideAndGroom':{
         'bride and groom with parents': (1, 0.2),
         'groom with his parents': (1, 0.2),
         'bride with her parents': (1, 0.2),
+        'parents portrait':(1,0.2)
 
     }
 ,'everyoneElse':{
@@ -302,6 +304,7 @@ relations = {'brideAndGroom':{
     'bride and groom with parents': (1, 0.2),
     'groom with his parents': (1, 0.2),
     'bride with her parents': (1, 0.2),
+    'parents portrait': (1, 0.2)
 
 }}
 
