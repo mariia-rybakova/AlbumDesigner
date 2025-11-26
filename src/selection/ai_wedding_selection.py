@@ -550,7 +550,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             return scored_df, available_img_ids,False
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
-            # print("Cluster name", cluster_name)
             n_actual = len(cluster_df)
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual

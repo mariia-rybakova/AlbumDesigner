@@ -626,7 +626,7 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * class_mix
             if left_check[2]:
                 spread_scores[j] = spread_scores[j] * color_mix
-            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, left_check[3] - 1)
+            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, max(1,left_check[3]) - 1)
             if layouts_df.at[spread[0], 'left_mixed']:
                 spread_scores[j] = spread_scores[j] * orientation_mix
             right_check = check_page(spread[2], photos)
@@ -638,7 +638,7 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
                 spread_scores[j] = spread_scores[j] * color_mix
             if layouts_df.at[spread[0], 'right_mixed']:
                 spread_scores[j] = spread_scores[j] * orientation_mix
-            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, right_check[3] - 1)
+            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, max(1,right_check[3]) - 1)
             if not left_check[0] and not right_check[0]:
                 # if two pages has gray colors give it much more worse
                 spread_scores[j] = spread_scores[j] * double_mix_color
@@ -683,7 +683,7 @@ def eval_single_comb(comb, photo_times, cluster_labels):
     score = 1
     for spread in comb:
 
-        spread_times = [photo_times[id] for id in spread]
+        spread_times = [photo_times[id]/60.0 for id in spread]
         spread_labels = [cluster_labels[id] for id in spread]
 
         time_std = np.std(spread_times)
