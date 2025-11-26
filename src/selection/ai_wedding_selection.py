@@ -484,7 +484,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         }
 
         persons_categories = {'portrait', 'very large group','speech'}
-
+        parents_categories = {"parents portrait"}
         # Load configs and mapping
         event_mapping = load_event_mapping(CONFIGS['focus_csv_path'], logger)
 
@@ -550,9 +550,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             return scored_df, available_img_ids,False
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
-            # print("Cluster name", cluster_name)
-            # if cluster_name != "getting hair-makeup":
-            #     continue
             n_actual = len(cluster_df)
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
@@ -678,22 +675,27 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 # Cluster by time and find most solo person
                 #df_with_time_cluster = cluster_by_time(valid_images_df, logger)
                 original_pool = color_candidates_df.copy()
-                filtered_df = color_candidates_df
-                groom_id = int(filtered_df['groom_id'].to_list()[0])
-                bride_id = int(filtered_df['bride_id'].to_list()[0])
+                filtered_df = color_candidates_df.copy()
+
+                groom_id = int(filtered_df['groom_id'].iloc[0])
+                bride_id = int(filtered_df['bride_id'].iloc[0])
+
                 if cluster_name == 'bride':
                     filtered_df = filtered_df[
                         filtered_df['persons_ids'].apply(lambda x: x == [bride_id])
                     ]
                 elif  cluster_name == 'groom':
                     if len(color_candidates_df) < need * 2:
-                        filtered_df = filtered_df
+                        filtered_df = filtered_df.copy()
                     else:
                         filtered_df = filtered_df[
                         filtered_df['persons_ids'].apply(lambda x: x == [groom_id])
                     ]
 
                 elif cluster_name == "bride and groom":
+                    groom_id = int(filtered_df['groom_id'].iloc[0])
+                    bride_id = int(filtered_df['bride_id'].iloc[0])
+
                     # Filter images that contain both top two IDs or have 2 faces or 2 bodies
                     def has_both_ids_or_two_faces_bodies(row):
                         ids = {str(v) for v in row.get("persons_ids", [])}
@@ -823,6 +825,119 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     image_cluster_dict=image_order_dict,
                     logger=logger
                 )
+
+
+            elif cluster_name in parents_categories:
+                BGP = "bride and groom with parents"
+                BWP = "bride with her parents"
+                GWP = "groom with his parents"
+
+                bgp_df = color_candidates_df[
+                    color_candidates_df["parent_category"] == BGP
+                    ].copy()
+
+                bride_groom_set = {bride_id, groom_id}
+
+                bgp_df["parent_ids"] = bgp_df["persons_ids"].apply(
+                    lambda ids: tuple(sorted(i for i in ids if i not in bride_groom_set))
+                )
+
+                selected_bgp_idx = []
+                used_parent_sets = set()
+
+                # Greedy pass: prioritize rows with *new* parent sets
+                # (keep current ordering – or sort by some score if you have one)
+                if need >=2:
+                    BGP_need = 2
+                else:
+                    BGP_need = 1
+
+                for idx, row in bgp_df.iterrows():
+                    if len(selected_bgp_idx) >= BGP_need:
+                        break
+
+                    parent_ids = row["parent_ids"]
+
+                    # First image: always take it
+                    if not used_parent_sets:
+                        selected_bgp_idx.append(idx)
+                        used_parent_sets.add(parent_ids)
+                        continue
+
+                    # Next images: prefer different parent sets
+                    if parent_ids not in used_parent_sets:
+                        selected_bgp_idx.append(idx)
+                        used_parent_sets.add(parent_ids)
+
+                selected_bgp_df = bgp_df.loc[selected_bgp_idx]
+                remaining_need = max(0, need - len(selected_bgp_df))
+
+                if remaining_need % 2 == 0:
+                    pairs_needed = remaining_need // 2
+
+                    # Filter BWP and GWP
+                    bwp_df = color_candidates_df[
+                        color_candidates_df["parent_category"] == BWP
+                        ].copy()
+
+                    gwp_df = color_candidates_df[
+                        color_candidates_df["parent_category"] == GWP
+                        ].copy()
+
+                    if not bwp_df.empty or not gwp_df.empty:
+
+                        # Ensure image_time is datetime
+                        bwp_df["image_time"] = pd.to_datetime(bwp_df["image_time"])
+                        gwp_df["image_time"] = pd.to_datetime(gwp_df["image_time"])
+
+                        # Sort by time to make pairing easier
+                        bwp_df = bwp_df.sort_values("image_time")
+                        gwp_df = gwp_df.sort_values("image_time")
+
+                        selected_bwp_idx = []
+                        selected_gwp_idx = []
+                        used_gwp_idx = set()
+
+                        ten_minutes = pd.Timedelta(minutes=10)
+
+                        # Greedy: for each BWP, find closest GWP in time within ±10 minutes
+                        for bwp_idx, bwp_row in bwp_df.iterrows():
+                            if len(selected_bwp_idx) >= pairs_needed:
+                                break
+
+                            b_time = bwp_row["image_time"]
+
+                            # candidate GWP rows not yet used, within time window
+                            candidates = gwp_df[
+                                (~gwp_df.index.isin(used_gwp_idx)) &
+                                (gwp_df["image_time"].between(b_time - ten_minutes,
+                                                              b_time + ten_minutes))
+                                ]
+
+                            if candidates.empty:
+                                continue
+
+                            # pick GWP with minimum absolute time difference
+                            time_diffs = (candidates["image_time"] - b_time).abs()
+                            best_gwp_idx = time_diffs.idxmin()
+
+                            selected_bwp_idx.append(bwp_idx)
+                            selected_gwp_idx.append(best_gwp_idx)
+                            used_gwp_idx.add(best_gwp_idx)
+
+                        selected_bwp_df = color_candidates_df.loc[selected_bwp_idx]
+                        selected_gwp_df = color_candidates_df.loc[selected_gwp_idx]
+
+                        final_selected_df = pd.concat(
+                            [selected_bgp_df, selected_bwp_df, selected_gwp_df],
+                            axis=0
+                        )
+
+                        # If you just want image IDs:
+                        preferred_color_ids = final_selected_df["image_id"].tolist()
+                    else:
+                       preferred_color_ids = selected_bgp_df["image_id"].tolist()
+
             else:
                 clusters_ids = get_clusters(color_candidates_df.reset_index())  # df was indexed earlier
                 preferred_color_ids = select_non_similar_images(clusters_ids, image_order_dict, need)

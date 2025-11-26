@@ -4,6 +4,8 @@ import traceback
 
 from datetime import datetime
 
+from pycparser.c_ast import Continue
+
 from utils.configs import CONFIGS
 from utils.layouts_tools import generate_layouts_df, get_layouts_data
 from utils.read_protos_files import get_info_protobufs
@@ -14,7 +16,8 @@ import json
 from bson.objectid import ObjectId
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
-#from experiments.plotting import plot_selected_rows_to_pdf
+from experiments.plotting import plot_selected_rows_to_pdf
+from collections import Counter
 
 def read_layouts_data(message, json_content):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -221,14 +224,12 @@ def identify_kiss_ceremony(df, logger=None):
             selected_rows = df.iloc[0:0]
         else:
             # --- 3️⃣ find images containing "kiss" (from your allowed lists) ---
-            kiss_df = df_filtered[
-                df["image_subquery_content"].apply(
-                    lambda x: "kiss" in str(x).lower()
-                )
-                | df["image_query_content"].apply(
-                    lambda x: "kiss" in str(x).lower()
-                )
-                ]
+            kiss_mask = (
+                    df_filtered["image_subquery_content"].str.lower().str.contains("kiss", na=False)
+                    | df_filtered["image_query_content"].str.lower().str.contains("kiss", na=False)
+            )
+
+            kiss_df = df_filtered[kiss_mask]
 
             last_officiant_ts = officiant_df["ts"].max()
 
@@ -292,6 +293,160 @@ def fetch_vectors_from_qdrant(client: QdrantClient, collection_name: str, projec
 
     logger.info(f'Fetched {len(vectors_with_ids)} vectors from Qdrant')
     return vectors_with_ids
+
+
+def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logger):
+    """
+    Identify images that contain bride/groom with their parents and update
+    'cluster_context' from 'portrait' to 'portrait with parent' for those images.
+
+    Inputs:
+        social_circle_df:
+            - columns: ['identity_ids', ...]
+            - 'identity_ids' is a list of identityNumeralId in each social circle
+
+        persons_details_df:
+            - columns: ['identity_id', 'age', 'gender', ...]
+            - one row per identity
+
+        gallery_info_df:
+            - columns at least:
+                ['image_id', 'persons_ids', 'main_persons', 'cluster_context']
+            - 'persons_ids' is list of identities in that image
+            - 'main_persons' is a list of [bride_id, groom_id] (or similar)
+
+    Returns:
+        Updated gallery_info_df (copy) with 'cluster_context' changed
+        from 'portrait' to 'portrait with parent' where relevant.
+    """
+    if social_circle_df is None:
+        logger.info(f'No social circle data found to identify parents')
+        return gallery_info_df
+
+    df = gallery_info_df.copy()
+
+    # --- Build lookup dicts for age & gender ---
+    id_to_age = persons_details_df.set_index("identity_id")["age"].to_dict()
+    id_to_gender = persons_details_df.set_index("identity_id")["gender"].to_dict()
+
+    # Collect all main_persons ids
+    main_ids_series = df["main_persons"].dropna()
+    main_ids = (
+        main_ids_series.explode()
+        .dropna()
+        .unique()
+    )
+    # does'nt matter the gender whether its bride or groom
+    bride_id = main_ids[0]
+    groom_id = main_ids[1]
+    bride_age = id_to_age.get(bride_id)
+    groom_age = id_to_age.get(groom_id)
+
+    # all_person_ids = (
+    #     df["persons_ids"]
+    #     .dropna()
+    #     .explode()
+    # )
+
+    # # Filter out bride & groom
+    # all_person_ids = all_person_ids[~all_person_ids.isin([bride_id, groom_id])]
+    #
+    # id_counts = Counter(all_person_ids)
+    # # Get top 5 most common ids (if <5 exist, get them all)
+    # top5_ids = [pid for pid, _ in id_counts.most_common(5)]
+
+
+    if bride_age is None or groom_age is None:
+        logger.info("Missing age information for bride or groom; skipping parent detection.")
+        return df
+
+    couple_pairs = set()  # set of frozenset({id1, id2})
+
+    for _, row in social_circle_df.iterrows():
+        ids = row.get("identity_ids") or []
+        # here only for the couple
+        # if len(ids) == 2:
+        couple_pairs.update(ids)
+
+    AGE_TOLERANCE = 10.0
+
+    portrait_df = df[df["cluster_context"] == "portrait"].copy()
+
+    def classify_persons(persons_ids):
+        """
+        Classify a single image based only on persons_ids.
+
+        Rules:
+          - must have exactly 4 distinct people
+          - must contain bride_id and groom_id
+          - the remaining 2 ids must form a couple in social_circle_df
+        """
+        if not isinstance(persons_ids, (list, tuple)):
+            return None
+
+        persons_set = set(persons_ids)
+
+        # exactly 4 distinct people or 3 people
+        if len(persons_set) != 4 and len(persons_set) != 3:
+            return None
+
+        # must contain both bride & groom
+        if bride_id not in persons_set and groom_id not in persons_set:
+            return None
+
+        # get the other two
+        remaining = list(persons_set - {bride_id, groom_id})
+        if len(remaining) != 2:
+            # should not happen if len(persons_set) == 4, but be safe
+            return None
+
+        pair = set(remaining)
+
+        parent_age_1 = id_to_age.get(remaining[0])
+        parent_age_2 = id_to_age.get(remaining[1])
+
+        parent_gender_1 = id_to_gender.get(remaining[0])
+        parent_gender_2 = id_to_gender.get(remaining[1])
+
+        # check if this pair is a known "couple" from social circles
+        if not (pair & couple_pairs) or (parent_gender_1 == parent_gender_2):
+            return None
+
+        if abs(parent_age_1 - (bride_age + 15.0)) <= AGE_TOLERANCE or  abs(parent_age_2 - (groom_age + 15.0)) <= AGE_TOLERANCE or abs(parent_age_2 - (bride_age + 15.0)) <= AGE_TOLERANCE or abs(parent_age_1 - (groom_age + 15.0)) <= AGE_TOLERANCE:
+            if bride_id in persons_set and groom_id not in persons_set:
+                 return "bride with her parents"
+            elif bride_id not in persons_set and groom_id in persons_set:
+                 return "groom with his parents"
+            else:
+                return  "bride and groom with parents"
+        else:
+            return None
+
+    # classify only portrait rows
+    portrait_df["parent_category"] = portrait_df["persons_ids"].apply(classify_persons)
+
+
+    # to_print = portrait_df[
+    # (portrait_df["parent_category"] == "bride and groom with parents") |
+    # (portrait_df["parent_category"] == "bride with her parents") |
+    # (portrait_df["parent_category"] == "groom with his parents")
+    # ]
+    # plot_selected_rows_to_pdf(to_print)
+    # print("plotting done")
+
+
+    # update cluster_context where a category was found
+    mask = portrait_df["parent_category"].notna()
+    portrait_df.loc[mask, "cluster_context"] = "parents portrait"
+
+    df.loc[portrait_df.index, ["parent_category", "cluster_context"]] = portrait_df[
+        ["parent_category", "cluster_context"]]
+
+    if logger:
+        updated_count = int(mask.sum())
+        logger.info(f"Updated {updated_count} images to 'bride and groom with parents' based on 4-person couples.")
+
+    return df
 
 
 def read_messages(messages, project_status_collection, qdrant_client, logger):
@@ -362,7 +517,7 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
                 clip_df = None
 
 
-            gallery_info_df, is_wedding, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
+            gallery_info_df, is_wedding,social_circle_df,persons_details_df, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
             if pt_error is not None:
                 return None, pt_error
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
@@ -376,6 +531,9 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
             # detect Ceremony kiss photos
             gallery_info_df = identify_kiss_ceremony(gallery_info_df, logger=logger)
 
+            # parents detection
+            gallery_info_df = identify_parents(social_circle_df,persons_details_df,gallery_info_df, logger=logger)
+
             if not gallery_info_df.empty:
                 _msg.content['gallery_photos_info'] = gallery_info_df
                 _msg.content['is_wedding'] = is_wedding
@@ -386,11 +544,6 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
 
             logger.info(
                 f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
-
-
-
-
-
 
         except Exception as ex:
             tb = traceback.extract_tb(ex.__traceback__)

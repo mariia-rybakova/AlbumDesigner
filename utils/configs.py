@@ -177,7 +177,7 @@ relations = {'brideAndGroom':{
 
     'large_portrait': (4, 0.5),
     'small_portrait': (7, 0.5),
-    'portrait': (7, 0.1),
+    'portrait': (5, 0.1),
     'very large group': (8, 0.5),
     'walking the aisle': (6, 0.4),
 
@@ -209,6 +209,10 @@ relations = {'brideAndGroom':{
     'suit':(1, 0.5),
     'rings':(1,0.5),
     'may kiss bride': (1, 0.2),
+    'bride and groom with parents': (1, 0.2),
+    'groom with his parents': (1, 0.2),
+    'bride with her parents': (1, 0.2),
+    'parents portrait': (1, 0.2)
 
 
 },
@@ -221,7 +225,7 @@ relations = {'brideAndGroom':{
         'bride party': (4, 0.5),
         'groom party': (4, 0.5),
         'full party': (4, 0.5),
-        'portrait': (10, 0.1),
+        'portrait': (5, 0.1),
         'very large group': (10, 0.5),
         'walking the aisle': (4, 0.4),
 
@@ -252,6 +256,10 @@ relations = {'brideAndGroom':{
         'suit': (0, 0.5),
         'rings': (1, 0.5),
         'may kiss bride': (1, 0.2),
+        'bride and groom with parents': (1, 0.2),
+        'groom with his parents': (1, 0.2),
+        'bride with her parents': (1, 0.2),
+        'parents portrait':(1,0.2)
 
     }
 ,'everyoneElse':{
@@ -293,6 +301,10 @@ relations = {'brideAndGroom':{
     'suit':(1, 0.5),
     'rings': (1, 0.5),
     'may kiss bride': (1, 0.2),
+    'bride and groom with parents': (1, 0.2),
+    'groom with his parents': (1, 0.2),
+    'bride with her parents': (1, 0.2),
+    'parents portrait': (1, 0.2)
 
 }}
 
