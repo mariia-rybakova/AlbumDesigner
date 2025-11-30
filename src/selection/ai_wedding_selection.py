@@ -533,7 +533,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             # CASE 2: scoring required
             scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
             if scores is None or all(score <= 0 for _, score in scores):
-                return None, []
+                return None, [],True
             candidates_images_scores = [
                 (image_id, score) for image_id, score in scores
                 if score > selection_threshold[cluster_name]
