@@ -542,7 +542,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 # fallback: at least top N images
                 candidates_images_scores = [
                     (row['image_id'], row['total_score'])
-                    for _, row in scored_df.head(images_allocation[cluster_name]).iterrows()
+                    for _, row in scored_df.head(images_allocation[cluster_name]*3).iterrows()
                 ]
 
             sorted_candidates = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
