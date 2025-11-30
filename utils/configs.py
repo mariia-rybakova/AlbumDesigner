@@ -508,5 +508,6 @@ selection_threshold = {
     'inside vehicle':0.15,
     'rings':0.15,
     'suit':0.15,
+    'parents portrait':0.15,
 
 }
