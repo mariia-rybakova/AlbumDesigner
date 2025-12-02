@@ -20,3 +20,4 @@ reportlab
 pyclustering
 qdrant-client==1.15.1
 pymongo==4.7.2
+python-dateutil
