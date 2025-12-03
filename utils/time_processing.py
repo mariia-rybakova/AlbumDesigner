@@ -197,9 +197,14 @@ def build_time_clusters(selected_df, all_photos_df=None):
 
 
 def generate_time_clusters(message, sorted_df, logger):
-    sorted_df['time_cluster'] = build_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
+
+
+    if 'scene_index' in sorted_df.columns and sorted_df['scene_index'].nunique() > 4:
+        sorted_df['time_cluster'] = sorted_df['scene_index']
+    else:
+        sorted_df['time_cluster'] = build_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
     if message.content['is_wedding']:
-        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'],True, logger)
+        sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], True, logger)
 
     return sorted_df
 
@@ -259,21 +264,38 @@ def check_time_correctness(time_list):
     return True
 
 
-def get_artificial_images_time(base_url):
+def get_artificial_images_time(base_url, gallery_info_df,time_correctness):
     photos_metadata = Gallery(base_url)
 
-    image_id2artificial_time = dict()
-    artificial_time = 0
+    scenes=[]
+    gallery_info_df['scene_name'] = ''
+    gallery_info_df['idx_in_scene'] = None
     for scene in photos_metadata.scenes:
-        for photo in scene.photos:
-            try:
-                filename = photo.get_filename()
-                image_id2artificial_time[np.int64(filename.split('.')[0])] = artificial_time
-                artificial_time += 10
-            except Exception as e:
-                pass
-        artificial_time += 1800
-    return image_id2artificial_time
+        photo_count=0
+        for idx,photo in enumerate(scene.photos):
+            photo_count+=1
+            gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'scene_name'] = scene.name
+            gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'idx_in_scene'] = idx
+        if photo_count>0:
+            scenes.append({'name':scene.name,'photo_count':photo_count,'priority':scene.viewPrio})
+
+    scene_df = pd.DataFrame(scenes)
+    scene_df = scene_df.sort_values(by=['priority'], ascending=True)
+    scene_df['scene_index'] = range(len(scene_df))
+    scene_df['cumulative_photo_count'] = scene_df['photo_count'].shift(1).fillna(0).cumsum()
+    scene_df['start_time'] = scene_df['cumulative_photo_count'] * 10 + scene_df['scene_index'] * 1800
+    gallery_info_df = gallery_info_df.merge(scene_df[['name', 'scene_index', 'start_time']],
+                                            left_on='scene_name',
+                                            right_on='name',
+                                            how='left')
+    gallery_info_df = gallery_info_df.drop('name', axis=1)
+    if not time_correctness:
+        gallery_info_df['general_time'] = gallery_info_df.apply(
+            lambda row: row['start_time'] + row['idx_in_scene'] * 10 if pd.notnull(row['start_time']) and pd.notnull(row['idx_in_scene']) else None,
+            axis=1
+        )
+    gallery_info_df = gallery_info_df.drop(['start_time', 'idx_in_scene'], axis=1)
+    return gallery_info_df
 
 
 def process_gallery_time(message, gallery_info_df, logger):
@@ -285,11 +307,13 @@ def process_gallery_time(message, gallery_info_df, logger):
 
     # check if gallery has time info
     general_time = gallery_info_df['general_time'].tolist()
-    if not check_time_correctness(general_time):
+    time_correctness = check_time_correctness(general_time)
+    gallery_info_df = get_artificial_images_time(message.content['base_url'], gallery_info_df,
+                                                 time_correctness)
+    if not time_correctness:
         logger.warning("Time info is not correct. Using artificial time.")
-        image_id2artificial_time = get_artificial_images_time(message.content['base_url'])
-        gallery_info_df['general_time'] = gallery_info_df['image_id'].map(image_id2artificial_time).fillna(gallery_info_df['general_time'])
-        gallery_info_df = gallery_info_df.sort_values(by="general_time", ascending=True)
+        # gallery_info_df['general_time'] = gallery_info_df['image_id'].map(image_id2artificial_time).fillna(gallery_info_df['general_time'])
+        # gallery_info_df = gallery_info_df.sort_values(by="general_time", ascending=True)
         is_artificial_time = True
 
 
