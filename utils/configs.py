@@ -509,5 +509,7 @@ selection_threshold = {
     'rings':0.15,
     'suit':0.15,
     'parents portrait':0.15,
+    'may kiss bride':0.15,
+    'parents portrait':0.15,
 
 }
