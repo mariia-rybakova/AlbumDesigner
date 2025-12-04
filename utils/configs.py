@@ -340,7 +340,10 @@ limit_imgs = {
     'invite': 1,
     'wedding dress': 1,
     'rings': 1,
-    'vehicle': 1
+    'vehicle': 1,
+    'parents portrait':2,
+    'may kiss bride':1
+
 }
 
 label_list = [
@@ -412,12 +415,15 @@ spreads_required_per_category = {
     'None':0,
     'wedding dress': 1,
     'vehicle':0,
-    'inside vehicle':0
+    'inside vehicle':0,
+    'may kiss bride':1,
+    'parents portrait':1,
+
 }
 
 priority_categories = ['bride and groom',
-                       'bride','groom','ceremony','bride party',
-    'groom party','full party','dancing','large_portrait',
+                       'bride','groom','ceremony', 'may kiss bride','bride party',
+    'groom party','full party','dancing','large_portrait', 'parents portrait',
     'portrait','very large group',
     'walking the aisle',
     'first dance','cake cutting','bride getting dressed',
@@ -470,7 +476,9 @@ min_images_per_category = {
     'wedding dress': 1,
     'vehicle': 1,
     'inside vehicle': 1,
-    'rings':1
+    'rings':1,
+    'parents portrait':2,
+    'may kiss bride':1
 
 }
 
@@ -508,7 +516,6 @@ selection_threshold = {
     'inside vehicle':0.15,
     'rings':0.15,
     'suit':0.15,
-    'parents portrait':0.15,
     'may kiss bride':0.15,
     'parents portrait':0.15,
 
