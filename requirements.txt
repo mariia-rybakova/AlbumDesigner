@@ -1,5 +1,5 @@
 numpy==1.26.4
-pandas
+pandas==2.2.3
 scikit-learn
 k_means_constrained
 opencv-python
