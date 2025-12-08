@@ -439,8 +439,11 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
     mask = portrait_df["parent_category"].notna()
     portrait_df.loc[mask, "cluster_context"] = "parents portrait"
 
-    df.loc[portrait_df.index, ["parent_category", "cluster_context"]] = portrait_df[
-        ["parent_category", "cluster_context"]]
+    # df.loc[portrait_df.index, ["parent_category", "cluster_context"]] = portrait_df[
+    #     ["parent_category", "cluster_context"]]
+
+    df.loc[portrait_df.index, "parent_category"] = portrait_df["parent_category"].astype("object")
+    df.loc[portrait_df.index, "cluster_context"] = portrait_df["cluster_context"].astype("object")
 
     if logger:
         updated_count = int(mask.sum())
