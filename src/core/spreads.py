@@ -612,7 +612,7 @@ def check_page(photo_set, photos):
 
 def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_penalty=0.5, color_mix=0.000000001,
                        class_mix=0.01,
-                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.000000000000000001, context_mix_penalty=0.00001):
+                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.000000000000000001, context_mix_penalty=0.00001,time_order_penalty=0.005):
     #print(f"the CONFIGS['spread_score_threshold'] is {score_threshold}")
     filtered_multi_spreads = []
     for i in range(len(multi_spreads)):
@@ -647,7 +647,7 @@ def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_pena
             for time_idx1 in range(len(photo_order_time)):
                 for time_idx2 in range(time_idx1 + 1, len(photo_order_time)):
                     if photo_order_time[time_idx1] > photo_order_time[time_idx2]:
-                        spread_scores[j] = spread_scores[j] * 0.005  # if time order is not correct, give it a penalty
+                        spread_scores[j] = spread_scores[j] * time_order_penalty  # if time order is not correct, give it a penalty
         if len(spread_scores) > 0:
             filtered_idx = np.where(spread_scores / np.max(spread_scores) > score_threshold)[0]
             filtered_multi_spreads.append([multi_spreads[i][j] + [spread_scores[j]] for j in filtered_idx])
@@ -731,9 +731,19 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
     for idx, comb in enumerate(combs):
         multi_spreads = layoutSingleCombination(comb, layouts_df, photos,params)
         if multi_spreads is not None:
-            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx],
-                                                               crop_penalty=CONFIGS['crop_penalty'], color_mix=CONFIGS['color_mix'], class_mix=CONFIGS['class_mix'],
-                                                               orientation_mix=CONFIGS['orientation_mix'], score_threshold=params[0], double_mix_color=CONFIGS['double_page_color_mix'])
+            if len(photos)<13:
+                single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx],
+                                                                   crop_penalty=CONFIGS['crop_penalty'], color_mix=CONFIGS['color_mix'], class_mix=CONFIGS['class_mix'],
+                                                                   orientation_mix=CONFIGS['orientation_mix'], score_threshold=params[0], double_mix_color=CONFIGS['double_page_color_mix'])
+            else:
+                single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx],
+                                                                   crop_penalty=0.8,
+                                                                   color_mix=CONFIGS['color_mix'],
+                                                                   class_mix=CONFIGS['class_mix'],
+                                                                   orientation_mix=CONFIGS['orientation_mix'],
+                                                                   score_threshold=params[0],
+                                                                   double_mix_color=CONFIGS['double_page_color_mix'],
+                                                                   context_mix_penalty=0.00001,time_order_penalty=0.5)
             filtered_multi_spreads += list_multi_spreads(single_filtered_multi_spreads)
 
         if len(filtered_multi_spreads) > 10000:

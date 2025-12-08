@@ -646,7 +646,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "boxes": None,
                                        "logicalSelectionsState": None})
         counter_comp_id += 1
-
+    logger.info(f"Added Album Cover composition with id {counter_comp_id-1}")
     # adding the first spread image
     if 'firstPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['firstPage']['first_images_df'] is not None:
         first_page_data = first_last_pages_data_dict['firstPage']
@@ -687,6 +687,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         counter_comp_id += 1
         counter_image_id += 1
 
+    logger.info(f"Added Album Cover composition with id {counter_comp_id-1}")
 
     # Add images
     for number_groups,group_dict in enumerate(output_list):
@@ -761,7 +762,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                             counter_image_id += 1
                         counter_comp_id += 1
 
-
+    logger.info(f"Added Album any page")
     # adding the last page
     if 'lastPage' in first_last_pages_data_dict.keys() and first_last_pages_data_dict['lastPage'][
         'last_images_df'] is not None:
@@ -800,6 +801,8 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                                  "projectId": message.content['projectId'],
                                                  "photoFilter": 0,
                                                  "photo": None})
+
+    logger.info(f"Added last page composition with id {counter_comp_id}")
 
     result_dict = convert_int64_to_int(result_dict)
 
