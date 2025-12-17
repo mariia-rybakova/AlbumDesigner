@@ -20,7 +20,7 @@ resources:
 
 variables:
   # Container registry service connection established during pipeline creation
-  dockerRegistryServiceConnection: 'azureDockerRegistryServiceConnection'
+  dockerRegistryServiceConnection: 'pictime-container-registry'
   imageRepository: 'albumdesigner'
   containerRegistry: 'pictime.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/AlbumDesigner/Dockerfile'
