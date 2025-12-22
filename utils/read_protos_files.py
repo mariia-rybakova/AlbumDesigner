@@ -427,6 +427,14 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
         columns_to_convert = ["image_class", "cluster_label", "cluster_class", "image_order", "scene_order"]
         gallery_info_df[columns_to_convert] = gallery_info_df[columns_to_convert].astype('Int64')
 
+        before = len(gallery_info_df)
+
+        gallery_info_df = gallery_info_df.dropna(subset=['embedding'])
+
+        after = len(gallery_info_df)
+
+        logger.warning(f"Dropped {before - after} rows because embedding is NaN")
+
         is_wedding = check_gallery_type(gallery_info_df)
 
         if is_wedding:
