@@ -680,6 +680,20 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 groom_id = int(filtered_df['groom_id'].iloc[0])
                 bride_id = int(filtered_df['bride_id'].iloc[0])
 
+                # Filter images that contain both top two IDs or have 2 faces or 2 bodies
+                def has_both_ids_or_two_faces_bodies(row):
+                    ids = {str(v) for v in row.get("persons_ids", [])}
+                    target = {str(bride_id), str(groom_id)}
+                    has_two_faces = row.get('n_faces', 0) == 2
+                    has_two_bodies = row.get('number_bodies', 0) == 2
+                    return target.issubset(ids) and (has_two_faces or has_two_bodies)
+
+                def has_bride_and_groom(row):
+                    ids = {str(v) for v in row.get("persons_ids", [])}
+                    target = {str(bride_id), str(groom_id)}
+                    return target.issubset(ids)
+
+
                 if cluster_name == 'bride':
                     filtered_df = filtered_df[
                         filtered_df['persons_ids'].apply(lambda x: x == [bride_id])
@@ -695,14 +709,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 elif cluster_name == "bride and groom":
                     groom_id = int(filtered_df['groom_id'].iloc[0])
                     bride_id = int(filtered_df['bride_id'].iloc[0])
-
-                    # Filter images that contain both top two IDs or have 2 faces or 2 bodies
-                    def has_both_ids_or_two_faces_bodies(row):
-                        ids = {str(v) for v in row.get("persons_ids", [])}
-                        target = {str(bride_id), str(groom_id)}
-                        has_two_faces = row.get('n_faces', 0) == 2
-                        has_two_bodies = row.get('number_bodies', 0) == 2
-                        return  target.issubset(ids) and (has_two_faces or has_two_bodies)
 
                     filtered_df = filtered_df[
                         filtered_df.apply(has_both_ids_or_two_faces_bodies, axis=1)]
@@ -723,7 +729,25 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         filtered_df = filtered_df[
                             filtered_df.apply(has_groom_in_photos, axis=1)]
 
+                elif cluster_name == "walking the aisle":
+                    bg_mask = filtered_df.apply(has_bride_and_groom, axis=1)
+                    bg_ids = filtered_df.loc[bg_mask, "image_id"].tolist()
+
+                    if bg_ids:
+                        original_pool = original_pool[
+                            ~original_pool["image_id"].isin(bg_ids)
+                        ]
+
+                        chosen_id = bg_ids[0]
+                        ai_images_selected.append(chosen_id)
+
+                        # remove all bride+groom images from filtered_df
+                        filtered_df = filtered_df[~filtered_df["image_id"].isin(bg_ids)]
+
+                        need -= 1
+
                 remaining = len(filtered_df)
+
 
                 if remaining == 0:
                     # Nothing left — bring back half of the *entire* original pool (rounded down).
@@ -957,12 +981,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 if grayscale_need > 0 and not grayscale_candidates_df.empty:
                     if len(grayscale_candidates_df) <= grayscale_need:
                         # Not enough grayscale to fill the need, take all available
-                        final_grayscale_selection = grayscale_candidates_df.index.tolist()
+                        final_grayscale_selection = grayscale_candidates_df["image_id"].tolist()
                     elif grayscale_need == 1:
                         # Only need one, take the best
                         final_grayscale_selection = grayscale_candidates_df.sort_values(
                             'total_score', ascending=False
-                        ).head(1).index.tolist()
+                        ).head(1)["image_id"].tolist()
                     else:
                         # Need multiple, so ensure they are diverse
                         final_grayscale_selection = select_remove_similar(is_artificial_time,need=grayscale_need,
@@ -984,7 +1008,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         logger.error(f"Error in smart_wedding_selection: {e}")
         return [] , f"Error in smart_wedding_selection: {e}"
 
-    return ai_images_selected,spreads_allocation, error_message
+    return list(dict.fromkeys(ai_images_selected)),spreads_allocation, error_message
 
 
 
