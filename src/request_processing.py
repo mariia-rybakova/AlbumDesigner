@@ -82,7 +82,7 @@ def read_layouts_data(message, json_content):
 
     message.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content[
         'designInfo'] else 1
-    message.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content[
+    message.designsInfo['maxPages'] = json_content['designInfo']['maxPages'] if 'maxPages' in json_content[
         'designInfo'] else CONFIGS['max_total_spreads']
 
     any_page_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], message.designsInfo['anyPageIds'],
