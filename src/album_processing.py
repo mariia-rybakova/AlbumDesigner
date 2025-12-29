@@ -162,6 +162,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger 
         look_up_table = get_lookup_table(group2images,is_wedding,logger,density)
 
     look_up_table = update_lookup_table_with_layouts_size(look_up_table, designs_info['anyPagelayouts_df'])
+    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table,
+                                                   max_total_spreads=max(CONFIGS['max_total_spreads'],
+                                                                         designs_info['maxPages']))
     # groups processing
     start_time = time.time()
     if is_wedding:
@@ -174,7 +177,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger 
 
     logger.debug("Groups: {}".format(group2images))
     # make sure that each group has no more than 3 spreads
-    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max(CONFIGS['max_total_spreads'], designs_info['maxPages']))
+    # look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max(CONFIGS['max_total_spreads'], designs_info['maxPages']))
 
     result_list = []
     for group_name in group2images.keys():

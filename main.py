@@ -177,8 +177,8 @@ class SelectionStage(Stage):
         #Iterate over message and start the selection process
         try:
             for _msg in messages:
-                ai_metadata = _msg.content.get('aiMetadata', {})
-                if not ai_metadata:
+                ai_metadata = _msg.content.get('aiMetadata', None)
+                if ai_metadata is None or ai_metadata['photoIds'] is None:
                     self.logger.info(f"aiMetadata not found for message {_msg}. Continue with chosen photos.")
                     photos = _msg.content.get('photos', [])
                     df = pd.DataFrame(photos, columns=['image_id'])

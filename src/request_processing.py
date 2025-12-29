@@ -82,7 +82,7 @@ def read_layouts_data(message, json_content):
 
     message.designsInfo['minPages'] = json_content['designInfo']['minPages'] if 'minPages' in json_content[
         'designInfo'] else 1
-    message.designsInfo['maxPages'] = json_content['designInfo']['minPages'] if 'maxPages' in json_content[
+    message.designsInfo['maxPages'] = json_content['designInfo']['maxPages'] if 'maxPages' in json_content[
         'designInfo'] else CONFIGS['max_total_spreads']
 
     any_page_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], message.designsInfo['anyPageIds'],
@@ -108,13 +108,21 @@ def add_scenes_info(gallery_info_df, project_base_url, logger):
             for photo in scene.photos:
                 try:
                     filename = photo.get_filename()
+                    if "_" in filename:
+                        continue
+                    name = filename.split('.')[0]
+
+                    if not name.isdigit():
+                        continue
                     image_id2scene_image_order[np.int64(filename.split('.')[0])] = (scene_idx, image_iter)
                     image_iter += 1
                 except Exception as e:
                     pass
     except Exception as e:
         logger.error(f"Error reading scenes info from gallery: {e}")
-        return gallery_info_df
+
+    print("Finshed with the photo scene")
+    return gallery_info_df
 
     mapped = gallery_info_df['image_id'].map(image_id2scene_image_order)
     mapped_df = pd.DataFrame(mapped.tolist(), columns=['scene_order', 'image_order'])
