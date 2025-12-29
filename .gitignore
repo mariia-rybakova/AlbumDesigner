@@ -14,3 +14,8 @@ files/focus_csvold.csv
 my_file.csv
 output
 experiments/mytestfile.py
+confetti.csv
+experiments/*.csv
+files/confetti.pkl
+files/confetti1.pkl
+files/confetti2.pkl
