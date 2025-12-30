@@ -161,7 +161,7 @@ def cluster_by_time(df,logger, eps=0.3, min_samples=2,metric='l1'):
             df[col] = s.astype(df[col].dtype)
 
         except Exception as e:
-            logger.error(f"Error in selection: {e}")
+            logger.error(f"Error in selection cluster_by_time function: {e}")
 
         return df
 
@@ -355,26 +355,31 @@ def load_event_mapping(csv_path: str,logger):
         logger.error(f"Error loading event mapping: {e}")
         return {}
 
-def define_min_max_spreads(df,focus_table,n_actual_dict):
-    total_images = sum(n_actual_dict.values())
-    total_people =  df['persons_ids'].explode().nunique()
+def define_min_max_spreads(df,focus_table,n_actual_dict,logger):
+    try:
+        total_images = sum(n_actual_dict.values())
+        total_people =  df['persons_ids'].explode().nunique()
 
-    actual_events_have = 0
-    actual_events_needed = 0
-    for event, config in focus_table.items():
-        if isinstance(config, dict) and 'value' in config:
-            if isinstance(config['value'], float):
-                if event in n_actual_dict.keys() and config['value'] > 0.0:
-                    actual_events_have  += 1
-                else:
-                    actual_events_needed += 1
+        actual_events_have = 0
+        actual_events_needed = 0
+        for event, config in focus_table.items():
+            if isinstance(config, dict) and 'value' in config:
+                if isinstance(config['value'], float):
+                    if event in n_actual_dict.keys() and config['value'] > 0.0:
+                        actual_events_have  += 1
+                    else:
+                        actual_events_needed += 1
 
-    if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
-        return 15,18
-    elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
-        return 23,26
-    else:
-        return 19,22
+        if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
+            return 15,18
+        elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
+            return 23,26
+        else:
+            return 19,22
+
+    except Exception as e:
+        logger.error(f"Error define_min_max_spreads: {e}")
+        return None,None
 
 
 def calculate_optimal_selection(
@@ -387,7 +392,7 @@ def calculate_optimal_selection(
     logger
     ):
     try:
-        min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict)
+        min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict,logger)
 
         TARGET_SPREADS = max_total_spreads
         density_factors = CONFIGS['density_factors']
@@ -488,7 +493,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         # Load configs and mapping
         event_mapping = load_event_mapping(CONFIGS['focus_csv_path'], logger)
 
-        if len(focus)>0:
+        if len(focus) > 0 :
             focus_table = event_mapping.get(focus[0], event_mapping['brideAndGroom'])
             relation_table = relations.get(focus[0], relations['brideAndGroom'])
         else:
@@ -523,31 +528,39 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             Returns a scored_df DataFrame and list of available image ids
             depending on whether scoring is required.
             """
-            # CASE 1: no scoring, all images are candidates
-            if len(people_ids) == 0 and len(user_selected_photos) == 0 and len(tags_features) == 0:
-                scored_df = cluster_df.copy()
-                scored_df["total_score"] = 1.0  # assign dummy uniform score
-                scored_df = scored_df.sort_values(by='image_order', ascending=True)
-                return scored_df, scored_df["image_id"].tolist(), True
+            try:
+                # CASE 1: no scoring, all images are candidates
+                if len(people_ids) == 0 and len(user_selected_photos) == 0 and len(tags_features) == 0:
+                    scored_df = cluster_df.copy()
+                    scored_df["total_score"] = 1.0  # assign dummy uniform score
+                    scored_df = scored_df.sort_values(by='image_order', ascending=True)
+                    return scored_df, scored_df["image_id"].tolist(), True
 
-            # CASE 2: scoring required
-            scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
-            if scores is None or all(score <= 0 for _, score in scores):
-                return None, [],True
-            candidates_images_scores = [
-                (image_id, score) for image_id, score in scores
-                if score > selection_threshold[cluster_name]
-            ]
-            if len(candidates_images_scores) < len(scored_df):
-                # fallback: at least top N images
+                # CASE 2: scoring required
+                scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
+                if scores is None or all(score <= 0 for _, score in scores):
+                    return None, [],True
                 candidates_images_scores = [
-                    (row['image_id'], row['total_score'])
-                    for _, row in scored_df.head(images_allocation[cluster_name]*3).iterrows()
+                    (image_id, score) for image_id, score in scores
+                    if score > selection_threshold[cluster_name]
                 ]
+                if len(candidates_images_scores) < len(scored_df):
+                    # fallback: at least top N images
+                    candidates_images_scores = [
+                        (row['image_id'], row['total_score'])
+                        for _, row in scored_df.head(images_allocation[cluster_name]*3).iterrows()
+                    ]
 
-            sorted_candidates = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
-            available_img_ids = [image_id for image_id, _ in sorted_candidates]
-            return scored_df, available_img_ids,False
+                sorted_candidates = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
+                available_img_ids = [image_id for image_id, _ in sorted_candidates]
+
+                return scored_df, available_img_ids, False
+
+            except Exception as e:
+                logger.error(f"Error in get_candidate_images: {e}")
+                return None,None,False
+
+
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
             n_actual = len(cluster_df)
@@ -680,6 +693,20 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 groom_id = int(filtered_df['groom_id'].iloc[0])
                 bride_id = int(filtered_df['bride_id'].iloc[0])
 
+                # Filter images that contain both top two IDs or have 2 faces or 2 bodies
+                def has_both_ids_or_two_faces_bodies(row):
+                    ids = {str(v) for v in row.get("persons_ids", [])}
+                    target = {str(bride_id), str(groom_id)}
+                    has_two_faces = row.get('n_faces', 0) == 2
+                    has_two_bodies = row.get('number_bodies', 0) == 2
+                    return target.issubset(ids) and (has_two_faces or has_two_bodies)
+
+                def has_bride_and_groom(row):
+                    ids = {str(v) for v in row.get("persons_ids", [])}
+                    target = {str(bride_id), str(groom_id)}
+                    return target.issubset(ids)
+
+
                 if cluster_name == 'bride':
                     filtered_df = filtered_df[
                         filtered_df['persons_ids'].apply(lambda x: x == [bride_id])
@@ -695,14 +722,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 elif cluster_name == "bride and groom":
                     groom_id = int(filtered_df['groom_id'].iloc[0])
                     bride_id = int(filtered_df['bride_id'].iloc[0])
-
-                    # Filter images that contain both top two IDs or have 2 faces or 2 bodies
-                    def has_both_ids_or_two_faces_bodies(row):
-                        ids = {str(v) for v in row.get("persons_ids", [])}
-                        target = {str(bride_id), str(groom_id)}
-                        has_two_faces = row.get('n_faces', 0) == 2
-                        has_two_bodies = row.get('number_bodies', 0) == 2
-                        return  target.issubset(ids) and (has_two_faces or has_two_bodies)
 
                     filtered_df = filtered_df[
                         filtered_df.apply(has_both_ids_or_two_faces_bodies, axis=1)]
@@ -723,7 +742,25 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         filtered_df = filtered_df[
                             filtered_df.apply(has_groom_in_photos, axis=1)]
 
+                elif cluster_name == "walking the aisle":
+                    bg_mask = filtered_df.apply(has_bride_and_groom, axis=1)
+                    bg_ids = filtered_df.loc[bg_mask, "image_id"].tolist()
+
+                    if bg_ids:
+                        original_pool = original_pool[
+                            ~original_pool["image_id"].isin(bg_ids)
+                        ]
+
+                        chosen_id = bg_ids[0]
+                        ai_images_selected.append(chosen_id)
+
+                        # remove all bride+groom images from filtered_df
+                        filtered_df = filtered_df[~filtered_df["image_id"].isin(bg_ids)]
+
+                        need -= 1
+
                 remaining = len(filtered_df)
+
 
                 if remaining == 0:
                     # Nothing left — bring back half of the *entire* original pool (rounded down).
@@ -957,12 +994,12 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                 if grayscale_need > 0 and not grayscale_candidates_df.empty:
                     if len(grayscale_candidates_df) <= grayscale_need:
                         # Not enough grayscale to fill the need, take all available
-                        final_grayscale_selection = grayscale_candidates_df.index.tolist()
+                        final_grayscale_selection = grayscale_candidates_df["image_id"].tolist()
                     elif grayscale_need == 1:
                         # Only need one, take the best
                         final_grayscale_selection = grayscale_candidates_df.sort_values(
                             'total_score', ascending=False
-                        ).head(1).index.tolist()
+                        ).head(1)["image_id"].tolist()
                     else:
                         # Need multiple, so ensure they are diverse
                         final_grayscale_selection = select_remove_similar(is_artificial_time,need=grayscale_need,
@@ -984,7 +1021,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         logger.error(f"Error in smart_wedding_selection: {e}")
         return [] , f"Error in smart_wedding_selection: {e}"
 
-    return ai_images_selected,spreads_allocation, error_message
+    return list(dict.fromkeys(ai_images_selected)),spreads_allocation, error_message
 
 
 
