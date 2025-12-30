@@ -271,6 +271,8 @@ def get_artificial_images_time(base_url, gallery_info_df,time_correctness):
     gallery_info_df['scene_name'] = ''
     gallery_info_df['idx_in_scene'] = None
     for scene in photos_metadata.scenes:
+        if scene.isHighlights:
+            continue
         photo_count=0
         for idx,photo in enumerate(scene.photos):
             photo_count+=1
