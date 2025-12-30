@@ -78,7 +78,7 @@ def get_general_times(data_db):
     return image_id2general_time
 
 
-def get_wedding_groups(df, logger):
+def get_wedding_groups(df, manual_selection, logger):
     required_columns = {'time_cluster', 'cluster_context', 'cluster_label'}
 
     # Check if required columns exist
@@ -88,22 +88,24 @@ def get_wedding_groups(df, logger):
         return None
 
     # Split DataFrame based on cluster_context being 'None' or 'other' (as strings)
-    mask_special = df['cluster_context'].isin(['None', 'other'])
-    df_special = df[mask_special].copy()
-    df_regular = df[~mask_special].copy()
+    if not manual_selection:
+        mask_special = df['cluster_context'].isin(['None', 'other'])
+        df_special = df[mask_special].copy()
+        df_regular = df[~mask_special].copy()
 
-    # Group df_special and update cluster_context for each group
-    groups_special = df_special.groupby(['time_cluster', 'cluster_context', 'cluster_label'])
-    for idx, (key, group_df) in enumerate(groups_special):
-        group_size = len(group_df)
-        new_context = f"{key[1]}_{idx}_{group_size}"
-        df_special.loc[group_df.index, 'cluster_context'] = new_context
+        # Group df_special and update cluster_context for each group
+        groups_special = df_special.groupby(['time_cluster', 'cluster_context', 'cluster_label'])
+        for idx, (key, group_df) in enumerate(groups_special):
+            group_size = len(group_df)
+            new_context = f"{key[1]}_{idx}_{group_size}"
+            df_special.loc[group_df.index, 'cluster_context'] = new_context
 
-    # Merge modified df_special with df_regular
-    merged_df = pd.concat([df_special, df_regular], ignore_index=True)
-
-    # Group the merged DataFrame by ['time_cluster', 'cluster_context']
-    groups_final = merged_df.groupby(['time_cluster', 'cluster_context'])
+        # Merge modified df_special with df_regular
+        merged_df = pd.concat([df_special, df_regular], ignore_index=True)
+        # Group the merged DataFrame by ['time_cluster', 'cluster_context']
+        groups_final = merged_df.groupby(['time_cluster', 'cluster_context'])
+    else:
+        groups_final = df.groupby(['time_cluster', 'cluster_context'])
     return groups_final
 
 

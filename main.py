@@ -183,6 +183,14 @@ class SelectionStage(Stage):
                     photos = _msg.content.get('photos', [])
                     df = pd.DataFrame(photos, columns=['image_id'])
                     _msg.content['gallery_photos_info'] = df.merge(_msg.content['gallery_photos_info'], how='inner', on='image_id')
+                    # handle LUT for manual selection
+                    is_wedding = _msg.content.get('is_wedding', False)
+                    if is_wedding:
+                        modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
+                        modified_lut['Other'] = (24, 12)  # Set 'Other' event to have max spreads
+                        modified_lut['None'] = (24, 12)
+                        _msg.content['modified_lut'] = modified_lut
+                    _msg.content['manual_selection'] = True
                     updated_messages.append(_msg)
                     continue
                 available_photos = _msg.content.get('photos', [])
@@ -313,8 +321,11 @@ class ProcessStage(Stage):
                     density = 3
 
                 modified_lut = message.content['modified_lut'] if message.content.get('modified_lut', None) is not None else None
+
+                manual_selection = message.content.get('manual_selection', False)
+
                 album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
-                                                logger=self.logger,density=density)
+                                                logger=self.logger,density=density, manual_selection=manual_selection)
 
                 wait_start = datetime.now()
                 try:

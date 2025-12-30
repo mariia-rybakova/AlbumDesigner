@@ -71,7 +71,7 @@ def get_lookup_table(group2images, is_wedding, logger=None,density=3):
 
         for group_name, num_images in group2images.items():
             if is_wedding:
-                group_id = group_name[1]  # Extract group ID
+                group_id = group_name[1].split('_')[0]  # Extract group ID
             else:
                 group_id = group_name[0].split('_')[0]
 
@@ -146,7 +146,7 @@ def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_t
                 break  # Exit if we've reduced enough spreads
 
             # Try reducing spreads for this group
-            new_spreads = max(1, current_spreads - 1)  # Ensure at least one spread per group
+            new_spreads = min(2,max(1, current_spreads - 1))  # Ensure at least one spread per group
             reduction = current_spreads - new_spreads
 
             spreads_per_group[key] = new_spreads

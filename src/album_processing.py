@@ -147,9 +147,9 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
         return None
 
 
-def album_processing(df, designs_info, is_wedding, modified_lut, params, logger , density=3):
+def album_processing(df, designs_info, is_wedding, modified_lut, params, logger , density=3, manual_selection=False):
     if is_wedding:
-        original_groups = get_wedding_groups(df,logger)
+        original_groups = get_wedding_groups(df,manual_selection, logger)
     else:
         original_groups = get_none_wedding_groups(df,logger)
 
@@ -168,7 +168,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger 
     # groups processing
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images, look_up_table = process_wedding_illegal_groups(df, look_up_table, logger)
+        updated_groups, group2images, look_up_table = process_wedding_illegal_groups(df, look_up_table, manual_selection, logger)
         illegal_time = (time.time() - start_time)
         logger.info(f'Illegal groups processing time: {illegal_time:.2f} seconds')
     else:
@@ -177,6 +177,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger 
 
     logger.debug("Groups: {}".format(group2images))
     # make sure that each group has no more than 3 spreads
+    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table,
+                                                   max_total_spreads=max(CONFIGS['max_total_spreads'],
+                                                                         designs_info['maxPages']))
     # look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max(CONFIGS['max_total_spreads'], designs_info['maxPages']))
 
     result_list = []

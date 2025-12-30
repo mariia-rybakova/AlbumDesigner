@@ -200,7 +200,7 @@ def process_wedding_merging(photos_df, look_up_table,logger=None):
     return photos_df, True
 
 
-def process_wedding_illegal_groups(photos_df, look_up_table, logger=None, max_iterations=500):
+def process_wedding_illegal_groups(photos_df, look_up_table, manual_selection, logger=None, max_iterations=500):
     required_columns = {'time_cluster', 'cluster_context', 'cluster_label'}
 
     # Check if required columns exist
@@ -211,14 +211,19 @@ def process_wedding_illegal_groups(photos_df, look_up_table, logger=None, max_it
 
     photos_df['group_sub_index'] = -1
     photos_df['group_size'] = -1
-    mask_special = photos_df['cluster_context'].isin(['None', 'other'])
-    df_special = photos_df[mask_special].copy()
-    df_regular = photos_df[~mask_special].copy()
-    groups_special = df_special.groupby(['time_cluster', 'cluster_context', 'cluster_label'])
-    for idx, (key, group_df) in enumerate(groups_special):
-        group_size = len(group_df)
-        df_special.loc[group_df.index, 'group_sub_index'] = idx
-        df_special.loc[group_df.index, 'group_size'] = group_size
+    if not manual_selection:
+        mask_special = photos_df['cluster_context'].isin(['None', 'other'])
+        df_special = photos_df[mask_special].copy()
+        df_regular = photos_df[~mask_special].copy()
+        groups_special = df_special.groupby(['time_cluster', 'cluster_context', 'cluster_label'])
+        for idx, (key, group_df) in enumerate(groups_special):
+            group_size = len(group_df)
+            df_special.loc[group_df.index, 'group_sub_index'] = idx
+            df_special.loc[group_df.index, 'group_size'] = group_size
+    else:
+        df_special = photos_df.copy().iloc[0:0]
+        df_regular = photos_df.copy()
+
     groups_regular = df_regular.groupby(['time_cluster', 'cluster_context'])
     for idx, (key, group_df) in enumerate(groups_regular):
         group_size = len(group_df)
