@@ -37,16 +37,21 @@ def load_pre_queries_embeddings(pre_queries_name,version):
     return embd_matrix
 
 
-def get_tags_bins(tags,version):
-    if not any(s.strip() for s in tags):
-        return []
-    #make the check for the model version
-    tags_features = {}
-    for tag in tags:
-        embeddings = load_pre_queries_embeddings(tag,version)
-        if tag not in tags_features:
-            tags_features[tag] = []
-        tags_features[tag] = embeddings
+def get_tags_bins(tags,version,logger):
+    try:
+        if not any(s.strip() for s in tags):
+            return []
+        #make the check for the model version
+        tags_features = {}
+        for tag in tags:
+            embeddings = load_pre_queries_embeddings(tag,version)
+            if tag not in tags_features:
+                tags_features[tag] = []
+            tags_features[tag] = embeddings
+
+    except Exception as e:
+        logger.error(e)
+        return [], None, 'Error inside get_tags_bins Function:{}'.format(e)
 
     return tags_features
 
@@ -57,7 +62,7 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
         if is_wedding:
             # Select images for creating an album
             model_version =  df.iloc[0]['model_version']
-            tags_features = get_tags_bins(tags,model_version)
+            tags_features = get_tags_bins(tags,model_version,logger)
             ai_images_selected, spreads_dict, errors = smart_wedding_selection(df, selected_photos, people_ids, focus,
                                                                  tags_features,density,is_artificial_time, logger)
         else:
@@ -66,6 +71,6 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
 
     except Exception as e:
         logger.error(e)
-        return [], None, 'Error:{}'.format(e)
+        return [], None, 'Error inside the ai_selection Function:{}'.format(e)
 
     return ai_images_selected, spreads_dict, errors

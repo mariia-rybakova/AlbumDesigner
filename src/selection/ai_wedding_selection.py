@@ -161,7 +161,7 @@ def cluster_by_time(df,logger, eps=0.3, min_samples=2,metric='l1'):
             df[col] = s.astype(df[col].dtype)
 
         except Exception as e:
-            logger.error(f"Error in selection: {e}")
+            logger.error(f"Error in selection cluster_by_time function: {e}")
 
         return df
 
@@ -355,26 +355,31 @@ def load_event_mapping(csv_path: str,logger):
         logger.error(f"Error loading event mapping: {e}")
         return {}
 
-def define_min_max_spreads(df,focus_table,n_actual_dict):
-    total_images = sum(n_actual_dict.values())
-    total_people =  df['persons_ids'].explode().nunique()
+def define_min_max_spreads(df,focus_table,n_actual_dict,logger):
+    try:
+        total_images = sum(n_actual_dict.values())
+        total_people =  df['persons_ids'].explode().nunique()
 
-    actual_events_have = 0
-    actual_events_needed = 0
-    for event, config in focus_table.items():
-        if isinstance(config, dict) and 'value' in config:
-            if isinstance(config['value'], float):
-                if event in n_actual_dict.keys() and config['value'] > 0.0:
-                    actual_events_have  += 1
-                else:
-                    actual_events_needed += 1
+        actual_events_have = 0
+        actual_events_needed = 0
+        for event, config in focus_table.items():
+            if isinstance(config, dict) and 'value' in config:
+                if isinstance(config['value'], float):
+                    if event in n_actual_dict.keys() and config['value'] > 0.0:
+                        actual_events_have  += 1
+                    else:
+                        actual_events_needed += 1
 
-    if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
-        return 15,18
-    elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
-        return 23,26
-    else:
-        return 19,22
+        if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
+            return 15,18
+        elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
+            return 23,26
+        else:
+            return 19,22
+
+    except Exception as e:
+        logger.error(f"Error define_min_max_spreads: {e}")
+        return None,None
 
 
 def calculate_optimal_selection(
@@ -387,7 +392,7 @@ def calculate_optimal_selection(
     logger
     ):
     try:
-        min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict)
+        min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict,logger)
 
         TARGET_SPREADS = max_total_spreads
         density_factors = CONFIGS['density_factors']
@@ -488,7 +493,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         # Load configs and mapping
         event_mapping = load_event_mapping(CONFIGS['focus_csv_path'], logger)
 
-        if len(focus)>0:
+        if len(focus) > 0 :
             focus_table = event_mapping.get(focus[0], event_mapping['brideAndGroom'])
             relation_table = relations.get(focus[0], relations['brideAndGroom'])
         else:
@@ -523,31 +528,39 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
             Returns a scored_df DataFrame and list of available image ids
             depending on whether scoring is required.
             """
-            # CASE 1: no scoring, all images are candidates
-            if len(people_ids) == 0 and len(user_selected_photos) == 0 and len(tags_features) == 0:
-                scored_df = cluster_df.copy()
-                scored_df["total_score"] = 1.0  # assign dummy uniform score
-                scored_df = scored_df.sort_values(by='image_order', ascending=True)
-                return scored_df, scored_df["image_id"].tolist(), True
+            try:
+                # CASE 1: no scoring, all images are candidates
+                if len(people_ids) == 0 and len(user_selected_photos) == 0 and len(tags_features) == 0:
+                    scored_df = cluster_df.copy()
+                    scored_df["total_score"] = 1.0  # assign dummy uniform score
+                    scored_df = scored_df.sort_values(by='image_order', ascending=True)
+                    return scored_df, scored_df["image_id"].tolist(), True
 
-            # CASE 2: scoring required
-            scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
-            if scores is None or all(score <= 0 for _, score in scores):
-                return None, [],True
-            candidates_images_scores = [
-                (image_id, score) for image_id, score in scores
-                if score > selection_threshold[cluster_name]
-            ]
-            if len(candidates_images_scores) < len(scored_df):
-                # fallback: at least top N images
+                # CASE 2: scoring required
+                scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
+                if scores is None or all(score <= 0 for _, score in scores):
+                    return None, [],True
                 candidates_images_scores = [
-                    (row['image_id'], row['total_score'])
-                    for _, row in scored_df.head(images_allocation[cluster_name]*3).iterrows()
+                    (image_id, score) for image_id, score in scores
+                    if score > selection_threshold[cluster_name]
                 ]
+                if len(candidates_images_scores) < len(scored_df):
+                    # fallback: at least top N images
+                    candidates_images_scores = [
+                        (row['image_id'], row['total_score'])
+                        for _, row in scored_df.head(images_allocation[cluster_name]*3).iterrows()
+                    ]
 
-            sorted_candidates = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
-            available_img_ids = [image_id for image_id, _ in sorted_candidates]
-            return scored_df, available_img_ids,False
+                sorted_candidates = sorted(candidates_images_scores, key=lambda x: x[1], reverse=True)
+                available_img_ids = [image_id for image_id, _ in sorted_candidates]
+
+                return scored_df, available_img_ids, False
+
+            except Exception as e:
+                logger.error(f"Error in get_candidate_images: {e}")
+                return None,None,False
+
+
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
             n_actual = len(cluster_df)
