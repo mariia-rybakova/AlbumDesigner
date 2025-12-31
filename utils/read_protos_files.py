@@ -430,6 +430,11 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
         before = len(gallery_info_df)
 
         gallery_info_df = gallery_info_df.dropna(subset=['embedding'])
+
+        gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
+            lambda x: [] if not isinstance(x, list) else x
+        )
+
         # gallery_info_df = gallery_info_df.dropna(subset=['persons_ids'])
 
 

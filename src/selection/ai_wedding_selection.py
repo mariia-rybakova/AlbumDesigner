@@ -564,6 +564,9 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
             n_actual = len(cluster_df)
+            print(f"going with {cluster_name}")
+            if cluster_name != 'getting hair-makeup':
+                continue
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
             need = images_allocation[cluster_name]
@@ -662,22 +665,25 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                     filtered = color_candidates_df[color_candidates_df["image_subquery_content"].str.contains("bride", case=False, na=False)]
                     if len(filtered) > 0:
                         all_ids = [pid for sublist in filtered["persons_ids"] for pid in sublist]
-                        most_common_id = Counter(all_ids).most_common(1)[0][0]
-                        df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
-
-                        if len(df) <= need or len(df) - need <= 1 :
-                            logger.info(f"this cluster {cluster_name} has no enough images related to bride less than needed we select them all no filtering")
-                            if no_selection:
-                                preferred_color_ids  = df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
-                            else:
-                                preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
-                                                          'image_id'].values.tolist()[:need]
+                        if len(all_ids) == 0:
+                            preferred_color_ids = list(filtered["image_id"].values[:need])
                         else:
-                            preferred_color_ids = select_remove_similar(is_artificial_time,need=need,
-                                                         df=df.reset_index(),
-                                                         cluster_name=cluster_name, logger=logger,
-                                                         # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
-                                                         target_group_size=10)
+                            most_common_id = Counter(all_ids).most_common(1)[0][0]
+                            df = filtered[filtered["persons_ids"].apply(lambda ids: most_common_id in ids)]
+
+                            if len(df) <= need or len(df) - need <= 1 :
+                                logger.info(f"this cluster {cluster_name} has no enough images related to bride less than needed we select them all no filtering")
+                                if no_selection:
+                                    preferred_color_ids  = df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:need]
+                                else:
+                                    preferred_color_ids = df.sort_values(by='total_score', ascending=False)[
+                                                              'image_id'].values.tolist()[:need]
+                            else:
+                                preferred_color_ids = select_remove_similar(is_artificial_time,need=need,
+                                                             df=df.reset_index(),
+                                                             cluster_name=cluster_name, logger=logger,
+                                                             # df has: image_id, image_embedding, total_score, sub_group_time_cluster, image_oreintation (or image_orientation)
+                                                             target_group_size=10)
 
                     else:
                         df = color_candidates_df
