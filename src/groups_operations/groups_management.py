@@ -163,7 +163,7 @@ def process_wedding_merging(photos_df, look_up_table,logger=None):
         merge_targets = targets_df[(targets_df['time_cluster'] == group_key[0]) &
                                    (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread']) &
                                    (group['groups_merged'].iloc[0] + targets_df['groups_merged'] <= CONFIGS['merge_limit_times'])&
-                                   (group['group_spreads'].iloc[0] + targets_df['group_spreads'] <= 2.5)]
+                                   (group['group_spreads'].iloc[0] + targets_df['group_spreads'] <= 2.1)]
         merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
         main_groups = [m_group for m_key, m_group in merge_target_groups if m_key != group_key]
         selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,

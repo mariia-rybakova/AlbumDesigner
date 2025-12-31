@@ -47,7 +47,7 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
     design_box_id2data = designs_info['anyPagebox_id2data']
 
     largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
-
+    start = time.time()
     # logger.info(f"Processing group name {group_name}, and # of images {len(group_images_df)}")
     try:
         if is_wedding and 'dancing' in group_name[1]:
@@ -136,6 +136,9 @@ def process_group(group_name, group_images_df, spread_params, designs_info, is_w
 
         del cur_group_photos_list
         collect()
+
+        end = time.time()
+        logger.info(f"Processed group name {group_name} in {end - start:.2f} seconds.")
 
         return local_result
 

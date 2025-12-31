@@ -398,7 +398,17 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
 
         layouts = layout_df.loc[
             (layout_df['number of boxes'] == n_photos) & (layout_df['max portraits'] >= portraits) & (
-                    layout_df['max landscapes'] >= landscapes)]
+                    layout_df['max landscapes'] >= landscapes)].copy()
+        layouts['number of squares'] = layouts.apply(lambda x: len(x['left_square_ids']) + len(x['right_square_ids']), axis=1)
+
+        # large spreads with squares gets trivial layout
+        if n_photos > 13 and len(layouts[layouts['number of squares']==n_photos]) > 0 and n_spreads == 1:
+            selectedLayout = layouts[layouts['number of squares']==n_photos]
+            single_spreads=[]
+            for layout_idx, layout in selectedLayout.iterrows():
+                single_spreads.append([layout_idx, set(range(0,len(layout['left_square_ids']))),set(range(len(layout['left_square_ids']),n_photos)),n_photos])
+            multi_spreads.append(single_spreads)
+            return multi_spreads
 
         ### greedy attempt to find layout based on seperation of time, class and color
 
