@@ -17,7 +17,7 @@ from bson.objectid import ObjectId
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from experiments.plotting import plot_selected_rows_to_pdf
-from collections import Counter
+from src.core.models import GroupProcessingResult
 
 def read_layouts_data(message, json_content):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -698,77 +698,71 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
     logger.info(f"Added Album Cover composition with id {counter_comp_id-1}")
 
     # Add images
-    for number_groups,group_dict in enumerate(output_list):
-        for group_name in group_dict.keys():
-            group_result = group_dict[group_name]
-            # logger.debug('Group name/result: {}: {}'.format(group_name, group_result))
-            total_spreads = len(group_result)
-            for i in range(total_spreads):
-                group_data = group_result[i]
-                if isinstance(group_data, float):
-                    continue
-                if isinstance(group_data, list):
-                    number_of_spreads = len(group_data)
+    for number_groups, group_dict in enumerate(output_list):
+        for group_id, result in group_dict.items():
+            if not isinstance(result, GroupProcessingResult):
+                logger.warning(f"Unexpected result type for group {group_id}: {type(result)}")
+                continue
 
-                    for spread_index in range(number_of_spreads):
-                        layout_id = group_data[spread_index][0]
+            for spread in result.spreads:
+                layout_id = spread.layout_id
 
-                        design_id = layouts_df.loc[layout_id]['id']
-                        if design_id > 0:
-                            design_boxes = sort_boxes(original_designs_data[str(design_id)]['boxes'])
-                        else:
-                            design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
-                            design_id = -1 * design_id
+                design_id = layouts_df.loc[layout_id]['id']
+                if design_id > 0:
+                    design_boxes = sort_boxes(original_designs_data[str(design_id)]['boxes'])
+                else:
+                    design_boxes = get_mirrored_boxes(original_designs_data[str(-1 * design_id)]['boxes'])
+                    design_id = -1 * design_id
 
-                        result_dict['compositions'].append({"compositionId": counter_comp_id,
-                                                       "compositionPackageId": message.content['compositionPackageId'],
-                                                       "designId": design_id,
-                                                       "styleId": message.designsInfo['defaultPackageStyleId'],
-                                                       "revisionCounter": 0,
-                                                       "copies": 1,
-                                                       "boxes": design_boxes,
-                                                       "logicalSelectionsState": None})
+                result_dict['compositions'].append({"compositionId": counter_comp_id,
+                                               "compositionPackageId": message.content['compositionPackageId'],
+                                               "designId": design_id,
+                                               "styleId": message.designsInfo['defaultPackageStyleId'],
+                                               "revisionCounter": 0,
+                                               "copies": 1,
+                                               "boxes": design_boxes,
+                                               "logicalSelectionsState": None})
 
-                        cur_layout_info = layouts_df.loc[layout_id]['boxes_info']
-                        left_box_ids = layouts_df.loc[layout_id]['left_box_ids']
-                        right_box_ids = layouts_df.loc[layout_id]['right_box_ids']
+                cur_layout_info = layouts_df.loc[layout_id]['boxes_info']
+                left_box_ids = layouts_df.loc[layout_id]['left_box_ids']
+                right_box_ids = layouts_df.loc[layout_id]['right_box_ids']
 
-                        left_page_photos = list(group_data[spread_index][1])
-                        right_page_photos = list(group_data[spread_index][2])
+                left_page_photos = spread.left_photos
+                right_page_photos = spread.right_photos
 
-                        all_box_ids = left_box_ids + right_box_ids
-                        all_photos = left_page_photos + right_page_photos
+                all_box_ids = left_box_ids + right_box_ids
+                all_photos = left_page_photos + right_page_photos
 
-                        # Loop over boxes and plot images
-                        for j, box in enumerate(cur_layout_info):
-                            box_id = box['id']
-                            if box_id not in all_box_ids:
-                                print('Some error, cant find box with id: {}'.format(box_id))
+                # Loop over boxes and plot images
+                for j, box in enumerate(cur_layout_info):
+                    box_id = box['id']
+                    if box_id not in all_box_ids:
+                        print('Some error, cant find box with id: {}'.format(box_id))
 
-                            element_index = all_box_ids.index(box_id)
-                            cur_photo = all_photos[element_index]
-                            image_id = cur_photo.id
+                    element_index = all_box_ids.index(box_id)
+                    cur_photo = all_photos[element_index]
+                    image_id = cur_photo.id
 
-                            image_info = images_df[images_df["image_id"] == image_id]
-                            if image_info is None or image_info.empty:
-                                continue
-                            else:
-                                x, y, w, h = customize_box(image_info.iloc[0], box_id2data[(design_id,box_id)],album_ar)
-                            result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
-                                                            "compositionId" : counter_comp_id,
-                                                            "compositionPackageId": message.content['compositionPackageId'],
-                                                            "boxId" : box_id,
-                                                            "photoId" : image_id,
-                                                            "cropX" : x,
-                                                            "cropY" : y,
-                                                            "cropWidth" : w,
-                                                            "cropHeight" : h,
-                                                            "rotate" : 0,
-                                                            "projectId" : message.content['projectId'],
-                                                            "photoFilter" : 0,
-                                                            "photo" : None})
-                            counter_image_id += 1
-                        counter_comp_id += 1
+                    image_info = images_df[images_df["image_id"] == image_id]
+                    if image_info is None or image_info.empty:
+                        continue
+                    else:
+                        x, y, w, h = customize_box(image_info.iloc[0], box_id2data[(design_id,box_id)],album_ar)
+                    result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
+                                                    "compositionId" : counter_comp_id,
+                                                    "compositionPackageId": message.content['compositionPackageId'],
+                                                    "boxId" : box_id,
+                                                    "photoId" : image_id,
+                                                    "cropX" : x,
+                                                    "cropY" : y,
+                                                    "cropWidth" : w,
+                                                    "cropHeight" : h,
+                                                    "rotate" : 0,
+                                                    "projectId" : message.content['projectId'],
+                                                    "photoFilter" : 0,
+                                                    "photo" : None})
+                    counter_image_id += 1
+                counter_comp_id += 1
 
     logger.info(f"Added Album any page")
     # adding the last page

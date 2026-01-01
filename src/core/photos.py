@@ -4,17 +4,20 @@ import numpy as np
 from glob import glob
 
 
+from dataclasses import dataclass
+from typing import Any, Optional
+
+@dataclass(frozen=True)
 class Photo:
     # class definition to hold all photo information required to calculate the layout score
-    def __init__(self, id, ar, color, rank, photo_class, cluster_label, general_time, original_context=None):
-        self.id = id
-        self.ar = ar
-        self.color = color
-        self.rank = rank
-        self.photo_class = photo_class
-        self.cluster_label = cluster_label
-        self.general_time = general_time
-        self.original_context = original_context
+    id: Any
+    ar: float
+    color: bool
+    rank: float
+    photo_class: Optional[str]
+    cluster_label: int
+    general_time: float
+    original_context: Optional[str] = None
 
     @classmethod
     def from_array(cls, array):

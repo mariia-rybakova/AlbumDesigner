@@ -323,44 +323,37 @@ def process_gallery_time(message, gallery_info_df, logger):
 
 
 
+from src.core.models import GroupProcessingResult, Spread
+
 def sort_groups_by_time(groups_list, logger):
     try:
         groups_time_list = list()
-        for number_groups, group_dict in enumerate(groups_list):
+        for group_dict in groups_list:
             photos_time_list = list()
-            # Sort spreads inside each group
-            for group_name in group_dict.keys():
-                group_result = group_dict[group_name]
-                total_spreads = len(group_result)
-                for i in range(total_spreads):
-                    group_data = group_result[i]
-                    if isinstance(group_data, float):
-                        continue
-                    if isinstance(group_data, list):
-                        number_of_spreads = len(group_data)
-                        # Sort spreads inside this group_data by min general_time of photos in the spread
-                        def spread_time_key(spread):
-                            left_page_photos = list(spread[1])
-                            right_page_photos = list(spread[2])
-                            all_photos = left_page_photos + right_page_photos
-                            times = [photo.general_time for photo in all_photos if photo]
-                            return min(times) if times else float('inf')
-                        group_data.sort(key=spread_time_key)
-                        # After sorting, continue as before
-                        for spread_index in range(number_of_spreads):
-                            left_page_photos = list(group_data[spread_index][1])
-                            right_page_photos = list(group_data[spread_index][2])
-                            all_photos = left_page_photos + right_page_photos
-                            for cur_photo in all_photos:
-                                if not cur_photo or cur_photo.id == -1:
-                                    continue
-                                cur_photo_time = cur_photo.general_time
-                                photos_time_list.append(cur_photo_time)
-            groups_time_list.append((group_dict, median(photos_time_list) if len(photos_time_list) > 0 else float('inf')))
-        groups_time_list = sorted(groups_time_list, key=lambda x: x[1])
-        sorted_data_list = [group_data for group_data, _ in groups_time_list]
-
-        return sorted_data_list
+            # group_dict is a Dict[str, GroupProcessingResult]
+            for group_id, result in group_dict.items():
+                if not isinstance(result, GroupProcessingResult):
+                    continue
+                
+                # Sort spreads inside this result by min general_time of photos
+                def spread_time_key(spread: Spread):
+                    all_photos = spread.left_photos + spread.right_photos
+                    times = [photo.general_time for photo in all_photos if photo and photo.id != -1]
+                    return min(times) if times else float('inf')
+                
+                result.spreads.sort(key=spread_time_key)
+                
+                # Collect times for sorting the groups themselves
+                for spread in result.spreads:
+                    all_photos = spread.left_photos + spread.right_photos
+                    for cur_photo in all_photos:
+                        if cur_photo and cur_photo.id != -1:
+                            photos_time_list.append(cur_photo.general_time)
+            
+            groups_time_list.append((group_dict, median(photos_time_list) if photos_time_list else float('inf')))
+        
+        groups_time_list.sort(key=lambda x: x[1])
+        return [item[0] for item in groups_time_list]
     except Exception as ex:
         logger.warning(f"Error in sorting groups by time: {ex}. Return groups without sorting by time.")
         return groups_list
