@@ -1,5 +1,6 @@
 import pandas as pd
 
+from src.core.models import AlbumDesignResources
 from utils.album_tools import get_images_per_groups
 from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time, split_illegal_group_in_certain_point
 from utils.configs import CONFIGS
@@ -40,12 +41,13 @@ def check_time_based_split_needed(general_times_list, group_time_list, group_key
     return False, None
 
 
-def handle_wedding_splitting(photos_df, look_up_table ,logger=None):
+def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=None):
     # handle splitting
+    look_up_table = resources.look_up_table if hasattr(resources, 'look_up_table') else {}
     split_df = photos_df[photos_df['group_size'] >= CONFIGS['max_img_split']]
     split_groups = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups)
-    count=0
+    count = 0
     for group_key, group in split_groups:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
         splitting_score = round(group['group_size'].iloc[0] / group_spread_size) if group_spread_size > 0 else 0
@@ -67,9 +69,14 @@ def handle_wedding_splitting(photos_df, look_up_table ,logger=None):
             else:
                 updated_group = None
         if updated_group is not None:
-           for row_index in updated_group.index:
-               sub_index = int(updated_group.loc[row_index, 'cluster_context'].split('_')[-2])
-               photos_df.loc[row_index, 'group_sub_index'] = sub_index
+            for row_index in updated_group.index:
+                # Use the last part of the cluster_context as the sub_index
+                try:
+                    context_parts = updated_group.loc[row_index, 'cluster_context'].split('_')
+                    sub_index = int(context_parts[-2])
+                    photos_df.loc[row_index, 'group_sub_index'] = sub_index
+                except (IndexError, ValueError):
+                    logger.warning(f"Could not parse sub_index from context: {updated_group.loc[row_index, 'cluster_context']}")
 
     photo_groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     for group_key, group in photo_groups:
@@ -131,9 +138,10 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
     return photos_df
 
 
-def process_wedding_merging(photos_df, look_up_table,logger=None):
+def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=None):
+    look_up_table = resources.look_up_table if hasattr(resources, 'look_up_table') else {}
     mask_special = photos_df['cluster_context'].isin(['None', 'other'])
-    photos_df['group_spreads'] = photos_df.apply(lambda x: x['group_size'] / look_up_table[x['cluster_context']][0], axis=1)
+    photos_df['group_spreads'] = photos_df.apply(lambda x: x['group_size'] / look_up_table[x['cluster_context']][0] if x['cluster_context'] in look_up_table else 1, axis=1)
     df_special = photos_df[mask_special].copy()
     df_regular = photos_df[~mask_special].copy()
 
@@ -200,7 +208,7 @@ def process_wedding_merging(photos_df, look_up_table,logger=None):
     return photos_df, True
 
 
-def process_wedding_illegal_groups(photos_df, look_up_table, manual_selection, logger=None, max_iterations=500):
+def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, manual_selection, logger=None, max_iterations=500):
     required_columns = {'time_cluster', 'cluster_context', 'cluster_label'}
 
     # Check if required columns exist
@@ -233,7 +241,7 @@ def process_wedding_illegal_groups(photos_df, look_up_table, manual_selection, l
 
     iteration = 0
     try:
-        photos_df = handle_wedding_splitting(photos_df,look_up_table, logger)
+        photos_df = handle_wedding_splitting(photos_df, resources, logger)
 
         photos_df['merge_allowed'] = True
         photos_df['original_context'] = photos_df['cluster_context'].copy()
@@ -246,7 +254,7 @@ def process_wedding_illegal_groups(photos_df, look_up_table, manual_selection, l
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
                 break
 
-            photos_df, was_merge = process_wedding_merging(photos_df,look_up_table, logger)
+            photos_df, was_merge = process_wedding_merging(photos_df, resources, logger)
             if not was_merge:
                 break
 
@@ -262,4 +270,4 @@ def process_wedding_illegal_groups(photos_df, look_up_table, manual_selection, l
     group2images = get_images_per_groups(groups)
     logger.info(f"Final number of groups for the album: {len(groups)}")
     logger.info(f"Final groups after illegal handling: {group2images}")
-    return groups, group2images, look_up_table
+    return groups, group2images, resources.look_up_table if hasattr(resources, 'look_up_table') else {}

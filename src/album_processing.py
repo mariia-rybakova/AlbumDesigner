@@ -161,7 +161,15 @@ def _rank_and_select_best_spread(filtered_spreads, sub_group_photos, layout_id2d
 
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False):
-    resources = AlbumDesignResources.from_dict(designs_info)
+    group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
+    
+    look_up_table = modified_lut if modified_lut is not None else get_lookup_table(group2images_initial, is_wedding, logger, density)
+    look_up_table = update_lookup_table_with_layouts_size(look_up_table, designs_info['anyPagelayouts_df'])
+    
+    max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages'])
+    look_up_table = update_lookup_table_with_limit(group2images_initial, is_wedding, look_up_table, max_total_spreads=max_total_spreads)
+
+    resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
     
     if is_wedding:
         original_groups = get_wedding_groups(df, manual_selection, logger)
@@ -171,24 +179,19 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     group2images = get_images_per_groups(original_groups)
     logger.info('Detected groups: {}'.format(group2images))
 
-    look_up_table = modified_lut if modified_lut is not None else get_lookup_table(group2images, is_wedding, logger, density)
-    look_up_table = update_lookup_table_with_layouts_size(look_up_table, resources.layouts_df)
-    
-    max_total_spreads = max(CONFIGS['max_total_spreads'], resources.max_pages)
-    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max_total_spreads)
-
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images, look_up_table = process_wedding_illegal_groups(df, look_up_table, manual_selection, logger)
+        updated_groups, group2images, look_up_table = process_wedding_illegal_groups(df, resources, manual_selection, logger)
+        resources.look_up_table = look_up_table
         logger.info(f'Illegal groups processing time: {time.time() - start_time:.2f} seconds')
     else:
         updated_groups = original_groups
 
-    look_up_table = update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads=max_total_spreads)
+    resources.look_up_table = update_lookup_table_with_limit(group2images, is_wedding, resources.look_up_table, max_total_spreads=max_total_spreads)
 
     result_list = []
     for group_name in group2images.keys():
-        spread_params = get_current_spread_parameters(group_name, group2images[group_name], is_wedding, look_up_table)
+        spread_params = get_current_spread_parameters(group_name, group2images[group_name], is_wedding, resources.look_up_table)
         if spread_params[0] > 24:
             spread_params = (24.0, spread_params[1])
             

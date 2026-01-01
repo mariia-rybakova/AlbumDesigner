@@ -399,7 +399,11 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
         layouts = layout_df.loc[
             (layout_df['number of boxes'] == n_photos) & (layout_df['max portraits'] >= portraits) & (
                     layout_df['max landscapes'] >= landscapes)].copy()
-        layouts['number of squares'] = layouts.apply(lambda x: len(x['left_square_ids']) + len(x['right_square_ids']), axis=1)
+        
+        if not layouts.empty:
+            layouts['number of squares'] = layouts.apply(lambda x: len(list(x['left_square_ids'])) + len(list(x['right_square_ids'])), axis=1)
+        else:
+            layouts['number of squares'] = 0
 
         # large spreads with squares gets trivial layout
         if n_photos > 13 and len(layouts[layouts['number of squares']==n_photos]) > 0 and n_spreads == 1:
@@ -416,18 +420,18 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
             if len(layouts) > 0 :
                 greedy_layouts = layouts.copy()
 
-                greedy_layouts['max_left_portraits'] = greedy_layouts[['left_portrait_ids', 'left_square_ids']].apply(
-                    lambda x: len(x['left_portrait_ids']) + len(x['left_square_ids']), axis=1)
-                greedy_layouts['max_left_landscapes'] = greedy_layouts[['left_landscape_ids', 'left_square_ids']].apply(
-                    lambda x: len(x['left_landscape_ids']) + len(x['left_square_ids']), axis=1)
-                greedy_layouts['max_right_portraits'] = greedy_layouts[['right_portrait_ids', 'right_square_ids']].apply(
-                    lambda x: len(x['right_portrait_ids']) + len(x['right_square_ids']), axis=1)
-                greedy_layouts['max_right_landscapes'] = greedy_layouts[['right_landscape_ids', 'right_square_ids']].apply(
-                    lambda x: len(x['right_landscape_ids']) + len(x['right_square_ids']), axis=1)
+                greedy_layouts['max_left_portraits'] = greedy_layouts.apply(
+                    lambda x: len(list(x['left_portrait_ids'])) + len(list(x['left_square_ids'])), axis=1)
+                greedy_layouts['max_left_landscapes'] = greedy_layouts.apply(
+                    lambda x: len(list(x['left_landscape_ids'])) + len(list(x['left_square_ids'])), axis=1)
+                greedy_layouts['max_right_portraits'] = greedy_layouts.apply(
+                    lambda x: len(list(x['right_portrait_ids'])) + len(list(x['right_square_ids'])), axis=1)
+                greedy_layouts['max_right_landscapes'] = greedy_layouts.apply(
+                    lambda x: len(list(x['right_landscape_ids'])) + len(list(x['right_square_ids'])), axis=1)
                 greedy_layouts['left_total_capacity'] = greedy_layouts.apply(
-                    lambda x: len(x['left_portrait_ids']) + len(x['left_landscape_ids']) + len(x['left_square_ids']), axis=1)
+                    lambda x: len(list(x['left_portrait_ids'])) + len(list(x['left_landscape_ids'])) + len(list(x['left_square_ids'])), axis=1)
                 greedy_layouts['right_total_capacity'] = greedy_layouts.apply(
-                    lambda x: len(x['right_portrait_ids']) + len(x['right_landscape_ids']) + len(x['right_square_ids']), axis=1)
+                    lambda x: len(list(x['right_portrait_ids'])) + len(list(x['right_landscape_ids'])) + len(list(x['right_square_ids'])), axis=1)
 
                 greedy_single_spreads = []
                 time_sequeces = [(photo_id, photos[photo_id].general_time, (photos[photo_id].original_context,photos[photo_id].color)) for photo_id in spread_photos]
@@ -452,7 +456,7 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                             ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity']))
                     possible_layouts = greedy_layouts.loc[mask]
                     for layout_idx , layout in possible_layouts.iterrows():
-                        greedy_single_spreads.append([layout_idx, set([item[0] for item in grouped_sequences[0]]), set([item[0] for item in grouped_sequences[1]]), len(layout['left_square_ids'] + layout['right_square_ids'])])
+                        greedy_single_spreads.append([layout_idx, set([item[0] for item in grouped_sequences[0]]), set([item[0] for item in grouped_sequences[1]]), len(list(layout['left_square_ids']) + list(layout['right_square_ids']))])
 
                 colors = [photos[photo_id].color for photo_id in spread_photos]
                 if len(set(colors)) == 2:
@@ -479,7 +483,7 @@ def layoutSingleCombination(singleClassComb, layout_df, photos,params):
                     for layout_idx, layout in possible_layouts.iterrows():
                         greedy_single_spreads.append([layout_idx, set([photo_id for photo_id in spread_photos if photos[photo_id].color == left_condition]),
                                                       set([photo_id for photo_id in spread_photos if photos[photo_id].color != left_condition]),
-                                                      len(layout['left_square_ids'] + layout['right_square_ids'])])
+                                                      len(list(layout['left_square_ids']) + list(layout['right_square_ids']))])
             else:
                 greedy_single_spreads = []
         except Exception as e:

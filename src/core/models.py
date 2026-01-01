@@ -9,14 +9,16 @@ class AlbumDesignResources:
     layout_id2data: Dict[int, Any]
     box_id2data: Dict[Tuple[int, int], Any]
     max_pages: int
+    look_up_table: Dict[str, Tuple[float, float]] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, designs_info: Dict[str, Any]):
+    def from_dict(cls, designs_info: Dict[str, Any], look_up_table: Dict[str, Tuple[float, float]] = None):
         return cls(
             layouts_df=designs_info['anyPagelayouts_df'],
             layout_id2data=designs_info['anyPagelayout_id2data'],
             box_id2data=designs_info['anyPagebox_id2data'],
-            max_pages=designs_info['maxPages']
+            max_pages=designs_info['maxPages'],
+            look_up_table=look_up_table or {}
         )
 
 @dataclass
