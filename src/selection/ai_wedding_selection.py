@@ -564,9 +564,6 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
         for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
             n_actual = len(cluster_df)
-            print(f"going with {cluster_name}")
-            if cluster_name != 'getting hair-makeup':
-                continue
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
             need = images_allocation[cluster_name]
