@@ -187,8 +187,8 @@ class SelectionStage(Stage):
                     is_wedding = _msg.content.get('is_wedding', False)
                     if is_wedding:
                         modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-                        modified_lut['Other'] = (24, 12)  # Set 'Other' event to have max spreads
-                        modified_lut['None'] = (24, 12)
+                        modified_lut['Other'] = (24, 4)  # Set 'Other' event to have max spreads
+                        modified_lut['None'] = (24, 4)
                         _msg.content['modified_lut'] = modified_lut
                     _msg.content['manual_selection'] = True
                     updated_messages.append(_msg)
