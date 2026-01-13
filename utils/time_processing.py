@@ -138,36 +138,25 @@ def get_time_clusters_dbscan(X):
 
 def build_time_clusters(selected_df, all_photos_df=None):
     # Cluster by time
-    if selected_df is None or selected_df.empty:
-        raise Exception('Selected DataFrame is empty. we cant build time clusters')
-
     general_time_df = selected_df[['general_time']]
     X = general_time_df.values.reshape(-1, 1)
-
     if all_photos_df is not None:
         all_X = all_photos_df['general_time'].values.reshape(-1, 1)
         initial_clusters, best_n = get_time_clusters_dbscan(all_X)
 
         # Assign clusters to all_photos_df
-        all_photos_df = all_photos_df.copy()
         all_photos_df['time_cluster'] = initial_clusters
 
-        # Build a unique mapping: image_id -> time_cluster
-        # If duplicates exist, keep the first (or choose a rule you prefer)
-        id_to_cluster = (
-            all_photos_df.drop_duplicates(subset='image_id', keep='first')
-            .set_index('image_id')['time_cluster']
+        # Map clusters to selected_df based on matching id
+        selected_df = selected_df.merge(
+            all_photos_df[['image_id', 'time_cluster']],
+            on='image_id',
+            how='left'
         )
-
-        # Assign to selected_df without changing row count
-        selected_df = selected_df.copy()
-        selected_df['time_cluster'] = selected_df['image_id'].map(id_to_cluster)
-
-        initial_clusters = selected_df['time_cluster'].to_numpy()
+        initial_clusters = selected_df['time_cluster'].values
     else:
-        initial_clusters, best_n = get_time_clusters_dbscan(X)
 
-    X = selected_df[['general_time']].values.reshape(-1, 1)
+        initial_clusters, best_n = get_time_clusters_dbscan(X)
 
     if -1 in initial_clusters:
         noise_mask = initial_clusters == -1
