@@ -270,7 +270,8 @@ def get_artificial_images_time(base_url, gallery_info_df,time_correctness):
     scenes=[]
     gallery_info_df['scene_name'] = ''
     gallery_info_df['idx_in_scene'] = None
-    for scene in photos_metadata.scenes:
+    gallery_info_df['scenelist_idx'] = None
+    for scene_idx,scene in enumerate(photos_metadata.scenes):
         if scene.isHighlights:
             continue
         photo_count=0
@@ -278,17 +279,18 @@ def get_artificial_images_time(base_url, gallery_info_df,time_correctness):
             photo_count+=1
             gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'scene_name'] = scene.name
             gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'idx_in_scene'] = idx
+            gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'scenelist_idx'] = scene_idx
         if photo_count>0:
-            scenes.append({'name':scene.name,'photo_count':photo_count,'priority':scene.viewPrio})
+            scenes.append({'name':scene.name,'photo_count':photo_count,'priority':scene.viewPrio,'scenelist_idx':scene_idx})
 
     scene_df = pd.DataFrame(scenes)
     scene_df = scene_df.sort_values(by=['priority'], ascending=True)
     scene_df['scene_index'] = range(len(scene_df))
     scene_df['cumulative_photo_count'] = scene_df['photo_count'].shift(1).fillna(0).cumsum()
     scene_df['start_time'] = scene_df['cumulative_photo_count'] * 10 + scene_df['scene_index'] * 1800
-    gallery_info_df = gallery_info_df.merge(scene_df[['name', 'scene_index', 'start_time']],
-                                            left_on='scene_name',
-                                            right_on='name',
+    gallery_info_df = gallery_info_df.merge(scene_df[['name', 'scene_index', 'start_time','scenelist_idx']],
+                                            left_on='scenelist_idx',
+                                            right_on='scenelist_idx',
                                             how='left')
     gallery_info_df = gallery_info_df.drop('name', axis=1)
     if not time_correctness:
