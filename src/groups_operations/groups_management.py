@@ -1,7 +1,7 @@
 import pandas as pd
 
 from src.core.models import AlbumDesignResources
-from utils.album_tools import get_images_per_groups
+from utils.album_tools import get_images_per_groups, get_missing_columns, split_groups
 from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time, split_illegal_group_in_certain_point
 from utils.configs import CONFIGS
 
@@ -43,7 +43,7 @@ def check_time_based_split_needed(general_times_list, group_time_list, group_key
 
 def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=None):
     # handle splitting
-    look_up_table = resources.look_up_table if hasattr(resources, 'look_up_table') else {}
+    look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
     split_df = photos_df[photos_df['group_size'] >= CONFIGS['max_img_split']]
     split_groups = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups)
@@ -139,7 +139,7 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
 
 
 def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=None):
-    look_up_table = resources.look_up_table if hasattr(resources, 'look_up_table') else {}
+    look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
     mask_special = photos_df['cluster_context'].isin(['None', 'other'])
     photos_df['group_spreads'] = photos_df.apply(lambda x: x['group_size'] / look_up_table[x['cluster_context']][0] if x['cluster_context'] in look_up_table else 1, axis=1)
     df_special = photos_df[mask_special].copy()
@@ -207,23 +207,16 @@ def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=N
         current_merges.add(selected_key)
     return photos_df, True
 
-
-def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, manual_selection, logger=None, max_iterations=500):
-    required_columns = {'time_cluster', 'cluster_context', 'cluster_label'}
-
+def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.DataFrame:
     # Check if required columns exist
-    if not required_columns.issubset(photos_df.columns):
-        missing = required_columns - set(photos_df.columns)
-        logger.error(f"Missing required columns: {missing}")
+    missing = get_missing_columns({'time_cluster', 'cluster_context', 'cluster_label'}, photos_df, logger)
+    if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
     photos_df['group_sub_index'] = -1
     photos_df['group_size'] = -1
     if not manual_selection:
-        mask_special = photos_df['cluster_context'].isin(['None', 'other'])
-        df_special = photos_df[mask_special].copy()
-        df_regular = photos_df[~mask_special].copy()
-        groups_special = df_special.groupby(['time_cluster', 'cluster_context', 'cluster_label'])
+        df_special, df_regular, groups_special = split_groups(photos_df)
         for idx, (key, group_df) in enumerate(groups_special):
             group_size = len(group_df)
             df_special.loc[group_df.index, 'group_sub_index'] = idx
@@ -238,6 +231,11 @@ def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, m
         df_regular.loc[group_df.index, 'group_size'] = group_size
 
     photos_df = pd.concat([df_special, df_regular], ignore_index=True)
+    return photos_df
+
+def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, manual_selection, logger=None,
+                                   max_iterations=500):
+    photos_df = _get_groups(photos_df, manual_selection, logger)
 
     iteration = 0
     try:
@@ -270,4 +268,4 @@ def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, m
     group2images = get_images_per_groups(groups)
     logger.info(f"Final number of groups for the album: {len(groups)}")
     logger.info(f"Final groups after illegal handling: {group2images}")
-    return groups, group2images, resources.look_up_table if hasattr(resources, 'look_up_table') else {}
+    return groups, group2images

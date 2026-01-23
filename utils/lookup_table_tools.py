@@ -1,5 +1,6 @@
 # Lookup table with category preferences (mean, std)
 import math
+from typing import Dict, Tuple, Optional
 from utils.configs import CONFIGS
 
 wedding_lookup_table = {
@@ -58,105 +59,107 @@ non_wedding_lookup_table = {
 }
 
 
-def get_lookup_table(group2images, is_wedding, logger=None,density=3):
-    density_factors = CONFIGS['density_factors']
+class LookUpTable:
+    def __init__(self, table: Dict[str, Tuple[float, float]] = None):
+        self._table = {} if not table else table
 
-    try:
-        if is_wedding:
-            lookup_table = wedding_lookup_table
-        else:
-            lookup_table = non_wedding_lookup_table
+    @property
+    def table(self):
+        return self._table.copy()
 
-        max_per_spread = 24
+    def get_table(self, group2images, is_wedding, logger=None, density=3):
+        density_factors = CONFIGS['density_factors']
 
-        for group_name, num_images in group2images.items():
+        try:
             if is_wedding:
-                group_id = group_name[1].split('_')[0]  # Extract group ID
+                lookup_table = wedding_lookup_table
             else:
-                group_id = group_name[0].split('_')[0]
+                lookup_table = non_wedding_lookup_table
 
-            # Assign default values if group_id is not in lookup_table
-            if group_id not in lookup_table:
-                lookup_table[group_id] = (10, 4)
+            max_per_spread = 24
 
-            lookup_table[group_id] = (max(1, min(max_per_spread, lookup_table[group_id][0] * density_factors[density])),
-                                      max(0.25, min(3, lookup_table[group_id][1] * density_factors[density])))
+            for group_name, num_images in group2images.items():
+                if is_wedding:
+                    group_id = group_name[1].split('_')[0]  # Extract group ID
+                else:
+                    group_id = group_name[0].split('_')[0]
 
+                # Assign default values if group_id is not in lookup_table
+                if group_id not in lookup_table:
+                    lookup_table[group_id] = (10, 4)
 
+                lookup_table[group_id] = (
+                    max(1, min(max_per_spread, lookup_table[group_id][0] * density_factors[density])),
+                    max(0.25, min(3, lookup_table[group_id][1] * density_factors[density]))
+                )
 
-        return lookup_table  # Return the updated lookup table
+            # Updated the lookup table
+            self._table = lookup_table
 
-    except Exception as e:
-        logger.error(f"Error: Unexpected error while updating lookup table: {str(e)}")
-        return None
+        except Exception as e:
+            logger.error(f"Error: Unexpected error while updating lookup table: {str(e)}")
 
+    def get_current_spread_parameters(self, group_key, number_of_images, is_wedding):
+        # Extract the correct lookup key
+        content_key = group_key[1].split("_")[0] if is_wedding and "_" in group_key[1] else group_key[1] if is_wedding else \
+            group_key[0].split("_")[0]
 
-def get_current_spread_parameters(group_key, number_of_images, is_wedding, lookup_table):
-    # Extract the correct lookup key
-    content_key = group_key[1].split("_")[0] if is_wedding and "_" in group_key[1] else group_key[1] if is_wedding else \
-    group_key[0].split("_")[0]
+        group_params = self._table.get(content_key, (10, 1.5))
+        group_value = group_params[0]
+        if group_value == 0:
+            spreads = 0
+        else:
+            spreads = 1 if round(number_of_images / group_value) == 0 else round(number_of_images / group_value)
 
-    group_params = lookup_table.get(content_key, (10, 1.5))
-    group_value = group_params[0]
-    if group_value == 0:
-        spreads = 0
-    else:
-        spreads = 1 if round(number_of_images / group_value) == 0 else round(number_of_images / group_value)
+        if spreads > CONFIGS['max_group_spread']:
+            max_images_per_spread = math.ceil(number_of_images / CONFIGS['max_group_spread'])
+            if max_images_per_spread > CONFIGS['max_imges_per_spread']:
+                max_images_per_spread = CONFIGS['max_imges_per_spread']
+            return max_images_per_spread, group_params[1]
 
-    if spreads > CONFIGS['max_group_spread']:
-        max_images_per_spread = math.ceil(number_of_images / CONFIGS['max_group_spread'])
-        if max_images_per_spread > CONFIGS['max_imges_per_spread']:
-            max_images_per_spread = CONFIGS['max_imges_per_spread']
-        return max_images_per_spread, group_params[1]
+        return group_params
 
-    return group_params
+    def update_with_layouts_size(self, layouts_df):
+        largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
 
+        for key, value in self._table.items():
+            self._table[key] = (min(value[0], largest_layout_size), value[1])
 
-def update_lookup_table_with_layouts_size(lookup_table, layouts_df):
-    largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
+    def update_with_limit(self, group2images, is_wedding, max_total_spreads):
+        # First pass: Calculate initial spreads per group and total spreads
+        total_spreads = 0
+        spreads_per_group = {}
 
-    for key, value in lookup_table.items():
-        lookup_table[key] = (min(value[0], largest_layout_size), value[1])
-    return lookup_table
+        for key, number_images in group2images.items():
+            # Get spread parameters for the current group
+            spread_params = self.get_current_spread_parameters(key, number_images, is_wedding)
+            spreads = math.ceil(number_images / spread_params[0])  # Calculate required spreads for this group
 
+            # Store the calculated spreads and add to the total
+            spreads_per_group[key] = spreads
+            total_spreads += spreads
 
-def update_lookup_table_with_limit(group2images, is_wedding, lookup_table, max_total_spreads):
-    # First pass: Calculate initial spreads per group and total spreads
-    total_spreads = 0
-    spreads_per_group = {}
+        # If the total spreads exceed the limit, start reducing spreads
+        if total_spreads > max_total_spreads:
+            # Sort groups by the number of spreads in descending order (reduce larger groups first)
+            sorted_groups = sorted(spreads_per_group.items(), key=lambda x: x[1], reverse=True)
 
-    for key, number_images in group2images.items():
-        # Get spread parameters for the current group
-        spread_params = get_current_spread_parameters(key, number_images, is_wedding, lookup_table)
-        spreads = math.ceil(number_images / spread_params[0])  # Calculate required spreads for this group
+            excess_spreads = total_spreads - max_total_spreads
 
-        # Store the calculated spreads and add to the total
-        spreads_per_group[key] = spreads
-        total_spreads += spreads
+            for key, current_spreads in sorted_groups:
+                if excess_spreads <= 0:
+                    break  # Exit if we've reduced enough spreads
 
-    # If the total spreads exceed the limit, start reducing spreads
-    if total_spreads > max_total_spreads:
-        # Sort groups by the number of spreads in descending order (reduce larger groups first)
-        sorted_groups = sorted(spreads_per_group.items(), key=lambda x: x[1], reverse=True)
+                # Try reducing spreads for this group
+                new_spreads = min(2, max(1, current_spreads - 1))  # Ensure at least one spread per group
+                reduction = current_spreads - new_spreads
 
-        excess_spreads = total_spreads - max_total_spreads
+                spreads_per_group[key] = new_spreads
 
-        for key, current_spreads in sorted_groups:
-            if excess_spreads <= 0:
-                break  # Exit if we've reduced enough spreads
-
-            # Try reducing spreads for this group
-            new_spreads = min(2,max(1, current_spreads - 1))  # Ensure at least one spread per group
-            reduction = current_spreads - new_spreads
-
-            spreads_per_group[key] = new_spreads
-
-            # Update the group in the lookup table
-            content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else key[0].split("_")[0]
-            current_max_images, extra_value = lookup_table[content_key]
-            value_to_change = math.ceil(group2images[key] / new_spreads)
-            if value_to_change > current_max_images:
-                lookup_table[content_key] = (value_to_change, extra_value)
-                excess_spreads -= reduction
-
-    return lookup_table
+                # Update the group in the lookup table
+                content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else key[0].split("_")[0]
+                current_max_images, extra_value = self._table[content_key]
+                value_to_change = math.ceil(group2images[key] / new_spreads)
+                if value_to_change > current_max_images:
+                    self._table[content_key] = (value_to_change, extra_value)
+                    excess_spreads -= reduction

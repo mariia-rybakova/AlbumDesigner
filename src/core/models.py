@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Set, Optional
 import pandas as pd
 from src.core.photos import Photo
+from utils.lookup_table_tools import LookUpTable
 
 @dataclass
 class AlbumDesignResources:
@@ -9,16 +10,16 @@ class AlbumDesignResources:
     layout_id2data: Dict[int, Any]
     box_id2data: Dict[Tuple[int, int], Any]
     max_pages: int
-    look_up_table: Dict[str, Tuple[float, float]] = field(default_factory=dict)
+    look_up_table: LookUpTable = field(default_factory=LookUpTable)
 
     @classmethod
-    def from_dict(cls, designs_info: Dict[str, Any], look_up_table: Dict[str, Tuple[float, float]] = None):
+    def from_dict(cls, designs_info: Dict[str, Any], look_up_table: LookUpTable = None):
         return cls(
             layouts_df=designs_info['anyPagelayouts_df'],
             layout_id2data=designs_info['anyPagelayout_id2data'],
             box_id2data=designs_info['anyPagebox_id2data'],
             max_pages=designs_info['maxPages'],
-            look_up_table=look_up_table or {}
+            look_up_table=look_up_table or LookUpTable()
         )
 
 @dataclass

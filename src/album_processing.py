@@ -9,8 +9,7 @@ from src.core.spreads import generate_filtered_multi_spreads
 from src.core.scores import add_ranking_score, assign_photos_order
 from src.groups_operations.groups_management import process_wedding_illegal_groups
 from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult
-from utils.lookup_table_tools import (get_lookup_table, get_current_spread_parameters,
-                                      update_lookup_table_with_limit, update_lookup_table_with_layouts_size)
+from utils.lookup_table_tools import LookUpTable
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
 from utils.time_processing import sort_groups_by_time
 from utils.configs import CONFIGS
@@ -162,12 +161,17 @@ def _rank_and_select_best_spread(filtered_spreads, sub_group_photos, layout_id2d
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False):
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
-    
-    look_up_table = modified_lut if modified_lut is not None else get_lookup_table(group2images_initial, is_wedding, logger, density)
-    look_up_table = update_lookup_table_with_layouts_size(look_up_table, designs_info['anyPagelayouts_df'])
+
+    if modified_lut is not None:
+        look_up_table = LookUpTable(modified_lut)
+    else:
+        look_up_table = LookUpTable()
+        look_up_table.get_table(group2images_initial, is_wedding, logger, density)
+
+    look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
     
     max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages'])
-    look_up_table = update_lookup_table_with_limit(group2images_initial, is_wedding, look_up_table, max_total_spreads=max_total_spreads)
+    look_up_table.update_with_limit(group2images_initial, is_wedding, max_total_spreads=max_total_spreads)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
     
@@ -181,17 +185,17 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
 
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images, look_up_table = process_wedding_illegal_groups(df, resources, manual_selection, logger)
+        updated_groups, group2images = process_wedding_illegal_groups(df, resources, manual_selection, logger)
         resources.look_up_table = look_up_table
         logger.info(f'Illegal groups processing time: {time.time() - start_time:.2f} seconds')
     else:
         updated_groups = original_groups
 
-    resources.look_up_table = update_lookup_table_with_limit(group2images, is_wedding, resources.look_up_table, max_total_spreads=max_total_spreads)
+    resources.look_up_table.update_with_limit(group2images, is_wedding,  max_total_spreads=max_total_spreads)
 
     result_list = []
     for group_name in group2images.keys():
-        spread_params = get_current_spread_parameters(group_name, group2images[group_name], is_wedding, resources.look_up_table)
+        spread_params = resources.look_up_table.get_current_spread_parameters(group_name, group2images[group_name], is_wedding)
         if spread_params[0] > 24:
             spread_params = (24.0, spread_params[1])
             

@@ -1,36 +1,36 @@
 import os
 import json
 import warnings
-import numpy as np
 import base64
 import gzip
 import traceback
-
-import pandas as pd
 from typing import List, Union
 from datetime import datetime
 import multiprocessing as mp
+
+import numpy as np
+import pandas as pd
 from azure.storage.queue import QueueClient
+from qdrant_client import QdrantClient, models
+from pymongo import MongoClient
 
 from ptinfra import intialize, get_logger
 from ptinfra.pt_queue import  MessageQueue, MemoryQueue, RoundRobinReader
 from ptinfra.config import get_variable
 from ptinfra.stage import Stage
-from ptinfra.pt_queue import QReader, QWriter, Message
+from ptinfra.pt_queue import QReader, Message
 from ptinfra import  AbortRequested
-
-from qdrant_client import QdrantClient, models
-from pymongo import MongoClient
 
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.selection.auto_selection import ai_selection
 from src.core.key_pages import generate_first_last_pages
-from utils.time_processing import generate_time_clusters
 from src.album_processing import album_processing
 from src.request_processing import read_messages, assembly_output
+from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
 from utils.lookup_table_tools import wedding_lookup_table
+
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
     os.environ['ConfigServiceURL'] = 'https://devqa.pic-time.com/config/'
@@ -43,7 +43,6 @@ os.environ["PYTHONHASHSEED"] = "42"
 read_time_list = list()
 processing_time_list = list()
 reporting_time_list = list()
-
 
 
 def push_report_error(one_msg, az_connection_string, logger=None):
@@ -81,6 +80,7 @@ def push_report_error(one_msg, az_connection_string, logger=None):
         filename, lineno, func, text = tb[-1]
         raise Exception(f'Report queue error, message not sent, error: {ex}. Exception in function: {func}, line {lineno}, file {filename}.')
 
+
 def push_report_msg(one_msg, az_connection_string, logger=None):
     '''Push result to the report queue'''
 
@@ -106,8 +106,7 @@ def push_report_msg(one_msg, az_connection_string, logger=None):
 
 
 class ReadStage(Stage):
-    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
-                 logger=None):
+    def __init__(self, in_q: QReader = None, out_q: MemoryQueue = None, err_q: MemoryQueue = None, logger = None):
         super().__init__('ReadStage', self.read_messages, in_q, out_q, err_q, batch_size=1, max_threads=1)
         self.logger = logger
         try:
@@ -128,9 +127,6 @@ class ReadStage(Stage):
             self.logger.info(f'Initialize qdrant client, host {CONFIGS["QDRANT_HOST"]}, port 6333, grpc_port 6334')
         except Exception as ex:
             self.logger.error(f"Failed to connect to Qdrant: {ex}")
-
-
-
 
     def read_messages(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):
@@ -157,19 +153,15 @@ class ReadStage(Stage):
         return messages
 
 
-
 class SelectionStage(Stage):
-    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
-                 logger=None):
+    def __init__(self, in_q: MemoryQueue = None, out_q: MemoryQueue = None, err_q: MemoryQueue = None, logger = None):
         super().__init__('SelectionStage', self.get_selection, in_q, out_q, err_q, batch_size=1, max_threads=1)
         self.logger = logger
-
 
     def get_selection(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):
             self.logger.info("Abort requested")
             return []
-
 
         updated_messages = []
         messages = msgs if isinstance(msgs, list) else [msgs]
@@ -266,8 +258,7 @@ class SelectionStage(Stage):
 
 
 class ProcessStage(Stage):
-    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
-                 logger=None):
+    def __init__(self, in_q: MemoryQueue = None, out_q: MemoryQueue = None, err_q: MemoryQueue = None, logger = None):
         super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=1,
         batch_wait_time=5)
         self.logger = logger
@@ -297,7 +288,6 @@ class ProcessStage(Stage):
             bride_and_groom_df = message.content.get('bride and groom', pd.DataFrame())
             df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
-
 
             p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
             p.start()
@@ -360,7 +350,6 @@ class ProcessStage(Stage):
 
                 self.logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
 
-
                 final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, message.content.get('album_ar',
                                                                                                                    {'anyPage':2})['anyPage'],self.logger)
 
@@ -387,11 +376,9 @@ class ProcessStage(Stage):
         return msgs
 
 
-
 class ReportStage(Stage):
-    def __init__(self, in_q: QReader = None, out_q: QWriter = None, err_q: QWriter = None,
-                 logger=None):
-        super().__init__('ReportMessage', self.report_message, in_q, out_q, err_q, batch_size=1, max_threads=1)
+    def __init__(self, in_q: MemoryQueue = None, logger = None):
+        super().__init__('ReportMessage', self.report_message, in_q, None, None, batch_size=1, max_threads=1)
         self.az_connection_string = get_variable("QueueConnectionString")
         self.global_start_time = datetime.now()
         self.global_number_of_msgs = 0
@@ -432,7 +419,6 @@ class ReportStage(Stage):
             push_report_msg(one_msg, self.az_connection_string, self.logger)
             self.logger.debug('Message was reported to the queue: {}/{}. '.format(one_msg.content['projectId'], one_msg.content['conditionId']))
 
-
     def report_message(self, msgs: Union[Message, List[Message]]):
         start = datetime.now()
         if isinstance(msgs, Message):
@@ -461,68 +447,64 @@ class ReportStage(Stage):
         self.print_time_summary()
 
 
+def _get_azure_input_queue(logger):
+    try:
+        prefix = get_variable('PTEnvironment')
+    except:
+        prefix = 'dev'
 
-class MessageProcessor:
-    def __init__(self):
-        self.logger = get_logger(__name__, 'DEBUG')
+    input_queue = CONFIGS['collection_name']
+    print(prefix + input_queue)
 
-    def run(self):
-        settings_filename = os.environ.get('HostingSettingsPath',
-                                           '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
-
-        intialize('AlbumDesigner', settings_filename)
-
-        private_key = get_variable('PtKey')
-        self.logger.debug('Private key: {}'.format(private_key))
-
-        try:
-            prefix = get_variable('PTEnvironment')
-        except:
-            prefix = 'dev'
-
-        input_queue = CONFIGS['collection_name']
-        print(prefix + input_queue)
-        if prefix == 'dev':
-            dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+    if prefix == 'dev':
+        dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                 max_dequeue_allowed=1000)
+        dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                  max_dequeue_allowed=1000)
+        azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
+    elif prefix == 'production':
+        logger.info('PRODUCTION environment set, queue name: ' + input_queue)
+        ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                max_dequeue_allowed=1000)
+        prod_queue = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
+                                     max_dequeue_allowed=1000)
+        azure_input_q = RoundRobinReader([prod_queue, ep_queue])
+    else:
+        logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
+        azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
                                      max_dequeue_allowed=1000)
 
-            dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                      max_dequeue_allowed=1000)
-
-            azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
-
-            # azure_input_q = dev_queue
-
-        elif prefix == 'production':
-            self.logger.info('PRODUCTION environment set, queue name: ' + input_queue)
-            ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                    max_dequeue_allowed=1000)
-            prod_queue = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                         max_dequeue_allowed=1000)
-            azure_input_q = RoundRobinReader([prod_queue, ep_queue])
-        else:
-            self.logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
-            azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                         max_dequeue_allowed=1000)
-
-        read_q = MemoryQueue(1)
-        selection_q = MemoryQueue(1)
-        report_q = MemoryQueue(1)
-
-        read_stage = ReadStage(azure_input_q, read_q, report_q, logger=self.logger)
-        selection_stage = SelectionStage(read_q, selection_q, report_q, logger=self.logger)
-        process_stage = ProcessStage(selection_q, report_q, report_q, logger=self.logger)
-        report_stage = ReportStage(report_q, logger=self.logger)
-
-        report_stage.start()
-        selection_stage.start()
-        process_stage.start()
-        read_stage.start()
+    return azure_input_q
 
 
 def main():
-    message_processor = MessageProcessor()
-    message_processor.run()
+    logger = get_logger(__name__, 'DEBUG')
+
+    # Initialize
+    settings_filename = os.environ.get('HostingSettingsPath',
+                                       '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
+    intialize('AlbumDesigner', settings_filename)
+
+    private_key = get_variable('PtKey')
+    logger.debug('Private key: {}'.format(private_key))
+
+    # Define message queues
+    azure_input_q = _get_azure_input_queue(logger)
+    read_q = MemoryQueue(1)
+    selection_q = MemoryQueue(1)
+    report_q = MemoryQueue(1)
+
+    # Define stages
+    read_stage = ReadStage(azure_input_q, read_q, report_q, logger=logger)
+    selection_stage = SelectionStage(read_q, selection_q, report_q, logger=logger)
+    process_stage = ProcessStage(selection_q, report_q, report_q, logger=logger)
+    report_stage = ReportStage(report_q, logger=logger)
+
+    # Run
+    report_stage.start()
+    selection_stage.start()
+    process_stage.start()
+    read_stage.start()
 
 
 if __name__ == '__main__':

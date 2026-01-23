@@ -16,12 +16,6 @@ from qdrant_client import QdrantClient
 
 from src.request_processing import read_messages
 
-from src.core.photos import update_photos_ranks
-from src.smart_cropping import process_crop_images
-from src.core.key_pages import generate_first_last_pages
-from utils.time_processing import generate_time_clusters
-from src.album_processing import album_processing
-from src.request_processing import assembly_output
 from src.selection.auto_selection import ai_selection
 
 from reportlab.pdfgen import canvas
@@ -31,6 +25,10 @@ from PIL import Image
 import io
 from utils.lookup_table_tools import wedding_lookup_table
 from utils.configs import CONFIGS
+
+from ptinfra.pt_queue import Message
+from main import ProcessStage
+
 
 def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info):
     """
@@ -116,22 +114,10 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
         c.showPage()
     c.save()
 
+
 class Source:
     def __init__(self, id):
         self.id = id
-
-class Message:
-    body: Dict
-    source: Source
-
-    def __init__(self, body, id):
-        self.body = body
-        self.source = Source(id)
-        self.error = None
-
-    @property
-    def content(self) -> Dict:
-        return self.body
 
 
 def get_selection(message, logger):
@@ -227,106 +213,8 @@ def get_selection(message, logger):
         raise Exception(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
 
 
-def process_message(message, logger):
-    # check if its single message or list
-    params = [0.01, 100, 1000, 100, 300, 12]
-    logger.debug("Params for this Gallery are: {}".format(params))
-
-    df = message.content.get('gallery_photos_info', pd.DataFrame())
-    bride_and_groom_df = message.content.get('bride and groom', pd.DataFrame())
-    df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
-    df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
-
-    q = mp.Queue()
-    p = mp.Process(target=process_crop_images, args=(q, df_serializable))
-    p.start()
-
-    try:
-        stage_start = datetime.now()
-        # Extract gallery photo info safely
-        df = message.content.get('gallery_photos_info', pd.DataFrame())
-        ai_metadata = message.content.get('aiMetadata', {})
-        if ai_metadata is not None:
-            chosen_photos = ai_metadata.get('photoIds', [])
-        else:
-            chosen_photos = []
-        df = update_photos_ranks(df, chosen_photos)
-        if df.empty:
-            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-            return None
-
-        # Sorting the DataFrame by "image_order" column
-        sorted_df = df.sort_values(by="image_order", ascending=False)
-
-        # generate time clusters for the gallery photos
-        sorted_df = generate_time_clusters(message, sorted_df, logger)
-
-        df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, logger)
-
-        if message.content.get('aiMetadata', None) is not None:
-            density = message.content['aiMetadata'].get('density', 3)
-        else:
-            density = 3
-
-        # Handle the processing time logging
-        start = datetime.now()
-        message.content['gallery_photos_info'] = df
-        modified_lut = message.content['modified_lut'] if message.content.get('modified_lut', None) is not None else None
-
-        manual_selection = message.content.get('manual_selection', False)
-        album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params, logger=logger, density=density, manual_selection=manual_selection)
-
-        wait_start = datetime.now()
-        try:
-            cropped_df = q.get(timeout=200)
-        except Exception as e:
-            p.terminate()
-            raise Exception('cropping process not completed: {}'.format(e))
-        p.join(timeout=5)
-        if p.is_alive():
-            p.terminate()
-            logger.error('cropping process not completed 2')
-            raise Exception('cropping process not completed.')
-
-        df = df.merge(cropped_df, how='inner', on='image_id')
-        # for key, value in first_last_pages_data_dict.items():
-        #     if first_last_pages_data_dict[key].get('last_images_df',None) is not None or first_last_pages_data_dict[key].get('first_images_df',None) is not None :
-        #         if len(first_last_pages_data_dict[key]['last_images_df']) != 0 or len(first_last_pages_data_dict[key]['first_images_df']) != 0:
-        #             first_last_pages_data_dict[key]['last_images_df'] = value['last_images_df'].merge(cropped_df, how='inner', on='image_id')
-        #             first_last_pages_data_dict[key]['first_images_df'] = value['first_images_df'].merge(cropped_df, how='inner', on='image_id')
-
-        _IMAGE_DF_FIELDS = ("first_images_df", "last_images_df")
-        for page_key, page_data in first_last_pages_data_dict.items():
-            for field in _IMAGE_DF_FIELDS:
-                if field in page_data:
-                    if not page_data[field].empty:
-                        page_data[field] = page_data[field].merge(cropped_df, how="inner", on="image_id")
-
-        logger.debug('waited for cropping process: {}'.format(datetime.now() - wait_start))
-
-        final_response = assembly_output(album_result, message, df, first_last_pages_data_dict,message.content.get('album_ar',
-                                                                                                                   {'anyPage':2})['anyPage'], logger)
-
-        processing_time = datetime.now() - start
-
-        logger.debug('Lay-outing time: {}.For Processed album id: {}'.format(processing_time,
-                                                                             message.content.get('projectURL', True)))
-        logger.debug(
-            'Processing Stage time: {}.For Processed album id: {}'.format(datetime.now() - stage_start,
-                                                                          message.content.get('projectURL',True)))
-
-    except Exception as e:
-        tb = traceback.extract_tb(e.__traceback__)
-        filename, lineno, func, text = tb[-1]
-        logger.error(f"Unexpected error in message processing: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
-        raise Exception(f"Unexpected error in message processing: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
-
-    return final_response, message
-
-
 def process_gallery(input_request):
-    message = Message(input_request, id=1)
+    message = Message(Source(1), input_request, None, datetime.now())
     msgs = [message]
     logger = get_logger(__name__, 'DEBUG')
 
@@ -354,7 +242,10 @@ def process_gallery(input_request):
         return reading_error, None
     message = get_selection(msgs[0], logger)
 
-    final_album_result, message = process_message(message, logger)
+    process_stage = ProcessStage(logger=logger)
+    message = process_stage.process_message(message)
+    final_album_result = message.album_doc
+
     return final_album_result, message
 
 
