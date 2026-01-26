@@ -637,7 +637,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
     result_dict['storeId'] = message.content['storeId']
     result_dict['accountId'] = message.content['accountId']
     result_dict['userId'] = message.content['userId']
-    result_dict["fulfillerId "] = message.content['fulfillerId']
+    result_dict["fulfillerId"] = message.content['fulfillerId']
 
     counter_comp_id = 0
     counter_image_id = 0
