@@ -475,7 +475,7 @@ def calculate_optimal_selection(
 
     return selections,spreads
 
-def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_features,density,
+def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, focus, tags_features,density,
                             is_artificial_time,logger):
     try:
         error_message = None
@@ -502,11 +502,11 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
         actual_number_images_dict = {
             cluster_name: len(cluster_df)
-            for cluster_name, cluster_df in df.groupby('cluster_context')
+            for cluster_name, cluster_df in original_big_df.groupby('cluster_context')
         }
 
-        if len(df) <= 200 and density >= 3:
-            return df['image_id'].values.tolist(), {}, error_message
+        if len(original_big_df) <= 200 and density >= 3:
+            return original_big_df['image_id'].values.tolist(), {}, error_message
 
         images_allocation,spreads_allocation = calculate_optimal_selection(
         actual_number_images_dict,
@@ -514,14 +514,14 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
         wedding_lookup_table,
         focus_table,
         density,
-        df,
+        original_big_df,
         logger
         )
 
         if images_allocation is None:
             return None,None, "No images got selected!"
 
-        user_selected_photos_df = df[df['image_id'].isin(user_selected_photos)]
+        user_selected_photos_df = original_big_df[original_big_df['image_id'].isin(user_selected_photos)]
 
         def get_candidate_images(cluster_df, cluster_name):
             """
@@ -562,7 +562,7 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
 
 
 
-        for iteration, (cluster_name, cluster_df) in enumerate(df.groupby('cluster_context')):
+        for iteration, (cluster_name, cluster_df) in enumerate(original_big_df.groupby('cluster_context')):
             n_actual = len(cluster_df)
             category_picked.setdefault(cluster_name, {})
             category_picked[cluster_name]['actual'] = n_actual
@@ -761,6 +761,27 @@ def smart_wedding_selection(df, user_selected_photos, people_ids, focus, tags_fe
                         filtered_df = filtered_df[~filtered_df["image_id"].isin(bg_ids)]
 
                         need -= 1
+
+                    # Find bride-only image just before ceremony (bride arriving at altar)
+                    if bride_id and need > 0:
+                        def has_bride_only(row):
+                            ids = {str(v) for v in row.get("persons_ids", [])}
+                            return str(bride_id) in ids and str(groom_id) not in ids
+
+                        bride_only_mask = filtered_df.apply(has_bride_only, axis=1)
+                        bride_only_df = filtered_df[bride_only_mask].copy()
+
+                        if len(bride_only_df) > 0:
+                            # Find the row with the maximum time (bride arriving at altar)
+                            max_time_idx = bride_only_df['image_time_date'].idxmax()
+                            chosen_bride_id = bride_only_df.loc[max_time_idx, 'image_id']
+
+                            ai_images_selected.append(chosen_bride_id)
+
+                            # Remove from filtered_df
+                            filtered_df = filtered_df[filtered_df["image_id"] != chosen_bride_id]
+
+                            need -= 1
 
                 remaining = len(filtered_df)
 
