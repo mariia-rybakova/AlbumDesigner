@@ -118,7 +118,8 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         ############################################################
         base = chosen_df[
             (chosen_df["cluster_context"] == "bride and groom") &
-            (chosen_df["persons_ids"].apply(lambda x: isinstance(x, list) and bride_id in x and groom_id in x))
+            (chosen_df["persons_ids"].apply(lambda x: isinstance(x, list) and bride_id in x and groom_id in x)) &
+            (chosen_df["n_faces"] > 0)
             ].copy()
 
         # 2) FIRST cover: earliest time_cluster
