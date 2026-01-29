@@ -60,6 +60,8 @@ non_wedding_lookup_table = {
 
 
 class LookUpTable:
+    default_table = None
+
     def __init__(self, table: Dict[str, Tuple[float, float]] = None):
         self._table = {} if not table else table
 
@@ -67,22 +69,25 @@ class LookUpTable:
     def table(self):
         return self._table.copy()
 
-    def get_table(self, group2images, is_wedding, logger=None, density=3):
+    @staticmethod
+    def _get_group_id(group_name):
+        pass
+
+    @staticmethod
+    def _get_content_key(group_key):
+        pass
+
+    def get_table(self, group2images, logger=None, density=3):
         density_factors = CONFIGS['density_factors']
 
         try:
-            if is_wedding:
-                lookup_table = wedding_lookup_table
-            else:
-                lookup_table = non_wedding_lookup_table
+            lookup_table = self.default_table
 
             max_per_spread = 24
 
             for group_name, num_images in group2images.items():
-                if is_wedding:
-                    group_id = group_name[1].split('_')[0]  # Extract group ID
-                else:
-                    group_id = group_name[0].split('_')[0]
+                # Extract group ID
+                group_id = self._get_group_id(group_name)
 
                 # Assign default values if group_id is not in lookup_table
                 if group_id not in lookup_table:
@@ -99,10 +104,9 @@ class LookUpTable:
         except Exception as e:
             logger.error(f"Error: Unexpected error while updating lookup table: {str(e)}")
 
-    def get_current_spread_parameters(self, group_key, number_of_images, is_wedding):
+    def get_current_spread_parameters(self, group_key, number_of_images):
         # Extract the correct lookup key
-        content_key = group_key[1].split("_")[0] if is_wedding and "_" in group_key[1] else group_key[1] if is_wedding else \
-            group_key[0].split("_")[0]
+        content_key = self._get_content_key(group_key)
 
         group_params = self._table.get(content_key, (10, 1.5))
         group_value = group_params[0]
@@ -125,14 +129,14 @@ class LookUpTable:
         for key, value in self._table.items():
             self._table[key] = (min(value[0], largest_layout_size), value[1])
 
-    def update_with_limit(self, group2images, is_wedding, max_total_spreads):
+    def update_with_limit(self, group2images, max_total_spreads):
         # First pass: Calculate initial spreads per group and total spreads
         total_spreads = 0
         spreads_per_group = {}
 
         for key, number_images in group2images.items():
             # Get spread parameters for the current group
-            spread_params = self.get_current_spread_parameters(key, number_images, is_wedding)
+            spread_params = self.get_current_spread_parameters(key, number_images)
             spreads = math.ceil(number_images / spread_params[0])  # Calculate required spreads for this group
 
             # Store the calculated spreads and add to the total
@@ -157,9 +161,36 @@ class LookUpTable:
                 spreads_per_group[key] = new_spreads
 
                 # Update the group in the lookup table
-                content_key = key[1].split("_")[0] if is_wedding and "_" in key[1] else key[1] if is_wedding else key[0].split("_")[0]
+                content_key = self._get_content_key(key)
                 current_max_images, extra_value = self._table[content_key]
                 value_to_change = math.ceil(group2images[key] / new_spreads)
                 if value_to_change > current_max_images:
                     self._table[content_key] = (value_to_change, extra_value)
                     excess_spreads -= reduction
+
+
+class WeddingLookUpTable(LookUpTable):
+    default_table = wedding_lookup_table
+
+    @staticmethod
+    def _get_group_id(group_name):
+        return group_name[1].split('_')[0]
+
+    @staticmethod
+    def _get_content_key(group_key):
+        if "_" in group_key[1]:
+            return group_key[1].split("_")[0]
+        else:
+            return group_key[1]
+
+
+class NonWeddingLookUpTable(LookUpTable):
+    default_table = non_wedding_lookup_table
+
+    @staticmethod
+    def _get_group_id(group_name):
+        return group_name[0].split('_')[0]
+
+    @staticmethod
+    def _get_content_key(group_key):
+        return group_key[0].split("_")[0]

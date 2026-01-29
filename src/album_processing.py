@@ -9,7 +9,7 @@ from src.core.spreads import generate_filtered_multi_spreads
 from src.core.scores import add_ranking_score, assign_photos_order
 from src.groups_operations.groups_management import process_wedding_illegal_groups
 from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult
-from utils.lookup_table_tools import LookUpTable
+from utils.lookup_table_tools import WeddingLookUpTable, NonWeddingLookUpTable
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
 from utils.time_processing import sort_groups_by_time
 from utils.configs import CONFIGS
@@ -162,16 +162,17 @@ def _rank_and_select_best_spread(filtered_spreads, sub_group_photos, layout_id2d
 def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False):
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
 
+    LookUpTable = WeddingLookUpTable if is_wedding else NonWeddingLookUpTable
     if modified_lut is not None:
         look_up_table = LookUpTable(modified_lut)
     else:
         look_up_table = LookUpTable()
-        look_up_table.get_table(group2images_initial, is_wedding, logger, density)
+        look_up_table.get_table(group2images_initial, logger, density)
 
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
     
     max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages'])
-    look_up_table.update_with_limit(group2images_initial, is_wedding, max_total_spreads=max_total_spreads)
+    look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
     
@@ -191,11 +192,11 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     else:
         updated_groups = original_groups
 
-    resources.look_up_table.update_with_limit(group2images, is_wedding,  max_total_spreads=max_total_spreads)
+    resources.look_up_table.update_with_limit(group2images,  max_total_spreads=max_total_spreads)
 
     result_list = []
     for group_name in group2images.keys():
-        spread_params = resources.look_up_table.get_current_spread_parameters(group_name, group2images[group_name], is_wedding)
+        spread_params = resources.look_up_table.get_current_spread_parameters(group_name, group2images[group_name])
         if spread_params[0] > 24:
             spread_params = (24.0, spread_params[1])
             
