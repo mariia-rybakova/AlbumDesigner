@@ -7,6 +7,7 @@ from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.metrics import silhouette_score
 
+
 SIMILAR_CLASSES_L1 = [
     ['bride', 'bride getting dressed', 'getting hair-makeup', 'bride party'],
     ['bride', 'groom'],
@@ -75,24 +76,7 @@ def split_illegal_group(illegal_group, count):
     return illegal_group, label_counts
 
 
-def split_illegal_group_by_time(illegal_group, single_spread_size, count):
-    """
-    Split an illegal group into subgroups based on time or size.
-
-    Args:
-        illegal_group (DataFrame): The group to be split.
-        single_spread_size (int): Threshold for determining split sizes.
-        count (int): Counter for naming new clusters.
-
-    Returns:
-        tuple: (modified DataFrame with new cluster labels, label counts) 
-               or (None, None) if splitting fails.
-    """
-    # Get time features and normalize them
-    time_features = illegal_group["general_time"].values.reshape(-1, 1)
-
-    # Calculate `max_size_splits` based on `single_spread_size`
-    n_samples = len(illegal_group)
+def _get_sizes(single_spread_size):
     max_size_splits = False
     if single_spread_size >= 16:
         if 24 - single_spread_size < single_spread_size - 16:
@@ -104,36 +88,38 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
         split_size = single_spread_size * 2
     else:
         split_size = single_spread_size * 3
+    return max_size_splits, split_size
 
-    # If max_size_splits is True, split into chunks of size split_size
-    if max_size_splits:
-        if split_size <= 0 or split_size >= n_samples:
-            # If the split size is invalid or larger than the group, don't split
-            return None, None
 
-        # Create chunks of size `split_size`
-        illegal_group = illegal_group.sort_values(['image_as', 'general_time'], ascending=[False, True])
-        chunks = [illegal_group.iloc[i:i + split_size] for i in range(0, n_samples, split_size)]
+def _split_by_chunk_size(illegal_group, split_size, n_samples, count):
+    if split_size <= 0 or split_size >= n_samples:
+        # If the split size is invalid or larger than the group, don't split
+        return None, None
 
-        # Assign unique cluster labels to each chunk
-        content_cluster_origin = illegal_group['cluster_context'].values[0]
-        for i, chunk in enumerate(chunks):
-            chunk.loc[:, 'cluster_context'] = f'{content_cluster_origin}_split_{i}_{count}'
+    # Create chunks of size `split_size`
+    illegal_group = illegal_group.sort_values(['image_as', 'general_time'], ascending=[False, True])
+    chunks = [illegal_group.iloc[i:i + split_size] for i in range(0, n_samples, split_size)]
 
-        # Combine all chunks into a single DataFrame
-        updated_group = pd.concat(chunks)
-        return updated_group, Counter(updated_group['cluster_context'])
+    # Assign unique cluster labels to each chunk
+    content_cluster_origin = illegal_group['cluster_context'].values[0]
+    for i, chunk in enumerate(chunks):
+        chunk.loc[:, 'cluster_context'] = f'{content_cluster_origin}_split_{i}_{count}'
 
-    # Otherwise, use clustering to split
-    n_clusters = max(2, int(np.ceil(n_samples / split_size)))
-    size_min = max(1, n_samples // n_clusters)
+    # Combine all chunks into a single DataFrame
+    updated_group = pd.concat(chunks)
+    return updated_group, Counter(updated_group['cluster_context'])
 
+
+def _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max, count):
     try:
+        # Get time features and normalize them
+        time_features = illegal_group["general_time"].values.reshape(-1, 1)
+
         # Apply constrained K-Means clustering on time
         clf = KMeansConstrained(
             n_clusters=n_clusters,
             size_min=size_min,
-            size_max=min(split_size, n_samples),
+            size_max=size_max,
             random_state=0
         )
         labels = clf.fit_predict(time_features)
@@ -159,6 +145,35 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
     except Exception as e:
         print(f"Error during temporal splitting: {str(e)}")
         return None, None
+
+
+def split_illegal_group_by_time(illegal_group, single_spread_size, count):
+    """
+    Split an illegal group into subgroups based on time or size.
+
+    Args:
+        illegal_group (DataFrame): The group to be split.
+        single_spread_size (int): Threshold for determining split sizes.
+        count (int): Counter for naming new clusters.
+
+    Returns:
+        tuple: (modified DataFrame with new cluster labels, label counts) 
+               or (None, None) if splitting fails.
+    """
+    # Calculate `max_size_splits` based on `single_spread_size`
+    n_samples = len(illegal_group)
+    max_size_splits, split_size = _get_sizes(single_spread_size)
+
+    # If max_size_splits is True, split into chunks of size split_size
+    if max_size_splits:
+        return _split_by_chunk_size(illegal_group, split_size, n_samples, count)
+
+    # Otherwise, use clustering to split
+    n_clusters = max(2, int(np.ceil(n_samples / split_size)))
+    size_min = max(1, n_samples // n_clusters)
+    size_max = min(split_size, n_samples)
+
+    return _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max, count)
 
 
 def split_illegal_group_in_certain_point(illegal_group, split_points, count):
