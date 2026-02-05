@@ -83,11 +83,11 @@ def _update_group_sub_index(photos_df, updated_group, logger):
                     f"Could not parse sub_index from context: {updated_group.loc[row_index, 'cluster_context']}")
 
 
-def _update_groups_size(photos_df):
+def _update_groups_size(photos_df, clusters = ['time_cluster', 'cluster_context', 'group_sub_index']):
     """
     Recalculates the "group_size" field after splitting groups into subgroups ('group_sub_index' edited)
     """
-    photo_groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
+    photo_groups = photos_df.groupby(clusters)
     for group_key, group in photo_groups:
         group_size = len(group)
         photos_df.loc[group.index, 'group_size'] = group_size
@@ -123,7 +123,12 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
     return photos_df
 
 
-def _get_main_groups(merge_target_groups, group_key, cent_idx):
+def _filter_merge_targets_bridegroom(targets_df: pd.DataFrame, group: pd.DataFrame, group_key) -> pd.DataFrame:
+    return targets_df[(targets_df['time_cluster'] == group_key[0]) &
+                      (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread'])]
+
+
+def _get_main_groups_bridegroom(merge_target_groups, group_key, cent_idx):
     return [
         m_group for m_key, m_group in merge_target_groups
         if (
@@ -137,14 +142,13 @@ def _get_main_groups(merge_target_groups, group_key, cent_idx):
     ]
 
 
-def _get_merge_candidates_bridegroom(merge_groups, targets_df, general_times_list, cent_idx):
+def _get_merge_candidates(_filter_merge_targets, _get_main_groups, merge_groups, targets_df, general_times_list, *args, **kwargs):
     merge_candidates = list()
 
     for group_key, group in merge_groups:
-        merge_targets = targets_df[(targets_df['time_cluster'] == group_key[0]) &
-                                   (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread'])]
+        merge_targets = _filter_merge_targets(targets_df, group, group_key)
         merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-        main_groups = _get_main_groups(merge_target_groups, group_key, cent_idx)
+        main_groups = _get_main_groups(merge_target_groups, group_key, *args, **kwargs)
         selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
                                                                                  general_times_list,
                                                                                  max_images_per_spread=CONFIGS['max_imges_per_spread'])
@@ -154,6 +158,9 @@ def _get_merge_candidates_bridegroom(merge_groups, targets_df, general_times_lis
 
     merge_candidates = sorted(merge_candidates, key=lambda x: x[2])
     return merge_candidates
+
+
+_get_merge_candidates_bridegroom = lambda *args, **kwargs: _get_merge_candidates(_filter_merge_targets_bridegroom, _get_main_groups_bridegroom, *args, **kwargs)
 
 
 def _is_bride_groom_pair(group_key, selected_cluster, cent_idx) -> bool:
@@ -183,7 +190,18 @@ def _is_bride_groom_pair(group_key, selected_cluster, cent_idx) -> bool:
     return bride_condition or groom_condition
 
 
-def _update_merged_photos(photos_df, reminder_group, merged_group, to_merge_group, selected_cluster):
+def _get_merged_group_bridegroom(to_merge_group, selected_cluster, group_key, cent_idx):
+    if _is_bride_groom_pair(group_key, selected_cluster, cent_idx):
+        if abs(len(to_merge_group) - len(selected_cluster)) >= 2:
+            min_len = min(len(to_merge_group), len(selected_cluster))
+            merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])
+            reminder_group = pd.concat([to_merge_group.tail(len(to_merge_group) - min_len),
+                                        selected_cluster.tail(len(selected_cluster) - min_len)])
+            return merged_group, reminder_group
+    return None, None
+
+
+def _update_merged_photos_bridegroom(photos_df, to_merge_group, selected_cluster, merged_group, reminder_group):
     # Update reminder group photos
     for row_index in reminder_group.index:
         photos_df.loc[row_index, 'group_size'] = len(reminder_group)
@@ -198,7 +216,7 @@ def _update_merged_photos(photos_df, reminder_group, merged_group, to_merge_grou
         photos_df.loc[row_index, 'merge_allowed'] = False
 
 
-def _update_with_merges(photos_df, merge_groups, merge_candidates, cent_idx):
+def _update_with_merges(_get_merged_group, _update_merged_photos, photos_df, merge_groups, merge_candidates, *args, **kwargs):
     current_merges = set()
     for group_key, selected_cluster, selected_time_difference in merge_candidates:
         to_merge_group = merge_groups.get_group(group_key)
@@ -208,17 +226,19 @@ def _update_with_merges(photos_df, merge_groups, merge_candidates, cent_idx):
         if group_key in current_merges or selected_key in current_merges:
             continue
 
-        if _is_bride_groom_pair(group_key, selected_cluster, cent_idx):
-            if abs(len(to_merge_group) - len(selected_cluster)) >= 2:
-                min_len = min(len(to_merge_group), len(selected_cluster))
-                merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])
-                reminder_group = pd.concat([to_merge_group.tail(len(to_merge_group) - min_len),
-                                            selected_cluster.tail(len(selected_cluster) - min_len)])
-                # Update df
-                _update_merged_photos(photos_df, reminder_group, merged_group, to_merge_group, selected_cluster)
+        merged_group, reminder_group = _get_merged_group(to_merge_group, selected_cluster, group_key, *args, **kwargs)
+        if merged_group is None:
+            continue
 
-                current_merges.add(group_key)
-                current_merges.add(selected_key)
+        # Update df
+        _update_merged_photos(photos_df, to_merge_group, selected_cluster, merged_group, reminder_group)
+
+        current_merges.add(group_key)
+        current_merges.add(selected_key)
+
+
+_update_with_merges_bridegroom = lambda *args, **kwargs: _update_with_merges(_get_merged_group_bridegroom,
+                                                                             _update_merged_photos_bridegroom, *args, **kwargs)
 
 
 def handle_wedding_bride_groom_merge(photos_df, logger=None):
@@ -231,9 +251,9 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
     general_times_list, _ = get_groups_time(photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']))
 
     for cent_idx in range(len(BRIDE_CENTRIC_CLASSES)):
-        merge_candidates = _get_merge_candidates_bridegroom(merge_groups, targets_df, general_times_list, cent_idx)
+        merge_candidates = _get_merge_candidates_bridegroom(merge_groups, targets_df, general_times_list, cent_idx=cent_idx)
 
-        _update_with_merges(photos_df, merge_groups, merge_candidates, cent_idx)
+        _update_with_merges_bridegroom(photos_df, merge_groups, merge_candidates, cent_idx)
 
     return photos_df
 
@@ -268,7 +288,7 @@ def _filter_merge_candidate_photos(df_chunk: pd.DataFrame, size_limit: int) -> p
     ]
 
 
-def _filter_merge_targets(targets_df: pd.DataFrame, group: pd.DataFrame, group_key) -> pd.DataFrame:
+def _filter_merge_targets_other(targets_df: pd.DataFrame, group: pd.DataFrame, group_key) -> pd.DataFrame:
     """
     Find potential merge targets for a given group.
 
@@ -288,46 +308,31 @@ def _filter_merge_targets(targets_df: pd.DataFrame, group: pd.DataFrame, group_k
     ]
 
 
-def _get_merge_candidates_other(merge_groups, targets_df, general_times_list):
-    merge_candidates = list()
-
-    for group_key, group in merge_groups:
-        merge_targets = _filter_merge_targets(targets_df, group, group_key)
-        merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-        main_groups = [m_group for m_key, m_group in merge_target_groups if m_key != group_key]
-        selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
-                                                                                 general_times_list,
-                                                                                 max_images_per_spread=CONFIGS['max_imges_per_spread'])
-
-        if selected_cluster is not None:
-            merge_candidates.append((group_key, selected_cluster, selected_time_difference))
-
-    merge_candidates = sorted(merge_candidates, key=lambda x: x[2])
-    return merge_candidates
+def _get_main_groups_other(merge_target_groups, group_key):
+    return [m_group for m_key, m_group in merge_target_groups if m_key != group_key]
 
 
-def _update_with_merges_other(photos_df, merge_groups, merge_candidates):
-    current_merges = set()
-    for group_key, selected_cluster, selected_time_difference in merge_candidates:
-        to_merge_group = merge_groups.get_group(group_key)
-        selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0],
-                        selected_cluster['group_sub_index'].iloc[0])
-        if group_key in current_merges or selected_key in current_merges:
-            continue
+_get_merge_candidates_other = lambda *args, **kwargs: _get_merge_candidates(_filter_merge_targets_other, _get_main_groups_other, *args, **kwargs)
 
-        merged_group = pd.concat([to_merge_group, selected_cluster])
 
-        # new_sub_index = photos_df['group_sub_index'].max() + 1
-        for row_index in merged_group.index:
-            photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
-            photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + \
-                                                        selected_cluster['groups_merged'].iloc[0]
-            photos_df.loc[row_index, 'group_size'] = len(merged_group)
-            photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
-            if photos_df.loc[row_index, 'groups_merged'] >= CONFIGS['merge_limit_times']:
-                photos_df.loc[row_index, 'merge_allowed'] = False
-        current_merges.add(group_key)
-        current_merges.add(selected_key)
+def _get_merged_group_other(to_merge_group, selected_cluster, *args, **kwargs):
+    merged_group = pd.concat([to_merge_group, selected_cluster])
+    return merged_group, None
+
+
+def _update_merged_photos_other(photos_df, to_merge_group, selected_cluster, merged_group, *args, **kwargs):
+    for row_index in merged_group.index:
+        photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
+        photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + \
+                                                    selected_cluster['groups_merged'].iloc[0]
+        photos_df.loc[row_index, 'group_size'] = len(merged_group)
+        photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
+        if photos_df.loc[row_index, 'groups_merged'] >= CONFIGS['merge_limit_times']:
+            photos_df.loc[row_index, 'merge_allowed'] = False
+
+
+_update_with_merges_other = lambda *args, **kwargs: _update_with_merges(_get_merged_group_other,
+                                                                        _update_merged_photos_other, *args, **kwargs)
 
 
 def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=None):
@@ -379,10 +384,8 @@ def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.D
         df_special = photos_df.copy().iloc[0:0]
         df_regular = photos_df.copy()
 
-    groups_regular = df_regular.groupby(['time_cluster', 'cluster_context'])
-    for idx, (key, group_df) in enumerate(groups_regular):
-        group_size = len(group_df)
-        df_regular.loc[group_df.index, 'group_size'] = group_size
+    # Update regular groups
+    _update_groups_size(df_regular, clusters=['time_cluster', 'cluster_context'])
 
     photos_df = pd.concat([df_special, df_regular], ignore_index=True)
     return photos_df
@@ -417,7 +420,7 @@ def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, m
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
         logger.error(f"Groups management error: {str(ex)}. Exception in function: {func}, line {lineno}, file {filename}")
-        return None, None, None
+        return None, None
 
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     group2images = get_images_per_groups(groups)
