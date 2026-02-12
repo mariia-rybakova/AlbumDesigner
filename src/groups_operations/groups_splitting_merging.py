@@ -180,13 +180,9 @@ def split_illegal_group_in_certain_point(illegal_group, split_points, count):
 
     content_cluster_origin = illegal_group['cluster_context'].values[0]
 
-    for i, split_time in enumerate(split_points):
+    for i, start_time in enumerate([-1] + split_points):
         next_label = f'{content_cluster_origin}_split_{i + 1}_{count}'
-        illegal_group.loc[illegal_group['general_time'] <= split_time, 'cluster_context'] = next_label
-
-    # Assign the remaining items to the last group after the final split point
-    last_label = f'{content_cluster_origin}_split_{len(split_points) + 1}_{count}'
-    illegal_group.loc[illegal_group['general_time'] > split_points[-1], 'cluster_context'] = last_label
+        illegal_group.loc[(illegal_group['general_time'] > start_time), 'cluster_context'] = next_label
 
     # Count occurrences of each cluster_context
     label_counts = Counter(illegal_group['cluster_context'])
