@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
-import ast
 
-from collections import Counter
 from k_means_constrained import KMeansConstrained
 from sklearn.metrics.pairwise import pairwise_distances
 from sklearn.metrics import silhouette_score
@@ -39,7 +37,7 @@ def _normalize_feature(feature):
     return feature_normalized
 
 
-def _clusterize(illegal_group, feature, n_clusters, size_min, size_max, count, silhouette = False, split_prefix = ''):
+def _clusterize(illegal_group, feature, n_clusters, size_min, size_max, silhouette = False):
     # Apply constrained K-Means clustering
     clf = KMeansConstrained(
         n_clusters=n_clusters,
@@ -55,14 +53,9 @@ def _clusterize(illegal_group, feature, n_clusters, size_min, size_max, count, s
         if silhouette_avg < 0.15:
             return None, None
 
-    # Assign cluster labels with a prefix or suffix to distinguish them from other groups
-    # Create new cluster labels with original context preserved
-    content_cluster_origin = illegal_group['cluster_context'].values[0]
-    new_labels = [f'{content_cluster_origin}_{split_prefix}{label}_{count}' for label in labels]
-
-    # Assign new cluster labels to the DataFrame
-    illegal_group.loc[:, 'cluster_context'] = new_labels
-    return content_cluster_origin, new_labels
+    # Assign label values as subindex to the DataFrame
+    illegal_group.loc[:, 'group_sub_index'] = labels
+    return labels
 
 
 def split_illegal_group(illegal_group, count):
@@ -78,12 +71,12 @@ def split_illegal_group(illegal_group, count):
     n_clusters = 2
     size_min = max(1, n_samples // 4)
     size_max = n_samples
-    _, labels = _clusterize(illegal_group, combined_features, n_clusters, size_min, size_max, count,
-                         silhouette = True, split_prefix = '')
+    labels = _clusterize(illegal_group, combined_features, n_clusters, size_min, size_max,
+                         silhouette = True)
     if labels is None:
-        return None, None
+        return None
 
-    return illegal_group, Counter(labels)
+    return illegal_group
 
 
 def _get_sizes(single_spread_size):
@@ -101,51 +94,49 @@ def _get_sizes(single_spread_size):
     return max_size_splits, split_size
 
 
-def _split_by_chunk_size(illegal_group, split_size, n_samples, count):
+def _split_by_chunk_size(illegal_group, split_size, n_samples):
     # If the split size is invalid or larger than the group, don't split
     if split_size <= 0 or split_size >= n_samples:
-        return None, None
+        return None
 
     # Create chunks of size `split_size`
     illegal_group = illegal_group.sort_values(['image_as', 'general_time'], ascending=[False, True])
     chunks = [illegal_group.iloc[i:i + split_size] for i in range(0, n_samples, split_size)]
 
-    # Assign unique cluster labels to each chunk
-    content_cluster_origin = illegal_group['cluster_context'].values[0]
+    # Assign unique index to each chunk
     for i, chunk in enumerate(chunks):
-        chunk.loc[:, 'cluster_context'] = f'{content_cluster_origin}_split_{i}_{count}'
+        chunk.loc[:, 'group_sub_index'] = i
 
     # Combine all chunks into a single DataFrame
     updated_group = pd.concat(chunks)
-    return updated_group, Counter(updated_group['cluster_context'])
+    return updated_group
 
 
-def _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max, count):
+def _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max):
     try:
         # Get time features and normalize them
         time_features = illegal_group["general_time"].values.reshape(-1, 1)
 
         # Apply constrained K-Means clustering on time
-        content_cluster_origin, _ = _clusterize(illegal_group, time_features, n_clusters, size_min, size_max, count,
-                                 silhouette = False, split_prefix = 'split_')
+        _ = _clusterize(illegal_group, time_features, n_clusters, size_min, size_max,
+                                 silhouette = False)
 
         # Sort groups by mean time for temporal ordering
-        mean_times = illegal_group.groupby('cluster_context')['general_time'].mean()
+        mean_times = illegal_group.groupby('group_sub_index')['general_time'].mean()
         sorted_clusters = mean_times.sort_values().index
 
         # Rename labels to ensure earlier time group gets a lower number
-        mapping = {old: f'{content_cluster_origin}_{i}_{count}'
-                   for i, old in enumerate(sorted_clusters)}
-        illegal_group.loc[:, 'cluster_context'] = illegal_group['cluster_context'].map(mapping)
+        mapping = {i: j for j, i in enumerate(sorted_clusters)}
+        illegal_group.loc[:, 'group_sub_index'] = illegal_group['group_sub_index'].map(mapping)
 
-        return illegal_group, Counter(illegal_group['cluster_context'])
+        return illegal_group
 
     except Exception as e:
         print(f"Error during temporal splitting: {str(e)}")
-        return None, None
+        return None
 
 
-def split_illegal_group_by_time(illegal_group, single_spread_size, count):
+def split_illegal_group_by_time(illegal_group, single_spread_size):
     """
     Split an illegal group into subgroups based on time or size.
 
@@ -164,30 +155,24 @@ def split_illegal_group_by_time(illegal_group, single_spread_size, count):
 
     # If max_size_splits is True, split into chunks of size split_size
     if max_size_splits:
-        return _split_by_chunk_size(illegal_group, split_size, n_samples, count)
+        return _split_by_chunk_size(illegal_group, split_size, n_samples)
 
     # Otherwise, use clustering to split
     n_clusters = max(2, int(np.ceil(n_samples / split_size)))
     size_min = max(1, n_samples // n_clusters)
     size_max = min(split_size, n_samples)
 
-    return _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max, count)
+    return _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max)
 
 
-def split_illegal_group_in_certain_point(illegal_group, split_points, count):
+def split_illegal_group_in_certain_point(illegal_group, split_points):
     if illegal_group is None or illegal_group.empty or split_points is None:
-        return None, None
-
-    content_cluster_origin = illegal_group['cluster_context'].values[0]
+        return None
 
     for i, start_time in enumerate([-1] + split_points):
-        next_label = f'{content_cluster_origin}_split_{i + 1}_{count}'
-        illegal_group.loc[(illegal_group['general_time'] > start_time), 'cluster_context'] = next_label
+        illegal_group.loc[(illegal_group['general_time'] > start_time), 'group_sub_index'] = i
 
-    # Count occurrences of each cluster_context
-    label_counts = Counter(illegal_group['cluster_context'])
-
-    return illegal_group, label_counts
+    return illegal_group
 
 
 def _mean_or_first_element(feature):

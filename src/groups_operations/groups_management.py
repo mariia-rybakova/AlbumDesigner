@@ -98,10 +98,6 @@ def _update_group_sub_index(photos_df: pd.DataFrame, updated_group: pd.DataFrame
     """
     Update the `group_sub_index` field in original DataFrame for rows from an updated group.
 
-    The sub_index is parsed from the second-to-last part of the group's
-    `cluster_context` string (split by underscores). If parsing fails,
-    a warning is logged.
-
     Args:
         photos_df (pd.DataFrame):
             The full DataFrame of photos to update.
@@ -115,14 +111,7 @@ def _update_group_sub_index(photos_df: pd.DataFrame, updated_group: pd.DataFrame
     """
     if updated_group is not None:
         for row_index in updated_group.index:
-            # Use the last part of the cluster_context as the sub_index
-            try:
-                context_parts = updated_group.loc[row_index, 'cluster_context'].split('_')
-                sub_index = int(context_parts[-2])
-                photos_df.loc[row_index, 'group_sub_index'] = sub_index
-            except (IndexError, ValueError):
-                logger.warning(
-                    f"Could not parse sub_index from context: {updated_group.loc[row_index, 'cluster_context']}")
+            photos_df.loc[row_index, 'group_sub_index'] = updated_group.loc[row_index, 'group_sub_index']
 
 
 def _update_groups_size(photos_df: pd.DataFrame,
@@ -156,20 +145,17 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
     split_groups_ = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups_)
 
-    count = 0
     for group_key, group in split_groups_:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
         splitting_score = _get_splitting_score(group, group_spread_size)
 
         if _is_split_needed(splitting_score, group_spread_size, group_key):
-            updated_group, labels_count = split_illegal_group_by_time(group, group_spread_size, count)
-            count += 1
+            updated_group = split_illegal_group_by_time(group, group_spread_size)
         else:
             if_split, split_points = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
                                                                    group_key=group_key[1])
             if if_split:
-                updated_group, labels_count = split_illegal_group_in_certain_point(group, split_points, count)
-                count += 1
+                updated_group = split_illegal_group_in_certain_point(group, split_points)
             else:
                 updated_group = None
 
