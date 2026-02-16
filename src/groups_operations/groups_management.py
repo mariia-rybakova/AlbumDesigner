@@ -4,7 +4,10 @@ import pandas as pd
 
 from src.core.models import AlbumDesignResources
 from utils.album_tools import get_images_per_groups, get_missing_columns, split_groups
-from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time, split_illegal_group_by_time, split_illegal_group_in_certain_point
+from src.groups_operations.groups_splitting_merging import merge_illegal_group_by_time
+from src.groups_operations.split import (get_splitting_score, is_split_needed, check_time_based_split_needed,
+                                         split_illegal_group_by_time, split_illegal_group_in_certain_point,
+                                         update_groups_size, update_group_sub_index)
 from utils.configs import CONFIGS
 
 
@@ -22,122 +25,6 @@ def get_groups_time(groups):
     return sorted(general_times_list), group_key2time_list
 
 
-def check_time_based_split_needed(general_times_list, group_time_list, group_key):
-    if len(group_time_list) < 2:
-        return False, None
-    if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'groom party', 'bride party', 'portrait']:
-        return False, None
-
-    split_points = list()
-    for i in range(len(group_time_list) - 1):
-        start_time = group_time_list[i]
-        end_time = group_time_list[i + 1]
-
-        count_between = sum(start_time < t < end_time for t in general_times_list)
-
-        if count_between > 2:
-            split_points.append(start_time)
-
-    if len(split_points) > 0:
-        return True, split_points
-
-    return False, None
-
-
-def _get_splitting_score(group: pd.DataFrame, group_spread_size: int) -> int:
-    """
-    Calculate the splitting score for a photo group.
-
-    Args:
-        group (DataFrame): The group of photos.
-        group_spread_size (int): Recommended number of photos per spread for this group.
-
-    Returns:
-        int: The splitting score (rounded), or 0 if spread size is invalid.
-    """
-    if group_spread_size > 0:
-        return round(group['group_size'].iloc[0] / group_spread_size)
-    return 0
-
-
-def _is_split_needed(splitting_score: int, group_spread_size: int, group_key: Tuple[str, str, int]) -> bool:
-    """
-    Determine whether a photo group should be split into subgroups.
-
-    A split is considered necessary if:
-      - The splitting score exceeds the minimum (`CONFIGS['min_split_score']`).
-      - The splitting score equals the minimum and the group spread size > 5.
-      - The splitting score equals 2 and the group spread size >= 12.
-      - The group spread size >= 24.
-    Additionally, groups with 'cant_split' in their cluster_context are excluded.
-
-    Args:
-        splitting_score (int):
-            Score indicating how strongly the group should be split.
-        group_spread_size (int):
-            Recommended number of photos per spread for this group.
-        group_key (Tuple[str, str, int]):
-            Key identifying the group (time_cluster, cluster_context, group_sub_index).
-
-    Returns:
-        bool:
-            True if the group should be split, False otherwise.
-    """
-    return (
-            (
-                    splitting_score > CONFIGS['min_split_score']
-                    or (splitting_score == CONFIGS['min_split_score'] and group_spread_size > 5)
-                    or (splitting_score == 2 and group_spread_size >= 12)
-                    or group_spread_size >= 24
-            )
-            and 'cant_split' not in group_key[1]
-    )
-
-
-def _update_group_sub_index(photos_df: pd.DataFrame, updated_group: pd.DataFrame, logger) -> None:
-    """
-    Update the `group_sub_index` field in original DataFrame for rows from an updated group.
-
-    Args:
-        photos_df (pd.DataFrame):
-            The full DataFrame of photos to update.
-        updated_group (pd.DataFrame):
-            A DataFrame with the group whose sub_index needs updating.
-        logger (logging.Logger):
-            Logger instance used to record warnings.
-
-    Returns:
-        None: Updates are applied directly to `photos_df`.
-    """
-    if updated_group is not None:
-        for row_index in updated_group.index:
-            photos_df.loc[row_index, 'group_sub_index'] = updated_group.loc[row_index, 'group_sub_index']
-
-
-def _update_groups_size(photos_df: pd.DataFrame,
-                        clusters: List[str] = ['time_cluster', 'cluster_context', 'group_sub_index']) -> None:
-    """
-    Recalculate the `group_size` field after splitting groups into subgroups.
-
-    Groups are defined by the specified cluster keys. The size of each group
-    is recalculated and updated in the DataFrame.
-
-    Args:
-        photos_df (pd.DataFrame):
-            The full DataFrame of photos to update.
-        clusters (List[str], optional):
-            List of column names used to group the DataFrame.
-            Defaults to ['time_cluster', 'cluster_context', 'group_sub_index'].
-
-    Returns:
-        None: Updates are applied directly to `photos_df`.
-    """
-    photo_groups = photos_df.groupby(clusters)
-    for group_key, group in photo_groups:
-        group_size = len(group)
-        photos_df.loc[group.index, 'group_size'] = group_size
-
-
 def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=None):
     # handle splitting
     look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
@@ -147,9 +34,9 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
 
     for group_key, group in split_groups_:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
-        splitting_score = _get_splitting_score(group, group_spread_size)
+        splitting_score = get_splitting_score(group, group_spread_size)
 
-        if _is_split_needed(splitting_score, group_spread_size, group_key):
+        if is_split_needed(splitting_score, group_spread_size, group_key):
             updated_group = split_illegal_group_by_time(group, group_spread_size)
         else:
             if_split, split_points = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
@@ -159,9 +46,9 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
             else:
                 updated_group = None
 
-        _update_group_sub_index(photos_df, updated_group, logger)
+        update_group_sub_index(photos_df, updated_group, logger)
 
-    _update_groups_size(photos_df)
+    update_groups_size(photos_df)
     return photos_df
 
 
@@ -666,7 +553,7 @@ def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.D
         df_regular = photos_df.copy()
 
     # Update regular groups
-    _update_groups_size(df_regular, clusters=['time_cluster', 'cluster_context'])
+    update_groups_size(df_regular, clusters=['time_cluster', 'cluster_context'])
 
     photos_df = pd.concat([df_special, df_regular], ignore_index=True)
     return photos_df
