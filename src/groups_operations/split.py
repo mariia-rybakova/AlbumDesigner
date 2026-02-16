@@ -9,7 +9,7 @@ from utils.configs import CONFIGS
 
 
 # split diverse group
-def split_illegal_group_in_certain_point(illegal_group, split_points):
+def split_diverse_group(illegal_group, split_points):
     if illegal_group is None or illegal_group.empty or split_points is None:
         return None
 
@@ -20,19 +20,18 @@ def split_illegal_group_in_certain_point(illegal_group, split_points):
 
 
 # split big group
-def _get_sizes(single_spread_size):
-    max_size_splits = False
-    if single_spread_size >= 16:
-        if 24 - single_spread_size < single_spread_size - 16:
-            split_size = 24
-        else:
-            split_size = 16
-        max_size_splits = True
-    elif single_spread_size >= 12:
-        split_size = single_spread_size * 2
+def get_large_spread_split_size(single_spread_size):
+    if 24 - single_spread_size < single_spread_size - 16:
+        return 24
     else:
-        split_size = single_spread_size * 3 # #photos for 3 spreads
-    return max_size_splits, split_size
+        return 16
+
+
+def get_small_spread_split_size(single_spread_size):
+    if single_spread_size >= 12:
+        return single_spread_size * 2
+    else:
+        return single_spread_size * 3 # #photos for 3 spreads
 
 
 def _split_by_chunk_size(illegal_group, split_size, n_samples):
@@ -98,41 +97,41 @@ def _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max):
         return None
 
 
-def split_illegal_group_by_time(illegal_group, single_spread_size):
+def split_big_group(illegal_group, single_spread_size):
     """
     Split an illegal group into subgroups based on time or size.
 
     Args:
         illegal_group (DataFrame): The group to be split.
         single_spread_size (int): Threshold for determining split sizes.
-        count (int): Counter for naming new clusters.
 
     Returns:
-        tuple: (modified DataFrame with new cluster labels, label counts)
-               or (None, None) if splitting fails.
+        modified DataFrame or None if splitting fails.
     """
     # Calculate `max_size_splits` based on `single_spread_size`
     n_samples = len(illegal_group)
-    max_size_splits, split_size = _get_sizes(single_spread_size)
 
-    # If max_size_splits is True, split into chunks of size split_size
-    if max_size_splits:
+    # Split large spread group by chunks
+    if single_spread_size >= 16:
+        # Spreads with more than 16 photos can be size 16 or size 24
+        split_size = get_large_spread_split_size(single_spread_size)
         return _split_by_chunk_size(illegal_group, split_size, n_samples)
 
     # Otherwise, use clustering to split
-    n_clusters = max(2, int(np.ceil(n_samples / split_size)))
-    size_min = max(1, n_samples // n_clusters)
-    size_max = min(split_size, n_samples)
-
-    return _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max)
+    else:
+        split_size = get_small_spread_split_size(single_spread_size)
+        n_clusters = max(2, int(np.ceil(n_samples / split_size)))
+        size_min = max(1, n_samples // n_clusters)
+        size_max = min(split_size, n_samples)
+        return _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max)
 
 
 # Main logic
-def check_time_based_split_needed(general_times_list, group_time_list, group_key):
+def get_split_points(general_times_list, group_time_list, group_key):
     if len(group_time_list) < 2:
-        return False, None
+        return None
     if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'groom party', 'bride party', 'portrait']:
-        return False, None
+        return None
 
     split_points = list()
     for i in range(len(group_time_list) - 1):
@@ -140,19 +139,18 @@ def check_time_based_split_needed(general_times_list, group_time_list, group_key
         end_time = group_time_list[i + 1]
 
         count_between = sum(start_time < t < end_time for t in general_times_list)
-
         if count_between > 2:
             split_points.append(start_time)
 
-    if len(split_points) > 0:
-        return True, split_points
+    if len(split_points) == 0:
+        return None
 
-    return False, None
+    return split_points
 
 
-def get_splitting_score(group: pd.DataFrame, group_spread_size: int) -> int:
+def get_number_of_spreads(group: pd.DataFrame, group_spread_size: int) -> int:
     """
-    Calculate the splitting score for a photo group.
+    Calculate average number of spreads for a photo group.
 
     Args:
         group (DataFrame): The group of photos.
@@ -166,20 +164,20 @@ def get_splitting_score(group: pd.DataFrame, group_spread_size: int) -> int:
     return 0
 
 
-def is_split_needed(splitting_score: int, group_spread_size: int, group_key: Tuple[str, str, int]) -> bool:
+def is_split_needed(number_of_spreads: int, group_spread_size: int, group_key: Tuple[str, str, int]) -> bool:
     """
     Determine whether a photo group should be split into subgroups.
 
     A split is considered necessary if:
-      - The splitting score exceeds the minimum (`CONFIGS['min_split_score']`).
-      - The splitting score equals the minimum and the group spread size > 5.
-      - The splitting score equals 2 and the group spread size >= 12.
+      - The number_of_spreads exceeds the minimum (`CONFIGS['min_split_score']`).
+      - The number_of_spreads equals the minimum and the group spread size > 5.
+      - The number_of_spreads equals 2 and the group spread size >= 12.
       - The group spread size >= 24.
     Additionally, groups with 'cant_split' in their cluster_context are excluded.
 
     Args:
-        splitting_score (int):
-            Score indicating how strongly the group should be split.
+        number_of_spreads (int):
+            Average number of spreads for group.
         group_spread_size (int):
             Recommended number of photos per spread for this group.
         group_key (Tuple[str, str, int]):
@@ -191,9 +189,9 @@ def is_split_needed(splitting_score: int, group_spread_size: int, group_key: Tup
     """
     return (
             (
-                    splitting_score > CONFIGS['min_split_score']
-                    or (splitting_score == CONFIGS['min_split_score'] and group_spread_size > 5)
-                    or (splitting_score == 2 and group_spread_size >= 12)
+                    number_of_spreads > CONFIGS['min_split_score']
+                    or (number_of_spreads == CONFIGS['min_split_score'] and group_spread_size > 5)
+                    or (number_of_spreads == 2 and group_spread_size >= 12)
                     or group_spread_size >= 24
             )
             and 'cant_split' not in group_key[1]

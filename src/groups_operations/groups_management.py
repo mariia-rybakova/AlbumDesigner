@@ -7,8 +7,8 @@ from utils.album_tools import get_images_per_groups, get_missing_columns, split_
 from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_merge_candidates_other,
                                          update_with_merges_bridegroom, update_with_merges_other,
                                          BRIDE_CENTRIC_CLASSES, GROOM_CENTRIC_CLASSES)
-from src.groups_operations.split import (get_splitting_score, is_split_needed, check_time_based_split_needed,
-                                         split_illegal_group_by_time, split_illegal_group_in_certain_point,
+from src.groups_operations.split import (get_number_of_spreads, is_split_needed, get_split_points,
+                                         split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
 from utils.configs import CONFIGS
 
@@ -33,17 +33,16 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
 
     for group_key, group in split_groups_:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
-        splitting_score = get_splitting_score(group, group_spread_size)
-
-        if is_split_needed(splitting_score, group_spread_size, group_key):
-            updated_group = split_illegal_group_by_time(group, group_spread_size)
+        # Calculate average number of spreads for this group
+        number_of_spreads = get_number_of_spreads(group, group_spread_size)
+        # Check if group is too big and need to be split
+        if is_split_needed(number_of_spreads, group_spread_size, group_key):
+            # Split big group
+            updated_group = split_big_group(group, group_spread_size)
         else:
-            if_split, split_points = check_time_based_split_needed(general_times_list, group_key2time_list[group_key],
-                                                                   group_key=group_key[1])
-            if if_split:
-                updated_group = split_illegal_group_in_certain_point(group, split_points)
-            else:
-                updated_group = None
+            # Check if group is diverse in time and get split time points
+            split_points = get_split_points(general_times_list, group_key2time_list[group_key], group_key=group_key[1])
+            updated_group = split_diverse_group(group, split_points)
 
         update_group_sub_index(photos_df, updated_group, logger)
 
