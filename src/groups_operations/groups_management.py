@@ -53,9 +53,12 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
 # Merging
 # Bride and groom
 def handle_wedding_bride_groom_merge(photos_df, logger=None):
+    def flatten(list_of_tuples):
+        return [item for group in list_of_tuples for item in group]
+
     merge_df = photos_df[(photos_df['group_size'] < CONFIGS['max_img_split']) &
-                         ((photos_df['cluster_context'].isin(BRIDE_CENTRIC_CLASSES)) |
-                          (photos_df['cluster_context'].isin(GROOM_CENTRIC_CLASSES)))]
+                         ((photos_df['cluster_context'].isin(flatten(BRIDE_CENTRIC_CLASSES))) |
+                          (photos_df['cluster_context'].isin(flatten(GROOM_CENTRIC_CLASSES))))]
     targets_df = photos_df.copy()
 
     merge_groups = merge_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
