@@ -364,6 +364,7 @@ def _get_merged_group_bridegroom(to_merge_group: pd.DataFrame, selected_cluster:
     """
     if _is_bride_groom_pair(group_key, selected_cluster, cent_idx):
         reminder_group_size = abs(len(to_merge_group) - len(selected_cluster))
+
         if reminder_group_size >= 2 or reminder_group_size == 0:
             min_len = min(len(to_merge_group), len(selected_cluster))
             merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])
@@ -471,7 +472,8 @@ def _update_merged_photos_other(photos_df: pd.DataFrame, to_merge_group: pd.Data
         None: Updates are applied directly to `photos_df`.
     """
     for row_index in merged_group.index:
-        photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
+        bigger_group = to_merge_group if len(to_merge_group) > len(selected_cluster) else selected_cluster
+        photos_df.loc[row_index, 'cluster_context'] = bigger_group['cluster_context'].iloc[0]
         photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + \
                                                     selected_cluster['groups_merged'].iloc[0]
         photos_df.loc[row_index, 'group_size'] = len(merged_group)
