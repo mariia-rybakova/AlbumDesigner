@@ -29,9 +29,10 @@ def get_large_spread_split_size(single_spread_size):
 
 def get_small_spread_split_size(single_spread_size):
     if single_spread_size >= 12:
-        return single_spread_size * 2
+        return single_spread_size
     else:
-        return single_spread_size * 3 # #photos for 3 spreads
+        # Number of photos for allowed amount of spreads
+        return single_spread_size * CONFIGS['min_split_score']
 
 
 def _split_by_chunk_size(illegal_group, split_size, n_samples):
@@ -190,9 +191,8 @@ def is_split_needed(number_of_spreads: int, group_spread_size: int, group_key: T
     return (
             (
                     number_of_spreads > CONFIGS['min_split_score']
-                    or (number_of_spreads == CONFIGS['min_split_score'] and group_spread_size > 5)
-                    or (number_of_spreads == 2 and group_spread_size >= 12)
-                    or group_spread_size >= 24
+                    or (number_of_spreads > 1 and group_spread_size >= 12)
+                    # or group_spread_size >= 24
             )
             and 'cant_split' not in group_key[1]
     )
