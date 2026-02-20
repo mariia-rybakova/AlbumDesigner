@@ -363,7 +363,8 @@ def _get_merged_group_bridegroom(to_merge_group: pd.DataFrame, selected_cluster:
             Returns (None, None) if no valid merge is possible.
     """
     if _is_bride_groom_pair(group_key, selected_cluster, cent_idx):
-        if abs(len(to_merge_group) - len(selected_cluster)) >= 2:
+        reminder_group_size = abs(len(to_merge_group) - len(selected_cluster))
+        if reminder_group_size >= 2 or reminder_group_size == 0:
             min_len = min(len(to_merge_group), len(selected_cluster))
             merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])
             reminder_group = pd.concat([to_merge_group.tail(len(to_merge_group) - min_len),
