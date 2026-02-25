@@ -29,7 +29,7 @@ wedding_lookup_table = {
     'speech': (6, 1),
     'detail': (6, 1.5),
     'getting hair-makeup': (2, 1.5),
-    'food': (2, 0.5),
+    'food': (4, 0.5),
     'other': (2, 0.5),
     'invite': (2, 0.5),
     'None':(2,0.5),
