@@ -505,8 +505,8 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
             for cluster_name, cluster_df in original_big_df.groupby('cluster_context')
         }
 
-        if len(original_big_df) <= 200 and density >= 3:
-            return original_big_df['image_id'].values.tolist(), {}, error_message
+        # if len(original_big_df) <= 200 and density >= 3:
+        #     return original_big_df['image_id'].values.tolist(), {}, error_message
 
         images_allocation,spreads_allocation = calculate_optimal_selection(
         actual_number_images_dict,

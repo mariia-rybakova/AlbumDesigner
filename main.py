@@ -121,8 +121,9 @@ class ReadStage(Stage):
                                               port=6333,
                                               # The HTTP port is often used for general access if not explicitly setting grpc_port
                                               grpc_port=6334,  # Explicitly define the gRPC port
-                                              prefer_grpc=True
+                                              prefer_grpc=True,
                                               # This forces the client to use gRPC for large operations like upsert
+                                              timeout=30,
                                               )
             self.logger.info(f'Initialize qdrant client, host {CONFIGS["QDRANT_HOST"]}, port 6333, grpc_port 6334')
         except Exception as ex:
