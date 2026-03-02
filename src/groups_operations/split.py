@@ -192,7 +192,7 @@ def is_split_needed(number_of_spreads: int, group_spread_size: int, group_key: T
             (
                     number_of_spreads > CONFIGS['min_split_score']
                     or (number_of_spreads > 1 and group_spread_size >= 12)
-                    # or group_spread_size >= 24
+                    or group_spread_size >= 24
             )
             and 'cant_split' not in group_key[1]
     )
