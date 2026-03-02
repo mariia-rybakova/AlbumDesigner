@@ -370,12 +370,14 @@ def define_min_max_spreads(df,focus_table,n_actual_dict,logger):
                     else:
                         actual_events_needed += 1
 
-        if total_images <= 600 and total_people <= 30 and actual_events_have / actual_events_needed <= 0.8:
-            return 15,18
-        elif total_images > 1000 and total_people > 70 and actual_events_have / actual_events_needed > 0.8:
-            return 23,26
+        events_ratio = actual_events_have / actual_events_needed if actual_events_needed > 0 else 0
+
+        if total_images <= 600 and total_people <= 30 and events_ratio <= 0.5:
+            return 15, 18
+        elif total_images >= 2000 and total_people >= 140 and events_ratio >= 0.8:
+            return 23, 26
         else:
-            return 19,22
+            return 19, 22
 
     except Exception as e:
         logger.error(f"Error define_min_max_spreads: {e}")
