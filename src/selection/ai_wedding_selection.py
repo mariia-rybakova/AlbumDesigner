@@ -633,6 +633,15 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
             grayscale_candidates_df = df_with_time_cluster[df_with_time_cluster['image_color'] == 0]
             has = len(df_with_time_cluster)
 
+            if len(color_candidates_df) == 0 and len(grayscale_candidates_df) > 0:
+                max_grayscale_select = min(2, len(grayscale_candidates_df))
+                grayscale_selected = grayscale_candidates_df.sort_values(by='image_order', ascending=True)['image_id'].values.tolist()[:max_grayscale_select]
+                ai_images_selected.extend(grayscale_selected)
+                category_picked[cluster_name]['selected'] = category_picked[cluster_name].get('selected', 0) + len(grayscale_selected)
+                logger.info(f"No color candidates for {cluster_name}, selected {len(grayscale_selected)} grayscale images only")
+                continue
+
+
             if no_selection:
                 image_order_dict = (
                     valid_images_df.set_index('image_id')['image_order']
