@@ -133,9 +133,30 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         last_page_ids = _select_by_priority_from_subset(
             subset_last, last_cover_queries, fallback_first_queries
         )
+        # Fallback to highest ranked images if no suitable cover images found
         if len(first_page_ids) == 0 or len(last_page_ids) == 0:
-            logger.error("No images selected for Cover images.")
-            return [], []
+            logger.warning("No ideal cover images found, falling back to highest ranked images.")
+            # Sort all images by image_order ascending (lower value = better image)
+            sorted_df = data_df.sort_values("image_order", ascending=True)
+            all_image_ids = sorted_df["image_id"].tolist()
+
+            if len(all_image_ids) == 0:
+                logger.error("No images available in the album.")
+                return [], []
+
+            # First cover gets highest ranked, last cover gets second highest
+            if len(first_page_ids) == 0:
+                first_page_ids = [all_image_ids[0]]
+
+            if len(last_page_ids) == 0:
+                # Get second highest, but make sure it's different from first
+                for img_id in all_image_ids[1:]:
+                    if img_id not in first_page_ids:
+                        last_page_ids = [img_id]
+                        break
+                # If only one image exists, use same for both
+                if len(last_page_ids) == 0:
+                    last_page_ids = [all_image_ids[0]]
 
         return [first_page_ids[0]], [last_page_ids[0]]
 
