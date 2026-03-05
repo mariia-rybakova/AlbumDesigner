@@ -9,6 +9,26 @@ import pandas as pd
 from utils.configs import CONFIGS
 
 
+@dataclass
+class Partition:
+    spread_sizes: List[int]
+    weight: float
+
+    def __str__(self):
+        return f'{len(self.spread_sizes)} spreads for group, spread sizes: {self.spread_sizes}. Partition weight: {self.weight}'
+
+
+@dataclass
+class Combination:
+    spreads: List[Set[int]]
+    weight: float
+
+    def __str__(self):
+        return (', '.join([f'Photos in {i + 1} spread: {spread}' for i, spread in enumerate(self.spreads)])
+                + f'. Combination weight: {self.weight}')
+
+
+
 def classWeight(nPhotos, classSpredParams):
     # calculates the class contribution to score.
     # score is gaussian with provided array of [mean,std]
@@ -951,25 +971,29 @@ def eval_single_comb(comb, photo_times, cluster_labels):
 def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,logger):
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
     photos_df = photos_df.sort_values('general_time')
-    layout_parts, weight_parts = selectPartitions(photos_df, spread_params,params,layouts_df=layouts_df)
+    layout_parts, weight_parts = selectPartitions(photos_df, spread_params, params, layouts_df=layouts_df)
+    partitions = [Partition(layout_parts[i], weight_parts[i]) for i in range(len(layout_parts))]
     # logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
 
     combs = []
-    comb_weights = np.array([])
 
     photoTimes = [item.general_time for item in photos]
     cluster_labels = [item.cluster_label for item in photos]
     # print("inside the genereatge filtered multi spreads")
 
+    def get_combination(spreads, partition):
+        combination_weight = eval_single_comb(spreads, photoTimes, cluster_labels)
+        return Combination(spreads, combination_weight * partition.weight)
+
     maxCombsParam = params[2] if len(photos) <= params[5] else params[3]
 
-    for i in range(len(layout_parts)):
+    for i, partition in enumerate(partitions):
         maxCombs = int(maxCombsParam / np.power(2, i))
 
         if len(photos) <= 8 and len(photos) / spread_params[0] <= 2:
-            single_combs = listSingleCombinations(photos, layout_parts[i],maxCombs)
+            single_combs = listSingleCombinations(photos, partition.spread_sizes, maxCombs)
         else:
-            single_combs = greedy_combination_search(photos, layout_parts[i], layouts_df)
+            single_combs = greedy_combination_search(photos, partition.spread_sizes, layouts_df)
         # print(f"Single Combinations {len(single_combs)} and maxCombs {maxCombs}")
 
         if len(single_combs) > maxCombs:
@@ -977,15 +1001,14 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
             sample_idxs = random.sample(range(len(single_combs)), maxCombs)
             single_combs = [single_combs[sample_idx] for sample_idx in sample_idxs]
 
-        single_weights = []
-        for single_comb in single_combs:
-            single_weights.append(eval_single_comb(single_comb, photoTimes, cluster_labels))
+        single_combs = [get_combination(spreads, partition) for spreads in single_combs]
         combs += single_combs
-        comb_weights = np.append(comb_weights, np.array(single_weights) * weight_parts[i])
+
+
     #print("Getting the filtered multi srpreads")
     filtered_multi_spreads = []
     for idx, comb in enumerate(combs):
-        multi_spreads = layoutSingleCombination(comb, layouts_df, photos,params)
+        multi_spreads = layoutSingleCombination(comb.spreads, layouts_df, photos,params)
         if multi_spreads is not None:
             if len(photos) < 13:
                 penalty = Penalties(
@@ -1007,9 +1030,10 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
                     context_mix_penalty=0.00001,
                     time_order_penalty=0.5
                 )
-            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx], penalty)
+            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb.weight, penalty)
             filtered_multi_spreads += list_multi_spreads(single_filtered_multi_spreads)
 
+        # ToDo optimize this
         if len(filtered_multi_spreads) > 10000:
             scores = np.zeros(len(filtered_multi_spreads))
             for multi_spread in range(len(filtered_multi_spreads)):
