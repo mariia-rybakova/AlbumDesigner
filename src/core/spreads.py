@@ -1,10 +1,12 @@
 import random
-import numpy as np
-
 from itertools import combinations, product, groupby, permutations
+from dataclasses import dataclass
+from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
+
+import numpy as np
+import pandas as pd
 
 from utils.configs import CONFIGS
-import pandas as pd
 
 
 def classWeight(nPhotos, classSpredParams):
@@ -172,8 +174,8 @@ def selectPartitions(photos_df, classSpreadParams, params, layouts_df):
 
     layouts_dict = _get_layouts_dict(layouts_df, available_n)
 
-    filtered_parts, filtered_weights = _filter_parts_by_layout(parts, weights, layouts_dict, nPortrait, nLandscape,
-                                                               params)
+    filtered_parts, filtered_weights = _filter_parts_by_layout(parts, weights, layouts_dict,
+                                                               nPortrait, nLandscape, params)
 
     partsAboveThresh, weightsAboveThresh = _filter_parts_by_len(filtered_parts, filtered_weights, nPhotos)
     return partsAboveThresh, weightsAboveThresh
@@ -306,6 +308,7 @@ def listSingleCombinations(photos, layout_part, maxCombs):
 
 def _get_portraits_landscapes(photos):
     photos_ids = list(range(len(photos)))
+
     # n_photos = len(photos)
     # landscapes = 0
     landscape_photos_ids = list()
@@ -433,11 +436,32 @@ def greedy_combination_search(photos, layout_part, layout_df):
 
     all_combinations_of_layouts = _prepare_all_combinations(spread_layouts_list)
 
-    final_layout_combs_list = _get_final_combinations(all_combinations_of_layouts, photos, portrait_photos_ids,
-                                                      landscape_photos_ids)
+    final_layout_combs_list = _get_final_combinations(all_combinations_of_layouts, photos,
+                                                      portrait_photos_ids, landscape_photos_ids)
 
     cleaned_comb_data = _filter_combinations(final_layout_combs_list)
     return cleaned_comb_data
+
+
+@dataclass
+class SingleSpreadLayout:
+    # ToDo combine with Spread class
+    layout_idx: int
+    left_page_photo_idxs: Set[int]  # photo index in local list of photos per group
+    right_page_photo_idxs: Set[int]
+    number_of_squares: int
+
+    def __str__(self):
+        return (f'Layout_idx: {self.layout_idx}; '
+                f'Photos: [left page: {self.left_page_photo_idxs}, right page: {self.right_page_photo_idxs}]; '
+                f'Square boxes in spread: {self.number_of_squares}')
+
+    def to_list(self):
+        return list(self.__dict__.values())
+
+    @property
+    def as_list(self):
+        return self.to_list()
 
 
 def _get_portraits_landscapes_for_spread(spread_photos, photos):
@@ -469,12 +493,14 @@ def _filter_layouts(layout_df, n_photos, portraits, landscapes):
 def _simple_layout(selectedLayout, n_photos):
     single_spreads = []
     for layout_idx, layout in selectedLayout.iterrows():
-        single_spreads.append([
-            layout_idx,
-            set(range(0, len(layout['left_square_ids']))),
-            set(range(len(layout['left_square_ids']), n_photos)),
-            n_photos
-        ])
+        single_spreads.append(
+            SingleSpreadLayout(
+                layout_idx=layout_idx,
+                left_page_photo_idxs= set(range(0,                                len(layout['left_square_ids']))),
+                right_page_photo_idxs=set(range(len(layout['left_square_ids']),   n_photos)),
+                number_of_squares=n_photos
+            )
+        )
     return single_spreads
 
 
@@ -528,12 +554,12 @@ def _group_by_time(spread_photos, photos):
 
 def _apply_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes, right_portraits):
     mask = (
-            (greedy_layouts['max_left_landscapes'] >= left_landscapes) &
-            (greedy_layouts['max_left_portraits'] >= left_portraits) &
-            (greedy_layouts['max_right_landscapes'] >= right_landscapes) &
-            (greedy_layouts['max_right_portraits'] >= right_portraits) &
-            ((left_landscapes + left_portraits) == greedy_layouts['left_total_capacity']) &
-            ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity'])
+        (greedy_layouts['max_left_landscapes']  >= left_landscapes) &
+        (greedy_layouts['max_left_portraits']   >= left_portraits) &
+        (greedy_layouts['max_right_landscapes'] >= right_landscapes) &
+        (greedy_layouts['max_right_portraits']  >= right_portraits) &
+        ((left_landscapes + left_portraits) == greedy_layouts['left_total_capacity']) &
+        ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity'])
     )
     return greedy_layouts.loc[mask]
 
@@ -551,12 +577,14 @@ def _process_with_time(spread_photos, photos, greedy_layouts, greedy_single_spre
                                        right_portraits)
 
         for layout_idx, layout in possible_layouts.iterrows():
-            greedy_single_spreads.append([
-                layout_idx,
-                set([item[0] for item in grouped_sequences[0]]),
-                set([item[0] for item in grouped_sequences[1]]),
-                len(list(layout['left_square_ids']) + list(layout['right_square_ids']))
-            ])
+            greedy_single_spreads.append(
+                SingleSpreadLayout(
+                    layout_idx=layout_idx,
+                    left_page_photo_idxs= set([item[0] for item in grouped_sequences[0]]),
+                    right_page_photo_idxs=set([item[0] for item in grouped_sequences[1]]),
+                    number_of_squares=len(list(layout['left_square_ids']) + list(layout['right_square_ids']))
+                )
+            )
 
     return greedy_single_spreads
 
@@ -574,23 +602,23 @@ def _process_with_color(spread_photos, photos, greedy_layouts, greedy_single_spr
         else:
             left_condition = False
 
-        left_landscapes = np.sum(
-            [photos[item].ar > 1 and photos[item].color == left_condition for item in spread_photos])
-        left_portraits = np.sum(photos_color == left_condition) - left_landscapes
-        right_landscapes = np.sum(
-            [photos[item].ar > 1 and photos[item].color != left_condition for item in spread_photos])
+        left_landscapes =  np.sum([photos[item].ar > 1 and photos[item].color == left_condition for item in spread_photos])
+        right_landscapes = np.sum([photos[item].ar > 1 and photos[item].color != left_condition for item in spread_photos])
+        left_portraits =  np.sum(photos_color == left_condition) - left_landscapes
         right_portraits = np.sum(photos_color != left_condition) - right_landscapes
 
         possible_layouts = _apply_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes,
                                        right_portraits)
 
         for layout_idx, layout in possible_layouts.iterrows():
-            greedy_single_spreads.append([
-                layout_idx,
-                set([photo_id for photo_id in spread_photos if photos[photo_id].color == left_condition]),
-                set([photo_id for photo_id in spread_photos if photos[photo_id].color != left_condition]),
-                len(list(layout['left_square_ids']) + list(layout['right_square_ids']))
-            ])
+            greedy_single_spreads.append(
+                SingleSpreadLayout(
+                    layout_idx=layout_idx,
+                    left_page_photo_idxs= set([photo_id for photo_id in spread_photos if photos[photo_id].color == left_condition]),
+                    right_page_photo_idxs=set([photo_id for photo_id in spread_photos if photos[photo_id].color != left_condition]),
+                    number_of_squares=len(list(layout['left_square_ids']) + list(layout['right_square_ids']))
+                )
+            )
 
     return greedy_single_spreads
 
@@ -660,8 +688,13 @@ def _expand_single_spreads(oriented_spreads, rem_right_landscapes, rem_right_por
         landscape_left_combs = list(combinations(rem_photos, left_squares))
         for comb in landscape_left_combs:
             single_spreads.append(
-                [layout, oriented_spread[0].union(set(comb)), oriented_spread[1].union(rem_photos) - set(comb),
-                 left_squares + right_squares])
+                SingleSpreadLayout(
+                    layout_idx=layout,
+                    left_page_photo_idxs= oriented_spread[0].union(set(comb)),
+                    right_page_photo_idxs=oriented_spread[1].union(rem_photos) - set(comb),
+                    number_of_squares=left_squares + right_squares
+                )
+            )
     return single_spreads
 
 
@@ -700,7 +733,7 @@ def _get_spreads(layouts, landscape_set, portrait_set, params, greedy_single_spr
         right_squares = len(layouts.at[layout, 'right_square_ids'])
 
         if len(oriented_spreads) != len(rem_right_landscapes):
-            rem_right_landscapes
+            rem_right_landscapes # ToDo ???
 
         # single_spreads = []
         single_spreads = greedy_single_spreads.copy()
@@ -715,10 +748,12 @@ def _get_spreads(layouts, landscape_set, portrait_set, params, greedy_single_spr
 def layoutSingleCombination(singleClassComb, layout_df, photos, params):
     n_spreads = len(singleClassComb)
     multi_spreads = []
+
     for spread_idx in range(n_spreads):
         spread_photos = list(singleClassComb[spread_idx])
+
         if len(spread_photos) == 0:
-            spread_photos
+            spread_photos # ToDo ???
 
         n_photos = len(spread_photos)
         portraits, landscapes, portrait_set, landscape_set = _get_portraits_landscapes_for_spread(spread_photos, photos)
@@ -744,20 +779,18 @@ def layoutSingleCombination(singleClassComb, layout_df, photos, params):
             return multi_spreads
 
         ### greedy attempt to find layout based on separation of time, class and color
+        greedy_single_spreads = []
         try:
             if len(layouts) > 0:
                 greedy_layouts = _calculate_capacities(layouts)
 
-                greedy_single_spreads = []
                 greedy_single_spreads = _process_with_time(spread_photos, photos, greedy_layouts, greedy_single_spreads)
                 greedy_single_spreads = _process_with_color(spread_photos, photos, greedy_layouts, greedy_single_spreads)
-            else:
-                greedy_single_spreads = []
         except Exception as e:
-            greedy_single_spreads = []
             print(f"Greedy layout attempt failed with error {e}")
 
         spreads = _get_spreads(layouts, landscape_set, portrait_set, params, greedy_single_spreads)
+
         if len(spreads) == 0:
             return None
         if len(spreads) > params[2]:
@@ -769,76 +802,109 @@ def layoutSingleCombination(singleClassComb, layout_df, photos, params):
     return multi_spreads
 
 
+@dataclass
+class PageEvaluationResult:
+    is_same_color: bool
+    is_same_class: bool
+    is_bride_groom_mix: bool
+    number_of_unique_contexts: int
+
+
 def check_page(photo_set, photos):
     bride_centric_classes = ['bride', 'bride party', 'wedding dress', 'getting hair-makeup','bride getting dressed']
     groom_centric_classes = ['groom','groom party','suit']
+
     if len(photo_set) == 1:
-        return [True, True, False, 1]
-    else:
-        colors = []
-        photo_classes = []
-        contexts = []
-        for photo_id in photo_set:
-            photo = photos[photo_id]
-            colors.append(photo.color)
-            photo_classes.append(photo.photo_class)
-            contexts.append(photo.original_context)
-        number_of_unique_contexts = len(set(contexts))
-        sameColor = all([color == colors[0] for color in colors])
-        sameClass = all([photo_class == photo_classes[0] for photo_class in photo_classes])
-        if not sameClass:
-            bride_centric = any([photo_class in bride_centric_classes for photo_class in photo_classes])
-            groom_centric = any([photo_class in groom_centric_classes for photo_class in photo_classes])
-            if bride_centric and groom_centric:
-                bride_groom_mix = True
-            else:
-                bride_groom_mix = False
-        else:
-            bride_groom_mix = False
-        return [sameColor, sameClass, bride_groom_mix, number_of_unique_contexts]
+        return PageEvaluationResult(True, True, False, 1)
+
+    # The DataFrame with subset of photos for the given IDs
+    df = pd.DataFrame(photos).loc[list(photo_set)]
+
+    # Column-based checks
+    is_same_color = df['color'].nunique() == 1
+    is_same_class = df['photo_class'].nunique() == 1
+    number_of_unique_contexts = df['original_context'].nunique()
+
+    def calculate_bride_groom_mix():
+        bride_centric = df['photo_class'].isin(bride_centric_classes).any()
+        groom_centric = df['photo_class'].isin(groom_centric_classes).any()
+        return bride_centric and groom_centric
+
+    return PageEvaluationResult(
+        is_same_color=is_same_color,
+        is_same_class=is_same_class,
+        is_bride_groom_mix=calculate_bride_groom_mix() if is_same_class else False,
+        number_of_unique_contexts=number_of_unique_contexts
+    )
 
 
-def eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weight, crop_penalty=0.5, color_mix=0.000000001,
-                       class_mix=0.01,
-                       orientation_mix=0.1, score_threshold=0.01, double_mix_color=0.000000000000000001, context_mix_penalty=0.00001,time_order_penalty=0.005):
-    #print(f"the CONFIGS['spread_score_threshold'] is {score_threshold}")
+@dataclass()
+class Penalties:
+    crop_penalty: float = 0.5
+    color_mix: float = 0.000000001
+    class_mix: float = 0.01
+    orientation_mix: float = 0.1
+    score_threshold: float = 0.01
+    double_mix_color: float = 0.000000000000000001
+    context_mix_penalty: float = 0.00001
+    time_order_penalty: float = 0.005
+
+
+def apply_page_penalties(page_check_result, score, penalty):
+    if not page_check_result.is_same_color:
+        score = score * penalty.color_mix
+    if not page_check_result.is_same_class:
+        score = score * penalty.class_mix
+    if page_check_result.is_bride_groom_mix:
+        score = score * penalty.color_mix
+
+    score = score * np.power(penalty.context_mix_penalty, max(1, page_check_result.number_of_unique_contexts) - 1)
+    return score
+
+
+def eval_multi_spreads(multi_spreads: List[List[SingleSpreadLayout]], layouts_df, photos, comb_weight, penalty = None):
+    if penalty is None:
+        penalty = Penalties()
+    #print(f"the CONFIGS['spread_score_threshold'] is {penalty.score_threshold}")
+
     filtered_multi_spreads = []
     for i in range(len(multi_spreads)):
         spread_scores = np.ones(len(multi_spreads[i]))
+
         for j in range(len(multi_spreads[i])):
             spread = multi_spreads[i][j]
-            left_check = check_page(spread[1], photos)
-            if not left_check[0]:
-                spread_scores[j] = spread_scores[j] * color_mix
-            if not left_check[1]:
-                spread_scores[j] = spread_scores[j] * class_mix
-            if left_check[2]:
-                spread_scores[j] = spread_scores[j] * color_mix
-            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, max(1,left_check[3]) - 1)
-            if layouts_df.at[spread[0], 'left_mixed']:
-                spread_scores[j] = spread_scores[j] * orientation_mix
-            right_check = check_page(spread[2], photos)
-            if not right_check[0]:
-                spread_scores[j] = spread_scores[j] * color_mix
-            if not right_check[1]:
-                spread_scores[j] = spread_scores[j] * class_mix
-            if right_check[2]:
-                spread_scores[j] = spread_scores[j] * color_mix
-            if layouts_df.at[spread[0], 'right_mixed']:
-                spread_scores[j] = spread_scores[j] * orientation_mix
-            spread_scores[j] = spread_scores[j] * np.power(context_mix_penalty, max(1,right_check[3]) - 1)
-            if not left_check[0] and not right_check[0]:
-                # if two pages has gray colors give it much more worse
-                spread_scores[j] = spread_scores[j] * double_mix_color
-            spread_scores[j] = spread_scores[j] * np.power(crop_penalty, spread[3])
-            photo_order_time = [photos[photo_id].general_time for photo_id in list(spread[1])+list(spread[2])]
+            score = spread_scores[j]
+
+            left_check = check_page(spread.left_page_photo_idxs, photos)
+            score = apply_page_penalties(left_check, score, penalty)
+            if layouts_df.at[spread.layout_idx, 'left_mixed']:
+                score = score * penalty.orientation_mix
+
+            right_check = check_page(spread.right_page_photo_idxs, photos)
+            score = apply_page_penalties(right_check, score, penalty)
+            if layouts_df.at[spread.layout_idx, 'right_mixed']:
+                score = score * penalty.orientation_mix
+
+            # if two pages has gray colors, give it much worse rating
+            if not left_check.is_same_color and not right_check.is_same_color:
+                score = score * penalty.double_mix_color
+
+            # penalty for cropping photos to square boxes
+            score = score * np.power(penalty.crop_penalty, spread.number_of_squares)
+
+            # if time order is not correct, give it a penalty
+            photo_order_time = [photos[photo_id].general_time for photo_id in
+                                list(spread.left_page_photo_idxs) + list(spread.right_page_photo_idxs)]
             for time_idx1 in range(len(photo_order_time)):
                 for time_idx2 in range(time_idx1 + 1, len(photo_order_time)):
                     if photo_order_time[time_idx1] > photo_order_time[time_idx2]:
-                        spread_scores[j] = spread_scores[j] * time_order_penalty  # if time order is not correct, give it a penalty
+                        score = score * penalty.time_order_penalty
+
+            spread_scores[j] = score
+
         if len(spread_scores) > 0:
-            filtered_idx = np.where(spread_scores / np.max(spread_scores) > score_threshold)[0]
-            filtered_multi_spreads.append([multi_spreads[i][j] + [spread_scores[j]] for j in filtered_idx])
+            filtered_idx = np.where(spread_scores / np.max(spread_scores) > penalty.score_threshold)[0]
+            filtered_multi_spreads.append([multi_spreads[i][j].as_list + [spread_scores[j]] for j in filtered_idx])
 
     filtered_multi_spreads.append(comb_weight)
     return filtered_multi_spreads
@@ -921,19 +987,27 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
     for idx, comb in enumerate(combs):
         multi_spreads = layoutSingleCombination(comb, layouts_df, photos,params)
         if multi_spreads is not None:
-            if len(photos)<13:
-                single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx],
-                                                                   crop_penalty=CONFIGS['crop_penalty'], color_mix=CONFIGS['color_mix'], class_mix=CONFIGS['class_mix'],
-                                                                   orientation_mix=CONFIGS['orientation_mix'], score_threshold=params[0], double_mix_color=CONFIGS['double_page_color_mix'])
+            if len(photos) < 13:
+                penalty = Penalties(
+                    crop_penalty=CONFIGS['crop_penalty'],
+                    color_mix=CONFIGS['color_mix'],
+                    class_mix=CONFIGS['class_mix'],
+                    orientation_mix=CONFIGS['orientation_mix'],
+                    score_threshold=params[0],
+                    double_mix_color=CONFIGS['double_page_color_mix']
+                )
             else:
-                single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx],
-                                                                   crop_penalty=0.8,
-                                                                   color_mix=CONFIGS['color_mix'],
-                                                                   class_mix=CONFIGS['class_mix'],
-                                                                   orientation_mix=CONFIGS['orientation_mix'],
-                                                                   score_threshold=params[0],
-                                                                   double_mix_color=CONFIGS['double_page_color_mix'],
-                                                                   context_mix_penalty=0.00001,time_order_penalty=0.5)
+                penalty = Penalties(
+                    crop_penalty=0.8,
+                    color_mix=CONFIGS['color_mix'],
+                    class_mix=CONFIGS['class_mix'],
+                    orientation_mix=CONFIGS['orientation_mix'],
+                    score_threshold=params[0],
+                    double_mix_color=CONFIGS['double_page_color_mix'],
+                    context_mix_penalty=0.00001,
+                    time_order_penalty=0.5
+                )
+            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb_weights[idx], penalty)
             filtered_multi_spreads += list_multi_spreads(single_filtered_multi_spreads)
 
         if len(filtered_multi_spreads) > 10000:
