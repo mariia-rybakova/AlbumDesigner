@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 from itertools import combinations, product, groupby, permutations
 from dataclasses import dataclass
@@ -44,6 +46,80 @@ class Partition:
         else:
             weights /= np.max(weights)
         return weights
+
+    @staticmethod
+    def filter_by_layout(parts: List[Partition], layouts_dict: dict,
+                                n_portraits: int, n_landscapes: int, params: Any) -> List[Partition]:
+        """
+        Filter Partition objects by layout feasibility.
+        Each Partition already has its weight set.
+        Returns a filtered list of Partition objects.
+        """
+        filtered_parts: List[Partition] = []
+        weight_threshold = max(p.weight for p in parts) / params[1]
+
+        for partition in parts:
+            part_landscape = n_landscapes
+            part_portrait = n_portraits
+            part_layout_matched = True
+
+            for spread in partition.spread_sizes:
+                n_layouts = layouts_dict[spread]
+                spread_layout_matched = False
+
+                for _, row in n_layouts.iterrows():
+                    rem_portrait = max(part_portrait - row['max portraits'], 0)
+                    rem_landscape = max(part_landscape - row['max landscapes'], 0)
+
+                    if (part_landscape + part_portrait) - spread >= (rem_portrait + rem_landscape):
+                        spread_layout_matched = True
+                        part_portrait = rem_portrait
+                        part_landscape = rem_landscape
+                        break
+
+                if not spread_layout_matched:
+                    part_layout_matched = False
+                    break
+
+            if part_layout_matched:
+                filtered_parts.append(partition)
+                # Early stopping if too many parts and weight is below threshold
+                if len(filtered_parts) > 2 and partition.weight < weight_threshold:
+                    break
+
+        return filtered_parts
+
+    def is_valid(self, min_len: int, n_photos: int) -> bool:
+        """
+        Check if this Partition meets the selection criteria.
+        """
+        part_len = len(self.spread_sizes)
+        return (
+            (
+                part_len - min_len <= 1 and
+                part_len <= 2 and
+                n_photos < 16
+            )
+            or (part_len == min_len)
+        )
+
+    @classmethod
+    def filter_by_len(cls, parts: List[Partition], n_photos: int) -> List[Partition]:
+        """
+        Filter Partition objects by their length relative to min/max spread sizes.
+        Returns a filtered list of Partition objects.
+        """
+        if not parts:
+            return parts
+
+        part_len_list = [len(part.spread_sizes) for part in parts]
+        min_len, max_len = np.min(part_len_list), np.max(part_len_list)
+
+        # Apply filtering only if there’s variation in lengths
+        if max_len > min_len:
+            parts = [part for part in parts if part.is_valid(min_len, n_photos)]
+
+        return parts
 
 
 @dataclass
@@ -131,104 +207,33 @@ def _get_layouts_dict(layouts_df, available_n):
     return layouts_dict
 
 
-def _filter_parts_by_layout(parts: List[Partition], layouts_dict: dict,
-                            nPortrait: int, nLandscape: int, params: Any) -> List[Partition]:
-    """
-    Filter Partition objects by layout feasibility.
-    Each Partition already has its weight set.
-    Returns a filtered list of Partition objects.
-    """
-    filtered_parts: List[Partition] = []
-    weight_threshold = max(p.weight for p in parts) / params[1]
-
-    for partition in parts:
-        part_landscape = nLandscape
-        part_portrait = nPortrait
-        part_layout_matched = True
-
-        for spread in partition.spread_sizes:
-            n_layouts = layouts_dict[spread]
-            spread_layout_matched = False
-
-            for _, row in n_layouts.iterrows():
-                rem_portrait = max(part_portrait - row['max portraits'], 0)
-                rem_landscape = max(part_landscape - row['max landscapes'], 0)
-
-                if (part_landscape + part_portrait) - spread >= (rem_portrait + rem_landscape):
-                    spread_layout_matched = True
-                    part_portrait = rem_portrait
-                    part_landscape = rem_landscape
-                    break
-
-            if not spread_layout_matched:
-                part_layout_matched = False
-                break
-
-        if part_layout_matched:
-            filtered_parts.append(partition)
-            # Early stopping if too many parts and weight is below threshold
-            if len(filtered_parts) > 2 and partition.weight < weight_threshold:
-                break
-
-    return filtered_parts
-
-
-def _filter_parts_by_len(parts: List[Partition], nPhotos: int) -> List[Partition]:
-    """
-    Filter Partition objects by their length relative to min/max spread sizes.
-    Returns a filtered list of Partition objects.
-    """
-    if not parts:
-        return parts
-
-    part_len_list = [len(part.spread_sizes) for part in parts]
-    min_len, max_len = np.min(part_len_list), np.max(part_len_list)
-
-    def is_valid_part(part: Partition) -> bool:
-        """Return True if the Partition meets the selection criteria."""
-        part_len = len(part.spread_sizes)
-        return (
-            (
-                part_len - min_len <= 1 and
-                part_len <= 2 and
-                nPhotos < 16
-            )
-            or (part_len == min_len)
-        )
-
-    # Apply filtering only if there’s variation in lengths
-    if max_len > min_len:
-        parts = [part for part in parts if is_valid_part(part)]
-
-    return parts
-
-
 def selectPartitions(photos_df, classSpreadParams, params, layouts_df):
-    # finds all available partitions for a class cluster of size nPhotos
+    # finds all available partitions for a class cluster of size n_photos
     # eliminates unlikely partitions based ont the cluster class score parameters
-    # parameter: nPhotos - total number of photos for a class cluster
+    # parameter: n_photos - total number of photos for a class cluster
     # parameter: classSpreadParams - array size 2 [mean,std] containing the gaussian parameter for the context class score
 
-    nPhotos = len(photos_df.index)
-    available_n = set(layouts_df['number of boxes'].unique())
+    n_photos = len(photos_df.index)
+    n_portraits = len(photos_df[photos_df['ar'] < 1].index)
+    n_landscapes = n_photos - n_portraits
 
-    nPortrait = len(photos_df[photos_df['ar'] < 1].index)
-    nLandscape = nPhotos - nPortrait
+    available_n = set(layouts_df['number of boxes'].unique())
+    layouts_dict = _get_layouts_dict(layouts_df, available_n)
 
     classSpreadParams[1] = max(classSpreadParams[1], 0.5)
 
-    parts = printAllUniqueParts(nPhotos)
+    # generate partitions
+    ## part values
+    parts = printAllUniqueParts(n_photos)
     parts = [part for part in parts if set(part).issubset(available_n)]
-
-    weights = Partition.get_weights_for_parts(parts, classSpreadParams, nPhotos)
+    ## part weights
+    weights = Partition.get_weights_for_parts(parts, classSpreadParams, n_photos)
     parts = [Partition(parts[i], weights[i]) for i in range(len(parts))]
+    # process partitions
     sorted_parts = sorted(parts, key=lambda p: p.weight, reverse=True)
+    filtered_parts = Partition.filter_by_layout(sorted_parts, layouts_dict, n_portraits, n_landscapes, params)
+    valid_parts = Partition.filter_by_len(filtered_parts, n_photos)
 
-    layouts_dict = _get_layouts_dict(layouts_df, available_n)
-
-    filtered_parts = _filter_parts_by_layout(sorted_parts, layouts_dict, nPortrait, nLandscape, params)
-
-    valid_parts = _filter_parts_by_len(filtered_parts, nPhotos)
     return valid_parts
 
 
@@ -502,6 +507,7 @@ class SingleSpreadLayout:
     left_page_photo_idxs: Set[int]  # photo index in local list of photos per group
     right_page_photo_idxs: Set[int]
     number_of_squares: int
+    score: float = None
 
     def __str__(self):
         return (f'Layout_idx: {self.layout_idx}; '
@@ -516,7 +522,52 @@ class SingleSpreadLayout:
         return self.to_list()
 
 
+@dataclass
+class SpreadLayoutsList:
+    spread_photo_idxs: Set[int]
+    possible_layouts: List[SingleSpreadLayout] = None
+
+    def view(self, limit=None, sep='=='):
+        print('Possible layouts for spread with photos:', self.spread_photo_idxs, f'- {len(self.possible_layouts)} options')
+        for j, sp in enumerate(self.possible_layouts):
+            if limit is not None and j > limit:
+                print(sep, '... ... ...')
+                break
+            print(sep, j + 1, sp)
+
+    def update_layouts(self, layouts_list: List[SingleSpreadLayout]):
+        self.possible_layouts = layouts_list
+
+
+class GroupLayoutsLists(Combination):
+    '''
+    The object of this class represents possible layout options for a certain Combination.
+    '''
+    def __init__(self, spreads: List[Set[int]], weight: float):
+        super().__init__(spreads=spreads, weight=weight)
+        self.possible_layouts: List[SpreadLayoutsList] = []
+
+    @classmethod
+    def from_comb(cls, comb: Combination) -> GroupLayoutsLists:
+        """
+        Create a GroupLayoutsLists from an existing Combination.
+        """
+        return cls(comb.spreads, comb.weight)
+
+    def view(self, limit = None, sep='=='):
+        print(f'Layout options for {len(self.spreads)}-spread group: {self.spreads}')
+        for i in range(len(self.spreads)):
+            print(sep, i + 1, end = ' ')
+            self.possible_layouts[i].view(limit=limit, sep = sep*2)
+
+    def add_spread(self, layouts: SpreadLayoutsList):
+        self.possible_layouts.append(layouts)
+
+
 def _get_portraits_landscapes_for_spread(spread_photos, photos):
+    '''
+    Read orientation from photos in group
+    '''
     landscape_set = set()
     portrait_set = set()
 
@@ -542,9 +593,21 @@ def _filter_layouts(layout_df, n_photos, portraits, landscapes):
     ].copy()
 
 
-def _simple_layout(selectedLayout, n_photos):
+def _count_squares(layouts_df):
+    if not layouts_df.empty:
+        layouts_df['number of squares'] = layouts_df.apply(
+            lambda x: len(list(x['left_square_ids'])) + len(list(x['right_square_ids'])), axis=1
+        )
+    else:
+        layouts_df['number of squares'] = 0
+    return layouts_df
+
+
+def _simple_layout(layouts_df, n_photos):
+    selected_layouts = layouts_df[layouts_df['number of squares'] == n_photos]
     single_spreads = []
-    for layout_idx, layout in selectedLayout.iterrows():
+
+    for layout_idx, layout in selected_layouts.iterrows():
         single_spreads.append(
             SingleSpreadLayout(
                 layout_idx=layout_idx,
@@ -791,38 +854,32 @@ def _get_spreads(layouts, landscape_set, portrait_set, params, greedy_single_spr
     return spreads
 
 
-def layoutSingleCombination(singleClassComb, layout_df, photos, params):
-    n_spreads = len(singleClassComb)
-    multi_spreads = []
+def layoutSingleCombination(single_class_comb: Combination, layout_df, photos, params):
+    n_spreads = len(single_class_comb.spreads)
+    group_spreads_layouts = GroupLayoutsLists.from_comb(single_class_comb)
 
-    for spread_idx in range(n_spreads):
-        spread_photos = list(singleClassComb[spread_idx])
+    for photo_idx_set in single_class_comb.spreads:
+        spread_photos = list(photo_idx_set)
 
         if len(spread_photos) == 0:
             spread_photos # ToDo ???
 
-        n_photos = len(spread_photos)
+        n_photos_in_spread = len(spread_photos)
         portraits, landscapes, portrait_set, landscape_set = _get_portraits_landscapes_for_spread(spread_photos, photos)
 
-        layouts = _filter_layouts(layout_df, n_photos, portraits, landscapes)
-
-        if not layouts.empty:
-            layouts['number of squares'] = layouts.apply(
-                lambda x: len(list(x['left_square_ids'])) + len(list(x['right_square_ids'])), axis=1
-            )
-        else:
-            layouts['number of squares'] = 0
+        layouts = _filter_layouts(layout_df, n_photos_in_spread, portraits, landscapes)
+        layouts = _count_squares(layouts)
 
         # large spreads with squares gets trivial layout
         if (
-                n_photos > 13 and
-                len(layouts[layouts['number of squares'] == n_photos]) > 0 and
+                n_photos_in_spread > 13 and
+                len(layouts[layouts['number of squares'] == n_photos_in_spread]) > 0 and
                 n_spreads == 1
             ):
-            selectedLayout = layouts[layouts['number of squares'] == n_photos]
-            single_spreads = _simple_layout(selectedLayout, n_photos)
-            multi_spreads.append(single_spreads)
-            return multi_spreads
+            single_spreads = _simple_layout(layouts, n_photos_in_spread)
+            single_spread_layouts = SpreadLayoutsList(photo_idx_set, single_spreads)
+            group_spreads_layouts.add_spread(single_spread_layouts)
+            return group_spreads_layouts
 
         ### greedy attempt to find layout based on separation of time, class and color
         greedy_single_spreads = []
@@ -843,9 +900,12 @@ def layoutSingleCombination(singleClassComb, layout_df, photos, params):
             # print(f"Sampling {params[2]} spreads from {len(spreads)}")
             sample_idxs = random.sample(range(len(spreads)), params[2])
             spreads = [spreads[i] for i in sample_idxs]
-        multi_spreads.append(spreads)
 
-    return multi_spreads
+        single_spread_layouts = SpreadLayoutsList(photo_idx_set, spreads)
+        group_spreads_layouts.add_spread(single_spread_layouts)
+
+    # group_spreads_layouts.view(limit=3)
+    return group_spreads_layouts
 
 
 @dataclass
@@ -908,18 +968,16 @@ def apply_page_penalties(page_check_result, score, penalty):
     return score
 
 
-def eval_multi_spreads(multi_spreads: List[List[SingleSpreadLayout]], layouts_df, photos, comb_weight, penalty = None):
+def eval_multi_spreads(group_spreads_layouts: GroupLayoutsLists, layouts_df, photos, penalty = None):
     if penalty is None:
         penalty = Penalties()
     #print(f"the CONFIGS['spread_score_threshold'] is {penalty.score_threshold}")
 
-    filtered_multi_spreads = []
-    for i in range(len(multi_spreads)):
-        spread_scores = np.ones(len(multi_spreads[i]))
-
-        for j in range(len(multi_spreads[i])):
-            spread = multi_spreads[i][j]
-            score = spread_scores[j]
+    # Evaluate layouts in all spreads
+    for single_spread_layouts in group_spreads_layouts.possible_layouts:
+        # Evaluate each spread in this combination
+        for spread in single_spread_layouts.possible_layouts:
+            score = 1.0
 
             left_check = check_page(spread.left_page_photo_idxs, photos)
             score = apply_page_penalties(left_check, score, penalty)
@@ -946,50 +1004,47 @@ def eval_multi_spreads(multi_spreads: List[List[SingleSpreadLayout]], layouts_df
                     if photo_order_time[time_idx1] > photo_order_time[time_idx2]:
                         score = score * penalty.time_order_penalty
 
-            spread_scores[j] = score
+            spread.score = score
 
-        if len(spread_scores) > 0:
-            filtered_idx = np.where(spread_scores / np.max(spread_scores) > penalty.score_threshold)[0]
-            filtered_multi_spreads.append([multi_spreads[i][j].as_list + [spread_scores[j]] for j in filtered_idx])
+        if len(single_spread_layouts.possible_layouts) > 0:
+            max_score = max(spread.score for spread in single_spread_layouts.possible_layouts)
+            filtered = [spread for spread in single_spread_layouts.possible_layouts
+                        if spread.score / max_score > penalty.score_threshold]
+            single_spread_layouts.update_layouts(filtered)
 
-    filtered_multi_spreads.append(comb_weight)
-    return filtered_multi_spreads
+    return group_spreads_layouts
 
 
-def list_multi_spreads(multi_spread):
+def list_multi_spreads(group_spreads_layouts: GroupLayoutsLists):
     listed_spreads = []
-    multi_spread_weight = multi_spread[-1]
-    n_spreads = len(multi_spread) - 1
+    n_spreads = len(group_spreads_layouts.spreads)
+    spreads_in_group = group_spreads_layouts.possible_layouts
+
     if n_spreads == 1:
-        for spread in multi_spread[0]:
-            listed_spreads.append([[spread], spread[-1] * multi_spread_weight])
+        for spread_layout in spreads_in_group[0].possible_layouts:
+            listed_spreads.append([[spread_layout.as_list], spread_layout.score * group_spreads_layouts.weight])
     else:
-        merged = list(product(multi_spread[0], multi_spread[1]))
-        merged = [[merged[idx][0], merged[idx][1]] for idx in range(len(merged))]
-        for spread in range(2, n_spreads):
-            merged = list(product(merged, multi_spread[spread]))
+        merged = [[spread_layout] for spread_layout in spreads_in_group[0].possible_layouts]
+        for spread_idx in range(1, n_spreads):
+            merged = list(product(merged, spreads_in_group[spread_idx].possible_layouts))
             merged = [merged[idx][0] + [merged[idx][1]] for idx in range(len(merged))]
 
         for merge in merged:
             merge_score = 1
             for spread in merge:
-                merge_score *= spread[-1]
-            listed_spreads.append([merge, merge_score * multi_spread_weight])
+                merge_score *= spread.score
+
+            merge = [spread_layout.as_list for spread_layout in merge]
+            listed_spreads.append([merge, merge_score * group_spreads_layouts.weight])
 
     return listed_spreads
 
 
-def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,logger):
-    photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
-    photos_df = photos_df.sort_values('general_time')
-    partitions = selectPartitions(photos_df, spread_params, params, layouts_df=layouts_df)
-    # logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
-
+def _get_combinations(partitions, photos, layouts_df, spread_params, params):
     combs = []
 
     photoTimes = [item.general_time for item in photos]
     cluster_labels = [item.cluster_label for item in photos]
-    # print("inside the genereatge filtered multi spreads")
 
     def eval_combination(combination, partition):
         combination_weight = combination.eval_single_comb(photoTimes, cluster_labels)
@@ -1017,10 +1072,21 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
             # print(comb)
         combs += single_combs
 
+    return combs
+
+
+def generate_filtered_multi_spreads(photos, layouts_df, spread_params, params, logger):
+    photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
+    photos_df = photos_df.sort_values('general_time')
+    partitions = selectPartitions(photos_df, spread_params, params, layouts_df=layouts_df)
+    # logger.info('Number of photos: {}. Possible partitions: {}'.format(len(photos), layout_parts))
+
+    combs = _get_combinations(partitions, photos, layouts_df, spread_params, params)
+
     #print("Getting the filtered multi srpreads")
     filtered_multi_spreads = []
     for idx, comb in enumerate(combs):
-        multi_spreads = layoutSingleCombination(comb.spreads, layouts_df, photos,params)
+        multi_spreads = layoutSingleCombination(comb, layouts_df, photos, params)
         if multi_spreads is not None:
             if len(photos) < 13:
                 penalty = Penalties(
@@ -1042,7 +1108,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params,params,log
                     context_mix_penalty=0.00001,
                     time_order_penalty=0.5
                 )
-            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, comb.weight, penalty)
+            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, penalty)
             filtered_multi_spreads += list_multi_spreads(single_filtered_multi_spreads)
 
         # ToDo optimize this
