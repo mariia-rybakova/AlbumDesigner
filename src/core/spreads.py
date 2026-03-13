@@ -502,24 +502,26 @@ def greedy_combination_search(photos, layout_part, layout_df):
 
 @dataclass
 class SingleSpreadLayout:
-    # ToDo combine with Spread class
     layout_idx: int
-    left_page_photo_idxs: Set[int]  # photo index in local list of photos per group
-    right_page_photo_idxs: Set[int]
+    left_page_photo_idxs: Set[int]      # photo index in local list of photos per group
+    right_page_photo_idxs: Set[int]     # (not photo ID)
     number_of_squares: int
     score: float = None
+    left_page_photos: Set | List = None   # set of Photos after resolve_photos,
+    right_page_photos: Set | List = None  # list after set_photos_order
 
     def __str__(self):
         return (f'Layout_idx: {self.layout_idx}; '
                 f'Photos: [left page: {self.left_page_photo_idxs}, right page: {self.right_page_photo_idxs}]; '
                 f'Square boxes in spread: {self.number_of_squares}')
 
-    def to_list(self):
-        return list(self.__dict__.values())
+    def resolve_photos(self, group_photos: List):
+        self.left_page_photos = {group_photos[idx] for idx in self.left_page_photo_idxs}
+        self.right_page_photos = {group_photos[idx] for idx in self.right_page_photo_idxs}
 
-    @property
-    def as_list(self):
-        return self.to_list()
+    def set_photos_order(self, left_ordered: List, right_ordered: List):
+        self.left_page_photos = left_ordered
+        self.right_page_photos = right_ordered
 
 
 @dataclass
@@ -1015,14 +1017,26 @@ def eval_multi_spreads(group_spreads_layouts: GroupLayoutsLists, layouts_df, pho
     return group_spreads_layouts
 
 
-def list_multi_spreads(group_spreads_layouts: GroupLayoutsLists):
+@dataclass
+class GroupSingleLayout:
+    spreads_layouts: List[SingleSpreadLayout]   # unordered actually (mutable)
+    score: float = None
+
+    def update_score(self, factor: float):
+        self.score *= factor
+
+
+def list_multi_spreads(group_spreads_layouts: GroupLayoutsLists) -> List[GroupSingleLayout]:
     listed_spreads = []
     n_spreads = len(group_spreads_layouts.spreads)
     spreads_in_group = group_spreads_layouts.possible_layouts
 
     if n_spreads == 1:
         for spread_layout in spreads_in_group[0].possible_layouts:
-            listed_spreads.append([[spread_layout.as_list], spread_layout.score * group_spreads_layouts.weight])
+            listed_spreads.append(GroupSingleLayout(
+                spreads_layouts=[spread_layout],
+                score=spread_layout.score * group_spreads_layouts.weight
+            ))
     else:
         merged = [[spread_layout] for spread_layout in spreads_in_group[0].possible_layouts]
         for spread_idx in range(1, n_spreads):
@@ -1034,8 +1048,10 @@ def list_multi_spreads(group_spreads_layouts: GroupLayoutsLists):
             for spread in merge:
                 merge_score *= spread.score
 
-            merge = [spread_layout.as_list for spread_layout in merge]
-            listed_spreads.append([merge, merge_score * group_spreads_layouts.weight])
+            listed_spreads.append(GroupSingleLayout(
+                spreads_layouts=merge,
+                score=merge_score * group_spreads_layouts.weight
+            ))
 
     return listed_spreads
 
@@ -1084,10 +1100,10 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params, params, l
     combs = _get_combinations(partitions, photos, layouts_df, spread_params, params)
 
     #print("Getting the filtered multi srpreads")
-    filtered_multi_spreads = []
+    group_single_layouts = []
     for idx, comb in enumerate(combs):
-        multi_spreads = layoutSingleCombination(comb, layouts_df, photos, params)
-        if multi_spreads is not None:
+        multispread_layouts = layoutSingleCombination(comb, layouts_df, photos, params)
+        if multispread_layouts is not None:
             if len(photos) < 13:
                 penalty = Penalties(
                     crop_penalty=CONFIGS['crop_penalty'],
@@ -1108,32 +1124,18 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params, params, l
                     context_mix_penalty=0.00001,
                     time_order_penalty=0.5
                 )
-            single_filtered_multi_spreads = eval_multi_spreads(multi_spreads, layouts_df, photos, penalty)
-            filtered_multi_spreads += list_multi_spreads(single_filtered_multi_spreads)
+            multispread_layouts = eval_multi_spreads(multispread_layouts, layouts_df, photos, penalty)
+            group_single_layouts += list_multi_spreads(multispread_layouts)
 
-        # ToDo optimize this
-        if len(filtered_multi_spreads) > 10000:
-            scores = np.zeros(len(filtered_multi_spreads))
-            for multi_spread in range(len(filtered_multi_spreads)):
-                scores[multi_spread] = filtered_multi_spreads[multi_spread][1]
+        if len(group_single_layouts) > 10000:
+            group_single_layouts = sorted(group_single_layouts, key=lambda layout: layout.score, reverse=True)[:1000]
 
-            args = np.argsort(scores)[::-1]
-            filtered_multi_spreads = [filtered_multi_spreads[args[idx]] for idx in range(1000)]
-
-    if len(filtered_multi_spreads) == 0:
+    if len(group_single_layouts) == 0:
         return None
 
-    scores = np.zeros(len(filtered_multi_spreads))
-    for multi_spread in range(len(filtered_multi_spreads)):
-        scores[multi_spread] = filtered_multi_spreads[multi_spread][1]
+    filtered = sorted(group_single_layouts, key=lambda layout: layout.score, reverse=True)
+    max_score = filtered[0].score
+    filtered = [layout for layout in filtered if layout.score / max_score > 0.01]
 
-    filtered_scores_idx = np.where(scores / np.max(scores) > 0.01)[0]
-
-    if len(filtered_scores_idx) < 1000:
-        filtered_scores = [filtered_multi_spreads[idx] for idx in filtered_scores_idx]
-    else:
-        args = np.argsort(scores)[::-1]
-        filtered_scores = [filtered_multi_spreads[args[idx]] for idx in range(1000)]
-
-    return filtered_scores
+    return filtered[:1000]
 

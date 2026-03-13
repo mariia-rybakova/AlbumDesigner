@@ -47,6 +47,7 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
     layouts_df = resources.layouts_df
     layout_id2data = resources.layout_id2data
     design_box_id2data = resources.box_id2data
+    # print('\nprocessing group', group_name)
 
     largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
     start = time.time()
@@ -69,22 +70,22 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
             if final_groups_and_spreads is None:
                 continue
 
-            for sub_group_photos, filtered_spreads in final_groups_and_spreads:
-                best_spread_data = _rank_and_select_best_spread(filtered_spreads, sub_group_photos, layout_id2data, design_box_id2data)
-                
-                if best_spread_data is None:
+            for sub_group_photos, filtered_layouts in final_groups_and_spreads:
+                best_layout = _rank_and_select_best_layout(filtered_layouts, sub_group_photos,
+                                                           layout_id2data, design_box_id2data)
+
+                if best_layout is None:
                     continue
 
-                spreads_list, score = best_spread_data
-                
-                structured_spreads = []
-                for s in spreads_list:
-                    structured_spreads.append(Spread(layout_id=s[0], left_photos=list(s[1]), right_photos=list(s[2])))
-                
+                structured_spreads = [
+                    Spread(layout_id=s.layout_idx, left_photos=s.left_page_photos, right_photos=s.right_page_photos)
+                    for s in best_layout.spreads_layouts
+                ]
+
                 group_id_str = str(group_name[0]) + '_' + group_name[1] if is_wedding else str(group_name[0])
                 group_id_str += '*' + str(group_idx)
-                
-                local_result[group_id_str] = GroupProcessingResult(group_name=group_id_str, spreads=structured_spreads, score=score)
+
+                local_result[group_id_str] = GroupProcessingResult(group_name=group_id_str, spreads=structured_spreads, score=best_layout.score)
                 group_idx += 1
 
         collect()
@@ -103,8 +104,9 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
 
 def _find_spreads_for_group(group_photos, layouts_df, spread_params, params, largest_layout_size, group_name, logger):
     filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params, params, logger)
-    
+
     if filtered_spreads is not None:
+        # return list of 1 tuple if all fine
         return [(group_photos, filtered_spreads)]
 
     # Retry with smaller spread params
@@ -121,8 +123,8 @@ def _find_spreads_for_group(group_photos, layouts_df, spread_params, params, lar
                 break
             else:
                 groups_filtered_spreads_list.append((cur_sub_group_photos, cur_filtered_spreads))
-
         if groups_filtered_spreads_list is not None:
+            # return list of multiple tuples
             return groups_filtered_spreads_list
 
     # Last resort: Add dummy photo
@@ -140,23 +142,21 @@ def _find_spreads_for_group(group_photos, layouts_df, spread_params, params, lar
     return None
 
 
-def _rank_and_select_best_spread(filtered_spreads, sub_group_photos, layout_id2data, design_box_id2data):
-    filtered_spreads = add_ranking_score(filtered_spreads, sub_group_photos, layout_id2data)
-    filtered_spreads = sorted(filtered_spreads, key=lambda x: x[1], reverse=True)
-    
-    if not filtered_spreads:
-        return None
-    
-    best_spread = filtered_spreads[0]
-    cur_spreads = best_spread[0]
-    
-    # Transform photo IDs to Photo objects
-    for spread_id, spread in enumerate(cur_spreads):
-        best_spread[0][spread_id][1] = set([sub_group_photos[photo_id] for photo_id in spread[1]])
-        best_spread[0][spread_id][2] = set([sub_group_photos[photo_id] for photo_id in spread[2]])
+def _rank_and_select_best_layout(filtered_layouts, sub_group_photos, layout_id2data, design_box_id2data):
+    filtered_layouts = add_ranking_score(filtered_layouts, sub_group_photos, layout_id2data)
+    filtered_layouts = sorted(filtered_layouts, key=lambda x: x.score, reverse=True)
 
-    best_spread = assign_photos_order(best_spread, layout_id2data, design_box_id2data, merge_pages=False)
-    return best_spread
+    if not filtered_layouts:
+        return None
+
+    best_layout = filtered_layouts[0]
+
+    # Retrieve Photo objects from photo indices
+    for spread in best_layout.spreads_layouts:
+        spread.resolve_photos(sub_group_photos)
+
+    best_layout = assign_photos_order(best_layout, layout_id2data, design_box_id2data, merge_pages=False)
+    return best_layout
 
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False):
