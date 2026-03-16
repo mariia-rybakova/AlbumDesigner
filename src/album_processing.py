@@ -8,7 +8,7 @@ from src.core.photos import get_photos_from_db, Photo
 from src.core.spreads import generate_filtered_multi_spreads
 from src.core.scores import add_ranking_score, assign_photos_order
 from src.groups_operations.groups_management import process_wedding_illegal_groups
-from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult
+from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult, SpreadSearchParams
 from utils.lookup_table_tools import WeddingLookUpTable, NonWeddingLookUpTable
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
 from utils.time_processing import sort_groups_by_time
@@ -42,8 +42,8 @@ def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[flo
     return cur_group_photos_list
 
 
-def process_group(group_name: Tuple, group_images_df, spread_params: List[float], 
-                  resources: AlbumDesignResources, is_wedding: bool, params: List[float], logger) -> Optional[Dict[str, GroupProcessingResult]]:
+def process_group(group_name: Tuple, group_images_df, spread_params: List[float],
+                  resources: AlbumDesignResources, is_wedding: bool, params: SpreadSearchParams, logger) -> Optional[Dict[str, GroupProcessingResult]]:
     layouts_df = resources.layouts_df
     layout_id2data = resources.layout_id2data
     design_box_id2data = resources.box_id2data
@@ -102,7 +102,7 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
         return None
 
 
-def _find_spreads_for_group(group_photos, layouts_df, spread_params, params, largest_layout_size, group_name, logger):
+def _find_spreads_for_group(group_photos, layouts_df, spread_params, params: SpreadSearchParams, largest_layout_size, group_name, logger):
     filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params, params, logger)
 
     if filtered_spreads is not None:
@@ -159,7 +159,7 @@ def _rank_and_select_best_layout(filtered_layouts, sub_group_photos, layout_id2d
     return best_layout
 
 
-def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False):
+def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3, manual_selection=False):
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
 
     LookUpTable = WeddingLookUpTable if is_wedding else NonWeddingLookUpTable

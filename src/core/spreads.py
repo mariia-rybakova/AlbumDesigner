@@ -9,6 +9,9 @@ import inspect
 import numpy as np
 import pandas as pd
 
+from src.spreads_layout.math_tools import all_unique_partitions
+from src.spreads_layout.layouts_tools import get_layouts_dict
+from src.core.models import SpreadSearchParams
 from utils.configs import CONFIGS
 
 
@@ -49,14 +52,14 @@ class Partition:
 
     @staticmethod
     def filter_by_layout(parts: List[Partition], layouts_dict: dict,
-                                n_portraits: int, n_landscapes: int, params: Any) -> List[Partition]:
+                                n_portraits: int, n_landscapes: int, params: SpreadSearchParams) -> List[Partition]:
         """
         Filter Partition objects by layout feasibility.
         Each Partition already has its weight set.
         Returns a filtered list of Partition objects.
         """
         filtered_parts: List[Partition] = []
-        weight_threshold = max(p.weight for p in parts) / params[1]
+        weight_threshold = max(p.weight for p in parts) / params.weight_threshold_divisor
 
         for partition in parts:
             part_landscape = n_landscapes
@@ -150,63 +153,6 @@ class Combination:
         self.weight = weight
 
 
-def printAllUniqueParts(n):
-    p = [0] * n  # An array to store a partition
-    k = 0  # Index of last element in a partition
-    p[k] = n  # Initialize first partition
-    # as number itself
-
-    # This loop first prints current partition,
-    # then generates next partition.The loop
-    # stops when the current partition has all 1s
-
-    parts = []
-
-    while True:
-
-        parts.append(p[:k + 1].copy())
-        # Generate next partition
-
-        # Find the rightmost non-one value in p[].
-        # Also, update the rem_val so that we know
-        # how much value can be accommodated
-        rem_val = 0
-        while k >= 0 and p[k] == 1:
-            rem_val += p[k]
-            k -= 1
-
-        # if k < 0, all the values are 1 so
-        # there are no more partitions
-        if k < 0:
-            return parts
-
-        # Decrease the p[k] found above
-        # and adjust the rem_val
-        p[k] -= 1
-        rem_val += 1
-
-        # If rem_val is more, then the sorted
-        # order is violated. Divide rem_val in
-        # different values of size p[k] and copy
-        # these values at different positions after p[k]
-        while rem_val > p[k]:
-            p[k + 1] = p[k]
-            rem_val = rem_val - p[k]
-            k += 1
-
-        # Copy rem_val to next position
-        # and increment position
-        p[k + 1] = rem_val
-        k += 1
-
-
-def _get_layouts_dict(layouts_df, available_n):
-    layouts_dict = dict()
-    for item in list(available_n):
-        layouts_dict[item] = layouts_df[layouts_df['number of boxes'] == item][['max portraits', 'max landscapes']].drop_duplicates()
-    return layouts_dict
-
-
 def selectPartitions(photos_df, classSpreadParams, params, layouts_df):
     # finds all available partitions for a class cluster of size n_photos
     # eliminates unlikely partitions based ont the cluster class score parameters
@@ -218,13 +164,13 @@ def selectPartitions(photos_df, classSpreadParams, params, layouts_df):
     n_landscapes = n_photos - n_portraits
 
     available_n = set(layouts_df['number of boxes'].unique())
-    layouts_dict = _get_layouts_dict(layouts_df, available_n)
+    layouts_dict = get_layouts_dict(layouts_df, available_n)
 
     classSpreadParams[1] = max(classSpreadParams[1], 0.5)
 
     # generate partitions
     ## part values
-    parts = printAllUniqueParts(n_photos)
+    parts = all_unique_partitions(n_photos)
     parts = [part for part in parts if set(part).issubset(available_n)]
     ## part weights
     weights = Partition.get_weights_for_parts(parts, classSpreadParams, n_photos)
@@ -821,10 +767,10 @@ def _get_spreads(layouts, landscape_set, portrait_set, params, greedy_single_spr
         rem_portraits = []
         # print(f"CONFIGS['MaxOrientedCombs'] is {CONFIGS['MaxOrientedCombs']}")
         # if len(oriented_combs) > CONFIGS['MaxOrientedCombs']:
-        if len(oriented_combs) > params[4]:
+        if len(oriented_combs) > params.max_oriented_combs:
             # print('MaxOrientedCombs crossed sampling oriented combinations instead of full listing')
             # sample_idxs = random.sample(range(len(oriented_combs)), CONFIGS['MaxOrientedCombs'])
-            sample_idxs = random.sample(range(len(oriented_combs)), params[4])
+            sample_idxs = random.sample(range(len(oriented_combs)), params.max_oriented_combs)
             oriented_combs = [oriented_combs[i] for i in sample_idxs]
 
         rem_landscapes, rem_portraits, left_pages = _get_left_pages(
@@ -898,9 +844,9 @@ def layoutSingleCombination(single_class_comb: Combination, layout_df, photos, p
 
         if len(spreads) == 0:
             return None
-        if len(spreads) > params[2]:
-            # print(f"Sampling {params[2]} spreads from {len(spreads)}")
-            sample_idxs = random.sample(range(len(spreads)), params[2])
+        if len(spreads) > params.max_spreads_sample:
+            # print(f"Sampling {params.max_spreads_sample} spreads from {len(spreads)}")
+            sample_idxs = random.sample(range(len(spreads)), params.max_spreads_sample)
             spreads = [spreads[i] for i in sample_idxs]
 
         single_spread_layouts = SpreadLayoutsList(photo_idx_set, spreads)
@@ -1066,7 +1012,7 @@ def _get_combinations(partitions, photos, layouts_df, spread_params, params):
         combination_weight = combination.eval_single_comb(photoTimes, cluster_labels)
         combination.set_weight(combination_weight * partition.weight)
 
-    maxCombsParam = params[2] if len(photos) <= params[5] else params[3]
+    maxCombsParam = params.max_spreads_sample if len(photos) <= params.small_group_threshold else params.max_combs_small_group
 
     for i, partition in enumerate(partitions):
         # print(partition)
@@ -1110,7 +1056,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params, params, l
                     color_mix=CONFIGS['color_mix'],
                     class_mix=CONFIGS['class_mix'],
                     orientation_mix=CONFIGS['orientation_mix'],
-                    score_threshold=params[0],
+                    score_threshold=params.score_threshold,
                     double_mix_color=CONFIGS['double_page_color_mix']
                 )
             else:
@@ -1119,7 +1065,7 @@ def generate_filtered_multi_spreads(photos, layouts_df, spread_params, params, l
                     color_mix=CONFIGS['color_mix'],
                     class_mix=CONFIGS['class_mix'],
                     orientation_mix=CONFIGS['orientation_mix'],
-                    score_threshold=params[0],
+                    score_threshold=params.score_threshold,
                     double_mix_color=CONFIGS['double_page_color_mix'],
                     context_mix_penalty=0.00001,
                     time_order_penalty=0.5
