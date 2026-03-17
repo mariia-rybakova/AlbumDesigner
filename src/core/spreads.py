@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from itertools import combinations, product, groupby, permutations
+from itertools import combinations, product, permutations
 from dataclasses import dataclass
 from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
 import inspect
@@ -9,43 +9,80 @@ import inspect
 import numpy as np
 import pandas as pd
 
-from src.spreads_layout.math_tools import all_unique_partitions
-from src.spreads_layout.layouts_tools import get_layouts_dict
+from src.spreads_layout.math_tools import all_unique_partitions, simple_partitions, partitions_with_swaps
+from src.spreads_layout.layouts_tools import (get_layouts_dict, get_spread_layouts_list, filter_layouts, count_squares,
+                                              calculate_capacities, apply_layouts_mask)
 from src.core.models import SpreadSearchParams
+from src.core.photos import group_photos
 from utils.configs import CONFIGS
 
 
 @dataclass
 class Partition:
+    """
+    Represents a partition of photos into spreads with an associated weight.
+
+    A partition defines how a group of photos is divided across album spreads.
+    The weight reflects how well the partition matches the expected spread size
+    distribution for the photo’s context class (based on a Gaussian score).
+
+    Attributes:
+        spread_sizes: Number of photos in each spread.
+        weight: Score indicating how well this partition fits the class distribution.
+    """
     spread_sizes: List[int]
     weight: float
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (f'Partition. {len(self.spread_sizes)} spreads for group, spread sizes: {self.spread_sizes}. ' +
                 f'Partition weight: {self.weight}' if self.weight is not None else '')
 
     @staticmethod
-    def classWeight(nPhotos, classSpredParams):
-        # calculates the class contribution to score.
-        # score is gaussian with provided array of [mean,std]
-        # input parameter nPhotos is an array of number of photos for all spreads for specific context class
-        # the result classWeight is the product of all gaussians for the context class
+    def class_weight(n_photos: List[int], class_spread_params: List[float]) -> float:
+        """
+        Calculate the class contribution to the partition score.
 
-        nPhotos = np.array(nPhotos)
-        nPhotos = nPhotos[nPhotos > 0]
-        classWeight = np.prod(np.exp(-0.5 * np.power(((nPhotos - classSpredParams[0]) / classSpredParams[1]), 2)))
-        return classWeight
+        Score is the product of Gaussians with the provided [mean, std] parameters,
+        evaluated at each spread’s photo count.
+
+        Args:
+            n_photos: Array of photo counts per spread for a specific context class.
+            class_spread_params: [mean, std] Gaussian parameters for the context class.
+
+        Returns:
+            Product of Gaussian values across all spreads (higher = better fit).
+        """
+        n_photos = np.array(n_photos)
+        n_photos = n_photos[n_photos > 0]
+        weight = np.prod(np.exp(-0.5 * np.power(((n_photos - class_spread_params[0]) / class_spread_params[1]), 2)))
+        return weight
 
     @classmethod
-    def get_weights_for_parts(cls, parts: List[List[int]], classSpreadParams, nPhotos):
+    def get_weights_for_parts(cls, parts: List[List[int]], class_spread_params: List[float],
+                              n_photos: int) -> np.ndarray:
+        """
+        Compute weights for all partition candidates.
+
+        If all weights are zero (no partition fits the Gaussian), widens the
+        std to allow broader matching. Otherwise normalizes by the max weight.
+
+        Args:
+            parts: List of partitions, each a list of spread sizes.
+            class_spread_params: [mean, std] Gaussian parameters. May be modified
+                in place if all initial weights are zero.
+            n_photos: Total number of photos in the group.
+
+        Returns:
+            Array of normalized weights, one per partition.
+        """
         weights = np.zeros(len(parts))
         for idx, part in enumerate(parts):
-            weights[idx] = cls.classWeight(part, classSpreadParams)
+            weights[idx] = cls.class_weight(part, class_spread_params)
 
         if np.all(weights == 0):
-            classSpreadParams[1] = np.abs(nPhotos - classSpreadParams[0]) / 3
+            class_spread_params[1] = np.abs(n_photos - class_spread_params[0]) / 3
             for idx, part in enumerate(parts):
-                weights[idx] = cls.classWeight(part, classSpreadParams)
+                weights[idx] = cls.class_weight(part, class_spread_params)
         else:
             weights /= np.max(weights)
         return weights
@@ -55,8 +92,20 @@ class Partition:
                                 n_portraits: int, n_landscapes: int, params: SpreadSearchParams) -> List[Partition]:
         """
         Filter Partition objects by layout feasibility.
-        Each Partition already has its weight set.
-        Returns a filtered list of Partition objects.
+
+        Checks each partition against available layouts to verify that portrait
+        and landscape counts can be accommodated. Applies early stopping when
+        enough partitions are found and weight drops below threshold.
+
+        Args:
+            parts: List of Partition objects sorted by weight (descending).
+            layouts_dict: Dict mapping box count to DataFrame of layout configs.
+            n_portraits: Total number of portrait photos.
+            n_landscapes: Total number of landscape photos.
+            params: Search parameters containing weight_threshold_divisor.
+
+        Returns:
+            Filtered list of feasible Partition objects.
         """
         filtered_parts: List[Partition] = []
         weight_threshold = max(p.weight for p in parts) / params.weight_threshold_divisor
@@ -95,6 +144,16 @@ class Partition:
     def is_valid(self, min_len: int, n_photos: int) -> bool:
         """
         Check if this Partition meets the selection criteria.
+
+        A partition is valid if its length equals min_len, or if it’s at most
+        1 longer, has at most 2 spreads, and the group has fewer than 16 photos.
+
+        Args:
+            min_len: Minimum spread count across all candidate partitions.
+            n_photos: Total number of photos in the group.
+
+        Returns:
+            True if the partition passes the filter.
         """
         part_len = len(self.spread_sizes)
         return (
@@ -110,7 +169,15 @@ class Partition:
     def filter_by_len(cls, parts: List[Partition], n_photos: int) -> List[Partition]:
         """
         Filter Partition objects by their length relative to min/max spread sizes.
-        Returns a filtered list of Partition objects.
+
+        Only applies filtering when there is variation in partition lengths.
+
+        Args:
+            parts: List of Partition objects.
+            n_photos: Total number of photos in the group.
+
+        Returns:
+            Filtered list of Partition objects.
         """
         if not parts:
             return parts
@@ -127,15 +194,41 @@ class Partition:
 
 @dataclass
 class Combination:
-    spreads: List[Set[int]]
-    weight: float = None
+    """
+    A specific assignment of photos to spreads within a Partition.
 
-    def __str__(self):
+    Given a Partition that defines how many spreads and their sizes, a Combination
+    determines which exact photos go into each spread. The weight reflects the
+    quality of this assignment based on temporal coherence and label consistency.
+
+    Attributes:
+        spreads: List of sets, each containing photo indices assigned to that spread.
+        weight: Quality score for this combination (None until evaluated).
+    """
+    spreads: List[Set[int]]
+    weight: Optional[float] = None
+
+    def __str__(self) -> str:
         return ('Combination. '
                 + ', '.join([f'Photos in {i + 1} spread: {spread}' for i, spread in enumerate(self.spreads)])
                 + f'. Combination weight: {self.weight}' if self.weight is not None else '')
 
-    def eval_single_comb(self, photo_times, cluster_labels):
+    def get_evaluation_score(self, photo_times: List[float], cluster_labels: List[int]) -> float:
+        """
+        Evaluate the quality of this combination based on time and label grouping.
+
+        For each spread, penalizes high time variance (photos far apart in time)
+        and duplicate cluster labels (mixed contexts within a spread). The final
+        score is the product of penalties across all spreads.
+
+        Args:
+            photo_times: List of general_time values indexed by photo index.
+            cluster_labels: List of cluster label values indexed by photo index.
+
+        Returns:
+            A score where higher values indicate better temporal and contextual
+            coherence within spreads.
+        """
         score = 1
         for spread in self.spreads:
 
@@ -149,7 +242,8 @@ class Combination:
                 score /= (1 + len(spread_labels) - len(set(spread_labels)))
         return score
 
-    def set_weight(self, weight):
+    def set_weight(self, weight: float) -> None:
+        """Set the final weight (evaluation score * partition weight)."""
         self.weight = weight
 
 
@@ -181,119 +275,6 @@ def selectPartitions(photos_df, classSpreadParams, params, layouts_df):
     valid_parts = Partition.filter_by_len(filtered_parts, n_photos)
 
     return valid_parts
-
-
-def partitions_with_swaps(seq, sizes, m):
-    """
-    Generate all partitions of `seq` into len(sizes) groups of given sizes.
-    Order inside a group doesn't affect the cost.
-    Cost = minimal #adjacent swaps needed to restore the default consecutive split,
-           which equals the number of inversions between group labels along the
-           original index order.
-
-    Returns: list of (groups, swaps) where groups is a list of lists of elements.
-    """
-    n = len(seq)
-    assert sum(sizes) == n, "sizes must sum to len(seq)"
-    G = len(sizes)
-    indices = tuple(range(n))
-
-    # assignment over original positions: -1 = unassigned, else group id 0..G-1
-    assign = [-1] * n
-    assigned_positions = []  # list of positions already assigned
-    results = []
-
-    def add_inversions_for_new(pos, g):
-        """Count inversions introduced by assigning position `pos` -> group `g`,
-        against all previously assigned positions."""
-        inc = 0
-        for j in assigned_positions:
-            gj = assign[j]
-            if j < pos and gj > g:
-                inc += 1
-            elif j > pos and g > gj:
-                inc += 1
-        return inc
-
-    def backtrack(group_id, remaining_idx_set, swaps_so_far, groups_idx):
-        if swaps_so_far > m:
-            return
-        if group_id == G:
-            # Build concrete groups (keep each group's indices in ascending original order)
-            groups = []
-            for gi, idxs in enumerate(groups_idx):
-                groups.append([seq[i] for i in sorted(idxs)])
-            results.append((groups, swaps_so_far))
-            return
-
-        s = sizes[group_id]
-        rem_list = sorted(remaining_idx_set)
-        # choose s indices (as a set) for this group
-        for chosen in combinations(rem_list, s):
-            # assign them (order within chosen doesn't change cost since same label)
-            inc = 0
-            # assign one-by-one so we can update swaps incrementally
-            for pos in chosen:
-                assign[pos] = group_id
-                inc += add_inversions_for_new(pos, group_id)
-                assigned_positions.append(pos)
-
-            backtrack(
-                group_id + 1,
-                remaining_idx_set - set(chosen),
-                swaps_so_far + inc,
-                groups_idx + [chosen],
-            )
-
-            # undo
-            for pos in chosen:
-                assigned_positions.pop()  # last appended
-                assign[pos] = -1
-
-    backtrack(0, set(indices), 0, [])
-    # sort nicely (by swaps, then lexicographically)
-    results.sort(key=lambda x: (x[1], x[0]))
-    return results
-
-
-def simple_partitions(photos_ids, layout_part, maxCombs):
-    l0_combs = list(combinations(photos_ids, layout_part[0]))
-
-    if len(l0_combs) > maxCombs:
-        sample_idxs = random.sample(range(len(l0_combs)), maxCombs)
-        l0_combs = [l0_combs[i] for i in sample_idxs]
-
-    l0_combs = [[set(l0_comb)] for l0_comb in l0_combs]
-    rem_photos = [photos_ids - l0_comb[0] for l0_comb in l0_combs]
-    layout_combs = l0_combs
-
-    for layout_index in range(1, len(layout_part) - 1):
-        merged_combs = []
-        merged_rem_photos = []
-        for comb_idx in range(len(layout_combs)):
-            next_combs = list(combinations(rem_photos[comb_idx], layout_part[layout_index]))
-            next_combs = [set(next_comb) for next_comb in next_combs]
-            if len(layout_combs) > maxCombs:
-                next_combs = [next_combs[0]]
-            single_comb = [layout_combs[comb_idx].copy() for _ in range(len(next_combs))]
-            single_rem_photos = [rem_photos[comb_idx].copy() for _ in range(len(next_combs))]
-            for single_idx in range(len(single_comb)):
-                single_comb[single_idx].append(next_combs[single_idx])
-                single_rem_photos[single_idx] = single_rem_photos[single_idx] - next_combs[single_idx]
-            merged_combs += single_comb
-            merged_rem_photos += single_rem_photos
-        layout_combs = merged_combs
-        rem_photos = merged_rem_photos
-
-    if len(layout_part) > 1:
-        if len(layout_combs) > maxCombs:
-            # print(f"Sampling {maxCombs} combinations from {len(layout_combs)}")
-            sample_idxs = random.sample(range(len(layout_combs)), maxCombs)
-            layout_combs = [layout_combs[i] for i in sample_idxs]
-            # rem_photos = [rem_photos[i] for i in sample_idxs]
-        for comb_idx in range(len(layout_combs)):
-            layout_combs[comb_idx].append(rem_photos[comb_idx])
-    return layout_combs
 
 
 def listSingleCombinations(photos, layout_part: Partition, maxCombs):
@@ -336,21 +317,6 @@ def _get_portraits_landscapes(photos):
                                  key=lambda x: [np.mean(context2photos_number[photos[x].original_context]),
                                                 photos[x].general_time])
     return portrait_photos_ids, landscape_photos_ids
-
-
-def _get_spread_layouts_list(layout_df, layout_part):
-    spread_layouts_list = list()
-    for spread_size in layout_part:
-        layouts = layout_df.loc[(layout_df['number of boxes'] == spread_size)]
-        # &
-        # (len(layout_df['left_portrait_ids']) + len(layout_df['right_portrait_ids']) <= portraits) &
-        # (len(layout_df['left_landscape_ids']) + len(layout_df['right_landscape_ids']) <= landscapes)
-        list_of_single_row_layouts = []
-        for index, row in layouts.iterrows():
-            single_row_df = row.to_frame().T
-            list_of_single_row_layouts.append(single_row_df)
-        spread_layouts_list.append(list_of_single_row_layouts)
-    return spread_layouts_list
 
 
 def _prepare_all_combinations(spread_layouts_list):
@@ -435,7 +401,7 @@ def _filter_combinations(final_layout_combs_list):
 def greedy_combination_search(photos, layout_part, layout_df):
     portrait_photos_ids, landscape_photos_ids = _get_portraits_landscapes(photos)
 
-    spread_layouts_list = _get_spread_layouts_list(layout_df, layout_part.spread_sizes)
+    spread_layouts_list = get_spread_layouts_list(layout_df, layout_part.spread_sizes)
 
     all_combinations_of_layouts = _prepare_all_combinations(spread_layouts_list)
 
@@ -533,24 +499,6 @@ def _get_portraits_landscapes_for_spread(spread_photos, photos):
     return portraits, landscapes, portrait_set, landscape_set
 
 
-def _filter_layouts(layout_df, n_photos, portraits, landscapes):
-    return layout_df.loc[
-        (layout_df['number of boxes'] == n_photos) &
-        (layout_df['max portraits'] >= portraits) &
-        (layout_df['max landscapes'] >= landscapes)
-    ].copy()
-
-
-def _count_squares(layouts_df):
-    if not layouts_df.empty:
-        layouts_df['number of squares'] = layouts_df.apply(
-            lambda x: len(list(x['left_square_ids'])) + len(list(x['right_square_ids'])), axis=1
-        )
-    else:
-        layouts_df['number of squares'] = 0
-    return layouts_df
-
-
 def _simple_layout(layouts_df, n_photos):
     selected_layouts = layouts_df[layouts_df['number of squares'] == n_photos]
     single_spreads = []
@@ -567,62 +515,8 @@ def _simple_layout(layouts_df, n_photos):
     return single_spreads
 
 
-def _calculate_capacities(layouts):
-    greedy_layouts = layouts.copy()
-
-    for side in ('left', 'right'):
-        square_len = greedy_layouts[f'{side}_square_ids'].apply(len)
-        total_capacity = square_len.copy()
-        for orientation in ('portrait', 'landscape'):
-            orient_len = greedy_layouts[f'{side}_{orientation}_ids'].apply(len)
-            greedy_layouts[f'max_{side}_{orientation}s'] = orient_len + square_len
-            total_capacity += orient_len
-        greedy_layouts[f'{side}_total_capacity'] = total_capacity
-    return greedy_layouts
-
-
-def _get_time_sequences(spread_photos, photos):
-    time_sequeces = [
-        (
-            photo_id,
-            photos[photo_id].general_time,
-            (
-                photos[photo_id].original_context,
-                photos[photo_id].color
-            )
-        ) for photo_id in spread_photos
-    ]
-    return time_sequeces
-
-
-def _group_by_time(spread_photos, photos):
-    time_sequeces = _get_time_sequences(spread_photos, photos)
-    # sort by id
-    time_sequeces = sorted(time_sequeces, key=lambda x: x[1])
-    # group by 'general_time'
-    grouped = groupby(time_sequeces, key=lambda x: x[2])
-
-    grouped_sequences = []
-    for key, group in grouped:
-        grouped_sequences.append(list(group))
-
-    return grouped_sequences
-
-
-def _apply_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes, right_portraits):
-    mask = (
-        (greedy_layouts['max_left_landscapes']  >= left_landscapes) &
-        (greedy_layouts['max_left_portraits']   >= left_portraits) &
-        (greedy_layouts['max_right_landscapes'] >= right_landscapes) &
-        (greedy_layouts['max_right_portraits']  >= right_portraits) &
-        ((left_landscapes + left_portraits) == greedy_layouts['left_total_capacity']) &
-        ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity'])
-    )
-    return greedy_layouts.loc[mask]
-
-
 def _process_with_time(spread_photos, photos, greedy_layouts, greedy_single_spreads):
-    grouped_sequences = _group_by_time(spread_photos, photos)
+    grouped_sequences = group_photos(spread_photos, photos)
 
     if len(grouped_sequences) == 2:
         left_landscapes = np.sum([photos[item[0]].ar > 1 for item in grouped_sequences[0]])
@@ -630,7 +524,7 @@ def _process_with_time(spread_photos, photos, greedy_layouts, greedy_single_spre
         right_landscapes = np.sum([photos[item[0]].ar > 1 for item in grouped_sequences[1]])
         right_portraits = len(grouped_sequences[1]) - right_landscapes
 
-        possible_layouts = _apply_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes,
+        possible_layouts = apply_layouts_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes,
                                        right_portraits)
 
         for layout_idx, layout in possible_layouts.iterrows():
@@ -664,7 +558,7 @@ def _process_with_color(spread_photos, photos, greedy_layouts, greedy_single_spr
         left_portraits =  np.sum(photos_color == left_condition) - left_landscapes
         right_portraits = np.sum(photos_color != left_condition) - right_landscapes
 
-        possible_layouts = _apply_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes,
+        possible_layouts = apply_layouts_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes,
                                        right_portraits)
 
         for layout_idx, layout in possible_layouts.iterrows():
@@ -815,8 +709,8 @@ def layoutSingleCombination(single_class_comb: Combination, layout_df, photos, p
         n_photos_in_spread = len(spread_photos)
         portraits, landscapes, portrait_set, landscape_set = _get_portraits_landscapes_for_spread(spread_photos, photos)
 
-        layouts = _filter_layouts(layout_df, n_photos_in_spread, portraits, landscapes)
-        layouts = _count_squares(layouts)
+        layouts = filter_layouts(layout_df, n_photos_in_spread, portraits, landscapes)
+        layouts = count_squares(layouts)
 
         # large spreads with squares gets trivial layout
         if (
@@ -833,7 +727,7 @@ def layoutSingleCombination(single_class_comb: Combination, layout_df, photos, p
         greedy_single_spreads = []
         try:
             if len(layouts) > 0:
-                greedy_layouts = _calculate_capacities(layouts)
+                greedy_layouts = calculate_capacities(layouts)
 
                 greedy_single_spreads = _process_with_time(spread_photos, photos, greedy_layouts, greedy_single_spreads)
                 greedy_single_spreads = _process_with_color(spread_photos, photos, greedy_layouts, greedy_single_spreads)
@@ -1009,7 +903,7 @@ def _get_combinations(partitions, photos, layouts_df, spread_params, params):
     cluster_labels = [item.cluster_label for item in photos]
 
     def eval_combination(combination, partition):
-        combination_weight = combination.eval_single_comb(photoTimes, cluster_labels)
+        combination_weight = combination.get_evaluation_score(photoTimes, cluster_labels)
         combination.set_weight(combination_weight * partition.weight)
 
     maxCombsParam = params.max_spreads_sample if len(photos) <= params.small_group_threshold else params.max_combs_small_group
