@@ -14,7 +14,22 @@ from utils.configs import CONFIGS
 
 
 # Splitting
-def get_groups_time(groups):
+def get_groups_time(groups) -> Tuple[List[float], dict]:
+    """
+    Extract and sort photo timestamps from grouped photo data.
+
+    Iterates over all groups, collects their 'general_time' values, and builds
+    both a global sorted timeline and a per-group sorted time list.
+
+    Args:
+        groups: A pandas GroupBy object yielding (group_key, group DataFrame) pairs,
+            where each DataFrame contains a 'general_time' column.
+
+    Returns:
+        A tuple of:
+          - general_times_list: All photo times across all groups, sorted.
+          - group_key2time_list: Dict mapping each group key to its sorted list of times.
+    """
     general_times_list = list()
     group_key2time_list = dict()
     for group_key, group in groups:
@@ -24,8 +39,30 @@ def get_groups_time(groups):
     return sorted(general_times_list), group_key2time_list
 
 
-def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=None):
-    # handle splitting
+def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignResources, logger=None) -> pd.DataFrame:
+    """
+    Split oversized or temporally diverse photo groups into smaller subgroups.
+
+    Iterates over groups whose size exceeds `CONFIGS['max_img_split']` and applies
+    one of two splitting strategies:
+      - **Size-based split** (`split_big_group`): used when the group occupies too many
+        spreads, determined by `is_split_needed`.
+      - **Time-based split** (`split_diverse_group`): used when the group spans
+        disjoint time ranges with other photos in between.
+
+    After splitting, all group sizes are recalculated.
+
+    Args:
+        photos_df: DataFrame of photos with columns including 'group_size',
+            'time_cluster', 'cluster_context', 'group_sub_index', and 'general_time'.
+        resources: Album design resources containing the look-up table that maps
+            cluster contexts to recommended spread sizes.
+        logger: Optional logger instance for recording warnings during updates.
+
+    Returns:
+        The updated photos DataFrame with split groups reflected in
+        'group_sub_index' and 'group_size' columns.
+    """
     look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
     split_df = photos_df[photos_df['group_size'] >= CONFIGS['max_img_split']]
     split_groups_ = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
@@ -52,7 +89,23 @@ def handle_wedding_splitting(photos_df, resources: AlbumDesignResources, logger=
 
 # Merging
 # Bride and groom
-def handle_wedding_bride_groom_merge(photos_df, logger=None):
+def handle_wedding_bride_groom_merge(photos_df: pd.DataFrame, logger=None) -> pd.DataFrame:
+    """
+    Merge complementary bride-centric and groom-centric photo groups.
+
+    For each pairing defined in `BRIDE_CENTRIC_CLASSES` / `GROOM_CENTRIC_CLASSES`,
+    identifies small groups (below `CONFIGS['max_img_split']`) that belong to
+    bride or groom categories, finds the best merge partner by time proximity,
+    and merges them while balancing group sizes.
+
+    Args:
+        photos_df: DataFrame of photos with columns including 'group_size',
+            'time_cluster', 'cluster_context', 'group_sub_index', and 'general_time'.
+        logger: Optional logger instance (currently unused).
+
+    Returns:
+        The updated photos DataFrame with bride/groom groups merged.
+    """
     def flatten(list_of_tuples):
         return [item for group in list_of_tuples for item in group]
 
@@ -73,11 +126,21 @@ def handle_wedding_bride_groom_merge(photos_df, logger=None):
 
 
 # Other groups
-def _update_group_spreads(photos_df: pd.DataFrame, look_up_table: dict):
+def _update_group_spreads(photos_df: pd.DataFrame, look_up_table: dict) -> None:
     """
-    Calculate group spread ratios for each photo group.
+    Calculate group spread ratios and store them in a new 'group_spreads' column.
+
+    For each row, divides the group's size by the recommended spread size from
+    the look-up table. Groups whose cluster context is not in the table default
+    to a ratio of 1.
+
+    Args:
+        photos_df: DataFrame of photos with 'cluster_context' and 'group_size' columns.
+            Modified in place by adding a 'group_spreads' column.
+        look_up_table: Dict mapping cluster context strings to lists where the
+            first element is the recommended number of photos per spread.
     """
-    def compute_spread(row):
+    def compute_spread(row: pd.Series) -> float:
         if row['cluster_context'] in look_up_table:
             return row['group_size'] / look_up_table[row['cluster_context']][0]
         return 1
@@ -89,12 +152,18 @@ def _filter_merge_candidate_photos(df_chunk: pd.DataFrame, size_limit: int) -> p
     """
     Filter photo groups eligible for merging.
 
+    A group is eligible if:
+      - Its size is below the split threshold or its spread ratio is < 1.
+      - Merging is still allowed (`merge_allowed` is True).
+      - The number of prior merges is below `size_limit`.
+
     Args:
-        df_chunk (pd.DataFrame): Subset of photos_df (special or regular).
-        size_limit (int): Maximum allowed merge times for this subset.
+        df_chunk: Subset of photos_df (special or regular), expected to contain
+            'group_size', 'group_spreads', 'merge_allowed', and 'groups_merged' columns.
+        size_limit: Maximum allowed number of cumulative merges for this subset.
 
     Returns:
-        pd.DataFrame: Filtered DataFrame of merge candidates.
+        Filtered DataFrame containing only rows belonging to merge-eligible groups.
     """
     return df_chunk[
         ((df_chunk['group_size'] < CONFIGS['max_img_split']) | (df_chunk['group_spreads'] < 1))
@@ -103,7 +172,28 @@ def _filter_merge_candidate_photos(df_chunk: pd.DataFrame, size_limit: int) -> p
     ]
 
 
-def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=None):
+def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResources, logger=None) -> Tuple[pd.DataFrame, bool]:
+    """
+    Run a single iteration of merging small photo groups.
+
+    Splits candidates into special ('None'/'other') and regular groups, each with
+    its own merge-count limit. Eligible groups are those below the split threshold
+    or with a spread ratio < 1 that still have merge attempts remaining. The best
+    merge partner is selected by time proximity, and groups are merged in place.
+
+    Args:
+        photos_df: DataFrame of photos, modified in place with updated
+            'cluster_context', 'group_sub_index', 'group_size', 'groups_merged',
+            and 'merge_allowed' columns.
+        resources: Album design resources containing the look-up table for
+            recommended spread sizes.
+        logger: Optional logger instance (currently unused).
+
+    Returns:
+        A tuple of:
+          - The updated photos DataFrame.
+          - True if at least one merge was performed, False otherwise.
+    """
     look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
     _update_group_spreads(photos_df, look_up_table)     # add 'group_spreads' field
 
@@ -136,6 +226,28 @@ def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=N
 
 # Illegal groups split/merge pipeline
 def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.DataFrame:
+    """
+    Initialize photo groups by assigning 'group_sub_index' and 'group_size' columns.
+
+    In automatic mode, splits photos into special and regular subsets using
+    `split_groups`, then assigns sub-indices and sizes to special groups
+    individually. In manual mode, all photos are treated as regular groups.
+    Regular group sizes are computed by ('time_cluster', 'cluster_context').
+
+    Args:
+        photos_df: DataFrame of photos with 'time_cluster', 'cluster_context',
+            and 'cluster_label' columns.
+        manual_selection: If True, skips special-group splitting and treats all
+            photos as regular groups.
+        logger: Logger instance used for column validation warnings.
+
+    Returns:
+        A new DataFrame with 'group_sub_index' and 'group_size' populated,
+        combining special and regular groups.
+
+    Raises:
+        ValueError: If required columns are missing from photos_df.
+    """
     # Check if required columns exist
     missing = get_missing_columns({'time_cluster', 'cluster_context', 'cluster_label'}, photos_df, logger)
     if missing:
@@ -160,8 +272,35 @@ def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.D
     return photos_df
 
 
-def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, manual_selection, logger=None,
-                                   max_iterations=500):
+def process_wedding_illegal_groups(
+        photos_df: pd.DataFrame, resources: AlbumDesignResources, manual_selection: bool,
+        logger=None, max_iterations: int = 500
+    ) -> Tuple[Optional[Any], Optional[dict]]:
+    """
+    Full pipeline for splitting and merging photo groups into legal album spreads.
+
+    Executes the following steps in order:
+      1. Initialize groups from the photos DataFrame.
+      2. Split oversized or temporally diverse groups.
+      3. Merge complementary bride/groom groups.
+      4. Iteratively merge remaining small groups until no more merges are possible
+         or `max_iterations` is reached.
+
+    Args:
+        photos_df: DataFrame of photos with classification and time columns.
+        resources: Album design resources containing the look-up table for
+            recommended spread sizes.
+        manual_selection: If True, skips special-group splitting and treats all
+            photos as regular groups.
+        logger: Optional logger instance for info/warning/error messages.
+        max_iterations: Safety limit for the iterative merge loop to prevent
+            infinite execution.
+
+    Returns:
+        A tuple of:
+          - groups: A pandas GroupBy object of the final photo groups, or None on error.
+          - group2images: Dict mapping group keys to their image lists, or None on error.
+    """
     photos_df = _get_groups(photos_df, manual_selection, logger)
 
     iteration = 0

@@ -2,7 +2,7 @@ from typing import List, Tuple, Iterable, Callable, Any, Optional
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics.pairwise import pairwise_distances
+# from sklearn.metrics.pairwise import pairwise_distances
 
 from utils.configs import CONFIGS
 
@@ -30,8 +30,25 @@ BRIDE_CENTRIC_CLASSES = [('bride', 'getting hair-makeup', 'bride getting dressed
 GROOM_CENTRIC_CLASSES = [('groom', 'suit'), ('groom party',)]
 
 
-def add_class_preference(illegal_group, selected_group, time_diff):
-    """Modifies time difference based on content class pairs"""
+def add_class_preference(illegal_group: Optional[pd.DataFrame], selected_group: Optional[pd.DataFrame],
+                         time_diff: float) -> float:
+    """
+    Adjust a time difference score based on content class similarity.
+
+    Applies multipliers to favour merging related wedding categories:
+      - Same class: ×0.2
+      - L1 similar classes (e.g. ceremony/walking the aisle): ×0.3
+      - L2 similar classes (e.g. accessories/food/settings): ×0.5
+    Additionally penalises bride/groom cross-merges with uneven group sizes.
+
+    Args:
+        illegal_group: DataFrame of the group to be merged, or None.
+        selected_group: DataFrame of the candidate merge target, or None.
+        time_diff: The raw time difference to adjust.
+
+    Returns:
+        The adjusted time difference (lower values indicate better merge affinity).
+    """
     if illegal_group is None or selected_group is None:
         return time_diff
 
@@ -72,18 +89,27 @@ def add_class_preference(illegal_group, selected_group, time_diff):
     return time_diff
 
 
-def merge_illegal_group_by_time(main_groups, illegal_group, general_times_list, max_images_per_spread=24):
+def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: pd.DataFrame,
+                                general_times_list: List[float],
+                                max_images_per_spread: int = 24) -> Tuple[Optional[pd.DataFrame], Optional[float]]:
     """
-    Merge illegal group with the closest group by time that meets size requirements.
+    Find the closest group by time that can be merged without exceeding size limits.
+
+    Evaluates candidate groups by time proximity (adjusted by class preference),
+    preferring groups with fewer than 2 photos in between. Falls back to
+    long-distance groups if no nearby candidates exist.
 
     Args:
-        main_groups: List of DataFrame groups to potentially merge with
-        illegal_group: DataFrame of the group to be merged
+        main_groups: List of candidate group DataFrames to potentially merge with.
+        illegal_group: DataFrame of the group to be merged.
+        general_times_list: Sorted list of all photo times across the album.
+        max_images_per_spread: Maximum combined size allowed after merging.
 
     Returns:
-        tuple: (modified_illegal_group, combined_group, selected_cluster_content_index)
+        A tuple of:
+          - The selected partner group DataFrame, or None if no valid merge exists.
+          - The adjusted time difference to the selected group, or None.
     """
-
     # Calculate mean time of the illegal group
     intended_group_time = illegal_group['general_time'].values.mean()
 
@@ -207,7 +233,6 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
         List[pd.DataFrame]:
             A list of DataFrames representing groups that are valid bride/groom merge candidates.
     """
-
     return [
         m_group for m_key, m_group in merge_target_groups
         if (
@@ -364,7 +389,6 @@ def _get_merged_group_bridegroom(to_merge_group: pd.DataFrame, selected_cluster:
     """
     if _is_bride_groom_pair(group_key, selected_cluster, cent_idx):
         reminder_group_size = abs(len(to_merge_group) - len(selected_cluster))
-
         if reminder_group_size >= 2 or reminder_group_size == 0:
             min_len = min(len(to_merge_group), len(selected_cluster))
             merged_group = pd.concat([to_merge_group.head(min_len), selected_cluster.head(min_len)])

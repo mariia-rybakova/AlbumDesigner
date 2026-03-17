@@ -1,11 +1,12 @@
-import cv2
 import os
-import numpy as np
 from glob import glob
-
-
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, List, Optional, Tuple
+from itertools import groupby
+
+import cv2
+import numpy as np
+
 
 @dataclass(frozen=True)
 class Photo:
@@ -60,3 +61,53 @@ def update_photos_ranks(data_db, chosen_photos):
     for photo_id in chosen_photos:
         data_db.loc[data_db['image_id'] == photo_id, 'image_order'] = 0
     return data_db
+
+
+# Photo time/context grouping utilities
+
+PhotoTimeEntry = Tuple[int, float, Tuple[Optional[str], bool]]
+"""A tuple of (photo_index, general_time, (original_context, color))."""
+
+
+def get_time_sequences(spread_photos: List[int], photos: List[Photo]) -> List[PhotoTimeEntry]:
+    """
+    Build a list of (photo_id, time, (context, color)) tuples for the given spread.
+
+    Args:
+        spread_photos: List of photo indices within this spread.
+        photos: Full list of Photo objects.
+
+    Returns:
+        List of PhotoTimeEntry tuples, each containing the photo index,
+        its general_time, and a (original_context, color) grouping key.
+    """
+    return [
+        (
+            photo_id,
+            photos[photo_id].general_time,
+            (photos[photo_id].original_context, photos[photo_id].color)
+        )
+        for photo_id in spread_photos
+    ]
+
+
+def group_photos(spread_photos: List[int], photos: List[Photo]) -> List[List[PhotoTimeEntry]]:
+    """
+    Group spread photos by (context, color), sorted by time.
+
+    Sorts photos by general_time, then groups consecutive photos sharing the
+    same (original_context, color) pair using itertools.groupby.
+
+    Args:
+        spread_photos: List of photo indices within this spread.
+        photos: Full list of Photo objects.
+
+    Returns:
+        A list of groups, where each group is a list of PhotoTimeEntry tuples.
+    """
+    time_sequences = get_time_sequences(spread_photos, photos)
+    # sort by time
+    time_sequences = sorted(time_sequences, key=lambda x: x[1])
+    # group by (context, color)
+    grouped = groupby(time_sequences, key=lambda x: x[2])
+    return [list(group) for _, group in grouped]

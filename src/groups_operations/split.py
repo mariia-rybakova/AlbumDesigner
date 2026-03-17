@@ -9,7 +9,24 @@ from utils.configs import CONFIGS
 
 
 # split diverse group
-def split_diverse_group(illegal_group, split_points):
+def split_diverse_group(illegal_group: Optional[pd.DataFrame],
+                        split_points: Optional[List[float]]) -> Optional[pd.DataFrame]:
+    """
+    Split a group into subgroups at temporal split points.
+
+    Assigns incremental 'group_sub_index' values based on which time segment
+    each photo falls into. Segments are defined by the provided split points.
+
+    Args:
+        illegal_group: DataFrame of photos to split, with a 'general_time' column.
+            Modified in place. May be None or empty.
+        split_points: Sorted list of time values at which to split the group.
+            May be None if no split is needed.
+
+    Returns:
+        The updated DataFrame with new 'group_sub_index' values, or None if
+        the group is empty/None or no split points are provided.
+    """
     if illegal_group is None or illegal_group.empty or split_points is None:
         return None
 
@@ -20,14 +37,38 @@ def split_diverse_group(illegal_group, split_points):
 
 
 # split big group
-def get_large_spread_split_size(single_spread_size):
+def get_large_spread_split_size(single_spread_size: int) -> int:
+    """
+    Choose the nearest valid large-spread size (16 or 24) for splitting.
+
+    Picks whichever of 16 or 24 is closer to `single_spread_size`.
+
+    Args:
+        single_spread_size: The recommended number of photos per spread.
+
+    Returns:
+        16 or 24, whichever is closer to the input.
+    """
     if 24 - single_spread_size < single_spread_size - 16:
         return 24
     else:
         return 16
 
 
-def get_small_spread_split_size(single_spread_size):
+def get_small_spread_split_size(single_spread_size: int) -> int:
+    """
+    Determine the split chunk size for small spreads.
+
+    For spreads with 12+ photos, uses the spread size directly. For smaller
+    spreads, multiplies by `CONFIGS['min_split_score']` to ensure enough
+    photos per subgroup.
+
+    Args:
+        single_spread_size: The recommended number of photos per spread.
+
+    Returns:
+        The number of photos per split chunk.
+    """
     if single_spread_size >= 12:
         return single_spread_size
     else:
@@ -35,7 +76,23 @@ def get_small_spread_split_size(single_spread_size):
         return single_spread_size * CONFIGS['min_split_score']
 
 
-def _split_by_chunk_size(illegal_group, split_size, n_samples):
+def _split_by_chunk_size(illegal_group: pd.DataFrame, split_size: int, n_samples: int) -> Optional[pd.DataFrame]:
+    """
+    Split a group into fixed-size chunks ordered by image importance and time.
+
+    Sorts the group by 'image_as' (descending) and 'general_time' (ascending),
+    then divides it into consecutive chunks of `split_size` photos, assigning
+    each chunk a unique 'group_sub_index'.
+
+    Args:
+        illegal_group: DataFrame of photos to split.
+        split_size: Number of photos per chunk.
+        n_samples: Total number of photos in the group.
+
+    Returns:
+        A DataFrame with updated 'group_sub_index' values, or None if
+        `split_size` is invalid or >= `n_samples`.
+    """
     # If the split size is invalid or larger than the group, don't split
     if split_size <= 0 or split_size >= n_samples:
         return None
@@ -53,7 +110,27 @@ def _split_by_chunk_size(illegal_group, split_size, n_samples):
     return updated_group
 
 
-def _clusterize(illegal_group, feature, n_clusters, size_min, size_max, silhouette = False):
+def _clusterize(illegal_group: pd.DataFrame, feature: np.ndarray, n_clusters: int,
+                size_min: int, size_max: int, silhouette: bool = False) -> Optional[np.ndarray]:
+    """
+    Apply constrained K-Means clustering and assign labels to the group.
+
+    Clusters the provided features using `KMeansConstrained` with size
+    constraints. Optionally validates clustering quality via silhouette score,
+    returning None if the score is below 0.15.
+
+    Args:
+        illegal_group: DataFrame to update in place with a 'group_sub_index' column.
+        feature: 2D array of features to cluster on (e.g. time values reshaped to (-1, 1)).
+        n_clusters: Number of clusters to create.
+        size_min: Minimum number of samples per cluster.
+        size_max: Maximum number of samples per cluster.
+        silhouette: If True, validate clustering quality and return None
+            if the silhouette score is below 0.15.
+
+    Returns:
+        Array of cluster labels, or None if silhouette validation fails.
+    """
     # Apply constrained K-Means clustering
     clf = KMeansConstrained(
         n_clusters=n_clusters,
@@ -67,14 +144,32 @@ def _clusterize(illegal_group, feature, n_clusters, size_min, size_max, silhouet
     if silhouette:
         silhouette_avg = silhouette_score(feature, labels)
         if silhouette_avg < 0.15:
-            return None, None
+            return None
 
     # Assign label values as subindex to the DataFrame
     illegal_group.loc[:, 'group_sub_index'] = labels
     return labels
 
 
-def _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max):
+def _split_with_time_clustering(illegal_group: pd.DataFrame, n_clusters: int,
+                                size_min: int, size_max: int) -> Optional[pd.DataFrame]:
+    """
+    Split a group into temporally ordered subgroups using constrained K-Means.
+
+    Clusters photos by their 'general_time' values, then remaps cluster labels
+    so that earlier time clusters receive lower 'group_sub_index' values.
+
+    Args:
+        illegal_group: DataFrame of photos to split, with a 'general_time' column.
+            Modified in place.
+        n_clusters: Number of clusters to create.
+        size_min: Minimum number of photos per cluster.
+        size_max: Maximum number of photos per cluster.
+
+    Returns:
+        The updated DataFrame with temporally ordered 'group_sub_index' values,
+        or None if clustering fails.
+    """
     try:
         # Get time features and normalize them
         time_features = illegal_group["general_time"].values.reshape(-1, 1)
@@ -98,7 +193,7 @@ def _split_with_time_clustering(illegal_group, n_clusters, size_min, size_max):
         return None
 
 
-def split_big_group(illegal_group, single_spread_size):
+def split_big_group(illegal_group: pd.DataFrame, single_spread_size: int) -> Optional[pd.DataFrame]:
     """
     Split an illegal group into subgroups based on time or size.
 
@@ -107,7 +202,7 @@ def split_big_group(illegal_group, single_spread_size):
         single_spread_size (int): Threshold for determining split sizes.
 
     Returns:
-        modified DataFrame or None if splitting fails.
+        Modified DataFrame with updated 'group_sub_index', or None if splitting fails.
     """
     # Calculate `max_size_splits` based on `single_spread_size`
     n_samples = len(illegal_group)
@@ -128,7 +223,25 @@ def split_big_group(illegal_group, single_spread_size):
 
 
 # Main logic
-def get_split_points(general_times_list, group_time_list, group_key):
+def get_split_points(general_times_list: List[float], group_time_list: List[float],
+                     group_key: str) -> Optional[List[float]]:
+    """
+    Identify temporal split points where a group is interrupted by other photos.
+
+    For eligible wedding categories, examines consecutive pairs of timestamps in
+    the group and marks a split point wherever more than 2 photos from other
+    groups fall between them.
+
+    Args:
+        general_times_list: Sorted list of all photo times across the album.
+        group_time_list: Sorted list of times for the current group.
+        group_key: The cluster context string (e.g. 'bride', 'ceremony').
+            Only specific wedding categories are eligible for splitting.
+
+    Returns:
+        A list of time values at which to split the group, or None if the group
+        is too small, not an eligible category, or has no gaps.
+    """
     if len(group_time_list) < 2:
         return None
     if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'groom party', 'bride party', 'portrait']:

@@ -18,15 +18,15 @@ def calculate_correlation_score(layout_id2data, photos, all_spreads_data):
     box_areas = []
     ranks = []
 
-    for cur_spread_data in all_spreads_data:
-        layout = layout_id2data[cur_spread_data[0]]
+    for spread in all_spreads_data:
+        layout = layout_id2data[spread.layout_idx]
         layout_boxes = layout['boxes_areas']
 
         left_boxes_ids = layout['left_box_ids']
         right_boxes_ids = layout['right_box_ids']
 
-        left_photos = list(cur_spread_data[1])
-        right_photos = list(cur_spread_data[2])
+        left_photos = list(spread.left_page_photo_idxs)
+        right_photos = list(spread.right_page_photo_idxs)
 
         layout_boxes_dict = {box['id']: box['area'] for box in layout_boxes}
 
@@ -63,10 +63,9 @@ def calculate_correlation_score(layout_id2data, photos, all_spreads_data):
 
 
 def add_ranking_score(filtered_spreads, photos, layout_id2data):
-    for idx, cur_group_spreads in enumerate(filtered_spreads):
-        cur_spreads = cur_group_spreads[0]
-        correlation_score = calculate_correlation_score(layout_id2data, photos, cur_spreads)
-        filtered_spreads[idx][1] *= correlation_score
+    for group_layout in filtered_spreads:
+        correlation_score = calculate_correlation_score(layout_id2data, photos, group_layout.spreads_layouts)
+        group_layout.update_score(correlation_score)
 
     return filtered_spreads
 
@@ -168,9 +167,9 @@ def assign_part_photos_order(boxes, photos):
     return left_photos_order, right_photos_order
 
 
-def assign_photos_order(spreads, layout_id2data, design_box_id2data, merge_pages=False):
-    for spread_idx, spread in enumerate(spreads[0]):
-        layout_data = layout_id2data[spread[0]]
+def assign_photos_order(group_layout, layout_id2data, design_box_id2data, merge_pages=False):
+    for spread in group_layout.spreads_layouts:
+        layout_data = layout_id2data[spread.layout_idx]
         left_boxes_ids = layout_data['left_box_ids']
         right_boxes_ids = layout_data['right_box_ids']
         left_page_boxes = [{'id': bid,
@@ -187,15 +186,15 @@ def assign_photos_order(spreads, layout_id2data, design_box_id2data, merge_pages
                        } for idx, bid in enumerate(right_boxes_ids)]
 
         if merge_pages:
-            all_photos = sorted(list(spread[1]) + list(spread[2]), key=lambda x: (x.rank, x.general_time))
+            all_photos = sorted(list(spread.left_page_photos) + list(spread.right_page_photos),
+                                key=lambda ph: (ph.rank, ph.general_time))
             left_photos_order, right_photos_order = assign_part_photos_order(left_page_boxes + right_page_boxes, all_photos)
         else:
-            left_page_photos = sorted(list(spread[1]), key=lambda x: (x.rank, x.general_time))
-            right_page_photos = sorted(list(spread[2]), key=lambda x: (x.rank, x.general_time))
+            left_page_photos = sorted(spread.left_page_photos, key=lambda ph: (ph.rank, ph.general_time))
+            right_page_photos = sorted(spread.right_page_photos, key=lambda ph: (ph.rank, ph.general_time))
             left_photos_order, _ = assign_part_photos_order(left_page_boxes, left_page_photos)
             _, right_photos_order = assign_part_photos_order(right_page_boxes, right_page_photos)
 
-        spreads[0][spread_idx][1] = left_photos_order
-        spreads[0][spread_idx][2] = right_photos_order
+        spread.set_photos_order(left_photos_order, right_photos_order)
 
-    return spreads
+    return group_layout

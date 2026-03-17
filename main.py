@@ -26,6 +26,7 @@ from src.smart_cropping import process_crop_images
 from src.selection.auto_selection import ai_selection
 from src.core.key_pages import generate_first_last_pages
 from src.album_processing import album_processing
+from src.core.models import SpreadSearchParams
 from src.request_processing import read_messages, assembly_output
 from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
@@ -270,7 +271,7 @@ class ProcessStage(Stage):
         messages = msgs if isinstance(msgs, list) else [msgs]
         whole_messages_start = datetime.now()
 
-        params = [0.01, 100, 1000, 100, 300, 12]
+        params = SpreadSearchParams()
 
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
