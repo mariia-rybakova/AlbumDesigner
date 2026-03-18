@@ -237,8 +237,8 @@ class SelectionStage(Stage):
 
                 if _msg.pagesInfo.get("firstPage"):
                     if _msg.content.get('is_wedding', True):
-                        all_bride_groom = df[
-                            (df["cluster_context"] == "bride and groom")]
+                        all_bride_groom = filtered_df[
+                            (filtered_df["cluster_context"] == "bride and groom")]
                         _msg.content['bride and groom'] = all_bride_groom
                 else:
                     _msg.content['bride and groom'] = None
