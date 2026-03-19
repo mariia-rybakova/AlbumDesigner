@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 
 from src.spreads_layout.layouts_tools import (filter_layouts, count_squares,
-                                              calculate_capacities, apply_layouts_mask)
+                                              update_with_page_capacities, apply_layouts_mask)
 from src.spreads_layout.partitions import Partition, get_partitions
 from src.spreads_layout.combinations import Combination, get_combinations
 from src.core.models import SpreadSearchParams
-from src.core.photos import group_photos
+from src.core.photos import group_photos, get_portraits_landscapes
 from utils.configs import CONFIGS
 
 
@@ -84,25 +84,26 @@ class GroupLayoutsLists(Combination):
         self.possible_layouts.append(layouts)
 
 
-def _get_portraits_landscapes_for_spread(spread_photos: List[int], photos: List) -> Tuple[int, int, Set[int], Set[int]]:
-    '''
-    Read orientation from photos in group
-    '''
-    landscape_set = set()
-    portrait_set = set()
+def _is_large_spread_with_squares(n_photos_in_spread: int, n_spreads: int, layouts_df: pd.DataFrame) -> bool:
+    """
+    Check if a spread qualifies for the trivial all-squares layout shortcut.
 
-    n_photos = len(spread_photos)
-    landscapes = 0
+    A spread qualifies when it is the only spread in the group, contains more
+    than 13 photos, and a layout exists where every box is a square.
 
-    for i in range(len(spread_photos)):
-        if photos[spread_photos[i]].ar < 1:
-            portrait_set.add(spread_photos[i])
-        else:
-            landscapes += 1
-            landscape_set.add(spread_photos[i])
+    Args:
+        n_photos_in_spread: Number of photos in the current spread.
+        n_spreads: Total number of spreads in the group.
+        layouts_df: DataFrame of layouts with a 'number of squares' column.
 
-    portraits = n_photos - landscapes
-    return portraits, landscapes, portrait_set, landscape_set
+    Returns:
+        True if the spread should use the simple all-squares layout.
+    """
+    return (
+            n_photos_in_spread > 13 and
+            len(layouts_df[layouts_df['number of squares'] == n_photos_in_spread]) > 0 and
+            n_spreads == 1
+    )
 
 
 def _simple_layout(layouts_df: pd.DataFrame, n_photos: int) -> List[SingleSpreadLayout]:
@@ -121,7 +122,25 @@ def _simple_layout(layouts_df: pd.DataFrame, n_photos: int) -> List[SingleSpread
     return single_spreads
 
 
-def _process_with_time(spread_photos: List[int], photos: List, greedy_layouts: pd.DataFrame, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+def _time_page_separation(spread_photos: List[int], photos: List, greedy_layouts: pd.DataFrame, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+    """
+    Try to split photos across left/right pages by time-based context groups.
+
+    Groups photos by (original_context, color) using group_photos. If exactly
+    two groups are found, treats them as left and right page candidates, finds
+    compatible layouts based on orientation counts, and appends matching
+    SingleSpreadLayouts to the greedy list.
+
+    Args:
+        spread_photos: Photo indices in the current spread.
+        photos: Full list of Photo objects.
+        greedy_layouts: DataFrame of layouts with page capacity columns.
+        greedy_single_spreads: Accumulator list to append new layouts to.
+
+    Returns:
+        The updated greedy_single_spreads list (with new layouts appended if
+        a two-group split was possible).
+    """
     grouped_sequences = group_photos(spread_photos, photos)
 
     if len(grouped_sequences) == 2:
@@ -130,8 +149,8 @@ def _process_with_time(spread_photos: List[int], photos: List, greedy_layouts: p
         right_landscapes = np.sum([photos[item[0]].ar > 1 for item in grouped_sequences[1]])
         right_portraits = len(grouped_sequences[1]) - right_landscapes
 
-        possible_layouts = apply_layouts_mask(greedy_layouts, left_landscapes, left_portraits, right_landscapes,
-                                       right_portraits)
+        possible_layouts = apply_layouts_mask(greedy_layouts, left_landscapes, left_portraits,
+                                              right_landscapes, right_portraits)
 
         for layout_idx, layout in possible_layouts.iterrows():
             greedy_single_spreads.append(
@@ -146,7 +165,25 @@ def _process_with_time(spread_photos: List[int], photos: List, greedy_layouts: p
     return greedy_single_spreads
 
 
-def _process_with_color(spread_photos: List[int], photos: List, greedy_layouts: pd.DataFrame, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+def _color_page_separation(spread_photos: List[int], photos: List, greedy_layouts: pd.DataFrame, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+    """
+    Try to split photos across left/right pages by color vs grayscale.
+
+    When the spread contains both color and grayscale photos, assigns the
+    group whose mean time is earlier to the left page (color-before-gray or
+    vice versa). Finds compatible layouts based on per-page orientation counts
+    and appends matching SingleSpreadLayouts to the greedy list.
+
+    Args:
+        spread_photos: Photo indices in the current spread.
+        photos: Full list of Photo objects.
+        greedy_layouts: DataFrame of layouts with page capacity columns.
+        greedy_single_spreads: Accumulator list to append new layouts to.
+
+    Returns:
+        The updated greedy_single_spreads list (with new layouts appended if
+        a color/grayscale split was possible).
+    """
     colors = [photos[photo_id].color for photo_id in spread_photos]
 
     if len(set(colors)) == 2:
@@ -180,129 +217,266 @@ def _process_with_color(spread_photos: List[int], photos: List, greedy_layouts: 
     return greedy_single_spreads
 
 
-def _get_left_pages(oriented_combs: List[Tuple], landscape_set: Set[int], portrait_set: Set[int], rem_landscapes: List[Set[int]], rem_portraits: List[Set[int]]) -> Tuple[List[Set[int]], List[Set[int]], List[Set[int]]]:
-    left_pages = list()
-    for comb in oriented_combs:
-        single_left = set(comb[0])
+def greedy_layout_search(spread_photos: List[int], photos: List, layouts_df: pd.DataFrame) -> List[SingleSpreadLayout]:
+    """
+    Attempt to find spread layouts using greedy heuristics before exhaustive search.
 
-        if len(comb[0]) == 0:
-            rem_landscapes.append(landscape_set)
-        else:
-            rem_landscapes.append(landscape_set - set(comb[0]))
+    Tries two strategies in sequence: splitting photos by time/context groups
+    and splitting by color/grayscale. Each strategy appends compatible layouts
+    to the result list. Silently catches exceptions so the caller can fall back
+    to exhaustive search.
 
-        for portrait in comb[1]:
-            single_left.add(portrait)
+    Args:
+        spread_photos: Photo indices in the current spread.
+        photos: Full list of Photo objects.
+        layouts_df: DataFrame of filtered layouts for this spread size.
 
-        if len(comb[1]) == 0:
-            rem_portraits.append(portrait_set)
-        else:
-            rem_portraits.append(portrait_set - set(comb[1]))
-        left_pages.append(single_left)
-    return rem_landscapes, rem_portraits, left_pages
+    Returns:
+        List of SingleSpreadLayout candidates found by greedy heuristics.
+        May be empty if no heuristic produced a valid split.
+    """
+    greedy_single_spreads = []
+    try:
+        if len(layouts_df) > 0:
+            layouts_df = update_with_page_capacities(layouts_df)
 
-
-def _get_single_right_page(oriented_combs: List[Tuple], rem_right_landscapes: List[Set[int]], rem_right_portraits: List[Set[int]], rem_landscapes: List[Set[int]], rem_portraits: List[Set[int]],
-                           idx: int, left_set: Set[int], oriented_spreads: List[List[Set[int]]]) -> Tuple[List[List[Set[int]]], List[Set[int]], List[Set[int]]]:
-    for comb in oriented_combs:
-        single_right = set(comb[0])
-
-        if len(comb[0]) == 0:
-            rem_right_landscapes.append(rem_landscapes[idx])
-        else:
-            rem_right_landscapes.append(rem_landscapes[idx] - set(comb[0]))
-
-        for portrait in comb[1]:
-            single_right.add(portrait)
-
-        if len(comb[1]) == 0:
-            rem_right_portraits.append(rem_portraits[idx])
-        else:
-            rem_right_portraits.append(rem_portraits[idx] - set(comb[1]))
-        oriented_spreads.append([left_set, single_right])
-    return oriented_spreads, rem_right_landscapes, rem_right_portraits
+            greedy_single_spreads = _time_page_separation(spread_photos, photos, layouts_df, greedy_single_spreads)
+            greedy_single_spreads = _color_page_separation(spread_photos, photos, layouts_df, greedy_single_spreads)
+    except Exception as e:
+        print(f"Greedy layout attempt failed with error {e}")
+    return greedy_single_spreads
 
 
-def _get_right_pages(right_landscapes: int, right_portraits: int, rem_landscapes: List[Set[int]], rem_portraits: List[Set[int]], left_pages: List[Set[int]]) -> Tuple[List[List[Set[int]]], List[Set[int]], List[Set[int]]]:
-    oriented_spreads = []
-    rem_right_landscapes = []
-    rem_right_portraits = []
-    for idx, left_set in enumerate(left_pages):
-        landscape_combs = list(combinations(rem_landscapes[idx], right_landscapes))
-        portrait_combs = list(combinations(rem_portraits[idx], right_portraits))
-        oriented_combs = list(product(landscape_combs, portrait_combs))
+def get_oriented_combs(landscape_spread_photo_idxs: Set[int], portrait_spread_photo_idxs: Set[int],
+                       n_page_landscapes: int, n_page_portraits: int) -> List[Tuple[Tuple[int, ...], Tuple[int, ...]]]:
+    """
+    Generate all (landscape, portrait) orientation combinations for a page.
 
-        oriented_spreads, rem_right_landscapes, rem_right_portraits = _get_single_right_page(
-            oriented_combs, rem_right_landscapes, rem_right_portraits, rem_landscapes, rem_portraits,
-            idx, left_set, oriented_spreads
-        )
-    return oriented_spreads, rem_right_landscapes, rem_right_portraits
+    Computes the cartesian product of all ways to choose n_page_landscapes
+    from the available landscapes and n_page_portraits from the available
+    portraits.
+
+    Args:
+        landscape_spread_photo_idxs: Available landscape photo indices.
+        portrait_spread_photo_idxs: Available portrait photo indices.
+        n_page_landscapes: Number of landscape slots on the page.
+        n_page_portraits: Number of portrait slots on the page.
+
+    Returns:
+        List of tuples, each containing two inner tuples:
+        - landscape_tuple: A selection of n_page_landscapes photo indices
+          chosen from landscape_spread_photo_idxs.
+        - portrait_tuple: A selection of n_page_portraits photo indices
+          chosen from portrait_spread_photo_idxs.
+        The list contains every possible pairing (cartesian product) of
+        landscape and portrait selections.
+    """
+    landscape_combs = list(combinations(landscape_spread_photo_idxs, n_page_landscapes))
+    portrait_combs = list(combinations(portrait_spread_photo_idxs, n_page_portraits))
+    oriented_combs = list(product(landscape_combs, portrait_combs))
+    return oriented_combs
 
 
-def _expand_single_spreads(oriented_spreads: List[List[Set[int]]], rem_right_landscapes: List[Set[int]], rem_right_portraits: List[Set[int]], left_squares: int, right_squares: int,
-                           layout: int, single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
-    for idx, oriented_spread in enumerate(oriented_spreads):
-        rem_photos = rem_right_landscapes[idx].union(rem_right_portraits[idx])
-        landscape_left_combs = list(combinations(rem_photos, left_squares))
-        for comb in landscape_left_combs:
+@dataclass
+class OrientedSpread:
+    """
+    A candidate left/right page split with remaining unassigned photos.
+
+    Tracks which photo indices go on each page and which landscape/portrait
+    photos are still available for square-slot assignment.
+
+    Attributes:
+        left_page_photo_idxs: Photo indices assigned to the left page.
+        right_page_photo_idxs: Photo indices assigned to the right page.
+        rem_landscapes: Landscape photo indices not yet assigned to either page.
+        rem_portraits: Portrait photo indices not yet assigned to either page.
+    """
+    left_page_photo_idxs: Set[int]
+    right_page_photo_idxs: Set[int]
+    rem_landscapes: Set[int]
+    rem_portraits: Set[int]
+
+
+
+def _get_left_pages(landscape_set: Set[int], portrait_set: Set[int],
+                    n_left_landscapes: int, n_left_portraits: int,
+                    max_oriented_combs: int) -> List[OrientedSpread]:
+    """
+    Build left-page photo assignments from all landscape/portrait orientation
+    combinations, sampling if the count exceeds max_oriented_combs.
+
+    Args:
+        landscape_set: Full set of landscape photo indices in this spread.
+        portrait_set: Full set of portrait photo indices in this spread.
+        n_left_landscapes: Number of landscape slots on the left page.
+        n_left_portraits: Number of portrait slots on the left page.
+        max_oriented_combs: Maximum number of orientation combinations to keep.
+
+    Returns:
+        List of OrientedSpread objects with left_page_photo_idxs populated
+        and right_page_photo_idxs empty (to be filled by _get_right_pages).
+    """
+    oriented_combs = get_oriented_combs(landscape_set, portrait_set, n_left_landscapes, n_left_portraits)
+
+    if len(oriented_combs) > max_oriented_combs:
+        sample_idxs = random.sample(range(len(oriented_combs)), max_oriented_combs)
+        oriented_combs = [oriented_combs[i] for i in sample_idxs]
+
+    results = []
+    for landscape_tuple, portrait_tuple in oriented_combs:
+        results.append(OrientedSpread(
+            left_page_photo_idxs=set(landscape_tuple) | set(portrait_tuple),
+            right_page_photo_idxs=set(),
+            rem_landscapes=landscape_set - set(landscape_tuple),
+            rem_portraits=portrait_set - set(portrait_tuple),
+        ))
+    return results
+
+
+def _get_single_right_page(oriented_combs: List[Tuple], left_spread: OrientedSpread, results: List[OrientedSpread]) -> List[OrientedSpread]:
+    """
+    Build right-page assignments for a single left-page option.
+
+    For each orientation combination, assigns landscapes and portraits to the
+    right page using what remains after the left-page assignment. Pairs each
+    result with the left_spread's left page to form a complete OrientedSpread.
+
+    Args:
+        oriented_combs: List of (landscape_tuple, portrait_tuple) combinations
+            for the right page.
+        left_spread: OrientedSpread with left page populated and remaining
+            photos from _get_left_pages.
+        results: Accumulator list to append completed OrientedSpreads to.
+
+    Returns:
+        The results list with new OrientedSpread entries appended.
+    """
+    for landscape_tuple, portrait_tuple in oriented_combs:
+        results.append(OrientedSpread(
+            left_page_photo_idxs=left_spread.left_page_photo_idxs,
+            right_page_photo_idxs=set(landscape_tuple) | set(portrait_tuple),
+            rem_landscapes=left_spread.rem_landscapes - set(landscape_tuple),
+            rem_portraits=left_spread.rem_portraits - set(portrait_tuple),
+        ))
+    return results
+
+
+def _get_right_pages(n_right_landscapes: int, n_right_portraits: int, left_spreads: List[OrientedSpread]) -> List[OrientedSpread]:
+    """
+    Build right-page assignments for all left-page options.
+
+    For each left-page OrientedSpread, enumerates all landscape/portrait
+    combinations that fit the right page's orientation requirements using
+    the remaining photos, then delegates to _get_single_right_page to build
+    complete OrientedSpreads with both pages populated.
+
+    Args:
+        n_right_landscapes: Number of landscape slots on the right page.
+        n_right_portraits: Number of portrait slots on the right page.
+        left_spreads: OrientedSpread objects from _get_left_pages with left
+            pages populated and remaining photo sets.
+
+    Returns:
+        List of fully populated OrientedSpread objects with both left and
+        right pages assigned and remaining photos for square-slot filling.
+    """
+    results = []
+    for left_spread in left_spreads:
+        oriented_combs = get_oriented_combs(left_spread.rem_landscapes, left_spread.rem_portraits, n_right_landscapes, n_right_portraits)
+        results = _get_single_right_page(oriented_combs, left_spread, results)
+    return results
+
+
+def _expand_single_spreads(oriented_spreads: List[OrientedSpread], n_left_squares: int, n_right_squares: int,
+                           layout_idx: int, single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+    """
+    Expand oriented spreads into SingleSpreadLayouts by distributing remaining
+    photos into square slots on left and right pages.
+
+    Args:
+        oriented_spreads: List of OrientedSpread objects with pages and
+            remaining photos populated.
+        n_left_squares: Number of square slots on the left page.
+        n_right_squares: Number of square slots on the right page.
+        layout_idx: Layout index to assign to each resulting SingleSpreadLayout.
+        single_spreads: Accumulator list to append new layouts to.
+
+    Returns:
+        The updated single_spreads list with new layouts appended.
+    """
+    for spread in oriented_spreads:
+        rem_photos = spread.rem_landscapes | spread.rem_portraits
+        square_combs = list(combinations(rem_photos, n_left_squares))
+        for comb in square_combs:
             single_spreads.append(
                 SingleSpreadLayout(
-                    layout_idx=layout,
-                    left_page_photo_idxs= oriented_spread[0].union(set(comb)),
-                    right_page_photo_idxs=oriented_spread[1].union(rem_photos) - set(comb),
-                    number_of_squares=left_squares + right_squares
+                    layout_idx=layout_idx,
+                    left_page_photo_idxs=spread.left_page_photo_idxs | set(comb),
+                    right_page_photo_idxs=spread.right_page_photo_idxs | (rem_photos - set(comb)),
+                    number_of_squares=n_left_squares + n_right_squares
                 )
             )
     return single_spreads
 
 
-def _get_spreads(layouts: pd.DataFrame, landscape_set: Set[int], portrait_set: Set[int], params: SpreadSearchParams, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+def full_oriented_layout_search(layouts_df: pd.DataFrame, landscape_set: Set[int], portrait_set: Set[int], params: SpreadSearchParams, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+    """
+    Exhaustive search for spread layouts across all available designs.
+
+    For each layout design, enumerates all valid left/right page assignments
+    based on orientation (portrait/landscape), then expands square slots.
+    Includes greedy heuristic results alongside exhaustive ones.
+
+    Args:
+        layouts_df: DataFrame of filtered layout designs for this spread size.
+        landscape_set: Landscape photo indices in this spread.
+        portrait_set: Portrait photo indices in this spread.
+        params: Search parameters controlling max oriented combinations.
+        greedy_single_spreads: Pre-computed layouts from greedy heuristics.
+
+    Returns:
+        List of all SingleSpreadLayout candidates (greedy + exhaustive).
+    """
     spreads = []
-    for layout in layouts.index:
-        left_landscapes = len(layouts.at[layout, 'left_landscape_ids'])
-        left_portraits = len(layouts.at[layout, 'left_portrait_ids'])
-        landscape_combs = list(combinations(landscape_set, left_landscapes))
-        portrait_combs = list(combinations(portrait_set, left_portraits))
-        oriented_combs = list(product(landscape_combs, portrait_combs))
-        rem_landscapes = []
-        rem_portraits = []
-        # print(f"CONFIGS['MaxOrientedCombs'] is {CONFIGS['MaxOrientedCombs']}")
-        # if len(oriented_combs) > CONFIGS['MaxOrientedCombs']:
-        if len(oriented_combs) > params.max_oriented_combs:
-            # print('MaxOrientedCombs crossed sampling oriented combinations instead of full listing')
-            # sample_idxs = random.sample(range(len(oriented_combs)), CONFIGS['MaxOrientedCombs'])
-            sample_idxs = random.sample(range(len(oriented_combs)), params.max_oriented_combs)
-            oriented_combs = [oriented_combs[i] for i in sample_idxs]
+    for layout_idx in layouts_df.index:
+        n_left_landscapes = len(layouts_df.at[layout_idx, 'left_landscape_ids'])
+        n_left_portraits = len(layouts_df.at[layout_idx, 'left_portrait_ids'])
+        n_right_landscapes = len(layouts_df.at[layout_idx, 'right_landscape_ids'])
+        n_right_portraits = len(layouts_df.at[layout_idx, 'right_portrait_ids'])
+        n_left_squares = len(layouts_df.at[layout_idx, 'left_square_ids'])
+        n_right_squares = len(layouts_df.at[layout_idx, 'right_square_ids'])
 
-        rem_landscapes, rem_portraits, left_pages = _get_left_pages(
-            oriented_combs,
-            landscape_set, portrait_set,
-            rem_landscapes, rem_portraits,
-        )
+        left_spreads = _get_left_pages(landscape_set, portrait_set, n_left_landscapes, n_left_portraits, params.max_oriented_combs)
+        oriented_spreads = _get_right_pages(n_right_landscapes, n_right_portraits, left_spreads)
 
-        right_landscapes = len(layouts.at[layout, 'right_landscape_ids'])
-        right_portraits = len(layouts.at[layout, 'right_portrait_ids'])
-
-        oriented_spreads, rem_right_landscapes, rem_right_portraits = _get_right_pages(
-            right_landscapes, right_portraits, rem_landscapes, rem_portraits, left_pages
-        )
-
-        left_squares = len(layouts.at[layout, 'left_square_ids'])
-        right_squares = len(layouts.at[layout, 'right_square_ids'])
-
-        if len(oriented_spreads) != len(rem_right_landscapes):
-            rem_right_landscapes # ToDo ???
-
-        # single_spreads = []
         single_spreads = greedy_single_spreads.copy()
-        single_spreads = _expand_single_spreads(oriented_spreads, rem_right_landscapes, rem_right_portraits,
-                                                left_squares, right_squares,
-                                                layout, single_spreads)
+        single_spreads = _expand_single_spreads(oriented_spreads, n_left_squares, n_right_squares,
+                                                layout_idx, single_spreads)
 
         spreads += single_spreads
     return spreads
 
 
-def layoutSingleCombination(single_class_comb: Combination, layout_df: pd.DataFrame, photos: List, params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
+def layout_combination(single_class_comb: Combination, layout_df: pd.DataFrame, photos: List, params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
+    """
+    Find all possible spread layouts for a single Combination.
+
+    For each spread in the combination, filters available layouts by photo
+    count and orientation, then searches for valid page assignments. Large
+    single-spread groups with all-square layouts get a fast path. Otherwise,
+    runs greedy heuristics followed by exhaustive oriented search, sampling
+    down if too many candidates are found.
+
+    Args:
+        single_class_comb: The Combination defining which photos go in each spread.
+        layout_df: Full DataFrame of available layout designs.
+        photos: List of Photo objects in the group.
+        params: Search parameters controlling sampling limits and thresholds.
+
+    Returns:
+        GroupLayoutsLists with possible layouts per spread, or None if any
+        spread has no valid layout.
+    """
     n_spreads = len(single_class_comb.spreads)
     group_spreads_layouts = GroupLayoutsLists.from_comb(single_class_comb)
 
@@ -313,34 +487,22 @@ def layoutSingleCombination(single_class_comb: Combination, layout_df: pd.DataFr
             spread_photos # ToDo ???
 
         n_photos_in_spread = len(spread_photos)
-        portraits, landscapes, portrait_set, landscape_set = _get_portraits_landscapes_for_spread(spread_photos, photos)
+        portrait_set, landscape_set = get_portraits_landscapes(spread_photos, photos)
 
-        layouts = filter_layouts(layout_df, n_photos_in_spread, portraits, landscapes)
-        layouts = count_squares(layouts)
+        layouts_df = filter_layouts(layout_df, n_photos_in_spread, len(portrait_set), len(landscape_set))
+        layouts_df = count_squares(layouts_df)
 
         # large spreads with squares gets trivial layout
-        if (
-                n_photos_in_spread > 13 and
-                len(layouts[layouts['number of squares'] == n_photos_in_spread]) > 0 and
-                n_spreads == 1
-            ):
-            single_spreads = _simple_layout(layouts, n_photos_in_spread)
+        if _is_large_spread_with_squares(n_photos_in_spread, n_spreads, layouts_df):
+            single_spreads = _simple_layout(layouts_df, n_photos_in_spread)
             single_spread_layouts = SpreadLayoutsList(photo_idx_set, single_spreads)
             group_spreads_layouts.add_spread(single_spread_layouts)
             return group_spreads_layouts
 
         ### greedy attempt to find layout based on separation of time, class and color
-        greedy_single_spreads = []
-        try:
-            if len(layouts) > 0:
-                greedy_layouts = calculate_capacities(layouts)
+        greedy_single_spreads = greedy_layout_search(spread_photos, photos, layouts_df)
 
-                greedy_single_spreads = _process_with_time(spread_photos, photos, greedy_layouts, greedy_single_spreads)
-                greedy_single_spreads = _process_with_color(spread_photos, photos, greedy_layouts, greedy_single_spreads)
-        except Exception as e:
-            print(f"Greedy layout attempt failed with error {e}")
-
-        spreads = _get_spreads(layouts, landscape_set, portrait_set, params, greedy_single_spreads)
+        spreads = full_oriented_layout_search(layouts_df, landscape_set, portrait_set, params, greedy_single_spreads)
 
         if len(spreads) == 0:
             return None
@@ -513,7 +675,7 @@ def generate_filtered_multi_spreads(photos: List, layouts_df: pd.DataFrame, spre
     #print("Getting the filtered multi srpreads")
     group_single_layouts = []
     for idx, comb in enumerate(combs):
-        multispread_layouts = layoutSingleCombination(comb, layouts_df, photos, params)
+        multispread_layouts = layout_combination(comb, layouts_df, photos, params)
         if multispread_layouts is not None:
             if len(photos) < 13:
                 penalty = Penalties(

@@ -1,7 +1,7 @@
 import os
 from glob import glob
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Set
 from itertools import groupby
 
 import cv2
@@ -111,3 +111,52 @@ def group_photos(spread_photos: List[int], photos: List[Photo]) -> List[List[Pho
     # group by (context, color)
     grouped = groupby(time_sequences, key=lambda x: x[2])
     return [list(group) for _, group in grouped]
+
+
+def get_portraits_landscapes(subset_photo_idxs: List[int] | Set[int], all_photos: List[Photo]) -> Tuple[Set[int], Set[int]]:
+    """
+    Separate photo indices into portrait and landscape sets by aspect ratio.
+
+    Args:
+        subset_photo_idxs: Indices into all_photos to classify.
+        all_photos: Full list of Photo objects.
+
+    Returns:
+        Tuple of (portrait_idxs, landscape_idxs) as sets. Photos with
+        ar < 1 are portraits, the rest are landscapes.
+    """
+    photo_idxs = list(subset_photo_idxs)
+    landscape_idxs = set()
+    portrait_idxs = set()
+
+    for i in range(len(photo_idxs)):
+        if all_photos[photo_idxs[i]].ar < 1:
+            portrait_idxs.add(photo_idxs[i])
+        else:
+            landscape_idxs.add(photo_idxs[i])
+
+    return portrait_idxs, landscape_idxs
+
+
+def count_photo_times_per_class(photos: List[Photo]) -> dict[Optional[str], List[float]]:
+    """
+    Group photo timestamps by their original_context class.
+
+    Args:
+        photos: List of Photo objects.
+
+    Returns:
+        Dict mapping each original_context value to a list of general_time
+        values for photos in that context.
+    """
+    times_for_classes = {}
+
+    for photo in photos:
+        class_name = photo.original_context
+
+        if class_name not in times_for_classes:
+            times_for_classes[class_name] = []
+
+        times_for_classes[class_name].append(photo.general_time)
+
+    return times_for_classes

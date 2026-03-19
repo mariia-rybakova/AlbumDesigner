@@ -11,6 +11,7 @@ import pandas as pd
 from src.spreads_layout.math_tools import simple_partitions, partitions_with_swaps
 from src.spreads_layout.layouts_tools import get_spread_layouts_list
 from src.spreads_layout.partitions import Partition
+from src.core.photos import get_portraits_landscapes, count_photo_times_per_class
 from src.core.models import SpreadSearchParams
 
 
@@ -98,10 +99,14 @@ def simple_combination_search(photos: List, layout_part: Partition, max_combs: i
     return layout_combs
 
 
-def _get_portraits_landscapes(photos: List) -> Tuple[List[int], List[int]]:
+def _get_portraits_landscapes_sorted(photos: List) -> Tuple[List[int], List[int]]:
     """
     Separate photo indices into portrait and landscape lists, sorted by context
     mean time then individual time.
+
+    Uses get_portraits_landscapes to split by orientation, then sorts each list
+    by the mean timestamp of the photo's original_context class (primary key)
+    and the photo's own timestamp (secondary key).
 
     Args:
         photos: List of Photo objects in the group.
@@ -110,30 +115,21 @@ def _get_portraits_landscapes(photos: List) -> Tuple[List[int], List[int]]:
         Tuple of (portrait_photo_ids, landscape_photo_ids), each sorted by
         the mean time of their original_context group, then by their own time.
     """
-    photos_ids = list(range(len(photos)))
+    photos_idxs = list(range(len(photos)))
+    portrait_idxs, landscape_idxs = get_portraits_landscapes(photos_idxs, photos)
+    portrait_idxs, landscape_idxs = list(portrait_idxs), list(landscape_idxs)
 
-    landscape_photos_ids = list()
-    portrait_photos_ids = list()
+    context_times = count_photo_times_per_class(photos)
+    context_means = {class_name: np.mean(times_list) for class_name, times_list in context_times.items()}
 
-    for i in range(len(photos)):
-        if photos[i].ar < 1:
-            portrait_photos_ids.append(photos_ids[i])
-        else:
-            landscape_photos_ids.append(photos_ids[i])
+    def get_time_values(idx: int) -> List[float]:
+        class_name = photos[idx].original_context
+        return [context_means[class_name], photos[idx].general_time]
 
-    context2photos_number = dict()
-    for photo in photos:
-        if photo.original_context not in context2photos_number:
-            context2photos_number[photo.original_context] = list()
-        context2photos_number[photo.original_context].append(photo.general_time)
+    landscape_idxs = sorted(landscape_idxs, key=get_time_values)
+    portrait_idxs = sorted(portrait_idxs, key=get_time_values)
 
-    landscape_photos_ids = sorted(landscape_photos_ids,
-                                  key=lambda x: [np.mean(context2photos_number[photos[x].original_context]),
-                                                 photos[x].general_time])
-    portrait_photos_ids = sorted(portrait_photos_ids,
-                                 key=lambda x: [np.mean(context2photos_number[photos[x].original_context]),
-                                                photos[x].general_time])
-    return portrait_photos_ids, landscape_photos_ids
+    return portrait_idxs, landscape_idxs
 
 
 def _prepare_all_combinations(spread_layouts_list: List[List[pd.DataFrame]]) -> List:
@@ -271,7 +267,7 @@ def greedy_combination_search(photos: List, layout_part: Partition, layout_df: p
     Returns:
         List of unique Combination objects.
     """
-    portrait_photos_ids, landscape_photos_ids = _get_portraits_landscapes(photos)
+    portrait_photos_ids, landscape_photos_ids = _get_portraits_landscapes_sorted(photos)
 
     spread_layouts_list = get_spread_layouts_list(layout_df, layout_part.spread_sizes)
 
