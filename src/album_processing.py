@@ -170,8 +170,8 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
         look_up_table.get_table(group2images_initial, logger, density)
 
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
-    
-    max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages'])
+
+    max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
