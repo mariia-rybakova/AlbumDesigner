@@ -124,10 +124,14 @@ class LookUpTable:
         return group_params
 
     def update_with_layouts_size(self, layouts_df):
-        largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
+        layout_sizes = sorted(list(layouts_df['number of boxes'].unique()))
 
         for key, value in self._table.items():
-            self._table[key] = (min(value[0], largest_layout_size), value[1])
+            if value[0] >= 12:
+                # Find the closest value in layout_sizes
+                closest_size = min(layout_sizes, key=lambda x: abs(x - value[0]))
+                self._table[key] = (min(closest_size,CONFIGS['max_imges_per_spread']), value[1])
+
 
     def update_with_limit(self, group2images, max_total_spreads):
         # First pass: Calculate initial spreads per group and total spreads
