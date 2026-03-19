@@ -124,10 +124,14 @@ class LookUpTable:
         return group_params
 
     def update_with_layouts_size(self, layouts_df):
-        largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
+        layout_sizes = sorted(list(layouts_df['number of boxes'].unique()))
 
         for key, value in self._table.items():
-            self._table[key] = (min(value[0], largest_layout_size), value[1])
+            if value[0] >= 12:
+                # Find the closest value in layout_sizes
+                closest_size = min(layout_sizes, key=lambda x: abs(x - value[0]))
+                self._table[key] = (min(closest_size,CONFIGS['max_imges_per_spread']), value[1])
+
 
     def update_with_limit(self, group2images, max_total_spreads):
         # First pass: Calculate initial spreads per group and total spreads
@@ -138,35 +142,39 @@ class LookUpTable:
             # Get spread parameters for the current group
             spread_params = self.get_current_spread_parameters(key, number_images)
             spreads = math.ceil(number_images / spread_params[0])  # Calculate required spreads for this group
+            # Enforce minimum spreads so photos per spread stays <= 24
+            min_spreads = math.ceil(number_images / 24)
+            spreads = max(spreads, min_spreads, 1)
 
             # Store the calculated spreads and add to the total
             spreads_per_group[key] = spreads
             total_spreads += spreads
 
         # If the total spreads exceed the limit, start reducing spreads
-        if total_spreads > max_total_spreads:
-            # Sort groups by the number of spreads in descending order (reduce larger groups first)
-            sorted_groups = sorted(spreads_per_group.items(), key=lambda x: x[1], reverse=True)
+        # If the total spreads exceed the limit, reduce largest groups one at a time
+        while total_spreads > max_total_spreads:
+            # Find the group with the most spreads that can still be reduced
+            best_key = None
+            best_spreads = 0
+            for key, current_spreads in spreads_per_group.items():
+                min_spreads = max(1, math.ceil(group2images[key] / 24))
+                if current_spreads > min_spreads and current_spreads > best_spreads:
+                    best_key = key
+                    best_spreads = current_spreads
 
-            excess_spreads = total_spreads - max_total_spreads
+            if best_key is None:
+                break  # Cannot reduce further without exceeding 24 photos per spread
 
-            for key, current_spreads in sorted_groups:
-                if excess_spreads <= 0:
-                    break  # Exit if we've reduced enough spreads
+            spreads_per_group[best_key] -= 1
+            total_spreads -= 1
 
-                # Try reducing spreads for this group
-                new_spreads = min(2, max(1, current_spreads - 1))  # Ensure at least one spread per group
-                reduction = current_spreads - new_spreads
-
-                spreads_per_group[key] = new_spreads
-
-                # Update the group in the lookup table
-                content_key = self._get_content_key(key)
-                current_max_images, extra_value = self._table[content_key]
-                value_to_change = math.ceil(group2images[key] / new_spreads)
-                if value_to_change > current_max_images:
-                    self._table[content_key] = (value_to_change, extra_value)
-                    excess_spreads -= reduction
+        # Update the lookup table with new values
+        for key, target_spreads in spreads_per_group.items():
+            content_key = self._get_content_key(key)
+            current_max_images, extra_value = self._table.get(content_key, (10, 1.5))
+            value_to_change = min(24, math.ceil(group2images[key] / target_spreads))
+            if value_to_change > current_max_images:
+                self._table[content_key] = (value_to_change, extra_value)
 
 
 class WeddingLookUpTable(LookUpTable):
