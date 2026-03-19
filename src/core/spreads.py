@@ -297,7 +297,6 @@ class OrientedSpread:
     rem_portraits: Set[int]
 
 
-
 def _get_left_pages(landscape_set: Set[int], portrait_set: Set[int],
                     n_left_landscapes: int, n_left_portraits: int,
                     max_oriented_combs: int) -> List[OrientedSpread]:
@@ -387,8 +386,8 @@ def _get_right_pages(n_right_landscapes: int, n_right_portraits: int, left_sprea
     return results
 
 
-def _expand_single_spreads(oriented_spreads: List[OrientedSpread], n_left_squares: int, n_right_squares: int,
-                           layout_idx: int, single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+def _process_squares(oriented_spreads: List[OrientedSpread], n_left_squares: int, n_right_squares: int,
+                     layout_idx: int) -> List[SingleSpreadLayout]:
     """
     Expand oriented spreads into SingleSpreadLayouts by distributing remaining
     photos into square slots on left and right pages.
@@ -404,6 +403,7 @@ def _expand_single_spreads(oriented_spreads: List[OrientedSpread], n_left_square
     Returns:
         The updated single_spreads list with new layouts appended.
     """
+    single_spreads = []
     for spread in oriented_spreads:
         rem_photos = spread.rem_landscapes | spread.rem_portraits
         square_combs = list(combinations(rem_photos, n_left_squares))
@@ -419,23 +419,21 @@ def _expand_single_spreads(oriented_spreads: List[OrientedSpread], n_left_square
     return single_spreads
 
 
-def full_oriented_layout_search(layouts_df: pd.DataFrame, landscape_set: Set[int], portrait_set: Set[int], params: SpreadSearchParams, greedy_single_spreads: List[SingleSpreadLayout]) -> List[SingleSpreadLayout]:
+def full_oriented_layout_search(layouts_df: pd.DataFrame, landscape_set: Set[int], portrait_set: Set[int], params: SpreadSearchParams) -> List[SingleSpreadLayout]:
     """
     Exhaustive search for spread layouts across all available designs.
 
     For each layout design, enumerates all valid left/right page assignments
     based on orientation (portrait/landscape), then expands square slots.
-    Includes greedy heuristic results alongside exhaustive ones.
 
     Args:
         layouts_df: DataFrame of filtered layout designs for this spread size.
         landscape_set: Landscape photo indices in this spread.
         portrait_set: Portrait photo indices in this spread.
         params: Search parameters controlling max oriented combinations.
-        greedy_single_spreads: Pre-computed layouts from greedy heuristics.
 
     Returns:
-        List of all SingleSpreadLayout candidates (greedy + exhaustive).
+        List of all SingleSpreadLayout candidates from exhaustive search.
     """
     spreads = []
     for layout_idx in layouts_df.index:
@@ -449,9 +447,8 @@ def full_oriented_layout_search(layouts_df: pd.DataFrame, landscape_set: Set[int
         left_spreads = _get_left_pages(landscape_set, portrait_set, n_left_landscapes, n_left_portraits, params.max_oriented_combs)
         oriented_spreads = _get_right_pages(n_right_landscapes, n_right_portraits, left_spreads)
 
-        single_spreads = greedy_single_spreads.copy()
-        single_spreads = _expand_single_spreads(oriented_spreads, n_left_squares, n_right_squares,
-                                                layout_idx, single_spreads)
+        # single_spreads = greedy_single_spreads.copy()
+        single_spreads = _process_squares(oriented_spreads, n_left_squares, n_right_squares, layout_idx)
 
         spreads += single_spreads
     return spreads
@@ -499,17 +496,24 @@ def layout_combination(single_class_comb: Combination, layout_df: pd.DataFrame, 
             group_spreads_layouts.add_spread(single_spread_layouts)
             return group_spreads_layouts
 
-        ### greedy attempt to find layout based on separation of time, class and color
+        # greedy attempt to find layout based on separation of time, class and color
         greedy_single_spreads = greedy_layout_search(spread_photos, photos, layouts_df)
+        # other layouts sampling
+        oriented_spreads = full_oriented_layout_search(layouts_df, landscape_set, portrait_set, params)
 
-        spreads = full_oriented_layout_search(layouts_df, landscape_set, portrait_set, params, greedy_single_spreads)
+        def limit_sample_size(objects_list, max_threshold):
+            if len(objects_list) > max_threshold:
+                sample_idxs = random.sample(range(len(objects_list)), max_threshold)
+                objects_list = [objects_list[i] for i in sample_idxs]
+            return objects_list
+
+        greedy_single_spreads = limit_sample_size(greedy_single_spreads, params.max_spreads_sample)
+        oriented_spreads = limit_sample_size(oriented_spreads, params.max_spreads_sample - len(greedy_single_spreads))
+
+        spreads = greedy_single_spreads + oriented_spreads
 
         if len(spreads) == 0:
             return None
-        if len(spreads) > params.max_spreads_sample:
-            # print(f"Sampling {params.max_spreads_sample} spreads from {len(spreads)}")
-            sample_idxs = random.sample(range(len(spreads)), params.max_spreads_sample)
-            spreads = [spreads[i] for i in sample_idxs]
 
         single_spread_layouts = SpreadLayoutsList(photo_idx_set, spreads)
         group_spreads_layouts.add_spread(single_spread_layouts)
