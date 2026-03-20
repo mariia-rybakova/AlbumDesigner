@@ -1,15 +1,8 @@
 from __future__ import annotations
 
 import random
-from itertools import combinations, product, groupby, permutations
-from dataclasses import dataclass
+from itertools import combinations
 from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
-import inspect
-
-import numpy as np
-import pandas as pd
-
-from utils.configs import CONFIGS
 
 
 def all_unique_partitions(n: int) -> list[list[int]]:
@@ -209,3 +202,10 @@ def simple_partitions(photos_ids: Set[int], layout_part: List[int], max_combs: i
         for comb_idx in range(len(layout_combs)):
             layout_combs[comb_idx].append(rem_photos[comb_idx])
     return layout_combs
+
+
+def limit_sample_size(objects_list, max_threshold):
+    if len(objects_list) > max_threshold:
+        sample_idxs = random.sample(range(len(objects_list)), max_threshold)
+        objects_list = [objects_list[i] for i in sample_idxs]
+    return objects_list

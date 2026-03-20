@@ -5,8 +5,8 @@ from gc import collect
 from typing import List, Dict, Any, Optional, Tuple
 
 from src.core.photos import get_photos_from_db, Photo
-from src.core.spreads import generate_filtered_multi_spreads
-from src.core.scores import add_ranking_score, assign_photos_order
+from src.spreads_layout.main import generate_filtered_multi_spreads
+from src.spreads_layout.group_layouts import assign_photos_order, add_ranking_score
 from src.groups_operations.groups_management import process_wedding_illegal_groups
 from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult, SpreadSearchParams
 from utils.lookup_table_tools import WeddingLookUpTable, NonWeddingLookUpTable
@@ -15,7 +15,24 @@ from utils.time_processing import sort_groups_by_time
 from utils.configs import CONFIGS
 
 
-def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[float], largest_layout_size: int, logger) -> List[List[Photo]]:
+def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[float],
+                          largest_layout_size: int, logger) -> List[List[Photo]]:
+    """
+    Split a photo group into smaller sub-groups if it is too large for a single search.
+
+    A group is split when its size relative to the optimal spread parameter suggests
+    4+ spreads would be needed. Splits are as equal as possible, distributing remainder
+    photos across the first sub-groups.
+
+    Args:
+        cur_group_photos: Photos in the group, already sorted.
+        spread_params: [mean, std] recommended photos per spread for this context.
+        largest_layout_size: Maximum number of boxes in any available layout.
+        logger: Logger instance.
+
+    Returns:
+        List of photo sub-groups. Contains a single element if no split is needed.
+    """
     cur_group_photos_list = []
 
     optimal_spread_param = min(largest_layout_size, spread_params[0])
@@ -58,18 +75,12 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
             group_images_df = group_images_df.sort_values(['image_time'])
 
         cur_group_photos = get_photos_from_db(group_images_df, is_wedding)
-        cur_group_photos_list = get_group_photos_list(cur_group_photos, spread_params, largest_layout_size, logger)
-        if len(cur_group_photos_list) > 1:
-            logger.info('Group: {} with size: {} was split into {} parts.'.format(group_name, len(cur_group_photos), len(cur_group_photos_list)))
 
         local_result = {}
         group_idx = 0
-        for group_photos in cur_group_photos_list:
-            final_groups_and_spreads = _find_spreads_for_group(group_photos, layouts_df, spread_params, params, largest_layout_size, group_name, logger)
+        final_groups_and_spreads = _find_spreads_for_group(cur_group_photos, layouts_df, spread_params, params, largest_layout_size, group_name, logger)
 
-            if final_groups_and_spreads is None:
-                continue
-
+        if final_groups_and_spreads is not None:
             for sub_group_photos, filtered_layouts in final_groups_and_spreads:
                 best_layout = _rank_and_select_best_layout(filtered_layouts, sub_group_photos,
                                                            layout_id2data, design_box_id2data)
@@ -103,42 +114,34 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
 
 
 def _find_spreads_for_group(group_photos, layouts_df, spread_params, params: SpreadSearchParams, largest_layout_size, group_name, logger):
-    filtered_spreads = generate_filtered_multi_spreads(group_photos, layouts_df, spread_params, params, logger)
+    dummy_photo = Photo(id=-1, ar=1.5, color=True, rank=1000000, photo_class='None', cluster_label=1,
+                        general_time=1000000, original_context='None')
 
-    if filtered_spreads is not None:
-        # return list of 1 tuple if all fine
-        return [(group_photos, filtered_spreads)]
+    attempts = [
+        (group_photos, [round(spread_params[0] * d), spread_params[1]])
+        for d in [1.0, 0.8, 0.6, 0.4, 0.2]
+    ] + [(group_photos + [dummy_photo], spread_params)]
 
-    # Retry with smaller spread params
-    for divider in [0.8, 0.6, 0.4, 0.2]:
-        new_spread_params = [round(spread_params[0] * divider), spread_params[1]]
-        new_group_photos_list = get_group_photos_list(group_photos, new_spread_params, largest_layout_size, logger)
+    for cur_photos, cur_spread_params in attempts:
+        cur_group_photos_list = get_group_photos_list(cur_photos, cur_spread_params, largest_layout_size, logger)
         groups_filtered_spreads_list = []
-        
-        for cur_sub_group_photos in new_group_photos_list:
-            logger.debug("Filtered spreads not found we try again with different params. Group: {}. Params: {}. Divider: {}.".format(group_name, new_spread_params, divider))
-            cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df, new_spread_params, params, logger)
+
+        for cur_sub_group_photos in cur_group_photos_list:
+            cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df, cur_spread_params, params, logger)
             if cur_filtered_spreads is None:
                 groups_filtered_spreads_list = None
                 break
             else:
                 groups_filtered_spreads_list.append((cur_sub_group_photos, cur_filtered_spreads))
+
         if groups_filtered_spreads_list is not None:
-            # return list of multiple tuples
+            if cur_photos is not group_photos:
+                logger.info("Spread created using dummy photo for group: {}.".format(group_name))
+            elif cur_spread_params[0] != spread_params[0]:
+                logger.debug("Spreads found with params {}. Group: {}.".format(cur_spread_params, group_name))
             return groups_filtered_spreads_list
 
-    # Last resort: Add dummy photo
-    logger.info('Coundnt find spread for the group: {}. Adding dummy photo to photo list.'.format(group_name))
-    dummy_photo = Photo(id=-1, ar=1.5, color=True, rank=1000000, photo_class='None', cluster_label=1,
-                        general_time=1000000, original_context='None')
-    group_photos_with_dummy = group_photos + [dummy_photo]
-    filtered_spreads = generate_filtered_multi_spreads(group_photos_with_dummy, layouts_df, spread_params, params, logger)
-    
-    if filtered_spreads is not None:
-        logger.info('Spread created using dummy photo for the group: {}.'.format(group_name))
-        return [(group_photos_with_dummy, filtered_spreads)]
-    
-    logger.warning('It is hopeless. Skipping group: {}'.format(group_name))
+    logger.warning("Could not find spreads. Skipping group: {}.".format(group_name))
     return None
 
 

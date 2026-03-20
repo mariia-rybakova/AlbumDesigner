@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import random
-from itertools import combinations, product, groupby, permutations
-from dataclasses import dataclass
 from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
-import inspect
 
 import numpy as np
 import pandas as pd
-
-from src.spreads_layout.math_tools import all_unique_partitions
-from utils.configs import CONFIGS
 
 
 def get_layouts_dict(layouts_df: pd.DataFrame, available_n: Set[int]) -> dict[int, pd.DataFrame]:

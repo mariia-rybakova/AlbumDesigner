@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from itertools import product
 from dataclasses import dataclass
 from typing import List, Tuple, Set, Optional
@@ -8,7 +7,7 @@ from typing import List, Tuple, Set, Optional
 import numpy as np
 import pandas as pd
 
-from src.spreads_layout.math_tools import simple_partitions, partitions_with_swaps
+from src.spreads_layout.math_tools import simple_partitions, partitions_with_swaps, limit_sample_size
 from src.spreads_layout.layouts_tools import get_spread_layouts_list
 from src.spreads_layout.partitions import Partition
 from src.core.photos import get_portraits_landscapes, count_photo_times_per_class
@@ -152,10 +151,7 @@ def _prepare_all_combinations(spread_layouts_list: List[List[pd.DataFrame]]) -> 
     else:
         all_combinations_of_layouts = list(product(*spread_layouts_list))
 
-    if len(all_combinations_of_layouts) > 1000:
-        all_combinations_of_layouts = random.sample(all_combinations_of_layouts, 1000)
-
-    return all_combinations_of_layouts
+    return limit_sample_size(all_combinations_of_layouts, 1000)
 
 
 def _get_final_combinations(all_combinations_of_layouts: List, photos: List,
@@ -319,9 +315,7 @@ def get_combinations(partitions: List[Partition], photos: List, layouts_df: pd.D
         else:
             single_combs = greedy_combination_search(photos, partition, layouts_df)
 
-        if len(single_combs) > max_combs:
-            sample_idxs = random.sample(range(len(single_combs)), max_combs)
-            single_combs = [single_combs[sample_idx] for sample_idx in sample_idxs]
+        single_combs = limit_sample_size(single_combs, max_combs)
 
         for comb in single_combs:
             eval_combination(comb, partition)
