@@ -98,6 +98,28 @@ def count_squares(layouts_df: pd.DataFrame) -> pd.DataFrame:
     return layouts_df
 
 
+def is_large_spread_with_squares(n_photos_in_spread: int, n_spreads: int, layouts_df: pd.DataFrame) -> bool:
+    """
+    Check if a spread qualifies for the trivial all-squares layout shortcut.
+
+    A spread qualifies when it is the only spread in the group, contains more
+    than 13 photos, and a layout exists where every box is a square.
+
+    Args:
+        n_photos_in_spread: Number of photos in the current spread.
+        n_spreads: Total number of spreads in the group.
+        layouts_df: DataFrame of layouts with a 'number of squares' column.
+
+    Returns:
+        True if the spread should use the simple all-squares layout.
+    """
+    return (
+            n_photos_in_spread > 13 and
+            len(layouts_df[layouts_df['number of squares'] == n_photos_in_spread]) > 0 and
+            n_spreads == 1
+    )
+
+
 def update_with_page_capacities(layouts: pd.DataFrame) -> pd.DataFrame:
     """
     Compute per-side orientation capacities for each layout.
