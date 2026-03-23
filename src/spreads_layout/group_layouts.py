@@ -6,7 +6,8 @@ from typing import List, Tuple, Set, Dict, Iterable, Callable, Any, Optional
 
 from scipy.stats import pearsonr
 
-from src.spreads_layout.spread_layouts import GroupLayoutsLists, SingleSpreadLayout
+from src.spreads_layout.spreads.group_of_lists_of_spreads import GroupLayoutsLists
+from src.spreads_layout.spreads.spread import SingleSpreadLayout
 from src.core.photos import Photo
 
 
@@ -241,8 +242,6 @@ def assign_photos_order(group_layout: GroupSingleLayout, layout_id2data: Dict[in
 
 
 # evaluation
-
-
 
 def calculate_correlation_score(layout_id2data: Dict[int, Any], photos: List[Photo],
                                 all_spreads_data: List[SingleSpreadLayout]) -> float:

@@ -4,7 +4,8 @@ import pandas as pd
 
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
-from src.spreads_layout.spread_layouts import layout_combination, eval_multi_spreads, Penalties
+from src.spreads_layout.spreads.group_of_lists_of_spreads import layout_combination, GroupLayoutsLists
+from src.spreads_layout.spreads.spread import Penalties
 from src.spreads_layout.group_layouts import GroupSingleLayout, list_multi_spreads
 from src.core.models import SpreadSearchParams
 from src.core.photos import Photo
@@ -44,7 +45,7 @@ def generate_filtered_multi_spreads(photos: List[Photo], layouts_df: pd.DataFram
                     context_mix_penalty=0.00001,
                     time_order_penalty=0.5
                 )
-            multispread_layouts = eval_multi_spreads(multispread_layouts, layouts_df, photos, penalty)
+            multispread_layouts.evaluate(layouts_df, photos, penalty)
             group_single_layouts += list_multi_spreads(multispread_layouts)
 
         if len(group_single_layouts) > 10000:
