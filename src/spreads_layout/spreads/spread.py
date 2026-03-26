@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from itertools import combinations, product
 from dataclasses import dataclass
-from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
+from typing import List, Dict, Tuple, Set, Iterable, Callable, Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -52,9 +52,10 @@ class SingleSpreadLayout:
     left_page_photo_idxs: Set[int]      # photo index in local list of photos per group
     right_page_photo_idxs: Set[int]     # (not photo ID)
     number_of_squares: int
-    score: float = None
-    left_page_photos: Set | List = None   # set of Photos after resolve_photos,
-    right_page_photos: Set | List = None  # list after set_photos_order
+    score: Optional[float] = None
+    weight: Optional[float] = None
+    left_page_photos: Optional[Set[Photo] | List[Photo]] = None   # set of Photos after resolve_photos,
+    right_page_photos: Optional[Set[Photo] | List[Photo]] = None  # list after set_photos_order
 
     def __str__(self) -> str:
         return (f'Layout_idx: {self.layout_idx}; '
@@ -149,7 +150,7 @@ class SingleSpreadLayout:
 
         self.score *= np.power(penalty.context_mix_penalty, max(1, page_check_result.number_of_unique_contexts) - 1)
 
-    def evaluate(self, photos: List[Photo], layouts_df: pd.DataFrame, penalty: Penalties) -> float:
+    def get_score(self, photos: List[Photo], layouts_df: pd.DataFrame, penalty: Penalties) -> float:
         """
         Score this spread layout based on page consistency, orientation, cropping,
         and time ordering penalties. Sets and returns self.score.
@@ -190,3 +191,187 @@ class SingleSpreadLayout:
                     self.score *= penalty.time_order_penalty
 
         return self.score
+
+    def set_weight(self, weight: float) -> None:
+        self.weight = weight
+
+    @staticmethod
+    def _assign_photos_order_by_area(photos: List[Photo], boxes: List[Dict[str, Any]],
+                                    portraits_total: int, landscapes_total: int
+                                    ) -> Tuple[List[Photo], int, int]:
+        """
+        Assign photos to boxes of a single area tier, matching orientation when possible.
+
+        Iterates through boxes, assigning portrait photos to portrait boxes and landscape
+        photos to landscape boxes first, then fills square boxes with remaining photos.
+        Tracks how many portrait/landscape photos remain for subsequent area tiers.
+
+        Args:
+            photos: Photos available for assignment (portrait and landscape mixed),
+                sorted by rank and time.
+            boxes: List of box dicts with 'orientation', 'id', 'area', 'side', 'position'.
+            portraits_total: Number of portrait photos reserved for later area tiers.
+            landscapes_total: Number of landscape photos reserved for later area tiers.
+
+        Returns:
+            Tuple of (photos_order, remaining_portraits, remaining_landscapes) where
+            photos_order is a list aligned with boxes containing assigned Photo objects.
+        """
+        photos_portrait = [photo for photo in photos if photo.ar < 1]
+        photos_landscape = [photo for photo in photos if photo.ar >= 1]
+        port_idx = 0
+        land_idx = 0
+
+        photos_order = [None] * len(boxes)
+        for idx, box_data in enumerate(boxes):
+            if box_data['orientation'] == 'portrait':
+                if port_idx != len(photos_portrait):
+                    cur_photos = photos_portrait[port_idx]
+                    port_idx += 1
+                    photos_order[idx] = cur_photos
+                elif land_idx != len(photos_landscape):
+                    cur_photos = photos_landscape[land_idx]
+                    land_idx += 1
+                    photos_order[idx] = cur_photos
+                else:
+                    print("Error: no more photos to add")
+            if box_data['orientation'] == 'landscape':
+                if land_idx != len(photos_landscape):
+                    cur_photos = photos_landscape[land_idx]
+                    land_idx += 1
+                    photos_order[idx] = cur_photos
+                elif port_idx != len(photos_portrait):
+                    cur_photos = photos_portrait[port_idx]
+                    port_idx += 1
+                    photos_order[idx] = cur_photos
+                else:
+                    print("Error: no more photos to add")
+
+        portraits_total = portraits_total - port_idx
+        landscapes_total = landscapes_total - land_idx
+
+        for idx, box_data in enumerate(boxes):
+            if box_data['orientation'] == 'square':
+                if port_idx != len(photos_portrait) - portraits_total:
+                    cur_photos = photos_portrait[port_idx]
+                    port_idx += 1
+                    photos_order[idx] = cur_photos
+                elif land_idx != len(photos_landscape) - landscapes_total:
+                    cur_photos = photos_landscape[land_idx]
+                    land_idx += 1
+                    photos_order[idx] = cur_photos
+                else:
+                    print("Error: no more photos to add")
+
+        return photos_order, portraits_total, landscapes_total
+
+    @classmethod
+    def _assign_part_photos_order(cls, boxes: List[Dict[str, Any]],
+                                 photos: List[Photo]) -> Tuple[List[Photo], List[Photo]]:
+        """
+        Order photos into left and right page positions by matching box areas to ranks.
+
+        Groups boxes by area (with 0.01 tolerance), then processes area tiers from
+        largest to smallest. Within each tier, assigns photos by orientation via
+        _assign_photos_order_by_area, sorts assigned photos by time, and places them
+        into left/right page positions. Assigned photos are removed from the pool
+        before processing the next tier.
+
+        Args:
+            boxes: List of box dicts, each with 'id', 'area', 'orientation', 'side',
+                and 'position' keys.
+            photos: Photos to assign, sorted by rank and time.
+
+        Returns:
+            Tuple of (left_photos_order, right_photos_order), each a list of Photo
+            objects indexed by box position within that page.
+        """
+        portraits_total = len([box for box in boxes if box['orientation'] == 'portrait'])
+        landscapes_total = len([box for box in boxes if box['orientation'] == 'landscape'])
+
+        area2boxes = dict()
+        for box in boxes:
+            cur_area = box['area']
+            added = False
+            for saved_area in area2boxes.keys():
+                if abs(cur_area - saved_area) < 0.01:
+                    area2boxes[saved_area].append(box)
+                    added = True
+                    break
+            if added:
+                continue
+            if cur_area not in area2boxes:
+                area2boxes[cur_area] = list()
+            area2boxes[cur_area].append(box)
+
+        left_size = max([box['position'] for box in boxes if box['side'] == 0], default=0) + 1
+        right_size = max([box['position'] for box in boxes if box['side'] == 1], default=0) + 1
+        left_photos_order = [None] * left_size
+        right_photos_order = [None] * right_size
+
+        for area in sorted(area2boxes.keys(), reverse=True):
+            cur_boxes = area2boxes[area]
+            photos_order, portraits_total, landscapes_total = cls._assign_photos_order_by_area(photos, cur_boxes,
+                                                                                          portraits_total,
+                                                                                          landscapes_total)
+            photos_order = sorted(photos_order, key=lambda x: x.general_time)
+            for idx, box_data in enumerate(cur_boxes):
+                cur_photo = photos_order[idx]
+                if box_data['side'] == 0:
+                    left_photos_order[box_data['position']] = cur_photo
+                else:
+                    right_photos_order[box_data['position']] = cur_photo
+
+            # Remove assigned photos from all_photos so they aren't reused
+            assigned_photos = [p for p in photos_order if p is not None]
+            if assigned_photos:
+                assigned_ids = set(id(p) for p in assigned_photos)
+                photos = [p for p in photos if id(p) not in assigned_ids]
+
+        return left_photos_order, right_photos_order
+
+    def assign_photos_order(self, layout_id2data: Dict[int, Any],
+                            design_box_id2data: Dict[Tuple[int, int], Any], merge_pages: bool) -> None:
+        """
+        Determine final photo ordering within this spread's left and right pages.
+
+        Builds box metadata (area, orientation, position) from the layout and design
+        data, then assigns photos to boxes by orientation and area ranking. If
+        merge_pages is True, all photos are pooled and assigned across both pages
+        together; otherwise each page is assigned independently.
+
+        Args:
+            layout_id2data: Mapping from layout index to layout metadata including
+                'layout_id', 'left_box_ids', and 'right_box_ids'.
+            design_box_id2data: Mapping from (layout_id, box_id) to box properties
+                including 'area' and 'orientation'.
+            merge_pages: If True, pool photos from both pages before assignment;
+                if False, assign each page's photos independently.
+        """
+        layout_data = layout_id2data[self.layout_idx]
+        left_boxes_ids = layout_data['left_box_ids']
+        right_boxes_ids = layout_data['right_box_ids']
+        left_page_boxes = [{'id': bid,
+                      'side': 0,
+                      'position': idx,
+                      'area': design_box_id2data[(layout_data['layout_id'],bid)]['area'],
+                      'orientation': design_box_id2data[(layout_data['layout_id'],bid)]['orientation']
+                      } for idx, bid in enumerate(left_boxes_ids)]
+        right_page_boxes = [{'id': bid,
+                       'side': 1,
+                       'position': idx,
+                       'area': design_box_id2data[(layout_data['layout_id'],bid)]['area'],
+                       'orientation': design_box_id2data[(layout_data['layout_id'],bid)]['orientation']
+                       } for idx, bid in enumerate(right_boxes_ids)]
+
+        if merge_pages:
+            all_photos = sorted(list(self.left_page_photos) + list(self.right_page_photos),
+                                key=lambda ph: (ph.rank, ph.general_time))
+            left_photos_order, right_photos_order = self._assign_part_photos_order(left_page_boxes + right_page_boxes, all_photos)
+        else:
+            left_page_photos = sorted(self.left_page_photos, key=lambda ph: (ph.rank, ph.general_time))
+            right_page_photos = sorted(self.right_page_photos, key=lambda ph: (ph.rank, ph.general_time))
+            left_photos_order, _ = self._assign_part_photos_order(left_page_boxes, left_page_photos)
+            _, right_photos_order = self._assign_part_photos_order(right_page_boxes, right_page_photos)
+
+        self.set_photos_order(left_photos_order, right_photos_order)

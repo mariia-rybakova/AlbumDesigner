@@ -14,13 +14,13 @@ from src.spreads_layout.combinations import Combination
 from src.spreads_layout.math_tools import limit_sample_size
 from src.core.models import SpreadSearchParams
 from src.core.photos import Photo, group_photos, get_portraits_landscapes
-from src.spreads_layout.spreads.spread import SingleSpreadLayout
+from src.spreads_layout.spreads.spread import SingleSpreadLayout, Penalties
 
 
 @dataclass
 class SpreadLayoutsList:
     spread_photo_idxs: Set[int]
-    possible_layouts: List[SingleSpreadLayout] = None
+    possible_layouts: Optional[List[SingleSpreadLayout]] = None
 
     def view(self, limit: Optional[int] = None, sep: str = '==') -> None:
         print('Possible layouts for spread with photos:', self.spread_photo_idxs, f'- {len(self.possible_layouts)} options')
@@ -156,7 +156,7 @@ class SpreadLayoutsList:
             layouts_df: DataFrame of filtered layouts for this spread size.
 
         Returns:
-            self with possible_layouts populated by greedy heuristics.
+            New SpreadLayoutsList with possible_layouts populated by greedy heuristics.
         """
         ll = cls(spread_photo_idxs=spread_photos, possible_layouts=[])
 
@@ -358,7 +358,7 @@ class SpreadLayoutsList:
             params: Search parameters controlling max oriented combinations.
 
         Returns:
-            self with possible_layouts populated from exhaustive search.
+            New SpreadLayoutsList with possible_layouts populated from exhaustive search.
         """
         ll = cls(spread_photo_idxs= landscape_set | portrait_set, possible_layouts=[])
 
@@ -383,3 +383,68 @@ class SpreadLayoutsList:
             max_score = max(spread.score for spread in self.possible_layouts)
             self.possible_layouts = [spread for spread in self.possible_layouts
                                      if spread.score / max_score > score_threshold]
+
+    def process(self, photos: List[Photo], layouts_df: pd.DataFrame, penalty: Penalties) -> None:
+        """
+        Score all spread layouts and filter out low-scoring ones.
+
+        Args:
+            photos: List of Photo objects for the group.
+            layouts_df: DataFrame of available layouts.
+            penalty: Penalty configuration for scoring.
+        """
+        # evaluate
+        for spread_layout in self.possible_layouts:
+            spread_layout.set_weight(spread_layout.get_score(photos, layouts_df, penalty))
+
+        # filter
+        self.filter_by_score_threshold(penalty.score_threshold)
+
+
+def sample_layouts(photo_idx_set: Set[int], n_spreads: int, photos: List[Photo],
+                   layouts_df: pd.DataFrame, params: SpreadSearchParams) -> Optional[SpreadLayoutsList]:
+    """
+    Find all possible spread layouts for a single set of photos.
+
+    Filters layouts by photo count and orientation, then tries a fast path
+    for large all-square spreads, greedy heuristics (context/color separation),
+    and exhaustive oriented search. Combines and samples results.
+
+    Args:
+        photo_idx_set: Set of photo indices for this spread.
+        n_spreads: Total number of spreads in the parent combination.
+        photos: Full list of Photo objects for the group.
+        layouts_df: DataFrame of available layout designs.
+        params: Search parameters controlling sampling limits.
+
+    Returns:
+        SpreadLayoutsList with candidate layouts, or None if no valid layout exists.
+    """
+    if len(photo_idx_set) == 0:
+        return None
+
+    n_photos_in_spread = len(photo_idx_set)
+    portrait_set, landscape_set = get_portraits_landscapes(photo_idx_set, photos)
+
+    layouts_df = filter_layouts(layouts_df, n_photos_in_spread, len(portrait_set), len(landscape_set))
+    layouts_df = count_squares(layouts_df)
+
+    # large spreads with squares gets trivial layout
+    if is_large_spread_with_squares(n_photos_in_spread, n_spreads, layouts_df):
+        return SpreadLayoutsList.simple_layout(photo_idx_set, layouts_df)
+
+    # greedy attempt to find layout based on separation of time, class and color
+    greedy_spreads = SpreadLayoutsList.greedy_layout_search(photo_idx_set, photos, layouts_df)
+    # other layouts sampling
+    oriented_spreads = SpreadLayoutsList.full_oriented_layout_search(landscape_set, portrait_set, layouts_df, params)
+
+    greedy_spreads_l = limit_sample_size(greedy_spreads.possible_layouts, params.max_spreads_sample)
+    oriented_spreads_l = limit_sample_size(oriented_spreads.possible_layouts,
+                                           params.max_spreads_sample - len(greedy_spreads_l))
+
+    spread_layouts = SpreadLayoutsList(photo_idx_set, greedy_spreads_l + oriented_spreads_l)
+
+    if len(spread_layouts.possible_layouts) == 0:
+        return None
+
+    return spread_layouts

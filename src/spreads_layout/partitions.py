@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -25,35 +25,36 @@ class Partition:
         weight: Score indicating how well this partition fits the class distribution.
     """
     spread_sizes: List[int]
-    weight: float
+    score: Optional[float] = None
+    weight: Optional[float] = None
 
     def __str__(self) -> str:
         return (f'Partition. {len(self.spread_sizes)} spreads for group, spread sizes: {self.spread_sizes}. ' +
                 f'Partition weight: {self.weight}' if self.weight is not None else '')
 
-    @staticmethod
-    def class_weight(n_photos: List[int], class_spread_params: List[float]) -> float:
+    def get_score(self, class_spread_params: List[float]) -> float:
         """
         Calculate the class contribution to the partition score.
 
         Score is the product of Gaussians with the provided [mean, std] parameters,
-        evaluated at each spread’s photo count.
+        evaluated at each spread’s photo count from self.spread_sizes.
 
         Args:
-            n_photos: Array of photo counts per spread for a specific context class.
             class_spread_params: [mean, std] Gaussian parameters for the context class.
 
         Returns:
             Product of Gaussian values across all spreads (higher = better fit).
         """
-        n_photos = np.array(n_photos)
+        n_photos = np.array(self.spread_sizes)
         n_photos = n_photos[n_photos > 0]
-        weight = np.prod(np.exp(-0.5 * np.power(((n_photos - class_spread_params[0]) / class_spread_params[1]), 2)))
-        return weight
+        self.score = np.prod(np.exp(-0.5 * np.power(((n_photos - class_spread_params[0]) / class_spread_params[1]), 2)))
+        return self.score
 
-    @classmethod
-    def get_weights_for_parts(cls, parts: List[List[int]], class_spread_params: List[float],
-                              n_photos: int) -> np.ndarray:
+    def set_weight(self, weight: float) -> None:
+        self.weight = weight
+
+    @staticmethod
+    def evaluate_list(parts: List[Partition], class_spread_params: List[float], n_photos: int) -> None:
         """
         Compute weights for all partition candidates.
 
@@ -61,25 +62,24 @@ class Partition:
         std to allow broader matching. Otherwise normalizes by the max weight.
 
         Args:
-            parts: List of partitions, each a list of spread sizes.
+            parts: List of Partition objects to score.
             class_spread_params: [mean, std] Gaussian parameters. May be modified
                 in place if all initial weights are zero.
             n_photos: Total number of photos in the group.
-
-        Returns:
-            Array of normalized weights, one per partition.
         """
         weights = np.zeros(len(parts))
         for idx, part in enumerate(parts):
-            weights[idx] = cls.class_weight(part, class_spread_params)
+            weights[idx] = part.get_score(class_spread_params)
 
         if np.all(weights == 0):
             class_spread_params[1] = np.abs(n_photos - class_spread_params[0]) / 3
             for idx, part in enumerate(parts):
-                weights[idx] = cls.class_weight(part, class_spread_params)
+                weights[idx] = part.get_score(class_spread_params)
         else:
             weights /= np.max(weights)
-        return weights
+
+        for idx, part in enumerate(parts):
+            part.set_weight(weights[idx])
 
     @staticmethod
     def filter_by_layout(parts: List[Partition], layouts_dict: dict,
@@ -219,14 +219,12 @@ def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
 
     class_spread_params[1] = max(class_spread_params[1], 0.5)
 
-    # generate partitions
-    ## part values
+    # sample
     parts = all_unique_partitions(n_photos)
-    parts = [part for part in parts if set(part).issubset(available_n)]
-    ## part weights
-    weights = Partition.get_weights_for_parts(parts, class_spread_params, n_photos)
-    parts = [Partition(parts[i], weights[i]) for i in range(len(parts))]
-    # process partitions
+    parts = [Partition(part) for part in parts if set(part).issubset(available_n)]
+    # evaluate
+    Partition.evaluate_list(parts, class_spread_params, n_photos)
+    # filter
     sorted_parts = sorted(parts, key=lambda p: p.weight, reverse=True)
     filtered_parts = Partition.filter_by_layout(sorted_parts, layouts_dict, n_portraits, n_landscapes, params)
     valid_parts = Partition.filter_by_len(filtered_parts, n_photos)

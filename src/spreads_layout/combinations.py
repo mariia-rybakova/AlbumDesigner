@@ -10,7 +10,7 @@ import pandas as pd
 from src.spreads_layout.math_tools import simple_partitions, partitions_with_swaps, limit_sample_size
 from src.spreads_layout.layouts_tools import get_spread_layouts_list
 from src.spreads_layout.partitions import Partition
-from src.core.photos import get_portraits_landscapes, count_photo_times_per_class
+from src.core.photos import Photo, get_portraits_landscapes, count_photo_times_per_class
 from src.core.models import SpreadSearchParams
 
 
@@ -25,9 +25,11 @@ class Combination:
 
     Attributes:
         spreads: List of sets, each containing photo indices assigned to that spread.
-        weight: Quality score for this combination (None until evaluated).
+        score: Raw evaluation score based on temporal/label coherence (None until scored).
+        weight: Final weighted score (score * partition weight, None until evaluated).
     """
     spreads: List[Set[int]]
+    score: Optional[float] = None
     weight: Optional[float] = None
 
     def __str__(self) -> str:
@@ -35,7 +37,7 @@ class Combination:
                 + ', '.join([f'Photos in {i + 1} spread: {spread}' for i, spread in enumerate(self.spreads)])
                 + f'. Combination weight: {self.weight}' if self.weight is not None else '')
 
-    def get_evaluation_score(self, photo_times: List[float], cluster_labels: List[int]) -> float:
+    def get_score(self, photo_times: List[float], cluster_labels: List[int]) -> float:
         """
         Evaluate the quality of this combination based on time and label grouping.
 
@@ -51,7 +53,7 @@ class Combination:
             A score where higher values indicate better temporal and contextual
             coherence within spreads.
         """
-        score = 1
+        self.score = 1
         for spread in self.spreads:
 
             spread_times = [photo_times[id] / 60.0 for id in spread]
@@ -59,17 +61,33 @@ class Combination:
 
             time_std = np.std(spread_times)
             if time_std > 0.0001:
-                score /= time_std
+                self.score /= time_std
             if not np.all(np.array(spread_labels) == None):
-                score /= (1 + len(spread_labels) - len(set(spread_labels)))
-        return score
+                self.score /= (1 + len(spread_labels) - len(set(spread_labels)))
+        return self.score
 
     def set_weight(self, weight: float) -> None:
         """Set the final weight (evaluation score * partition weight)."""
         self.weight = weight
 
+    @staticmethod
+    def evaluate_list(combs: List[Combination], part: Partition,
+                      photo_times: List[float], cluster_labels: List[int]) -> None:
+        """
+        Score and weight all combinations against a partition.
 
-def simple_combination_search(photos: List, layout_part: Partition, max_combs: int) -> List[Combination]:
+        Args:
+            combs: List of Combination objects to evaluate.
+            part: The Partition these combinations belong to (provides weight).
+            photo_times: List of general_time values indexed by photo index.
+            cluster_labels: List of cluster label values indexed by photo index.
+        """
+        for comb in combs:
+            comb_score = comb.get_score(photo_times, cluster_labels)
+            comb.set_weight(comb_score * part.weight)
+
+
+def simple_combination_search(photos: List[Photo], layout_part: Partition, max_combs: int) -> List[Combination]:
     """
     Enumerate concrete photo-to-spread assignments for a given partition.
 
@@ -98,7 +116,7 @@ def simple_combination_search(photos: List, layout_part: Partition, max_combs: i
     return layout_combs
 
 
-def _get_portraits_landscapes_sorted(photos: List) -> Tuple[List[int], List[int]]:
+def _get_portraits_landscapes_sorted(photos: List[Photo]) -> Tuple[List[int], List[int]]:
     """
     Separate photo indices into portrait and landscape lists, sorted by context
     mean time then individual time.
@@ -154,7 +172,7 @@ def _prepare_all_combinations(spread_layouts_list: List[List[pd.DataFrame]]) -> 
     return limit_sample_size(all_combinations_of_layouts, 1000)
 
 
-def _get_final_combinations(all_combinations_of_layouts: List, photos: List,
+def _get_final_combinations(all_combinations_of_layouts: List, photos: List[Photo],
                             portrait_photos_ids: List[int], landscape_photos_ids: List[int]) -> List[List[Set[int]]]:
     """
     Assign photo indices to spreads based on layout orientation requirements.
@@ -248,7 +266,7 @@ def _filter_combinations(final_layout_combs_list: List[List[Set[int]]]) -> List[
     return cleaned_comb_data
 
 
-def greedy_combination_search(photos: List, layout_part: Partition, layout_df: pd.DataFrame) -> List[Combination]:
+def greedy_combination_search(photos: List[Photo], layout_part: Partition, layout_df: pd.DataFrame) -> List[Combination]:
     """
     Build combinations by greedily assigning photos to layouts based on orientation.
 
@@ -276,7 +294,7 @@ def greedy_combination_search(photos: List, layout_part: Partition, layout_df: p
     return [Combination(comb_list) for comb_list in cleaned_comb_data]
 
 
-def get_combinations(partitions: List[Partition], photos: List, layouts_df: pd.DataFrame, spread_params: List[float], params: SpreadSearchParams) -> List[Combination]:
+def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_df: pd.DataFrame, spread_params: List[float], params: SpreadSearchParams) -> List[Combination]:
     """
     Generate and evaluate all photo-to-spread combinations across partitions.
 
@@ -301,15 +319,12 @@ def get_combinations(partitions: List[Partition], photos: List, layouts_df: pd.D
     photo_times = [item.general_time for item in photos]
     cluster_labels = [item.cluster_label for item in photos]
 
-    def eval_combination(combination: Combination, part: Partition) -> None:
-        combination_weight = combination.get_evaluation_score(photo_times, cluster_labels)
-        combination.set_weight(combination_weight * part.weight)
-
     max_combs_param = params.max_spreads_sample if len(photos) <= params.small_group_threshold else params.max_combs_small_group
 
     for i, partition in enumerate(partitions):
         max_combs = int(max_combs_param / np.power(2, i))
 
+        # sample
         if len(photos) <= 8 and len(photos) / spread_params[0] <= 2:
             single_combs = simple_combination_search(photos, partition, max_combs)
         else:
@@ -317,8 +332,9 @@ def get_combinations(partitions: List[Partition], photos: List, layouts_df: pd.D
 
         single_combs = limit_sample_size(single_combs, max_combs)
 
-        for comb in single_combs:
-            eval_combination(comb, partition)
+        # evaluate
+        Combination.evaluate_list(single_combs, partition, photo_times, cluster_labels)
+
         combs += single_combs
 
     return combs

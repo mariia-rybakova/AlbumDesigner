@@ -14,8 +14,9 @@ from src.spreads_layout.combinations import Combination
 from src.spreads_layout.math_tools import limit_sample_size
 from src.core.models import SpreadSearchParams
 from src.core.photos import Photo, group_photos, get_portraits_landscapes
-from src.spreads_layout.spreads.list_of_spreads import SpreadLayoutsList
+from src.spreads_layout.spreads.list_of_spreads import SpreadLayoutsList, sample_layouts
 from src.spreads_layout.spreads.spread import Penalties
+from utils.configs import CONFIGS
 
 
 class GroupLayoutsLists(Combination):
@@ -42,7 +43,7 @@ class GroupLayoutsLists(Combination):
     def add_spread(self, layouts: SpreadLayoutsList) -> None:
         self.possible_layouts.append(layouts)
 
-    def evaluate(self, layouts_df: pd.DataFrame, photos: List[Photo], penalty: Optional[Penalties] = None) -> None:
+    def process(self, layouts_df: pd.DataFrame, photos: List[Photo], penalty: Optional[Penalties] = None) -> None:
         """
         Score and filter all spread layout options for this group.
 
@@ -60,28 +61,23 @@ class GroupLayoutsLists(Combination):
             penalty = Penalties()
         #print(f"the CONFIGS['spread_score_threshold'] is {penalty.score_threshold}")
 
-        # Evaluate layouts in all spreads
-        for single_spread_layouts in self.possible_layouts:
-            # Evaluate each spread in this combination
-            for spread in single_spread_layouts.possible_layouts:
-                spread.evaluate(photos, layouts_df, penalty)
-
-            single_spread_layouts.filter_by_score_threshold(penalty.score_threshold)
+        # Process layout lists for all spreads
+        for spread in self.possible_layouts:
+            # Process each layout for this spread
+            spread.process(photos, layouts_df, penalty)
 
 
-def layout_combination(single_class_comb: Combination, layout_df: pd.DataFrame, photos: List[Photo], params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
+def layout_combination(combination: Combination, layouts_df: pd.DataFrame, photos: List[Photo], params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
     """
     Find all possible spread layouts for a single Combination.
 
-    For each spread in the combination, filters available layouts by photo
-    count and orientation, then searches for valid page assignments. Large
-    single-spread groups with all-square layouts get a fast path. Otherwise,
-    runs greedy heuristics followed by exhaustive oriented search, sampling
-    down if too many candidates are found.
+    For each spread in the combination, delegates to sample_layouts to find
+    valid page assignments. Collects results into a GroupLayoutsLists. Returns
+    None early if any spread has no valid layout.
 
     Args:
-        single_class_comb: The Combination defining which photos go in each spread.
-        layout_df: Full DataFrame of available layout designs.
+        combination: The Combination defining which photos go in each spread.
+        layouts_df: Full DataFrame of available layout designs.
         photos: List of Photo objects in the group.
         params: Search parameters controlling sampling limits and thresholds.
 
@@ -89,41 +85,63 @@ def layout_combination(single_class_comb: Combination, layout_df: pd.DataFrame, 
         GroupLayoutsLists with possible layouts per spread, or None if any
         spread has no valid layout.
     """
-    n_spreads = len(single_class_comb.spreads)
-    group_spreads_layouts = GroupLayoutsLists.from_comb(single_class_comb)
+    n_spreads = len(combination.spreads)
+    group_spreads_layouts = GroupLayoutsLists.from_comb(combination)
 
-    for photo_idx_set in single_class_comb.spreads:
-        # spread_photos = list(photo_idx_set)
+    for photo_idx_set in combination.spreads:
+        single_spread_layouts = sample_layouts(photo_idx_set, n_spreads, photos, layouts_df, params)
 
-        if len(photo_idx_set) == 0:
-            return None
-
-        n_photos_in_spread = len(photo_idx_set)
-        portrait_set, landscape_set = get_portraits_landscapes(photo_idx_set, photos)
-
-        layouts_df = filter_layouts(layout_df, n_photos_in_spread, len(portrait_set), len(landscape_set))
-        layouts_df = count_squares(layouts_df)
-
-        # large spreads with squares gets trivial layout
-        if is_large_spread_with_squares(n_photos_in_spread, n_spreads, layouts_df):
-            single_spread_layouts = SpreadLayoutsList.simple_layout(photo_idx_set, layouts_df)
-            group_spreads_layouts.add_spread(single_spread_layouts)
-            return group_spreads_layouts
-
-        # greedy attempt to find layout based on separation of time, class and color
-        greedy_single_spreads = SpreadLayoutsList.greedy_layout_search(photo_idx_set, photos, layouts_df)
-        # other layouts sampling
-        oriented_spreads = SpreadLayoutsList.full_oriented_layout_search(landscape_set, portrait_set, layouts_df, params)
-
-        greedy_single_spreads_l = limit_sample_size(greedy_single_spreads.possible_layouts, params.max_spreads_sample)
-        oriented_spreads_l = limit_sample_size(oriented_spreads.possible_layouts, params.max_spreads_sample - len(greedy_single_spreads_l))
-
-        single_spread_layouts = SpreadLayoutsList(photo_idx_set, greedy_single_spreads_l + oriented_spreads_l)
-
-        if len(single_spread_layouts.possible_layouts) == 0:
+        if single_spread_layouts is None:
             return None
 
         group_spreads_layouts.add_spread(single_spread_layouts)
 
     # group_spreads_layouts.view(limit=3)
     return group_spreads_layouts
+
+
+def process_combination(comb: Combination, photos: List[Photo], layouts_df: pd.DataFrame,
+                        params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
+    """
+    Sample, score, and filter spread layouts for a single combination.
+
+    Finds all possible spread layouts via layout_combination, then scores
+    each layout using page consistency penalties. Uses relaxed penalties
+    for large groups (13+ photos).
+
+    Args:
+        comb: The Combination defining which photos go in each spread.
+        photos: List of Photo objects in the group.
+        layouts_df: DataFrame of available layout designs.
+        params: Search parameters controlling sampling limits and thresholds.
+
+    Returns:
+        GroupLayoutsLists with scored and filtered layouts, or None if no
+        valid layout exists for any spread.
+    """
+    # sample
+    multispread_layouts = layout_combination(comb, layouts_df, photos, params)
+    # evaluate + filter
+    if multispread_layouts is not None:
+        if len(photos) < 13:
+            penalty = Penalties(
+                crop_penalty=CONFIGS['crop_penalty'],
+                color_mix=CONFIGS['color_mix'],
+                class_mix=CONFIGS['class_mix'],
+                orientation_mix=CONFIGS['orientation_mix'],
+                score_threshold=params.score_threshold,
+                double_mix_color=CONFIGS['double_page_color_mix']
+            )
+        else:
+            penalty = Penalties(
+                crop_penalty=0.8,
+                color_mix=CONFIGS['color_mix'],
+                class_mix=CONFIGS['class_mix'],
+                orientation_mix=CONFIGS['orientation_mix'],
+                score_threshold=params.score_threshold,
+                double_mix_color=CONFIGS['double_page_color_mix'],
+                context_mix_penalty=0.00001,
+                time_order_penalty=0.5
+            )
+        multispread_layouts.process(layouts_df, photos, penalty)
+    return multispread_layouts
