@@ -700,6 +700,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
     logger.info(f"Added Album Cover composition with id {counter_comp_id-1}")
 
     # Add images
+    i = 0
     for number_groups, group_dict in enumerate(output_list):
         for group_id, result in group_dict.items():
             if not isinstance(result, GroupProcessingResult):
@@ -707,6 +708,10 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                 continue
 
             for spread in result.spreads:
+                i += 2
+                logger.info(f'Pages {i - 1}-{i} - left photos ({len(spread.left_photos)}): {[ph.id for ph in spread.left_photos]}, '
+                            f'right photos ({len(spread.right_photos)}): {[ph.id for ph in spread.right_photos]}')
+
                 layout_id = spread.layout_id
 
                 design_id = layouts_df.loc[layout_id]['id']
