@@ -104,7 +104,7 @@ def _normalised_entropy(series: pd.Series) -> tuple[float, int]:
     return float(h_norm), n_unique
 
 
-def compute_scene_signals(df: pd.DataFrame,
+def compute_scene_signals(df: pd.DataFrame,logger,
                           use_cluster_ctx: bool = True) -> pd.DataFrame:
     """
     Compute size-normalised signals for every scene.
@@ -333,18 +333,18 @@ def print_gallery_detail(gallery_id: str,
     print(scored_df[show].head(top_n).to_string(index=False, float_format="{:.3f}".format))
 
 
-def detect_anachronism_scene(df):
+def detect_anachronism_scene(df,logger):
     weights = DEFAULT_WEIGHTS
     use_cluster_ctx=True
     # Compute signals
-    signals  = compute_scene_signals(df, use_cluster_ctx=use_cluster_ctx)
+    signals  = compute_scene_signals(df,logger, use_cluster_ctx=use_cluster_ctx)
     if signals.empty:
-      print(f"[SKIP] No scenes found")
+      logger.info(f"[SKIP] No scenes found")
     else:
         # Score
         scored = score_scenes(signals, weights, use_cluster_ctx=use_cluster_ctx)
         detected = detect_anachronism(scored)
         if detected:
-           print(f"Detected the highlight or anachronismScene that disrupt our artificial time {detected[0]}")
+           logger.info(f"Detected the highlight or anachronismScene that disrupt our artificial time {detected[0]}")
 
 

@@ -328,7 +328,7 @@ def process_gallery_time(message, gallery_info_df, logger):
     # Add scene info first so detect_anachronism_scene has access to scene_name
     gallery_info_df, _ = add_scene_info(message.content['base_url'], gallery_info_df)
 
-    scene_name = detect_anachronism_scene(gallery_info_df)
+    scene_name = detect_anachronism_scene(gallery_info_df,logger)
 
     if gallery_info_df is not None:
         gallery_info_df = process_image_time(gallery_info_df)
