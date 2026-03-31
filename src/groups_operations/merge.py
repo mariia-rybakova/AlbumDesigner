@@ -477,7 +477,7 @@ def _update_merged_photos_other(photos_df: pd.DataFrame, to_merge_group: pd.Data
         photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + \
                                                     selected_cluster['groups_merged'].iloc[0]
         photos_df.loc[row_index, 'group_size'] = len(merged_group)
-        photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
+        photos_df.loc[row_index, 'group_sub_index'] = bigger_group['group_sub_index'].iloc[0]
         if photos_df.loc[row_index, 'groups_merged'] >= CONFIGS['merge_limit_times']:
             photos_df.loc[row_index, 'merge_allowed'] = False
 

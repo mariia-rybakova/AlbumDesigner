@@ -169,6 +169,7 @@ def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, m
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
 
         photos_df['merge_allowed'] = True
+        photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
         photos_df['original_context'] = photos_df['cluster_context'].copy()
         photos_df['groups_merged'] = 1
         photos_df = handle_wedding_bride_groom_merge(photos_df, logger)
