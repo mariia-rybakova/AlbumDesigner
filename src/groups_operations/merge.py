@@ -186,7 +186,7 @@ def _filter_merge_targets_other(targets_df: pd.DataFrame, group: pd.DataFrame, g
 
 
 def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]],
-                                group_key: Tuple[str, str, int], cent_idx: int) -> List[pd.DataFrame]:
+                                group_key: Tuple[str, str, int], group: pd.DataFrame, cent_idx: int) -> List[pd.DataFrame]:
     """
     Filter merge target groups to find valid bride/groom pairs.
 
@@ -200,6 +200,8 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
             An iterable of (group_key, group DataFrame) pairs representing potential merge targets.
         group_key (Tuple[str, str, int]):
             The key of the current group (time_cluster, cluster_context, group_sub_index).
+        group:
+            Group to be merged
         cent_idx (int):
             Index pointing to the bride/groom class pairing to check against.
 
@@ -222,7 +224,8 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
 
 
 def _get_main_groups_other(merge_target_groups: Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]],
-                           group_key: Tuple[str, str, int]) -> List[pd.DataFrame]:
+                           group_key: Tuple[str, str, int], group: pd.DataFrame,
+                           possible_boxes_numbers: List[int]) -> List[pd.DataFrame]:
     """
     Retrieve merge target groups excluding the current group.
 
@@ -234,13 +237,23 @@ def _get_main_groups_other(merge_target_groups: Iterable[Tuple[Tuple[str, str, i
             An iterable of (group_key, group DataFrame) pairs representing potential merge targets.
         group_key (Tuple[str, str, int]):
             The key of the current group (time_cluster, cluster_context, group_sub_index).
+        group:
+            Group to be merged
+        possible_boxes_numbers:
+            List of numbers of photo boxes allowed per spread in at least one layout.
 
     Returns:
         List[pd.DataFrame]:
             A list of DataFrames representing groups that are valid merge candidates,
             excluding the one matching `group_key`.
     """
-    return [m_group for m_key, m_group in merge_target_groups if m_key != group_key]
+    return [
+        m_group for m_key, m_group in merge_target_groups
+        if (
+                m_key != group_key and
+                (len(group) + len(m_group) < 12 or len(group) + len(m_group) in possible_boxes_numbers)
+        )
+    ]
 
 
 def _get_merge_candidates(
@@ -289,7 +302,7 @@ def _get_merge_candidates(
     for group_key, group in merge_groups:
         merge_targets = _filter_merge_targets(targets_df, group, group_key)
         merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-        main_groups = _get_main_groups(merge_target_groups, group_key, *args, **kwargs)
+        main_groups = _get_main_groups(merge_target_groups, group_key, group, *args, **kwargs)
         selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
                                                                                  general_times_list,
                                                                                  max_images_per_spread=CONFIGS['max_imges_per_spread'])
