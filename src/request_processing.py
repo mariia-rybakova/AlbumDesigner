@@ -701,6 +701,14 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
 
     # Add images
     i = 0
+
+    def list_ids(ph_l):
+        ids = []
+        for ph in ph_l:
+            id = ph.id if ph is not None else None
+            ids.append(id)
+        return ids
+
     for number_groups, group_dict in enumerate(output_list):
         for group_id, result in group_dict.items():
             if not isinstance(result, GroupProcessingResult):
@@ -709,8 +717,8 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
 
             for spread in result.spreads:
                 i += 2
-                logger.info(f'Pages {i - 1}-{i} - left photos ({len(spread.left_photos)}): {[ph.id for ph in spread.left_photos]}, '
-                            f'right photos ({len(spread.right_photos)}): {[ph.id for ph in spread.right_photos]}')
+                logger.info(f'Pages {i - 1}-{i} - left photos ({len(spread.left_photos)}): {list_ids(spread.left_photos)}, '
+                            f'right photos ({len(spread.right_photos)}): {list_ids(spread.right_photos)}')
 
                 layout_id = spread.layout_id
 
@@ -744,7 +752,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                 for j, box in enumerate(cur_layout_info):
                     box_id = box['id']
                     if box_id not in all_box_ids:
-                        print('Some error, cant find box with id: {}'.format(box_id))
+                        logger.info('Some error, cant find box with id: {}'.format(box_id))
 
                     element_index = all_box_ids.index(box_id)
                     cur_photo = all_photos[element_index]
