@@ -46,7 +46,7 @@ class SpreadLayoutsList:
         Returns:
             New SpreadLayoutsList with possible_layouts populated.
         """
-        ll = cls(spread_photo_idxs=spread_photo_idxs)
+        ll = cls(spread_photo_idxs=spread_photo_idxs, possible_layouts=[])
 
         n_photos = len(ll.spread_photo_idxs)
         selected_layouts = layouts_df[layouts_df['number of squares'] == n_photos]
