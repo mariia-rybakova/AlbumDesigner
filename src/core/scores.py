@@ -141,8 +141,8 @@ def assign_part_photos_order(boxes, photos):
             area2boxes[cur_area] = list()
         area2boxes[cur_area].append(box)
 
-    left_size = max([box['position'] for box in boxes if box['side'] == 0], default=0) + 1
-    right_size = max([box['position'] for box in boxes if box['side'] == 1], default=0) + 1
+    left_size = max([box['position'] for box in boxes if box['side'] == 0], default=-1) + 1
+    right_size = max([box['position'] for box in boxes if box['side'] == 1], default=-1) + 1
     left_photos_order = [None] * left_size
     right_photos_order = [None] * right_size
 
