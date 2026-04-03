@@ -195,6 +195,8 @@ def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResou
           - True if at least one merge was performed, False otherwise.
     """
     look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
+    possible_boxes_numbers = list(resources.layouts_df['number of boxes'].unique())
+
     _update_group_spreads(photos_df, look_up_table)     # add 'group_spreads' field
 
     mask_special = photos_df['cluster_context'].isin(['None', 'other'])
@@ -215,7 +217,7 @@ def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResou
 
     general_times_list, _ = get_groups_time(photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']))
 
-    merge_candidates = get_merge_candidates_other(merge_groups, targets_df, general_times_list)
+    merge_candidates = get_merge_candidates_other(merge_groups, targets_df, general_times_list, possible_boxes_numbers)
 
     if len(merge_candidates) == 0:
         return photos_df, False
@@ -308,6 +310,7 @@ def process_wedding_illegal_groups(
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
 
         photos_df['merge_allowed'] = True
+        photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
         photos_df['original_context'] = photos_df['cluster_context'].copy()
         photos_df['groups_merged'] = 1
         photos_df = handle_wedding_bride_groom_merge(photos_df, logger)
