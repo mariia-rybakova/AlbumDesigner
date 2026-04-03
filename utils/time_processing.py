@@ -153,7 +153,7 @@ def build_time_clusters(selected_df, all_photos_df=None):
             on='image_id',
             how='left'
         )
-        initial_clusters = selected_df['time_cluster'].values
+        initial_clusters = selected_df['time_cluster'].values.copy()
     else:
 
         initial_clusters, best_n = get_time_clusters_dbscan(X)
