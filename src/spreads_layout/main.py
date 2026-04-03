@@ -9,11 +9,10 @@ from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult,
 from src.core.photos import get_photos_from_db, Photo
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
-from src.spreads_layout.spreads.group_of_lists_of_spreads import process_combination, GroupLayoutsLists
-from src.spreads_layout.group_layouts import GroupSingleLayout, process_group_lists, assign_photos_order
+from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts, assign_photos_order
 
 
-def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[float],
+def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
                           largest_layout_size: int, logger) -> List[List[Photo]]:
     """
     Split a photo group into smaller sub-groups if it is too large for a single search.
@@ -23,7 +22,7 @@ def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[flo
     photos across the first sub-groups.
 
     Args:
-        cur_group_photos: Photos in the group, already sorted.
+        group_photos: Photos in the group, already sorted.
         spread_params: [mean, std] recommended photos per spread for this context.
         largest_layout_size: Maximum number of boxes in any available layout.
         logger: Logger instance.
@@ -31,16 +30,16 @@ def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[flo
     Returns:
         List of photo sub-groups. Contains a single element if no split is needed.
     """
-    cur_group_photos_list = []
+    subgroups = []
 
     optimal_spread_param = min(largest_layout_size, spread_params[0])
-    if len(cur_group_photos) / (max(optimal_spread_param - 2 * spread_params[1], 1)) >= 4:
+    if len(group_photos) / (max(optimal_spread_param - 2 * spread_params[1], 1)) >= 4:
         split_size = min(optimal_spread_param * 3, max(optimal_spread_param, 11))
-        number_of_splits = math.ceil(len(cur_group_photos) / split_size)
+        number_of_splits = math.ceil(len(group_photos) / split_size)
         logger.info('Condition we split!. Using splitting to {} parts'.format(number_of_splits))
 
         # Split as equally as possible
-        total_items = len(cur_group_photos)
+        total_items = len(group_photos)
         base_size = total_items // number_of_splits
         remainder = total_items % number_of_splits
 
@@ -49,15 +48,15 @@ def get_group_photos_list(cur_group_photos: List[Photo], spread_params: List[flo
             # Add 1 extra item to the first 'remainder' splits
             current_size = base_size + (1 if split_num < remainder else 0)
             end_idx = start_idx + current_size
-            cur_group_photos_list.append(cur_group_photos[start_idx:end_idx])
+            subgroups.append(group_photos[start_idx:end_idx])
             start_idx = end_idx
     else:
-        cur_group_photos_list.append(cur_group_photos)
+        subgroups.append(group_photos)
 
-    return cur_group_photos_list
+    return subgroups
 
 
-def generate_filtered_multi_spreads(photos: List[Photo], layouts_df: pd.DataFrame, spread_params: List[float], params: SpreadSearchParams, logger) -> Optional[List[GroupSingleLayout]]:
+def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFrame, layout_id2data, spread_params: List[float], params: SpreadSearchParams, logger) -> Optional[List[GroupSingleLayout]]:
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
     photos_df = photos_df.sort_values('general_time')
 
@@ -68,31 +67,12 @@ def generate_filtered_multi_spreads(photos: List[Photo], layouts_df: pd.DataFram
     combs = get_combinations(partitions, photos, layouts_df, spread_params, params)
 
     # stage 3
-    # sample
-    group_single_layouts = []
-    for idx, comb in enumerate(combs):
-        # stage 3.1
-        # sample
-        multispread_layouts = process_combination(comb, photos, layouts_df, params)
-        if multispread_layouts is not None:
-            group_single_layouts += process_group_lists(multispread_layouts)
+    group_single_layouts = get_group_single_layouts(combs, photos, layouts_df, params, layout_id2data)
 
-        # filter
-        if len(group_single_layouts) > 10000:
-            group_single_layouts = sorted(group_single_layouts, key=lambda layout: layout.score, reverse=True)[:1000]
-
-    if len(group_single_layouts) == 0:
-        return None
-
-    # filter
-    filtered = sorted(group_single_layouts, key=lambda layout: layout.weight, reverse=True)
-    max_score = filtered[0].weight
-    filtered = [layout for layout in filtered if layout.weight / max_score > 0.01]
-
-    return filtered[:1000]
+    return group_single_layouts
 
 
-def _find_spreads_for_group(group_photos, layouts_df, spread_params, params: SpreadSearchParams, largest_layout_size, group_name, logger):
+def find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params, params: SpreadSearchParams, largest_layout_size, group_name, logger):
     dummy_photo = Photo(id=-1, ar=1.5, color=True, rank=1000000, photo_class='None', cluster_label=1,
                         general_time=1000000, original_context='None')
 
@@ -102,40 +82,37 @@ def _find_spreads_for_group(group_photos, layouts_df, spread_params, params: Spr
     ] + [(group_photos + [dummy_photo], spread_params)]
 
     for cur_photos, cur_spread_params in attempts:
-        cur_group_photos_list = get_group_photos_list(cur_photos, cur_spread_params, largest_layout_size, logger)
-        groups_filtered_spreads_list = []
+        cur_subgroups = split_group_if_needed(cur_photos, cur_spread_params, largest_layout_size, logger)
+        group_final_layouts = []
 
-        for cur_sub_group_photos in cur_group_photos_list:
-            cur_filtered_spreads = generate_filtered_multi_spreads(cur_sub_group_photos, layouts_df, cur_spread_params, params, logger)
-            if cur_filtered_spreads is None:
-                groups_filtered_spreads_list = None
+        for subgroup_photos in cur_subgroups:
+            subgroup_spreads_layouts = find_spreads_layouts_for_subgroup(subgroup_photos, layouts_df, layout_id2data, cur_spread_params, params, logger)
+            if subgroup_spreads_layouts is None:
+                group_final_layouts = None
                 break
             else:
-                groups_filtered_spreads_list.append((cur_sub_group_photos, cur_filtered_spreads))
+                group_final_layouts.append((subgroup_photos, subgroup_spreads_layouts))
 
-        if groups_filtered_spreads_list is not None:
+        if group_final_layouts is not None:
             if cur_photos is not group_photos:
                 logger.info("Spread created using dummy photo for group: {}.".format(group_name))
             elif cur_spread_params[0] != spread_params[0]:
                 logger.debug("Spreads found with params {}. Group: {}.".format(cur_spread_params, group_name))
-            return groups_filtered_spreads_list
+            return group_final_layouts
 
     logger.warning("Could not find spreads. Skipping group: {}.".format(group_name))
     return None
 
 
-def rank_and_select_best_layout(filtered_layouts, sub_group_photos, layout_id2data, design_box_id2data):
-    GroupSingleLayout.evaluate_list(filtered_layouts, sub_group_photos, layout_id2data)
-    filtered_layouts = sorted(filtered_layouts, key=lambda x: x.weight, reverse=True)
-
-    if not filtered_layouts:
+def select_best_layout(subgroup_layouts, subgroup_photos, layout_id2data, design_box_id2data):
+    if not subgroup_layouts:
         return None
 
-    best_layout = filtered_layouts[0]
+    best_layout = subgroup_layouts[0]
 
     # Retrieve Photo objects from photo indices
     for spread in best_layout.spreads_layouts:
-        spread.resolve_photos(sub_group_photos)
+        spread.resolve_photos(subgroup_photos)
 
     best_layout = assign_photos_order(best_layout, layout_id2data, design_box_id2data, merge_pages=False)
     return best_layout
@@ -156,16 +133,16 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
         else:
             group_images_df = group_images_df.sort_values(['image_time'])
 
-        cur_group_photos = get_photos_from_db(group_images_df, is_wedding)
+        group_photos = get_photos_from_db(group_images_df, is_wedding)
 
         local_result = {}
         group_idx = 0
-        final_groups_and_spreads = _find_spreads_for_group(cur_group_photos, layouts_df, spread_params, params, largest_layout_size, group_name, logger)
+        final_groups_and_layouts = find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params,
+                                                                  params, largest_layout_size, group_name, logger)
 
-        if final_groups_and_spreads is not None:
-            for sub_group_photos, filtered_layouts in final_groups_and_spreads:
-                best_layout = rank_and_select_best_layout(filtered_layouts, sub_group_photos,
-                                                           layout_id2data, design_box_id2data)
+        if final_groups_and_layouts is not None:
+            for subgroup_photos, subgroup_layouts in final_groups_and_layouts:
+                best_layout = select_best_layout(subgroup_layouts, subgroup_photos, layout_id2data, design_box_id2data)
 
                 if best_layout is None:
                     continue

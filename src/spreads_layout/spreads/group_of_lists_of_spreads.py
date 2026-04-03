@@ -100,7 +100,7 @@ def layout_combination(combination: Combination, layouts_df: pd.DataFrame, photo
     return group_spreads_layouts
 
 
-def process_combination(comb: Combination, photos: List[Photo], layouts_df: pd.DataFrame,
+def process_combination_inner(comb: Combination, photos: List[Photo], layouts_df: pd.DataFrame,
                         params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
     """
     Sample, score, and filter spread layouts for a single combination.

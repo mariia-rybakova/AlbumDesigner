@@ -6,9 +6,10 @@ from typing import List, Tuple, Set, Dict, Iterable, Callable, Any, Optional
 
 from scipy.stats import pearsonr
 
-from src.spreads_layout.spreads.group_of_lists_of_spreads import GroupLayoutsLists
+from src.spreads_layout.spreads.group_of_lists_of_spreads import GroupLayoutsLists, process_combination_inner
 from src.spreads_layout.spreads.spread import SingleSpreadLayout
 from src.core.photos import Photo
+from src.spreads_layout.combinations import Combination
 
 
 @dataclass
@@ -144,6 +145,39 @@ def process_group_lists(group_spreads_layouts: GroupLayoutsLists) -> List[GroupS
             ))
 
     return listed_spreads
+
+
+def process_combination_outer(comb: Combination, photos, layouts_df, params, group_single_layouts: List[GroupSingleLayout]) -> List[GroupSingleLayout]:
+    # sample
+    multispread_layouts = process_combination_inner(comb, photos, layouts_df, params)
+    if multispread_layouts is not None:
+        group_single_layouts += process_group_lists(multispread_layouts)
+
+    # filter
+    if len(group_single_layouts) > 10000:
+        group_single_layouts = sorted(group_single_layouts, key=lambda layout: layout.score, reverse=True)[:1000]
+
+    return group_single_layouts
+
+
+def get_group_single_layouts(combs: List[Combination], photos, layouts_df, params,
+                             layout_id2data) -> Optional[List[GroupSingleLayout]]:
+    # sample
+    group_single_layouts = []
+    for idx, comb in enumerate(combs):
+        group_single_layouts = process_combination_outer(comb, photos, layouts_df, params, group_single_layouts)
+
+    if len(group_single_layouts) == 0:
+        return None
+
+    # filter
+    filtered = sorted(group_single_layouts, key=lambda layout: layout.weight, reverse=True)
+    max_weight = filtered[0].weight
+    filtered = [layout for layout in filtered if layout.weight / max_weight > 0.01][:1000]
+
+    # evaluate
+    GroupSingleLayout.evaluate_list(filtered, photos, layout_id2data)
+    return sorted(filtered, key=lambda x: x.weight, reverse=True)
 
 
 def assign_photos_order(group_layout: GroupSingleLayout, layout_id2data: Dict[int, Any],
