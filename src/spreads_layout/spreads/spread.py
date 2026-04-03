@@ -110,23 +110,25 @@ class SingleSpreadLayout:
         if len(photo_set) == 1:
             return cls.PageProperties(True, True, False, 1)
 
-        # The DataFrame with subset of photos for the given IDs
-        df = pd.DataFrame(photos).loc[list(photo_set)]
+        # Collect attributes
+        colors = [photos[pid].color for pid in photo_set]
+        photo_classes = [photos[pid].photo_class for pid in photo_set]
+        contexts = [photos[pid].original_context for pid in photo_set]
 
-        # Column-based checks
-        is_same_color = df['color'].nunique() == 1
-        is_same_class = df['photo_class'].nunique() == 1
-        number_of_unique_contexts = df['original_context'].nunique()
+        # Uniqueness checks
+        is_same_color = len(set(colors)) == 1
+        is_same_class = len(set(photo_classes)) == 1
+        number_of_unique_contexts = len(set(contexts))
 
         def calculate_bride_groom_mix():
-            bride_centric = df['photo_class'].isin(bride_centric_classes).any()
-            groom_centric = df['photo_class'].isin(groom_centric_classes).any()
+            bride_centric = any(cls_name in bride_centric_classes for cls_name in photo_classes)
+            groom_centric = any(cls_name in groom_centric_classes for cls_name in photo_classes)
             return bride_centric and groom_centric
 
         return cls.PageProperties(
             is_same_color=is_same_color,
             is_same_class=is_same_class,
-            is_bride_groom_mix=calculate_bride_groom_mix() if is_same_class else False,
+            is_bride_groom_mix=calculate_bride_groom_mix() if not is_same_class else False,
             number_of_unique_contexts=number_of_unique_contexts
         )
 
