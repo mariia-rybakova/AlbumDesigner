@@ -175,7 +175,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
     min_total_spreads = min(max_total_spreads, designs_info['minPages']+4)
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
-                                    min_total_spreads=min_total_spreads)
+                                    min_total_spreads=min_total_spreads,logger = logger)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
     
@@ -197,7 +197,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
         updated_groups = original_groups
 
     resources.look_up_table.update_with_limit(group2images, max_total_spreads=max_total_spreads,
-                                              min_total_spreads=min_total_spreads)
+                                              min_total_spreads=min_total_spreads,logger = logger)
 
     result_list = []
     for group_name in group2images.keys():

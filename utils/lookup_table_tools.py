@@ -133,7 +133,7 @@ class LookUpTable:
                 self._table[key] = (min(closest_size,CONFIGS['max_imges_per_spread']), value[1])
 
 
-    def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None):
+    def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None,logger=None):
         # First pass: Calculate initial spreads per group and total spreads
         total_spreads = 0
         spreads_per_group = {}
@@ -151,6 +151,7 @@ class LookUpTable:
             total_spreads += spreads
 
         # Reduction and expansion are mutually exclusive to avoid min/max contradiction
+        expansion_applied = False
         if total_spreads > max_total_spreads:
             # Reduce largest groups one at a time until within max
             while total_spreads > max_total_spreads:
@@ -170,6 +171,9 @@ class LookUpTable:
 
         elif min_total_spreads is not None and total_spreads < min_total_spreads:
             # Expand groups with highest photos-per-spread ratio until meeting min
+            expansion_applied = True
+            if logger is not None:
+                logger.debug(f'adjusting LUT, total spreads: {total_spreads}, min_total_spreads: {min_total_spreads} ')
             while total_spreads < min_total_spreads:
                 best_key = None
                 best_ratio = 0
@@ -188,9 +192,11 @@ class LookUpTable:
 
                 spreads_per_group[best_key] += 1
                 total_spreads += 1
+            if logger is not None:
+                logger.debug(f'adjusted LUT, total spreads: {total_spreads}, min_total_spreads: {min_total_spreads} ')
 
         # Update the lookup table with new values
-        if min_total_spreads is not None and total_spreads <= min_total_spreads:
+        if expansion_applied:
             # Expansion path: aggregate by content_key (max across shared keys), allow decrease
             content_key_values = {}
             for key, target_spreads in spreads_per_group.items():
