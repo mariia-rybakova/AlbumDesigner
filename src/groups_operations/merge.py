@@ -564,3 +564,65 @@ update_with_merges_bridegroom = lambda *args, **kwargs: _update_with_merges(_get
 update_with_merges_other = lambda *args, **kwargs: _update_with_merges(_get_merged_group_other,
                                                                         _update_merged_photos_other, *args, **kwargs)
 
+
+def force_merge_portrait_singleton(
+        photos_df: pd.DataFrame,
+        singleton_key: Tuple[str, str, int],
+        singleton_group: pd.DataFrame,
+        possible_boxes_numbers: List[int],
+        logger
+) -> bool:
+    """
+    Force-merge a portrait singleton group into the closest available group.
+
+    Uses relaxed constraints (ignores merge_allowed, groups_merged limit,
+    count_contexts limit) because this is a last-resort cleanup for groups
+    that would otherwise fail downstream layout matching.
+
+    Args:
+        photos_df: The full DataFrame of photos (modified in-place).
+        singleton_key: Key of the singleton group (time_cluster, cluster_context, group_sub_index).
+        singleton_group: DataFrame containing the single portrait photo.
+        possible_boxes_numbers: Valid layout sizes from layouts_df.
+        logger: Logger instance.
+
+    Returns:
+        True if the singleton was successfully merged, False otherwise.
+    """
+    all_groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
+
+    # Build general_times_list and collect candidate target groups
+    general_times_list = []
+    candidate_groups = []
+    for m_key, m_group in all_groups:
+        general_times_list.extend(m_group['general_time'].values.tolist())
+        if m_key == singleton_key:
+            continue
+        combined_size = len(singleton_group) + len(m_group)
+        if combined_size < 12 or combined_size in possible_boxes_numbers:
+            candidate_groups.append(m_group)
+
+    general_times_list = sorted(general_times_list)
+
+    if not candidate_groups:
+        return False
+
+    selected_cluster, _ = merge_illegal_group_by_time(
+        candidate_groups, singleton_group, general_times_list,
+        max_images_per_spread=CONFIGS['max_imges_per_spread']
+    )
+
+    if selected_cluster is None:
+        return False
+
+    # Apply metadata updates (same pattern as _update_merged_photos_other)
+    merged_group = pd.concat([singleton_group, selected_cluster])
+    for row_index in merged_group.index:
+        photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
+        photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
+        photos_df.loc[row_index, 'group_size'] = len(merged_group)
+        photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
+        photos_df.loc[row_index, 'merge_allowed'] = False
+
+    return True
+

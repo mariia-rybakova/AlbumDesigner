@@ -159,7 +159,8 @@ def _rank_and_select_best_spread(filtered_spreads, sub_group_photos, layout_id2d
     return best_spread
 
 
-def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False):
+def album_processing(df, designs_info, is_wedding, modified_lut, params, logger, density=3, manual_selection=False,
+                     all_gallery_df=None):
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
 
     LookUpTable = WeddingLookUpTable if is_wedding else NonWeddingLookUpTable
@@ -172,6 +173,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
 
     max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
+    min_total_spreads = min(max_total_spreads, designs_info['minPages']+2)
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
@@ -186,7 +188,8 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
 
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images = process_wedding_illegal_groups(df, resources, manual_selection, logger)
+        updated_groups, group2images = process_wedding_illegal_groups(df, resources, manual_selection, logger,
+                                                                         all_gallery_df=all_gallery_df)
         resources.look_up_table = look_up_table
         logger.info(f'Illegal groups processing time: {time.time() - start_time:.2f} seconds')
     else:
