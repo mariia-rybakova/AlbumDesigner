@@ -11,7 +11,8 @@ from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
 
 
-def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3, manual_selection=False):
+def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
+                     manual_selection=False, all_gallery_df=None):
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
 
     LookUpTable = WeddingLookUpTable if is_wedding else NonWeddingLookUpTable
@@ -24,7 +25,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
 
     max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
-    look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads)
+    min_total_spreads = min(max_total_spreads, designs_info['minPages']+4)
+    look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
+                                    min_total_spreads=min_total_spreads,logger = logger)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
     
@@ -38,13 +41,15 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
 
     start_time = time.time()
     if is_wedding:
-        updated_groups, group2images = process_wedding_illegal_groups(df, resources, manual_selection, logger)
+        updated_groups, group2images = process_wedding_illegal_groups(df, resources, manual_selection, logger,
+                                                                         all_gallery_df=all_gallery_df)
         resources.look_up_table = look_up_table
         logger.info(f'Illegal groups processing time: {time.time() - start_time:.2f} seconds')
     else:
         updated_groups = original_groups
 
-    resources.look_up_table.update_with_limit(group2images,  max_total_spreads=max_total_spreads)
+    resources.look_up_table.update_with_limit(group2images, max_total_spreads=max_total_spreads,
+                                              min_total_spreads=min_total_spreads,logger = logger)
 
     result_list = []
     for group_name in group2images.keys():

@@ -316,8 +316,10 @@ class ProcessStage(Stage):
 
                 manual_selection = message.content.get('manual_selection', False)
 
+                all_gallery_df = message.content.get('gallery_all_photos_info', None)
                 album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
-                                                logger=self.logger,density=density, manual_selection=manual_selection)
+                                                logger=self.logger,density=density, manual_selection=manual_selection,
+                                                all_gallery_df=all_gallery_df)
 
                 wait_start = datetime.now()
                 try:
