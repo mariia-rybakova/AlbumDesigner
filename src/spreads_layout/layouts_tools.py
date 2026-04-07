@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-import random
-from itertools import combinations, product, groupby, permutations
-from dataclasses import dataclass
 from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
-import inspect
 
 import numpy as np
 import pandas as pd
-
-from src.spreads_layout.math_tools import all_unique_partitions
-from utils.configs import CONFIGS
 
 
 def get_layouts_dict(layouts_df: pd.DataFrame, available_n: Set[int]) -> dict[int, pd.DataFrame]:
@@ -105,7 +98,29 @@ def count_squares(layouts_df: pd.DataFrame) -> pd.DataFrame:
     return layouts_df
 
 
-def calculate_capacities(layouts: pd.DataFrame) -> pd.DataFrame:
+def is_large_spread_with_squares(n_photos_in_spread: int, n_spreads: int, layouts_df: pd.DataFrame) -> bool:
+    """
+    Check if a spread qualifies for the trivial all-squares layout shortcut.
+
+    A spread qualifies when it is the only spread in the group, contains more
+    than 13 photos, and a layout exists where every box is a square.
+
+    Args:
+        n_photos_in_spread: Number of photos in the current spread.
+        n_spreads: Total number of spreads in the group.
+        layouts_df: DataFrame of layouts with a 'number of squares' column.
+
+    Returns:
+        True if the spread should use the simple all-squares layout.
+    """
+    return (
+            n_photos_in_spread > 13 and
+            len(layouts_df[layouts_df['number of squares'] == n_photos_in_spread]) > 0 and
+            n_spreads == 1
+    )
+
+
+def update_with_page_capacities(layouts: pd.DataFrame) -> pd.DataFrame:
     """
     Compute per-side orientation capacities for each layout.
 
@@ -121,22 +136,22 @@ def calculate_capacities(layouts: pd.DataFrame) -> pd.DataFrame:
         A copy of the DataFrame with added columns: 'max_left_portraits',
         'max_left_landscapes', 'left_total_capacity', and their right equivalents.
     """
-    greedy_layouts = layouts.copy()
+    updated_layouts = layouts.copy()
 
     for side in ('left', 'right'):
-        square_len = greedy_layouts[f'{side}_square_ids'].apply(len)
+        square_len = updated_layouts[f'{side}_square_ids'].apply(len)
         total_capacity = square_len.copy()
         for orientation in ('portrait', 'landscape'):
-            orient_len = greedy_layouts[f'{side}_{orientation}_ids'].apply(len)
-            greedy_layouts[f'max_{side}_{orientation}s'] = orient_len + square_len
+            orient_len = updated_layouts[f'{side}_{orientation}_ids'].apply(len)
+            updated_layouts[f'max_{side}_{orientation}s'] = orient_len + square_len
             total_capacity += orient_len
-        greedy_layouts[f'{side}_total_capacity'] = total_capacity
-    return greedy_layouts
+        updated_layouts[f'{side}_total_capacity'] = total_capacity
+    return updated_layouts
 
 
-def apply_layouts_mask(greedy_layouts: pd.DataFrame, left_landscapes: int,
-                       left_portraits: int, right_landscapes: int,
-                       right_portraits: int) -> pd.DataFrame:
+def apply_layouts_mask(extended_layouts: pd.DataFrame,
+                       left_landscapes: int, left_portraits: int,
+                       right_landscapes: int, right_portraits: int) -> pd.DataFrame:
     """
     Filter layouts whose per-side capacities exactly match the given orientation counts.
 
@@ -145,7 +160,7 @@ def apply_layouts_mask(greedy_layouts: pd.DataFrame, left_landscapes: int,
     sum of portraits and landscapes for that side.
 
     Args:
-        greedy_layouts: DataFrame with capacity columns from `_calculate_capacities`.
+        extended_layouts: DataFrame with capacity columns from `update_with_page_capacities`.
         left_landscapes: Number of landscape photos on the left page.
         left_portraits: Number of portrait photos on the left page.
         right_landscapes: Number of landscape photos on the right page.
@@ -155,11 +170,11 @@ def apply_layouts_mask(greedy_layouts: pd.DataFrame, left_landscapes: int,
         Filtered DataFrame of layouts matching the orientation requirements.
     """
     mask = (
-        (greedy_layouts['max_left_landscapes']  >= left_landscapes) &
-        (greedy_layouts['max_left_portraits']   >= left_portraits) &
-        (greedy_layouts['max_right_landscapes'] >= right_landscapes) &
-        (greedy_layouts['max_right_portraits']  >= right_portraits) &
-        ((left_landscapes + left_portraits) == greedy_layouts['left_total_capacity']) &
-        ((right_landscapes + right_portraits) == greedy_layouts['right_total_capacity'])
+        (extended_layouts['max_left_landscapes']  >= left_landscapes) &
+        (extended_layouts['max_left_portraits']   >= left_portraits) &
+        (extended_layouts['max_right_landscapes'] >= right_landscapes) &
+        (extended_layouts['max_right_portraits']  >= right_portraits) &
+        ((left_landscapes + left_portraits) == extended_layouts['left_total_capacity']) &
+        ((right_landscapes + right_portraits) == extended_layouts['right_total_capacity'])
     )
-    return greedy_layouts.loc[mask]
+    return extended_layouts.loc[mask]

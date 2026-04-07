@@ -206,13 +206,12 @@ def _filter_merge_targets_other(targets_df: pd.DataFrame, group: pd.DataFrame, g
     return targets_df[
         (targets_df['time_cluster'] == group_key[0]) &
         (targets_df['group_size'] + len(group) <= CONFIGS['max_imges_per_spread']) &
-        (group['groups_merged'].iloc[0] + targets_df['groups_merged'] <= CONFIGS['merge_limit_times']) &
         (group['group_spreads'].iloc[0] + targets_df['group_spreads'] <= 2.1)
     ]
 
 
 def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]],
-                                group_key: Tuple[str, str, int], cent_idx: int) -> List[pd.DataFrame]:
+                                group_key: Tuple[str, str, int], group: pd.DataFrame, cent_idx: int) -> List[pd.DataFrame]:
     """
     Filter merge target groups to find valid bride/groom pairs.
 
@@ -226,6 +225,8 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
             An iterable of (group_key, group DataFrame) pairs representing potential merge targets.
         group_key (Tuple[str, str, int]):
             The key of the current group (time_cluster, cluster_context, group_sub_index).
+        group:
+            Group to be merged
         cent_idx (int):
             Index pointing to the bride/groom class pairing to check against.
 
@@ -246,8 +247,15 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
     ]
 
 
+def count_contexts(group: pd.DataFrame):
+    contexts = group['original_context'].copy()
+    contexts = contexts.replace({'None': '*', 'other': '*'})
+    return contexts.nunique()
+
+
 def _get_main_groups_other(merge_target_groups: Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]],
-                           group_key: Tuple[str, str, int]) -> List[pd.DataFrame]:
+                           group_key: Tuple[str, str, int], group: pd.DataFrame,
+                           possible_boxes_numbers: List[int]) -> List[pd.DataFrame]:
     """
     Retrieve merge target groups excluding the current group.
 
@@ -259,13 +267,24 @@ def _get_main_groups_other(merge_target_groups: Iterable[Tuple[Tuple[str, str, i
             An iterable of (group_key, group DataFrame) pairs representing potential merge targets.
         group_key (Tuple[str, str, int]):
             The key of the current group (time_cluster, cluster_context, group_sub_index).
+        group:
+            Group to be merged
+        possible_boxes_numbers:
+            List of numbers of photo boxes allowed per spread in at least one layout.
 
     Returns:
         List[pd.DataFrame]:
             A list of DataFrames representing groups that are valid merge candidates,
             excluding the one matching `group_key`.
     """
-    return [m_group for m_key, m_group in merge_target_groups if m_key != group_key]
+    return [
+        m_group for m_key, m_group in merge_target_groups
+        if (
+                m_key != group_key
+                and (len(group) + len(m_group) < 12 or len(group) + len(m_group) in possible_boxes_numbers)
+                and count_contexts(pd.concat([group, m_group])) <= CONFIGS['merge_limit_times']
+        )
+    ]
 
 
 def _get_merge_candidates(
@@ -314,7 +333,7 @@ def _get_merge_candidates(
     for group_key, group in merge_groups:
         merge_targets = _filter_merge_targets(targets_df, group, group_key)
         merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-        main_groups = _get_main_groups(merge_target_groups, group_key, *args, **kwargs)
+        main_groups = _get_main_groups(merge_target_groups, group_key, group, *args, **kwargs)
         selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
                                                                                  general_times_list,
                                                                                  max_images_per_spread=CONFIGS['max_imges_per_spread'])
@@ -458,8 +477,7 @@ def _update_merged_photos_bridegroom(photos_df: pd.DataFrame, to_merge_group: pd
     new_sub_index = photos_df['group_sub_index'].max() + 1
     for row_index in merged_group.index:
         photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
-        photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + \
-                                                    selected_cluster['groups_merged'].iloc[0]
+        photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
         photos_df.loc[row_index, 'group_size'] = len(merged_group)
         photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
         photos_df.loc[row_index, 'merge_allowed'] = False
@@ -498,10 +516,9 @@ def _update_merged_photos_other(photos_df: pd.DataFrame, to_merge_group: pd.Data
     for row_index in merged_group.index:
         bigger_group = to_merge_group if len(to_merge_group) > len(selected_cluster) else selected_cluster
         photos_df.loc[row_index, 'cluster_context'] = bigger_group['cluster_context'].iloc[0]
-        photos_df.loc[row_index, 'groups_merged'] = to_merge_group['groups_merged'].iloc[0] + \
-                                                    selected_cluster['groups_merged'].iloc[0]
+        photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
         photos_df.loc[row_index, 'group_size'] = len(merged_group)
-        photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
+        photos_df.loc[row_index, 'group_sub_index'] = bigger_group['group_sub_index'].iloc[0]
         if photos_df.loc[row_index, 'groups_merged'] >= CONFIGS['merge_limit_times']:
             photos_df.loc[row_index, 'merge_allowed'] = False
 
