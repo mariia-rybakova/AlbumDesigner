@@ -778,6 +778,8 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                                     "photo" : None})
                     counter_image_id += 1
                 counter_comp_id += 1
+                if logger is not None:
+                    logger.debug(f'placementImg length {len(result_dict["placementsImg"])}')
 
     logger.info(f"Added Album any page")
     # adding the last page
@@ -828,4 +830,8 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
         'error': message.error,
         'composition': result_dict
     }
+
+    if logger is not None:
+        logger.debug(f'final_result placementImg length {len(final_result["composition"]["placementsImg"])}')
+
     return final_result
