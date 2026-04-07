@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 import warnings
 import base64
 import gzip
@@ -356,7 +357,7 @@ class ProcessStage(Stage):
                 final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, message.content.get('album_ar',
                                                                                                                    {'anyPage':2})['anyPage'],self.logger)
 
-                message.album_doc = final_response
+                message.album_doc = copy.deepcopy(final_response)
                 processing_time = datetime.now() - start
 
                 self.logger.debug('Lay-outing time: {}.For Processed album id: {}'.format(processing_time,
