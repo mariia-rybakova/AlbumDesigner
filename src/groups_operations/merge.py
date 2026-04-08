@@ -589,13 +589,39 @@ update_with_merges_other = lambda *args, **kwargs: _update_with_merges(_get_merg
                                                                         _update_merged_photos_other, *args, **kwargs)
 
 
+def _update_merged_photos_singleton(photos_df: pd.DataFrame, selected_cluster: pd.DataFrame, merged_group: pd.DataFrame):
+    for row_index in merged_group.index:
+        photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
+        photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
+        photos_df.loc[row_index, 'group_size'] = len(merged_group)
+        photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
+        photos_df.loc[row_index, 'merge_allowed'] = False
+
+
+def _get_main_groups_singleton(all_groups: Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]],
+                               group_key: Tuple[str, str, int], group: pd.DataFrame,
+                               possible_boxes_numbers: List[int]):
+    general_times_list = []
+    candidate_groups = []
+    for m_key, m_group in all_groups:
+        general_times_list.extend(m_group['general_time'].values.tolist())
+        if m_key == group_key:
+            continue
+        combined_size = len(group) + len(m_group)
+        if combined_size < 12 or combined_size in possible_boxes_numbers:
+            candidate_groups.append(m_group)
+
+    general_times_list = sorted(general_times_list)
+    return candidate_groups, general_times_list
+
+
 def force_merge_portrait_singleton(
         photos_df: pd.DataFrame,
         singleton_key: Tuple[str, str, int],
         singleton_group: pd.DataFrame,
         possible_boxes_numbers: List[int],
         logger
-) -> bool:
+    ) -> bool:
     """
     Force-merge a portrait singleton group into the closest available group.
 
@@ -616,17 +642,7 @@ def force_merge_portrait_singleton(
     all_groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
 
     # Build general_times_list and collect candidate target groups
-    general_times_list = []
-    candidate_groups = []
-    for m_key, m_group in all_groups:
-        general_times_list.extend(m_group['general_time'].values.tolist())
-        if m_key == singleton_key:
-            continue
-        combined_size = len(singleton_group) + len(m_group)
-        if combined_size < 12 or combined_size in possible_boxes_numbers:
-            candidate_groups.append(m_group)
-
-    general_times_list = sorted(general_times_list)
+    candidate_groups, general_times_list = _get_main_groups_singleton(all_groups, singleton_key, singleton_group, possible_boxes_numbers)
 
     if not candidate_groups:
         return False
@@ -641,12 +657,7 @@ def force_merge_portrait_singleton(
 
     # Apply metadata updates (same pattern as _update_merged_photos_other)
     merged_group = pd.concat([singleton_group, selected_cluster])
-    for row_index in merged_group.index:
-        photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
-        photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
-        photos_df.loc[row_index, 'group_size'] = len(merged_group)
-        photos_df.loc[row_index, 'group_sub_index'] = selected_cluster['group_sub_index'].iloc[0]
-        photos_df.loc[row_index, 'merge_allowed'] = False
+    _update_merged_photos_singleton(photos_df, selected_cluster, merged_group)
 
     return True
 
