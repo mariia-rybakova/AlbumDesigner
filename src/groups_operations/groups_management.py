@@ -164,9 +164,9 @@ def _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df,
     return False
 
 
-def _resolve_portrait_singletons(photos_df, resources, manual_selection, logger, all_gallery_df=None):
+def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gallery_df=None):
     """
-    Find and resolve all portrait-orientation singleton groups remaining after the merge pipeline.
+    Find and resolve all singleton groups (size 1) remaining after the merge pipeline.
 
     For manual selection: force-merge into the closest timeline group.
     For non-manual selection: try adding an unused photo first, fall back to force-merge.
@@ -184,23 +184,30 @@ def _resolve_portrait_singletons(photos_df, resources, manual_selection, logger,
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     possible_boxes_numbers = list(resources.layouts_df['number of boxes'].unique())
 
-    # Collect portrait singletons sorted by general_time for deterministic order
-    portrait_singletons = []
-    for group_key, group in groups:
-        if len(group) == 1 and group['image_as'].iloc[0] < 1:
-            portrait_singletons.append((group_key, group))
+    group_sizes = {k: len(g) for k, g in groups}
+    logger.info(f"_resolve_singletons called. Groups: {group_sizes}")
 
-    if not portrait_singletons:
+    # Re-create groupby since the previous one was consumed by iteration
+    groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
+
+    # Collect all singleton groups sorted by general_time for deterministic order
+    singletons = []
+    for group_key, group in groups:
+        if len(group) == 1:
+            singletons.append((group_key, group))
+
+    if not singletons:
+        logger.info("No singletons found to resolve")
         return photos_df
 
-    portrait_singletons.sort(key=lambda x: x[1]['general_time'].iloc[0])
-    logger.info(f"Found {len(portrait_singletons)} portrait singleton group(s) to resolve")
+    singletons.sort(key=lambda x: x[1]['general_time'].iloc[0])
+    logger.info(f"Found {len(singletons)} singleton group(s) to resolve: {[s[0] for s in singletons]}")
 
-    for group_key, singleton_group in portrait_singletons:
+    for group_key, singleton_group in singletons:
         # Non-manual: try adding an unused photo first
         if not manual_selection and all_gallery_df is not None:
             if _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df, resources, logger):
-                logger.info(f"Resolved portrait singleton {group_key} by adding unused photo")
+                logger.info(f"Resolved singleton {group_key} by adding unused photo")
                 continue
 
         # Force-merge into closest timeline group
@@ -208,9 +215,9 @@ def _resolve_portrait_singletons(photos_df, resources, manual_selection, logger,
             photos_df, group_key, singleton_group, possible_boxes_numbers, logger
         )
         if merged:
-            logger.info(f"Resolved portrait singleton {group_key} by force-merge")
+            logger.info(f"Resolved singleton {group_key} by force-merge")
         else:
-            logger.warning(f"Could not resolve portrait singleton {group_key}. No valid merge target.")
+            logger.warning(f"Could not resolve singleton {group_key}. No valid merge target.")
 
     return photos_df
 
@@ -268,7 +275,7 @@ def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, m
             iteration += 1
 
         # Resolve portrait singletons that survived merging
-        photos_df = _resolve_portrait_singletons(
+        photos_df = _resolve_singletons(
             photos_df, resources, manual_selection, logger, all_gallery_df
         )
     except Exception as ex:

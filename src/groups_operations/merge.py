@@ -598,6 +598,9 @@ def force_merge_portrait_singleton(
         general_times_list.extend(m_group['general_time'].values.tolist())
         if m_key == singleton_key:
             continue
+        # Restrict to same time_cluster to avoid creating phantom groups
+        if m_key[0] != singleton_key[0]:
+            continue
         combined_size = len(singleton_group) + len(m_group)
         if combined_size < 12 or combined_size in possible_boxes_numbers:
             candidate_groups.append(m_group)
@@ -605,7 +608,10 @@ def force_merge_portrait_singleton(
     general_times_list = sorted(general_times_list)
 
     if not candidate_groups:
+        logger.warning(f"force_merge_portrait_singleton: no candidates for {singleton_key}")
         return False
+
+    logger.info(f"force_merge_portrait_singleton: {len(candidate_groups)} candidates for {singleton_key}")
 
     selected_cluster, _ = merge_illegal_group_by_time(
         candidate_groups, singleton_group, general_times_list,
@@ -613,6 +619,7 @@ def force_merge_portrait_singleton(
     )
 
     if selected_cluster is None:
+        logger.warning(f"force_merge_portrait_singleton: merge_illegal_group_by_time returned None for {singleton_key}")
         return False
 
     # Apply metadata updates (same pattern as _update_merged_photos_other)
