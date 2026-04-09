@@ -140,14 +140,16 @@ def process_wedding_merging(photos_df, resources: AlbumDesignResources, logger=N
 # Portrait singleton resolution
 def _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df, resources, logger):
     """
-    Attempt to add an unused photo from the full gallery to grow a portrait singleton to size 2.
+    Attempt to add an unused photo from the full gallery to grow a singleton to size 2.
 
-    Photo selection logic is TBD. Currently returns False so the merge fallback is always used.
+    Selection priority:
+      1. Same time_cluster + same cluster_context, closest by general_time
+      2. Same time_cluster + any class, closest by general_time
 
     Args:
-        photos_df: The current album DataFrame.
-        group_key: Key of the singleton group.
-        singleton_group: DataFrame containing the single portrait photo.
+        photos_df: The current album DataFrame (modified in-place).
+        group_key: Key of the singleton group (time_cluster, cluster_context, group_sub_index).
+        singleton_group: DataFrame containing the single photo.
         all_gallery_df: Full gallery DataFrame (before AI selection).
         resources: AlbumDesignResources instance.
         logger: Logger instance.
@@ -160,8 +162,50 @@ def _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df,
     if unused_df.empty:
         return False
 
-    # TODO: Implement photo selection logic (prefer same time_cluster, cluster_context, closest general_time)
-    return False
+    if 'time_cluster' not in unused_df.columns:
+        return False
+
+    singleton_time = singleton_group['general_time'].iloc[0]
+    singleton_time_cluster = group_key[0]
+    singleton_context = group_key[1]
+
+    # Filter to same time_cluster
+    same_cluster = unused_df[unused_df['time_cluster'] == singleton_time_cluster]
+    if same_cluster.empty:
+        return False
+
+    # Try same class first, fallback to any class in same time_cluster
+    same_class = same_cluster[same_cluster['cluster_context'] == singleton_context]
+    pool = same_class if not same_class.empty else same_cluster
+
+    # Pick closest by general_time
+    candidate_idx = (pool['general_time'] - singleton_time).abs().idxmin()
+    candidate = pool.loc[candidate_idx]
+
+    # Build new row with all columns photos_df expects
+    new_row = {}
+    for col in photos_df.columns:
+        if col in candidate.index:
+            new_row[col] = candidate[col]
+
+    # Override group-specific metadata to join the singleton's group
+    new_row['time_cluster'] = singleton_time_cluster
+    new_row['cluster_context'] = singleton_context
+    new_row['group_sub_index'] = group_key[2]
+    new_row['group_size'] = 2
+    new_row['merge_allowed'] = False
+    new_row['original_context'] = candidate.get('cluster_context', singleton_context)
+    new_row['groups_merged'] = 1
+    if 'group_spreads' in photos_df.columns:
+        new_row['group_spreads'] = 1
+
+    # Add row in-place and update singleton's group_size
+    new_index = photos_df.index.max() + 1
+    photos_df.loc[new_index] = new_row
+    photos_df.loc[singleton_group.index, 'group_size'] = 2
+
+    logger.info(f"Added unused photo {candidate.get('image_id', '?')} to singleton {group_key}")
+    return True
 
 
 def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gallery_df=None):
