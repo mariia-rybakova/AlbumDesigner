@@ -137,7 +137,9 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         if len(first_page_ids) == 0 or len(last_page_ids) == 0:
             logger.warning("No ideal cover images found, falling back to highest ranked images.")
             # Sort all images by image_order descending (higher value = better image)
-            if bride_groom_df.empty:
+            if bride_groom_df is None:
+                sorted_df = data_df.sort_values("image_order", ascending=False)
+            elif bride_groom_df.empty:
                 sorted_df = data_df.sort_values("image_order", ascending=False)
             else:
                 sorted_df = bride_groom_df.sort_values("image_order", ascending=False)
