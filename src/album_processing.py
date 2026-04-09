@@ -173,7 +173,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
 
     max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
-    min_total_spreads = min(max_total_spreads, designs_info['minPages']+4)
+    min_total_spreads = min(max_total_spreads, designs_info['minPages']+6)
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
                                     min_total_spreads=min_total_spreads,logger = logger)
 
