@@ -252,15 +252,57 @@ def merge_time_clusters_by_context(sorted_df, context_clusters_list, merge_all=T
         return sorted_df
 
 
+def _has_burst_over(times, max_burst_length):
+    """Check if a time sequence contains any <1s burst longer than max_burst_length."""
+    i = 0
+    while i < len(times):
+        j = i
+        while j + 1 < len(times) and times[j + 1] - times[j] < 1:
+            j += 1
+        if j - i + 1 > max_burst_length:
+            return True
+        i = j + 1
+    return False
+
+
 def check_time_correctness(time_list):
     if len(time_list) <= 5:
         return True
     time_list.sort()
     if time_list[-1] - time_list[0] <= 1800:
         return False
-    for i in range(len(time_list) - 5):
-        if time_list[i + 5] - time_list[i] <= 1:
+
+    # Identify burst sequences (maximal runs of consecutive photos <1s apart)
+    i = 0
+    while i < len(time_list):
+        j = i
+        while j + 1 < len(time_list) and time_list[j + 1] - time_list[j] < 1:
+            j += 1
+        burst_length = j - i + 1
+
+        if burst_length > 20:
             return False
+
+        if burst_length > 5:
+            # Must be followed by 5x burst_length valid photos
+            required_follow = 5 * burst_length
+            follow_start = j + 1
+            follow_end = follow_start + required_follow
+
+            if follow_end > len(time_list):
+                return False
+
+            # Following sequence must have no <1s burst > 5
+            follow_times = time_list[follow_start:follow_end]
+            if _has_burst_over(follow_times, 5):
+                return False
+
+            # Burst and following sequence must not be on separate dates (>24h apart)
+            if time_list[follow_start] - time_list[j] > 86400:
+                return False
+
+        i = j + 1
+
     return True
 
 
