@@ -3,6 +3,7 @@ import math
 from typing import Dict, Tuple, Optional
 from utils.configs import CONFIGS
 
+
 wedding_lookup_table = {
     'bride and groom': (4, 0.5),
     'bride': (4, 0.5),
@@ -133,90 +134,149 @@ class LookUpTable:
                 self._table[key] = (min(closest_size,CONFIGS['max_imges_per_spread']), value[1])
 
 
-    def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None,logger=None):
-        # First pass: Calculate initial spreads per group and total spreads
-        total_spreads = 0
+    def _compute_initial_spreads(self, group2images: Dict) -> Dict:
+        """Compute spread count per group based on current LUT values.
+
+        For each group, reads spread parameters via get_current_spread_parameters
+        (which may apply a max_group_spread cap) and computes ceil(number_images / param).
+        Enforces at least 1 spread and at most 24 photos per spread.
+        """
         spreads_per_group = {}
 
         for key, number_images in group2images.items():
             # Get spread parameters for the current group
             spread_params = self.get_current_spread_parameters(key, number_images)
-            spreads = math.ceil(number_images / spread_params[0])  # Calculate required spreads for this group
+            # Calculate required spreads for this group
+            spreads = math.ceil(number_images / spread_params[0])
             # Enforce minimum spreads so photos per spread stays <= 24
             min_spreads = math.ceil(number_images / 24)
             spreads = max(spreads, min_spreads, 1)
-
-            # Store the calculated spreads and add to the total
             spreads_per_group[key] = spreads
-            total_spreads += spreads
+        return spreads_per_group
 
-        # Reduction and expansion are mutually exclusive to avoid min/max contradiction
-        expansion_applied = False
-        if total_spreads > max_total_spreads:
-            # Reduce largest groups one at a time until within max
-            while total_spreads > max_total_spreads:
-                best_key = None
-                best_spreads = 0
-                for key, current_spreads in spreads_per_group.items():
-                    min_spreads = max(1, math.ceil(group2images[key] / 24))
-                    if current_spreads > min_spreads and current_spreads > best_spreads:
-                        best_key = key
-                        best_spreads = current_spreads
+    @staticmethod
+    def _reduce_spreads(spreads_per_group: Dict, group2images: Dict, max_total_spreads: int) -> Dict:
+        """Reduce spreads one at a time until total <= max_total_spreads.
 
-                if best_key is None:
-                    break  # Cannot reduce further without exceeding 24 photos per spread
+        Each iteration picks the group with the most spreads that can still
+        be reduced (without exceeding 24 photos per spread). Modifies
+        spreads_per_group in place.
+        """
+        total_spreads = sum(spreads_per_group.values())
+        while total_spreads > max_total_spreads:
+            # Find the group with the most spreads that can still be reduced
+            best_key = None
+            best_spreads = 0
+            for key, current_spreads in spreads_per_group.items():
+                min_spreads = max(1, math.ceil(group2images[key] / 24))
+                if current_spreads > min_spreads and current_spreads > best_spreads:
+                    best_key = key
+                    best_spreads = current_spreads
 
-                spreads_per_group[best_key] -= 1
-                total_spreads -= 1
+            if best_key is None:
+                break  # Cannot reduce further without exceeding 24 photos per spread
 
-        elif min_total_spreads is not None and total_spreads < min_total_spreads:
-            # Expand groups with highest photos-per-spread ratio until meeting min
-            expansion_applied = True
-            if logger is not None:
-                logger.debug(f'adjusting LUT, total spreads: {total_spreads}, min_total_spreads: {min_total_spreads} ')
-            while total_spreads < min_total_spreads:
-                best_key = None
-                best_ratio = 0
-                for key, current_spreads in spreads_per_group.items():
-                    # LUT value floor is 1.5 (value of 1 is unrealistic, gets merged)
-                    max_spreads = math.floor(group2images[key] / 1.5)
-                    if current_spreads >= max_spreads:
-                        continue
-                    ratio = group2images[key] / current_spreads
-                    if ratio > best_ratio:
-                        best_key = key
-                        best_ratio = ratio
+            spreads_per_group[best_key] -= 1
+            total_spreads -= 1
 
-                if best_key is None:
-                    break  # All groups at minimum photos-per-spread floor
+        return spreads_per_group
 
-                spreads_per_group[best_key] += 1
-                total_spreads += 1
-            if logger is not None:
-                logger.debug(f'adjusted LUT, total spreads: {total_spreads}, min_total_spreads: {min_total_spreads} ')
+    @staticmethod
+    def _expand_with_floor(spreads_per_group: Dict, group2images: Dict,
+                           min_total_spreads: int, min_photos_per_spread: int) -> Tuple[Dict, int]:
+        """Expand spreads one at a time until total >= min_total_spreads.
 
-        # Update the lookup table with new values
-        if expansion_applied:
-            # Expansion path: aggregate by content_key (max across shared keys), allow decrease
-            content_key_values = {}
-            for key, target_spreads in spreads_per_group.items():
-                content_key = self._get_content_key(key)
-                value_to_change = min(24, math.ceil(group2images[key] / target_spreads))
-                if content_key not in content_key_values:
-                    content_key_values[content_key] = value_to_change
-                else:
-                    content_key_values[content_key] = max(content_key_values[content_key], value_to_change)
-            for content_key, new_value in content_key_values.items():
-                _, extra_value = self._table.get(content_key, (10, 1.5))
+        Each iteration picks the group with the highest photos-per-spread ratio
+        that can still grow without going below min_photos_per_spread per spread.
+        Modifies spreads_per_group in place. Returns (spreads_per_group, total).
+        """
+        total_spreads = sum(spreads_per_group.values())
+        while total_spreads < min_total_spreads:
+            # Find the group with the highest photos-per-spread ratio that can still expand
+            best_key = None
+            best_ratio = 0
+            for key, current_spreads in spreads_per_group.items():
+                num_images_in_group = group2images[key]
+                max_spreads = max(1, num_images_in_group // min_photos_per_spread)
+                if current_spreads >= max_spreads:
+                    continue
+                ratio = num_images_in_group / current_spreads
+                if ratio > best_ratio:
+                    best_key = key
+                    best_ratio = ratio
+
+            if best_key is None:
+                break
+
+            spreads_per_group[best_key] += 1
+            total_spreads += 1
+
+        return spreads_per_group, total_spreads
+
+    @staticmethod
+    def _expand_spreads(spreads_per_group: Dict, group2images: Dict, min_total_spreads: int) -> Dict:
+        """Expand spreads in two phases to reach min_total_spreads.
+
+        Phase 1: expand keeping >= 2 photos per spread.
+        Phase 2 (if still short): allow 1 photo per spread as last resort.
+        Modifies spreads_per_group in place.
+        """
+        spreads_per_group, total_spreads = LookUpTable._expand_with_floor(
+            spreads_per_group, group2images, min_total_spreads, min_photos_per_spread=2)
+
+        if total_spreads < min_total_spreads:
+            spreads_per_group, total_spreads = LookUpTable._expand_with_floor(
+                spreads_per_group, group2images, min_total_spreads, min_photos_per_spread=1)
+        return spreads_per_group
+
+    def _apply_table_reduction(self, spreads_per_group: Dict, group2images: Dict) -> None:
+        """Write back LUT after reduction: only increase values (to produce fewer spreads).
+
+        For each group, computes ceil(n_images / target_spreads) and writes it
+        to the LUT only if it exceeds the current value.
+        """
+        for key, target_spreads in spreads_per_group.items():
+            content_key = self._get_content_key(key)
+            current_value, extra_value = self._table.get(content_key, (10, 1.5))
+            new_value = min(24, math.ceil(group2images[key] / target_spreads))
+            if new_value > current_value:
                 self._table[content_key] = (new_value, extra_value)
-        else:
-            # Reduction or no-op: original logic, only increase
-            for key, target_spreads in spreads_per_group.items():
-                content_key = self._get_content_key(key)
-                current_max_images, extra_value = self._table.get(content_key, (10, 1.5))
-                value_to_change = min(24, math.ceil(group2images[key] / target_spreads))
-                if value_to_change > current_max_images:
-                    self._table[content_key] = (value_to_change, extra_value)
+
+    def _apply_table_expansion(self, spreads_per_group: Dict,
+                               group2images: Dict) -> None:
+        """Write back LUT after expansion: only decrease values (to produce more spreads).
+
+        For each group, computes int(n_images / target_spreads) and writes it
+        to the LUT only if it is below the current value.
+        """
+        for key, target_spreads in spreads_per_group.items():
+            content_key = self._get_content_key(key)
+            current_value, extra_value = self._table.get(content_key, (10, 1.5))
+            new_value = max(1, int(group2images[key] / target_spreads))
+            if new_value < current_value:
+                self._table[content_key] = (new_value, extra_value)
+
+    def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None, logger=None):
+        """Adjust LUT values so total spreads across all groups stays within [min, max].
+
+        1. Computes initial spread count per group from current LUT.
+        2. If total > max: reduces spreads (largest groups first), then increases LUT values.
+        3. If total < min: expands spreads (most crowded groups first), then decreases LUT values.
+        4. If within range: no changes to LUT.
+        """
+        spreads_per_group = self._compute_initial_spreads(group2images)
+        total_spreads = sum(spreads_per_group.values())
+
+        if total_spreads > max_total_spreads:
+            spreads_per_group = self._reduce_spreads(spreads_per_group, group2images, max_total_spreads)
+            self._apply_table_reduction(spreads_per_group, group2images)
+        elif min_total_spreads is not None and total_spreads < min_total_spreads:
+            spreads_per_group = self._expand_spreads(spreads_per_group, group2images, min_total_spreads)
+            self._apply_table_expansion(spreads_per_group, group2images)
+            if logger:
+                logger.debug(f'Expanded LUT: {total_spreads} -> {sum(spreads_per_group.values())} (target {min_total_spreads})')
+        # else:
+        #     self._apply_table_reduction(spreads_per_group, group2images)
 
 
 class WeddingLookUpTable(LookUpTable):
