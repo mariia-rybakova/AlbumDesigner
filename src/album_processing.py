@@ -188,8 +188,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     logger.info('Detected groups: {}'.format(group2images))
 
     start_time = time.time()
+    updated_photos_df = df
     if is_wedding:
-        updated_groups, group2images = process_wedding_illegal_groups(df, resources, manual_selection, logger,
+        updated_groups, group2images, updated_photos_df = process_wedding_illegal_groups(df, resources, manual_selection, logger,
                                                                          all_gallery_df=all_gallery_df)
         resources.look_up_table = look_up_table
         logger.info(f'Illegal groups processing time: {time.time() - start_time:.2f} seconds')
@@ -218,9 +219,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params, logger,
     logger.info(f'General groups processing time: {time.time() - start_time:.2f} seconds')
 
     if is_wedding:
-        return sort_groups_by_time(result_list, logger)
+        return sort_groups_by_time(result_list, logger), updated_photos_df
     else:
-        return result_list
+        return result_list, updated_photos_df
 
 
 

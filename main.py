@@ -317,7 +317,7 @@ class ProcessStage(Stage):
                 manual_selection = message.content.get('manual_selection', False)
 
                 all_gallery_df = message.content.get('gallery_all_photos_info', None)
-                album_result = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
+                album_result, df = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
                                                 logger=self.logger,density=density, manual_selection=manual_selection,
                                                 all_gallery_df=all_gallery_df)
 
@@ -333,7 +333,23 @@ class ProcessStage(Stage):
                     self.logger.error('cropping process not completed 2')
                     raise Exception('cropping process not completed.')
 
-                df = df.merge(cropped_df, how='inner', on='image_id')
+                df = df.merge(cropped_df, how='left', on='image_id')
+
+                # Fill missing crop values (photos added by singleton resolution
+                # that weren't in the original cropping batch) with centered crop
+                crop_missing = df['cropped_x'].isna()
+                if crop_missing.any():
+                    ar = df.loc[crop_missing, 'image_as'].astype(float)
+                    landscape = ar > 1
+                    portrait = ar <= 1
+                    df.loc[crop_missing & landscape, 'cropped_x'] = ((1 - 1 / ar[landscape]) / 2).values
+                    df.loc[crop_missing & landscape, 'cropped_y'] = 0.0
+                    df.loc[crop_missing & landscape, 'cropped_w'] = (1 / ar[landscape]).values
+                    df.loc[crop_missing & landscape, 'cropped_h'] = 1.0
+                    df.loc[crop_missing & portrait, 'cropped_x'] = 0.0
+                    df.loc[crop_missing & portrait, 'cropped_y'] = ((1 - ar[portrait]) / 2).values
+                    df.loc[crop_missing & portrait, 'cropped_w'] = 1.0
+                    df.loc[crop_missing & portrait, 'cropped_h'] = ar[portrait].values
 
                 # for key, value in first_last_pages_data_dict.items():
                 #     if first_last_pages_data_dict[key]['last_images_df'] is not None or first_last_pages_data_dict[key][

@@ -265,20 +265,21 @@ def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gall
             continue
         singleton_group = current_group  # use fresh reference
 
-        # Non-manual: try adding an unused photo first
-        if not manual_selection and all_gallery_df is not None:
-            if _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df, resources, logger):
-                logger.info(f"Resolved singleton {group_key} by adding unused photo")
-                continue
-
-        # Force-merge into closest timeline group
+        # Prefer force-merge (keeps original selection intact) over adding an unused photo
         merged = force_merge_portrait_singleton(
             photos_df, group_key, singleton_group, possible_boxes_numbers, logger
         )
         if merged:
             logger.info(f"Resolved singleton {group_key} by force-merge")
-        else:
-            logger.warning(f"Could not resolve singleton {group_key}. No valid merge target.")
+            continue
+
+        # Fallback for non-manual: add an unused photo from the gallery
+        if not manual_selection and all_gallery_df is not None:
+            if _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df, resources, logger):
+                logger.info(f"Resolved singleton {group_key} by adding unused photo")
+                continue
+
+        logger.warning(f"Could not resolve singleton {group_key}. No valid merge target.")
 
     return photos_df
 
@@ -344,10 +345,10 @@ def process_wedding_illegal_groups(photos_df, resources: AlbumDesignResources, m
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
         logger.error(f"Groups management error: {str(ex)}. Exception in function: {func}, line {lineno}, file {filename}")
-        return None, None
+        return None, None, None
 
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     group2images = get_images_per_groups(groups)
     logger.info(f"Final number of groups for the album: {len(groups)}")
     logger.info(f"Final groups after illegal handling: {group2images}")
-    return groups, group2images
+    return groups, group2images, photos_df
