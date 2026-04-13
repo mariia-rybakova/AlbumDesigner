@@ -198,15 +198,45 @@ def build_time_clusters(selected_df, all_photos_df=None):
 
 def generate_time_clusters(message, sorted_df, logger):
 
+    all_gallery_df = message.content.get('gallery_all_photos_info', None)
 
     if 'scene_index' in sorted_df.columns and sorted_df['scene_index'].nunique() > 4:
         sorted_df['time_cluster'] = sorted_df['scene_index']
+        # Propagate time_cluster to all_gallery_df so _try_add_unused_photo
+        # can filter unused photos by time_cluster (build_time_clusters does
+        # this internally for the DBSCAN path, but scene_index skips it).
+        if all_gallery_df is not None:
+            _propagate_time_clusters_to_gallery(sorted_df, all_gallery_df)
     else:
-        sorted_df['time_cluster'] = build_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
+        sorted_df['time_cluster'] = build_time_clusters(sorted_df, all_gallery_df)
     if message.content['is_wedding']:
         sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], True, logger)
 
     return sorted_df
+
+
+def _propagate_time_clusters_to_gallery(selected_df, all_gallery_df):
+    """Assign time_cluster to all_gallery_df based on selected_df.
+
+    Photos present in selected_df get the exact cluster.  Remaining photos
+    are assigned the cluster of the nearest selected photo by general_time.
+    """
+    # Direct mapping for selected photos
+    mapping = selected_df[['image_id', 'time_cluster']].drop_duplicates('image_id')
+    merged = all_gallery_df[['image_id']].merge(mapping, on='image_id', how='left')
+    all_gallery_df['time_cluster'] = merged['time_cluster'].values
+
+    # Assign nearest cluster for unmatched photos
+    unmatched_mask = all_gallery_df['time_cluster'].isna()
+    if not unmatched_mask.any():
+        return
+
+    selected_times = selected_df['general_time'].values
+    selected_clusters = selected_df['time_cluster'].values
+    unmatched_times = all_gallery_df.loc[unmatched_mask, 'general_time'].values
+
+    nearest_idx = np.abs(unmatched_times[:, None] - selected_times[None, :]).argmin(axis=1)
+    all_gallery_df.loc[unmatched_mask, 'time_cluster'] = selected_clusters[nearest_idx]
 
 
 def merge_time_clusters_by_context(sorted_df, context_clusters_list, merge_all=True, logger=None):

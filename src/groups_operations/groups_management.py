@@ -248,6 +248,23 @@ def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gall
     logger.info(f"Found {len(singletons)} singleton group(s) to resolve: {[s[0] for s in singletons]}")
 
     for group_key, singleton_group in singletons:
+        # Re-check: a prior merge in this loop may have altered this group
+        # (e.g. another singleton was force-merged INTO this one, making it size > 1,
+        #  or this photo was already moved to a different group).
+        current_mask = (
+            (photos_df['time_cluster'] == group_key[0]) &
+            (photos_df['cluster_context'] == group_key[1]) &
+            (photos_df['group_sub_index'] == group_key[2])
+        )
+        current_group = photos_df[current_mask]
+        if len(current_group) == 0:
+            logger.info(f"Singleton {group_key} already resolved by a prior merge")
+            continue
+        if len(current_group) != 1:
+            logger.info(f"Singleton {group_key} is now size {len(current_group)} after a prior merge, skipping")
+            continue
+        singleton_group = current_group  # use fresh reference
+
         # Non-manual: try adding an unused photo first
         if not manual_selection and all_gallery_df is not None:
             if _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df, resources, logger):
