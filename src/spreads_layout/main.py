@@ -6,10 +6,10 @@ import time
 import pandas as pd
 
 from src.core.models import AlbumDesignResources, Spread, GroupProcessingResult, SpreadSearchParams
-from src.core.photos import get_photos_from_db, Photo
+from src.core.photos import get_photos_from_df, Photo
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
-from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts, assign_photos_order
+from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts
 
 
 def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
@@ -56,7 +56,29 @@ def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
     return subgroups
 
 
-def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFrame, layout_id2data, spread_params: List[float], params: SpreadSearchParams, logger) -> Optional[List[GroupSingleLayout]]:
+def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFrame,
+                                      layout_id2data: Dict[int, Any], spread_params: List[float],
+                                      params: SpreadSearchParams, logger) -> Optional[List[GroupSingleLayout]]:
+    """
+    Find candidate spread layouts for a single sub-group of photos.
+
+    Runs the three-stage layout search pipeline:
+    1. Partition photos into spread-sized chunks based on spread_params.
+    2. Generate combinations of partitions with compatible layouts.
+    3. Sample, score, and filter GroupSingleLayout candidates.
+
+    Args:
+        photos: Photos in this sub-group.
+        layouts_df: DataFrame of available layout designs.
+        layout_id2data: Mapping from layout index to layout metadata.
+        spread_params: [mean, std] recommended photos per spread.
+        params: Search parameters controlling sampling limits.
+        logger: Logger instance.
+
+    Returns:
+        Sorted list of GroupSingleLayout candidates (best first), or None if
+        no valid layouts were found.
+    """
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
     photos_df = photos_df.sort_values('general_time')
 
@@ -72,7 +94,32 @@ def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFr
     return group_single_layouts
 
 
-def find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params, params: SpreadSearchParams, largest_layout_size, group_name, logger):
+def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.DataFrame,
+                                   layout_id2data: Dict[int, Any], spread_params: List[float],
+                                   params: SpreadSearchParams, largest_layout_size: int,
+                                   group_name: Tuple, logger) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout]]]]:
+    """
+    Find spread layouts for an entire group, with fallback attempts.
+
+    Tries progressively relaxed spread parameters (scaling mean down by
+    1.0, 0.8, 0.6, 0.4, 0.2) and a final attempt with a dummy photo appended.
+    For each attempt, splits the group into sub-groups if needed and runs
+    find_spreads_layouts_for_subgroup on each. Returns on the first successful attempt.
+
+    Args:
+        group_photos: All photos in this group, already sorted.
+        layouts_df: DataFrame of available layout designs.
+        layout_id2data: Mapping from layout index to layout metadata.
+        spread_params: [mean, std] recommended photos per spread.
+        params: Search parameters controlling sampling limits.
+        largest_layout_size: Maximum number of boxes in any available layout.
+        group_name: Tuple identifying the group (used for logging).
+        logger: Logger instance.
+
+    Returns:
+        List of (sub_group_photos, layout_candidates) tuples on success, or None
+        if all attempts failed.
+    """
     dummy_photo = Photo(id=-1, ar=1.5, color=True, rank=1000000, photo_class='None', cluster_label=1,
                         general_time=1000000, original_context='None')
 
@@ -104,22 +151,129 @@ def find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spr
     return None
 
 
-def select_best_layout(subgroup_layouts, subgroup_photos, layout_id2data, design_box_id2data):
+def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], subgroup_photos: List[Photo],
+                                    layout_id2data: Dict[int, Any],
+                                    design_box_id2data: Dict[Tuple[int, int], Any]) -> Optional[GroupSingleLayout]:
+    """
+    Select the top-ranked layout for a sub-group and resolve photo assignments.
+
+    Takes the first (best-scored) layout from the sorted candidates, resolves
+    photo indices to Photo objects, and assigns photos to layout boxes by
+    orientation and area.
+
+    Args:
+        subgroup_layouts: Sorted list of GroupSingleLayout candidates (best first).
+        subgroup_photos: Photos in this sub-group.
+        layout_id2data: Mapping from layout index to layout metadata.
+        design_box_id2data: Mapping from (layout_id, box_id) to box properties.
+
+    Returns:
+        The best GroupSingleLayout with photos resolved and ordered, or None
+        if subgroup_layouts is empty.
+    """
     if not subgroup_layouts:
         return None
 
     best_layout = subgroup_layouts[0]
+    best_layout.resolve_and_order(subgroup_photos, layout_id2data, design_box_id2data, merge_pages=False)
 
-    # Retrieve Photo objects from photo indices
-    for spread in best_layout.spreads_layouts:
-        spread.resolve_photos(subgroup_photos)
-
-    best_layout = assign_photos_order(best_layout, layout_id2data, design_box_id2data, merge_pages=False)
     return best_layout
 
 
-def process_group(group_name: Tuple, group_images_df, spread_params: List[float],
-                  resources: AlbumDesignResources, is_wedding: bool, params: SpreadSearchParams, logger) -> Optional[Dict[str, GroupProcessingResult]]:
+def structure_layout(best_layout: GroupSingleLayout, group_name: Tuple,
+                     group_idx: int, is_wedding: bool = True) -> Tuple[str, GroupProcessingResult]:
+    """
+    Convert a GroupSingleLayout into the output GroupProcessingResult format.
+
+    Builds a list of Spread objects from the layout's resolved photo assignments
+    and generates a unique group ID string from the group name and sub-group index.
+
+    Args:
+        best_layout: The selected layout with photos resolved and ordered.
+        group_name: Tuple identifying the group.
+        group_idx: Sub-group index (for groups that were split).
+        is_wedding: Whether this is a wedding album (affects group ID format).
+
+    Returns:
+        Tuple of (group_id_str, GroupProcessingResult).
+    """
+    structured_spreads = [
+        Spread(layout_id=s.layout_idx, left_photos=s.left_page_photos, right_photos=s.right_page_photos)
+        for s in best_layout.spreads_layouts
+    ]
+
+    group_id_str = str(group_name[0]) + '_' + group_name[1] if is_wedding else str(group_name[0])
+    group_id_str += '*' + str(group_idx)
+
+    structured_group = GroupProcessingResult(group_name=group_id_str, spreads=structured_spreads,
+                                                               score=best_layout.score)
+
+    return group_id_str, structured_group
+
+
+def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[List[Photo], List[GroupSingleLayout]]]],
+                                 layout_id2data: Dict[int, Any],
+                                 design_box_id2data: Dict[Tuple[int, int], Any],
+                                 group_name: Tuple, is_wedding: bool) -> Dict[str, GroupProcessingResult]:
+    """
+    Select the best layout for each sub-group and structure the results.
+
+    Iterates over sub-groups, picks the best layout for each via
+    select_best_layout_for_subgroup, converts it to the output format via
+    structure_layout, and collects all results into a dict keyed by group ID.
+
+    Args:
+        final_groups_and_layouts: List of (sub_group_photos, layout_candidates)
+            tuples from find_spreads_layouts_for_group, or None.
+        layout_id2data: Mapping from layout index to layout metadata.
+        design_box_id2data: Mapping from (layout_id, box_id) to box properties.
+        group_name: Tuple identifying the group.
+        is_wedding: Whether this is a wedding album.
+
+    Returns:
+        Dict mapping group_id_str to GroupProcessingResult for each sub-group
+        that produced a valid layout. Empty dict if input is None or all failed.
+    """
+    local_result = {}
+    group_idx = 0
+    if final_groups_and_layouts is not None:
+        for subgroup_photos, subgroup_layouts in final_groups_and_layouts:
+            best_layout = select_best_layout_for_subgroup(subgroup_layouts, subgroup_photos, layout_id2data, design_box_id2data)
+            if best_layout is None:
+                continue
+
+            group_id_str, structured_group = structure_layout(best_layout, group_name, group_idx, is_wedding)
+
+            local_result[group_id_str] = structured_group
+            group_idx += 1
+
+    return local_result
+
+
+def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_params: List[float],
+                  resources: AlbumDesignResources, is_wedding: bool, params: SpreadSearchParams,
+                  logger) -> Optional[Dict[str, GroupProcessingResult]]:
+    """
+    Top-level entry point: process a single photo group into album spreads.
+
+    Orchestrates the full layout pipeline for one group:
+    1. Sorts photos (by time, or by aspect ratio + time for dancing groups).
+    2. Converts the DataFrame rows into Photo objects.
+    3. Finds candidate spread layouts with fallback attempts.
+    4. Selects the best layout per sub-group and structures the output.
+
+    Args:
+        group_name: Tuple identifying the group (e.g. (cluster_idx, context)).
+        group_images_df: DataFrame of images belonging to this group.
+        spread_params: [mean, std] recommended photos per spread.
+        resources: AlbumDesignResources containing layouts_df, layout_id2data, box_id2data.
+        is_wedding: Whether this is a wedding album.
+        params: Search parameters controlling sampling limits.
+        logger: Logger instance.
+
+    Returns:
+        Dict mapping group_id_str to GroupProcessingResult, or None on error.
+    """
     layouts_df = resources.layouts_df
     layout_id2data = resources.layout_id2data
     design_box_id2data = resources.box_id2data
@@ -133,30 +287,12 @@ def process_group(group_name: Tuple, group_images_df, spread_params: List[float]
         else:
             group_images_df = group_images_df.sort_values(['image_time'])
 
-        group_photos = get_photos_from_db(group_images_df, is_wedding)
+        group_photos = get_photos_from_df(group_images_df, is_wedding)
 
-        local_result = {}
-        group_idx = 0
         final_groups_and_layouts = find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params,
                                                                   params, largest_layout_size, group_name, logger)
 
-        if final_groups_and_layouts is not None:
-            for subgroup_photos, subgroup_layouts in final_groups_and_layouts:
-                best_layout = select_best_layout(subgroup_layouts, subgroup_photos, layout_id2data, design_box_id2data)
-
-                if best_layout is None:
-                    continue
-
-                structured_spreads = [
-                    Spread(layout_id=s.layout_idx, left_photos=s.left_page_photos, right_photos=s.right_page_photos)
-                    for s in best_layout.spreads_layouts
-                ]
-
-                group_id_str = str(group_name[0]) + '_' + group_name[1] if is_wedding else str(group_name[0])
-                group_id_str += '*' + str(group_idx)
-
-                local_result[group_id_str] = GroupProcessingResult(group_name=group_id_str, spreads=structured_spreads, score=best_layout.score)
-                group_idx += 1
+        local_result = select_best_layout_for_group(final_groups_and_layouts, layout_id2data, design_box_id2data, group_name, is_wedding)
 
         collect()
         end = time.time()

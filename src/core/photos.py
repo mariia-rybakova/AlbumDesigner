@@ -34,9 +34,9 @@ def get_int_photo_id(photo_id):
     return int(photo_id)
 
 
-def get_photos_from_db(data_db, is_wedding):
+def get_photos_from_df(data_df, is_wedding):
     photos = list()
-    for index, row in data_db.iterrows():
+    for index, row in data_df.iterrows():
         image_id = row['image_id']
         class_contex = row['cluster_context'] if is_wedding else None
         cluster_label = row['cluster_label']

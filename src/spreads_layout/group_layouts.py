@@ -5,11 +5,13 @@ from dataclasses import dataclass
 from typing import List, Tuple, Set, Dict, Iterable, Callable, Any, Optional
 
 from scipy.stats import pearsonr
+import pandas as pd
 
 from src.spreads_layout.spreads.group_of_lists_of_spreads import GroupLayoutsLists, process_combination_inner
 from src.spreads_layout.spreads.spread import SingleSpreadLayout
 from src.core.photos import Photo
 from src.spreads_layout.combinations import Combination
+from src.core.models import SpreadSearchParams
 
 
 @dataclass
@@ -101,6 +103,35 @@ class GroupSingleLayout:
             score = group_layout.get_score(layout_id2data, photos)
             group_layout.update_weight(score)
 
+    def resolve_and_order(self, photos: List[Photo], layout_id2data: Dict[int, Any],
+                          design_box_id2data: Dict[Tuple[int, int], Any],
+                          merge_pages: bool = False):
+        """
+        Resolve photo indices to Photo objects and assign them to layout boxes.
+
+        Two-step process for each spread in this group layout:
+        1. resolve_photos: converts photo index sets (left/right_page_photo_idxs)
+           into actual Photo object sets (left/right_page_photos).
+        2. assign_photos_order: matches photos to layout boxes by orientation
+           (portrait/landscape) and area (largest boxes get highest-ranked photos),
+           producing ordered lists for left and right pages.
+
+        Args:
+            photos: Full list of Photo objects for the group (indexed by photo_idxs).
+            layout_id2data: Mapping from layout index to layout metadata including
+                'layout_id', 'left_box_ids', 'right_box_ids', and 'boxes_areas'.
+            design_box_id2data: Mapping from (layout_id, box_id) to box properties
+                including 'area' and 'orientation'.
+            merge_pages: If True, pool photos from both pages before assignment
+                (useful when page separation is not meaningful). If False, assign
+                each page's photos independently.
+        """
+        for spread in self.spreads_layouts:
+            # Retrieve Photo objects from photo indices
+            spread.resolve_photos(photos)
+            # Assign photos to layout boxes
+            spread.assign_photos_order(layout_id2data, design_box_id2data, merge_pages)
+
 
 def process_group_lists(group_spreads_layouts: GroupLayoutsLists) -> List[GroupSingleLayout]:
     """
@@ -147,7 +178,26 @@ def process_group_lists(group_spreads_layouts: GroupLayoutsLists) -> List[GroupS
     return listed_spreads
 
 
-def process_combination_outer(comb: Combination, photos, layouts_df, params, group_single_layouts: List[GroupSingleLayout]) -> List[GroupSingleLayout]:
+def process_combination_outer(comb: Combination, photos: List[Photo],
+                              layouts_df: pd.DataFrame, params: SpreadSearchParams,
+                              group_single_layouts: List[GroupSingleLayout]) -> List[GroupSingleLayout]:
+    """
+    Process a single combination: sample spread layouts and accumulate results.
+
+    Generates multi-spread layouts for the combination via process_combination_inner,
+    flattens them into GroupSingleLayout candidates, and appends to the running list.
+    Trims to top 1000 by score if the list exceeds 10000 to bound memory usage.
+
+    Args:
+        comb: A partition combination defining how photos are split across spreads.
+        photos: Full list of Photo objects for the group.
+        layouts_df: DataFrame of available layout designs.
+        params: Search parameters controlling sampling limits.
+        group_single_layouts: Running accumulator of GroupSingleLayout candidates.
+
+    Returns:
+        Updated group_single_layouts list with new candidates appended (and trimmed if needed).
+    """
     # sample
     multispread_layouts = process_combination_inner(comb, photos, layouts_df, params)
     if multispread_layouts is not None:
@@ -160,8 +210,31 @@ def process_combination_outer(comb: Combination, photos, layouts_df, params, gro
     return group_single_layouts
 
 
-def get_group_single_layouts(combs: List[Combination], photos, layouts_df, params,
-                             layout_id2data) -> Optional[List[GroupSingleLayout]]:
+def get_group_single_layouts(combs: List[Combination], photos: List[Photo],
+                             layouts_df: pd.DataFrame, params: SpreadSearchParams,
+                             layout_id2data: Dict[int, Any]) -> Optional[List[GroupSingleLayout]]:
+    """
+    Find the best GroupSingleLayout candidates for a photo group.
+
+    Three stages:
+    1. Sample: iterates over all combinations, generating and accumulating
+       GroupSingleLayout candidates via process_combination_outer.
+    2. Filter: keeps top 1000 candidates by weight (discarding those below
+       1% of the max weight).
+    3. Evaluate: scores remaining candidates by box-area/rank correlation
+       (Pearson) and returns them sorted by final weight.
+
+    Args:
+        combs: List of partition combinations to evaluate.
+        photos: Full list of Photo objects for the group.
+        layouts_df: DataFrame of available layout designs.
+        params: Search parameters controlling sampling limits.
+        layout_id2data: Mapping from layout index to layout metadata.
+
+    Returns:
+        Sorted list of GroupSingleLayout candidates (best first), or None if
+        no valid layouts were found for any combination.
+    """
     # sample
     group_single_layouts = []
     for idx, comb in enumerate(combs):
@@ -178,30 +251,3 @@ def get_group_single_layouts(combs: List[Combination], photos, layouts_df, param
     # evaluate
     GroupSingleLayout.evaluate_list(filtered, photos, layout_id2data)
     return sorted(filtered, key=lambda x: x.weight, reverse=True)
-
-
-def assign_photos_order(group_layout: GroupSingleLayout, layout_id2data: Dict[int, Any],
-                        design_box_id2data: Dict[Tuple[int, int], Any],
-                        merge_pages: bool = False) -> GroupSingleLayout:
-    """
-    Assign final photo ordering to each spread's left and right pages.
-
-    For each spread, builds box metadata from the layout design data and assigns
-    photos to boxes by matching orientation and area. When merge_pages is True,
-    both pages are treated as a single pool; otherwise each page is ordered
-    independently.
-
-    Args:
-        group_layout: The selected GroupSingleLayout with resolved photos.
-        layout_id2data: Mapping from layout ID to layout data dict.
-        design_box_id2data: Mapping from (layout_id, box_id) to box properties
-            including 'area' and 'orientation'.
-        merge_pages: If True, pool photos from both pages before ordering.
-
-    Returns:
-        The same GroupSingleLayout with photos reordered in each spread.
-    """
-    for spread in group_layout.spreads_layouts:
-        spread.assign_photos_order(layout_id2data, design_box_id2data, merge_pages)
-
-    return group_layout
