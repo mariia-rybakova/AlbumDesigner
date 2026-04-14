@@ -3,6 +3,35 @@ import pandas as pd
 from utils.configs import CONFIGS
 
 
+def _find_single_box_layout(layouts_df, orientation):
+    """Find a single-box layout matching the image orientation.
+
+    Prefers large boxes, falls back to any single-box layout.
+    """
+    if orientation == "landscape":
+        # Prefer large landscape or large square
+        candidates = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1 and (
+            layout['right_large_landscape'] == 1 or layout["left_large_landscape"] == 1 or
+            layout["left_large_square"] == 1 or layout["right_large_square"] == 1)]
+        if not candidates:
+            # Fall back: any single-box layout that accepts a landscape
+            candidates = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] >= 1
+                          and layout["number of boxes"] == 1]
+    else:
+        # Prefer large portrait or large square
+        candidates = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1 and (
+            layout['left_large_portrait'] == 1 or layout["right_large_portrait"] == 1 or
+            layout["left_large_square"] == 1 or layout["right_large_square"] == 1)]
+        if not candidates:
+            # Fall back: any single-box layout that accepts a portrait
+            candidates = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] >= 1
+                          and layout["number of boxes"] == 1]
+    # Last resort: any single-box layout
+    if not candidates:
+        candidates = [key for key, layout in layouts_df.iterrows() if layout["number of boxes"] == 1]
+    return candidates
+
+
 def get_design_id(layout_df, number_of_boxes, logger):
     # Get all layout keys where "number of boxes" == 1
     img_layouts = [key for key, layout in layout_df.iterrows() if layout["number of boxes"] == number_of_boxes]
@@ -269,47 +298,30 @@ def generate_first_last_pages(message, df, logger):
         if message.pagesInfo.get("firstPage"):
             layouts_df = message.designsInfo[f"firstPage_layouts_df"]
             if not first_imgs_df.empty:
-                if first_imgs_df["image_orientation"].values[0] == "landscape":
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1 and (
-                                layout['right_large_landscape'] == 1 or layout["left_large_landscape"] == 1 or layout[
-                            "left_large_square"] == 1 or layout["right_large_square"] == 1)]
-                    design_id = cover_layouts[0]
+                cover_layouts = _find_single_box_layout(layouts_df, first_imgs_df["image_orientation"].values[0])
+                if cover_layouts:
+                    first_last_pages_data_dict["firstPage"] = {
+                        'design_id': cover_layouts[0],
+                        'first_images_ids': first_images_ids,
+                        'first_images_df': first_imgs_df,
+                    }
                 else:
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1 and (
-                                layout['left_large_portrait'] == 1 or layout["right_large_portrait"] == 1 or layout[
-                            "left_large_square"] == 1 or layout["right_large_square"] == 1)]
-                    design_id = cover_layouts[0]
-
-                first_last_pages_data_dict["firstPage"] = {
-                    'design_id': design_id,
-                    'first_images_ids': first_images_ids,
-                    'first_images_df': first_imgs_df,
-
-                }
+                    logger.warning("No matching single-box layout found for firstPage")
         else:
             logger.warning("For this album theres no first page cover image")
 
         if message.pagesInfo.get('lastPage'):
             layouts_df = message.designsInfo[f"lastPage_layouts_df"]
-            # minimal number of images required by any layout for that page
             if not last_imgs_df.empty:
-                if last_imgs_df["image_orientation"].values[0] == "landscape":
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1 and (
-                            layout['right_large_landscape'] == 1 or layout["left_large_landscape"] == 1 or layout[
-                        "left_large_square"] == 1 or layout["right_large_square"] == 1)]
-                    design_id = cover_layouts[0]
+                cover_layouts = _find_single_box_layout(layouts_df, last_imgs_df["image_orientation"].values[0])
+                if cover_layouts:
+                    first_last_pages_data_dict['lastPage'] = {
+                        'design_id': cover_layouts[0],
+                        'last_images_ids': last_images_ids,
+                        'last_images_df': last_imgs_df,
+                    }
                 else:
-                    cover_layouts = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1 and (
-                            layout['left_large_portrait'] == 1 or layout["right_large_portrait"] == 1 or layout[
-                        "left_large_square"] == 1 or layout["right_large_square"] == 1)]
-                    design_id = cover_layouts[0]
-
-                first_last_pages_data_dict['lastPage'] = {
-                    'design_id': design_id,
-                    'last_images_ids': last_images_ids,
-                    'last_images_df': last_imgs_df,
-
-                }
+                    logger.warning("No matching single-box layout found for lastPage")
         else:
             logger.warning("For this album theres no last page cover image")
 

@@ -19,7 +19,7 @@ from pymongo import MongoClient
 from experiments.plotting import plot_selected_rows_to_pdf
 from src.core.models import GroupProcessingResult
 
-def read_layouts_data(message, json_content):
+def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
         if 'designInfoTempLocation' in json_content:
             try:
@@ -89,9 +89,49 @@ def read_layouts_data(message, json_content):
                                              album_ar=message.content.get('album_ar', {'anyPage': 2})['anyPage'],
                                              do_mirror=True)
 
+    # Add dummy firstPage/lastPage from single-box anyPage layouts when missing
+    if not any_page_layouts_df.empty:
+        needs_first = first_page_layouts_df is None
+        needs_last = last_page_layouts_df is None
+
+        if needs_first or needs_last:
+            single_box_df = any_page_layouts_df[
+                (any_page_layouts_df['number of boxes'] == 1) &
+                (any_page_layouts_df['is_mirrored'] == False)
+            ]
+            single_box_ids = single_box_df['id'].astype(int).unique().tolist()
+
+            if single_box_ids:
+                album_ar_val = message.content.get('album_ar', {'anyPage': 2})['anyPage']
+                designs_data = json_content['designInfo']['designs']
+
+                if needs_first:
+                    first_page_layouts_df = generate_layouts_df(designs_data, single_box_ids, album_ar=album_ar_val)
+                    if not first_page_layouts_df.empty:
+                        message.designsInfo['firstPageDesignIds'] = single_box_ids
+                        message.pagesInfo['firstPage'] = True
+                        message.designsInfo['firstPage_layouts_df'] = first_page_layouts_df
+                        if logger:
+                            logger.info(f"Added dummy firstPage section with {len(single_box_ids)} single-box layout(s) from anyPage")
+
+                if needs_last:
+                    last_page_layouts_df = generate_layouts_df(designs_data, single_box_ids, album_ar=album_ar_val)
+                    if not last_page_layouts_df.empty:
+                        message.designsInfo['lastPageDesignIds'] = single_box_ids
+                        message.pagesInfo['lastPage'] = True
+                        message.designsInfo['lastPage_layouts_df'] = last_page_layouts_df
+                        if logger:
+                            logger.info(f"Added dummy lastPage section with {len(single_box_ids)} single-box layout(s) from anyPage")
+            else:
+                if logger:
+                    if needs_first:
+                        logger.info("No single-box layouts in anyPage; cannot add dummy firstPage section")
+                    if needs_last:
+                        logger.info("No single-box layouts in anyPage; cannot add dummy lastPage section")
+
     if not any_page_layouts_df.empty:
         message.designsInfo['anyPagelayouts_df'] = any_page_layouts_df
-        layout_id2data, box_id2data = get_layouts_data(any_page_layouts_df, first_page_layouts_df, last_page_layouts_df)
+        layout_id2data, box_id2data = get_layouts_data(any_page_layouts_df, first_page_layouts_df, last_page_layouts_df, logger=logger)
         message.designsInfo['anyPagelayout_id2data'] = layout_id2data
         message.designsInfo['anyPagebox_id2data'] = box_id2data
 
@@ -475,7 +515,7 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
             return None, 'There are missing fields in input request: {}. Skipping.'.format(json_content)
 
         try:
-            message = read_layouts_data(_msg, json_content)
+            message = read_layouts_data(_msg, json_content, logger=logger)
             _msg = message
             json_content = _msg.content
 
