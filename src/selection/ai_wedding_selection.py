@@ -396,7 +396,7 @@ def calculate_optimal_selection(
     try:
         min_total_spreads, max_total_spreads = define_min_max_spreads(df,focus_table,n_actual_dict,logger)
 
-        TARGET_SPREADS = max_total_spreads
+        TARGET_SPREADS = min_total_spreads
         density_factors = CONFIGS['density_factors']
         density_factor = density_factors.get(density, 1.0)
 
