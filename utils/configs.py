@@ -88,9 +88,11 @@ CONFIGS = {'DEBUG': True,
             'similarity': 0.2,
             'person': 0.4,
             'tags': 0.1,
-            'rank': 0.2
+            'rank': 0.2,
+            'user_rating': 0.3
          },
-           'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
+        'user_rating_max_scale': 5,
+        'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
         'MAX_PERSON_COMBINATION': 10000,
 
 }

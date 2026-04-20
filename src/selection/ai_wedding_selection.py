@@ -258,7 +258,12 @@ def calculate_scores(row_data,selected_photos_df, people_ids, tags):
 def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
     try:
         images_scores = {}
-        class_scores, similarity_scores, person_scores, tags_scores = [], [], [], []
+        class_scores, similarity_scores, person_scores, tags_scores, user_rating_scores = [], [], [], [], []
+
+        # Check if user_rating column exists
+        has_user_rating = 'user_rating' in df.columns
+        max_scale = CONFIGS.get('user_rating_max_scale', 5)
+
         for index,data in df.iterrows():
             image_id = data['image_id']
             class_score, sim_score, person_score, tag_score  = calculate_scores(data,selected_photos_df, people_ids, tags_features)
@@ -266,12 +271,22 @@ def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
             similarity_scores.append(sim_score)
             person_scores.append(person_score)
             tags_scores.append(tag_score)
+
+            # Handle user_rating: use neutral score (0.5) if column doesn't exist or value is missing
+            if has_user_rating and pd.notna(data.get('user_rating')):
+                # Normalize to 0-1 range based on max_scale
+                user_rating_scores.append(data['user_rating'] / max_scale)
+            else:
+                # Neutral score - doesn't help or hurt the total score
+                user_rating_scores.append(0.5)
+
             images_scores[image_id] = None  # Placeholder for now
 
         df['class_score'] = class_scores
         df['similarity_score'] = similarity_scores
         df['person_score'] = person_scores
         df['tags_score'] = tags_scores
+        df['user_rating_score'] = user_rating_scores
 
         # Inline normalization function
         def normalize(col):
@@ -283,6 +298,7 @@ def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
         df['similarity_score_norm'] = normalize(df['similarity_score'])
         df['person_score_norm'] = normalize(df['person_score'])
         df['tags_score_norm'] = normalize(df['tags_score'])
+        df['user_rating_score_norm'] = normalize(df['user_rating_score'])
 
         # Invert and normalize image order
         df['image_order_score'] = 1 / (df['image_order'] + CONFIGS['ε'])
@@ -299,7 +315,8 @@ def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
                 CONFIGS['weights']['similarity'] * df['similarity_score_norm'] +
                 CONFIGS['weights']['person'] * df['person_score_norm'] +
                 CONFIGS['weights']['tags'] * df['tags_score_norm'] +
-                CONFIGS['weights']['rank'] * df['ranking']  # swap with image_order_score_norm if needed
+                CONFIGS['weights']['rank'] * df['ranking'] +  # swap with image_order_score_norm if needed
+                CONFIGS['weights']['user_rating'] * df['user_rating_score_norm']
         )
 
         sorted_df = df.sort_values(by='total_score', ascending=False)

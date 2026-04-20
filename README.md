@@ -25,7 +25,29 @@ This algorithm aims to select a number of images to be used in the album design 
 
 - Ranking: Each image has a ranking score indicating its importance. The higher the score, the more important the image is.
 
-The total score is the product of each of the scores explained above.
+- User Rating: If the user has rated images, this score reflects their preference. Higher ratings result in better selection chances. This value is optional - if not present in the data, a neutral score is assigned that doesn't affect the total score.
+
+## Scoring Weights
+
+Each factor is assigned a weight that determines its influence on the total score. The weights are normalized automatically so they sum to 1.0:
+
+| Factor | Raw Weight | Normalized | Description |
+|--------|------------|------------|-------------|
+| Person | 0.4 | ~29% | People presence in the image |
+| User Rating | 0.3 | ~21% | User's rating preference (optional) |
+| Class | 0.2 | ~14% | Image class matching |
+| Similarity | 0.2 | ~14% | Similarity to user-selected images |
+| Rank | 0.2 | ~14% | Image importance ranking |
+| Tags | 0.1 | ~7% | Tag cloud matching |
+
+**Configuration:**
+- Weights are defined in `utils/configs.py` under `CONFIGS['weights']`
+- `user_rating_max_scale`: Maximum scale for user rating (default: 5). Change to 10 if using a 1-10 scale.
+
+**How normalization works:**
+The total score is calculated as a weighted sum. Before calculation, all weights are divided by their sum to ensure they total 1.0. This means you can adjust relative weights without worrying about the exact sum.
+
+The total score is the weighted sum of each of the normalized scores explained above.
 
 The selection process depends on the relationship of the user to the bride and groom, whether they are parents or friends. We have set several rules where each category of the wedding has a percentage related to the user's relationship. For example, parents might want to see more portraits of the whole family compared to friends. Based on the number of available images in each group, we consider the percentage needed for that category and select the highest-scoring images. The process is iterative over the clusters we have created until there are no further clusters to select from.
 
