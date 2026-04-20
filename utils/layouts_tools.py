@@ -240,7 +240,7 @@ def generate_layouts_df(data, id_list, tolerance=0.05, album_ar=2,do_mirror=Fals
     return layouts_df
 
 
-def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df):
+def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df, logger=None):
     layout_id2data = dict()
     box_id2data = dict()
     for df_id, layouts_df in enumerate([any_layouts_df, first_page_layouts_df, last_page_layouts_df]):
@@ -280,17 +280,11 @@ def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df
                 left_square_ids = ast.literal_eval(left_square_ids)
                 right_square_ids = ast.literal_eval(right_square_ids)
             for box_id in left_portrait_ids + right_portrait_ids:
-                if (layout['id'],box_id) in box_id2data:
-                    print(f"Warning: box id {(layout['id'],box_id)} already exists in box_id2data. Overwriting orientation to 'portrait'.")
-                box_id2data[(layout['id'],box_id)] = {'orientation': 'portrait'}
+                _set_box_orientation(box_id2data, layout['id'], box_id, 'portrait', logger)
             for box_id in left_landscape_ids + right_landscape_ids:
-                if (layout['id'],box_id) in box_id2data:
-                    print(f"Warning: box id {(layout['id'],box_id)} already exists in box_id2data. Overwriting orientation to 'landscape'.")
-                box_id2data[(layout['id'],box_id)] = {'orientation': 'landscape'}
+                _set_box_orientation(box_id2data, layout['id'], box_id, 'landscape', logger)
             for box_id in left_square_ids + right_square_ids:
-                if (layout['id'],box_id) in box_id2data:
-                    print(f"Warning: box id {(layout['id'],box_id)} already exists in box_id2data. Overwriting orientation to 'square'.")
-                box_id2data[(layout['id'],box_id)] = {'orientation': 'square'}
+                _set_box_orientation(box_id2data, layout['id'], box_id, 'square', logger)
 
             # get boxes areas
             for item in layout_boxes:
@@ -310,3 +304,14 @@ def get_layouts_data(any_layouts_df, first_page_layouts_df, last_page_layouts_df
                 box_id2data[(layout['id'],box_id)]['height'] = item['height']
 
     return layout_id2data, box_id2data
+
+
+def _set_box_orientation(box_id2data, design_id, box_id, orientation, logger=None):
+    key = (design_id, box_id)
+    if key in box_id2data:
+        existing = box_id2data[key].get('orientation')
+        if existing == orientation:
+            return  # identical — nothing to do
+        if logger:
+            logger.warning(f"box id {key} orientation conflict: '{existing}' -> '{orientation}'")
+    box_id2data[key] = {'orientation': orientation}

@@ -198,15 +198,45 @@ def build_time_clusters(selected_df, all_photos_df=None):
 
 def generate_time_clusters(message, sorted_df, logger):
 
+    all_gallery_df = message.content.get('gallery_all_photos_info', None)
 
     if 'scene_index' in sorted_df.columns and sorted_df['scene_index'].nunique() > 4:
         sorted_df['time_cluster'] = sorted_df['scene_index']
+        # Propagate time_cluster to all_gallery_df so _try_add_unused_photo
+        # can filter unused photos by time_cluster (build_time_clusters does
+        # this internally for the DBSCAN path, but scene_index skips it).
+        if all_gallery_df is not None:
+            _propagate_time_clusters_to_gallery(sorted_df, all_gallery_df)
     else:
-        sorted_df['time_cluster'] = build_time_clusters(sorted_df, message.content.get('gallery_all_photos_info', None))
+        sorted_df['time_cluster'] = build_time_clusters(sorted_df, all_gallery_df)
     if message.content['is_wedding']:
         sorted_df = merge_time_clusters_by_context(sorted_df, ['dancing'], True, logger)
 
     return sorted_df
+
+
+def _propagate_time_clusters_to_gallery(selected_df, all_gallery_df):
+    """Assign time_cluster to all_gallery_df based on selected_df.
+
+    Photos present in selected_df get the exact cluster.  Remaining photos
+    are assigned the cluster of the nearest selected photo by general_time.
+    """
+    # Direct mapping for selected photos
+    mapping = selected_df[['image_id', 'time_cluster']].drop_duplicates('image_id')
+    merged = all_gallery_df[['image_id']].merge(mapping, on='image_id', how='left')
+    all_gallery_df['time_cluster'] = merged['time_cluster'].values
+
+    # Assign nearest cluster for unmatched photos
+    unmatched_mask = all_gallery_df['time_cluster'].isna()
+    if not unmatched_mask.any():
+        return
+
+    selected_times = selected_df['general_time'].values
+    selected_clusters = selected_df['time_cluster'].values
+    unmatched_times = all_gallery_df.loc[unmatched_mask, 'general_time'].values
+
+    nearest_idx = np.abs(unmatched_times[:, None] - selected_times[None, :]).argmin(axis=1)
+    all_gallery_df.loc[unmatched_mask, 'time_cluster'] = selected_clusters[nearest_idx]
 
 
 def merge_time_clusters_by_context(sorted_df, context_clusters_list, merge_all=True, logger=None):
@@ -252,15 +282,57 @@ def merge_time_clusters_by_context(sorted_df, context_clusters_list, merge_all=T
         return sorted_df
 
 
+def _has_burst_over(times, max_burst_length):
+    """Check if a time sequence contains any <1s burst longer than max_burst_length."""
+    i = 0
+    while i < len(times):
+        j = i
+        while j + 1 < len(times) and times[j + 1] - times[j] < 1:
+            j += 1
+        if j - i + 1 > max_burst_length:
+            return True
+        i = j + 1
+    return False
+
+
 def check_time_correctness(time_list):
     if len(time_list) <= 5:
         return True
     time_list.sort()
     if time_list[-1] - time_list[0] <= 1800:
         return False
-    for i in range(len(time_list) - 5):
-        if time_list[i + 5] - time_list[i] <= 1:
+
+    # Identify burst sequences (maximal runs of consecutive photos <1s apart)
+    i = 0
+    while i < len(time_list):
+        j = i
+        while j + 1 < len(time_list) and time_list[j + 1] - time_list[j] < 1:
+            j += 1
+        burst_length = j - i + 1
+
+        if burst_length > 20:
             return False
+
+        if burst_length > 5:
+            # Must be followed by 5x burst_length valid photos
+            required_follow = 5 * burst_length
+            follow_start = j + 1
+            follow_end = follow_start + required_follow
+
+            if follow_end > len(time_list):
+                return False
+
+            # Following sequence must have no <1s burst > 5
+            follow_times = time_list[follow_start:follow_end]
+            if _has_burst_over(follow_times, 5):
+                return False
+
+            # Burst and following sequence must not be on separate dates (>24h apart)
+            if time_list[follow_start] - time_list[j] > 86400:
+                return False
+
+        i = j + 1
+
     return True
 
 

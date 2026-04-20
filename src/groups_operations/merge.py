@@ -589,8 +589,12 @@ update_with_merges_other = lambda *args, **kwargs: _update_with_merges(_get_merg
                                                                         _update_merged_photos_other, *args, **kwargs)
 
 
-def _update_merged_photos_singleton(photos_df: pd.DataFrame, selected_cluster: pd.DataFrame, merged_group: pd.DataFrame):
+def _update_merged_photos_singleton(photos_df: pd.DataFrame, selected_cluster: pd.DataFrame, merged_group: pd.DataFrame,
+                                    cross_cluster_merge):
+    target_time_cluster = selected_cluster['time_cluster'].iloc[0]
     for row_index in merged_group.index:
+        if cross_cluster_merge:
+            photos_df.loc[row_index, 'time_cluster'] = target_time_cluster
         photos_df.loc[row_index, 'cluster_context'] = selected_cluster['cluster_context'].iloc[0]
         photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
         photos_df.loc[row_index, 'group_size'] = len(merged_group)
@@ -601,18 +605,26 @@ def _update_merged_photos_singleton(photos_df: pd.DataFrame, selected_cluster: p
 def _get_main_groups_singleton(all_groups: Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]],
                                group_key: Tuple[str, str, int], group: pd.DataFrame,
                                possible_boxes_numbers: List[int]):
+    # Build general_times_list and collect candidate target groups
+    # Prefer same time_cluster; fall back to cross-cluster if no same-cluster candidates
     general_times_list = []
-    candidate_groups = []
+    same_cluster_candidates = []
+    cross_cluster_candidates = []
     for m_key, m_group in all_groups:
         general_times_list.extend(m_group['general_time'].values.tolist())
         if m_key == group_key:
             continue
         combined_size = len(group) + len(m_group)
         if combined_size < 12 or combined_size in possible_boxes_numbers:
-            candidate_groups.append(m_group)
+            if m_key[0] == group_key[0]:
+                same_cluster_candidates.append(m_group)
+            else:
+                cross_cluster_candidates.append(m_group)
 
     general_times_list = sorted(general_times_list)
-    return candidate_groups, general_times_list
+    candidate_groups = same_cluster_candidates if same_cluster_candidates else cross_cluster_candidates
+    cross_cluster_merge = not same_cluster_candidates and bool(cross_cluster_candidates)
+    return candidate_groups, general_times_list, cross_cluster_merge
 
 
 def force_merge_portrait_singleton(
@@ -641,11 +653,14 @@ def force_merge_portrait_singleton(
     """
     all_groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
 
-    # Build general_times_list and collect candidate target groups
-    candidate_groups, general_times_list = _get_main_groups_singleton(all_groups, singleton_key, singleton_group, possible_boxes_numbers)
+    candidate_groups, general_times_list, cross_cluster_merge = _get_main_groups_singleton(all_groups, singleton_key, singleton_group, possible_boxes_numbers)
 
     if not candidate_groups:
+        logger.warning(f"force_merge_singleton: no candidates for {singleton_key}")
         return False
+
+    logger.info(f"force_merge_singleton: {len(candidate_groups)} candidates for {singleton_key}"
+                f"{' (cross-cluster)' if cross_cluster_merge else ''}")
 
     selected_cluster, _ = merge_illegal_group_by_time(
         candidate_groups, singleton_group, general_times_list,
@@ -653,11 +668,11 @@ def force_merge_portrait_singleton(
     )
 
     if selected_cluster is None:
+        logger.warning(f"force_merge_singleton: merge_illegal_group_by_time returned None for {singleton_key}")
         return False
 
     # Apply metadata updates (same pattern as _update_merged_photos_other)
     merged_group = pd.concat([singleton_group, selected_cluster])
-    _update_merged_photos_singleton(photos_df, selected_cluster, merged_group)
+    _update_merged_photos_singleton(photos_df, selected_cluster, merged_group, cross_cluster_merge)
 
     return True
-
