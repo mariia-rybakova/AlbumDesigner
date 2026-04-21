@@ -1,4 +1,5 @@
-from typing import List, Tuple, Iterable, Callable, Any, Optional
+import math
+from typing import List, Tuple, Iterable, Callable, Any, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -641,3 +642,101 @@ def force_merge_portrait_singleton(
 
     return True
 
+
+# Spread-rebalancing pair merge
+def expected_spreads_float(group_size: int, lut_value: float) -> float:
+    """Raw float expected spreads for a group (size / LUT[0])."""
+    if lut_value and lut_value > 0:
+        return group_size / lut_value
+    return 0.0
+
+
+def expected_spreads_ceil(group_size: int, lut_value: float) -> int:
+    """Ceil expected spreads for a group; min of 1 when the group has photos."""
+    if lut_value and lut_value > 0:
+        return max(1, math.ceil(group_size / lut_value))
+    return 1 if group_size > 0 else 0
+
+
+def find_reassignment_class(
+        pair_size: int,
+        pre_pair_expected: int,
+        lut_table: Dict[str, Tuple[float, float]],
+        src_classes: Tuple[str, ...],
+) -> Optional[str]:
+    """
+    Find a class whose LUT value reduces the pair's expected spreads by at least 1.
+
+    Priority:
+      1) Classes sharing a SIMILAR_CLASSES_L1 bucket with any src_class.
+      2) Classes sharing a SIMILAR_CLASSES_L2 bucket with any src_class.
+      3) Any class in the LUT.
+
+    Within each tier, prefer the class that gives the largest reduction (lowest new expected).
+    A candidate is valid iff new_expected <= pre_pair_expected - 1 and new_expected >= 1.
+
+    Returns the class name or None if no valid candidate exists.
+    """
+    target = pre_pair_expected - 1
+    if target < 1:
+        return None
+
+    tier1, tier2 = set(), set()
+    for src in src_classes:
+        for bucket in SIMILAR_CLASSES_L1:
+            if src in bucket:
+                tier1.update(bucket)
+        for bucket in SIMILAR_CLASSES_L2:
+            if src in bucket:
+                tier2.update(bucket)
+    tier1.difference_update(src_classes)
+    tier2.difference_update(src_classes)
+    tier2.difference_update(tier1)
+    tier3 = set(lut_table.keys()) - tier1 - tier2 - set(src_classes)
+
+    for tier in (tier1, tier2, tier3):
+        best_class = None
+        best_new_expected = None
+        for candidate in tier:
+            params = lut_table.get(candidate)
+            if not params:
+                continue
+            lut_val = params[0]
+            if not lut_val or lut_val <= 0:
+                continue
+            new_expected = expected_spreads_ceil(pair_size, lut_val)
+            if new_expected < 1 or new_expected > target:
+                continue
+            if best_new_expected is None or new_expected < best_new_expected:
+                best_new_expected = new_expected
+                best_class = candidate
+        if best_class is not None:
+            return best_class
+
+    return None
+
+
+def apply_pair_merge_for_rebalance(
+        photos_df: pd.DataFrame,
+        group_a: pd.DataFrame,
+        group_b: pd.DataFrame,
+        new_context: str,
+) -> Tuple[int, pd.DataFrame]:
+    """
+    Merge two groups into a single group with a reassigned cluster_context.
+
+    Concatenates rows, assigns a fresh group_sub_index, and updates
+    cluster_context / group_size / groups_merged / merge_allowed. Returns
+    (new_sub_index, merged_group_df).
+    """
+    merged_group = pd.concat([group_a, group_b])
+    new_sub_index = int(photos_df['group_sub_index'].max()) + 1
+
+    for row_index in merged_group.index:
+        photos_df.loc[row_index, 'cluster_context'] = new_context
+        photos_df.loc[row_index, 'groups_merged'] = count_contexts(merged_group)
+        photos_df.loc[row_index, 'group_size'] = len(merged_group)
+        photos_df.loc[row_index, 'group_sub_index'] = new_sub_index
+        photos_df.loc[row_index, 'merge_allowed'] = False
+
+    return new_sub_index, merged_group

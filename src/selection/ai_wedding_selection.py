@@ -490,9 +490,9 @@ def calculate_optimal_selection(
 
     except Exception as e:
         logger.error(f"Error calculate_optimal_selection: {e}")
-        return None,None
+        return None, None, None
 
-    return selections,spreads
+    return selections, spreads, min_total_spreads
 
 def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, focus, tags_features,density,
                             is_artificial_time,logger):
@@ -527,7 +527,7 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
         # if len(original_big_df) <= 200 and density >= 3:
         #     return original_big_df['image_id'].values.tolist(), {}, error_message
 
-        images_allocation,spreads_allocation = calculate_optimal_selection(
+        images_allocation, spreads_allocation, min_total_spreads = calculate_optimal_selection(
         actual_number_images_dict,
         relation_table,
         wedding_lookup_table,
@@ -538,7 +538,7 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
         )
 
         if images_allocation is None:
-            return None,None, "No images got selected!"
+            return None, None, None, "No images got selected!"
 
         user_selected_photos_df = original_big_df[original_big_df['image_id'].isin(user_selected_photos)]
 
@@ -1071,9 +1071,9 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
 
     except Exception as e:
         logger.error(f"Error in smart_wedding_selection: {e}")
-        return [] , f"Error in smart_wedding_selection: {e}"
+        return [], None, None, f"Error in smart_wedding_selection: {e}"
 
-    return list(dict.fromkeys(ai_images_selected)),spreads_allocation, error_message
+    return list(dict.fromkeys(ai_images_selected)), spreads_allocation, min_total_spreads, error_message
 
 
 
