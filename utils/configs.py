@@ -44,8 +44,8 @@ CONFIGS = {'DEBUG': True,
 
             #Qdrant
             "QDRANT_HOST": "10.0.44.13",
-            "QDRANT_COLLECTION": {1:"ImageEmbedding_V1",
-                                  2:"ImageEmbedding_V2",},
+            "QDRANT_COLLECTION": {1:"ImageEmbedding_V1_new",
+                                  2:"ImageEmbedding_V2_new",},
             #mongo DB
             "DB_NAME": "aimongo",
             "STATUS_COLLECTION_NAME": "aiprojectstatusdal",
