@@ -138,6 +138,36 @@ def read_layouts_data(message, json_content, logger=None):
     return message
 
 
+def read_rating_data(message, json_content, logger=None):
+    rating_list = json_content.get('rating')
+
+    if not rating_list and json_content.get('ratingTempLocation'):
+        try:
+            fb = PTFile(json_content['ratingTempLocation'])
+            fileBytes = fb.read_blob()
+            rating_list = json.loads(fileBytes.decode('utf-8'))
+        except Exception as e:
+            if logger:
+                logger.warning('Failed to read rating from blob {}: {}'.format(
+                    json_content['ratingTempLocation'], e))
+            return message
+
+    if not rating_list:
+        return message
+
+    try:
+        rating_df = pd.DataFrame(rating_list).rename(
+            columns={'photoId': 'image_id', 'rating': 'user_rating'}
+        )[['image_id', 'user_rating']]
+        rating_df['image_id'] = rating_df['image_id'].astype(np.int64)
+        message.rating_df = rating_df
+    except Exception as e:
+        if logger:
+            logger.warning('Failed to build rating_df: {}'.format(e))
+
+    return message
+
+
 def add_scenes_info(gallery_info_df, project_base_url, logger):
     try:
         photos_metadata = Gallery(project_base_url)
@@ -516,6 +546,13 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
 
         try:
             message = read_layouts_data(_msg, json_content, logger=logger)
+
+            if message is None or isinstance(message, tuple):
+                err = message[1] if isinstance(message, tuple) and len(message) > 1 else 'unknown error'
+                raise ValueError('read_layouts_data failed: {}'.format(err))
+
+            message = read_rating_data(message, json_content, logger=logger)
+
             _msg = message
             json_content = _msg.content
 
@@ -572,6 +609,15 @@ def read_messages(messages, project_status_collection, qdrant_client, logger):
             if pt_error is not None:
                 return None, pt_error
             logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
+
+            # merge user ratings (0 for photos without a rating)
+            rating_df = getattr(message, 'rating_df', None)
+            if rating_df is not None and not gallery_info_df.empty:
+                gallery_info_df = gallery_info_df.merge(rating_df, on='image_id', how='left')
+                gallery_info_df['user_rating'] = gallery_info_df['user_rating'].fillna(0)
+                if logger:
+                    matched = int(gallery_info_df['user_rating'].gt(0).sum())
+                    logger.info(f"Merged user_rating into gallery_info_df: {matched}/{len(gallery_info_df)} photos have a rating.")
 
             # add scenes info to gallery_info_df
             gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
