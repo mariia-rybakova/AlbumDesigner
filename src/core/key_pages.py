@@ -1,4 +1,5 @@
 import random
+import numpy as np
 import pandas as pd
 from utils.configs import CONFIGS
 
@@ -96,7 +97,11 @@ def _select_by_priority_from_subset(df_subset, queries_primary, queries_fallback
         if sub.empty:
             return []
         sub["__q"] = pd.Categorical(sub["image_subquery_content"], categories=queries, ordered=True)
-        sub = sub.sort_values("__q")
+        # Break ties within the same subquery by image_order (higher rating first)
+        if "image_order" in sub.columns:
+            sub = sub.sort_values(["__q", "image_order"], ascending=[True, False])
+        else:
+            sub = sub.sort_values("__q")
         return sub["image_id"].tolist()
 
     for orientation, queries in [
@@ -192,7 +197,7 @@ def get_important_imgs(data_df, bride_groom_df, logger):
                 if len(last_page_ids) == 0:
                     last_page_ids = [all_image_ids[0]]
 
-        return [first_page_ids[0]], [last_page_ids[0]]
+        return first_page_ids, last_page_ids
 
     except Exception as e:
         logger.error(f"Error inside the function get_important_imgs {e}")
@@ -213,10 +218,99 @@ def _preferred_orientation_pool(df, bride_groom_df, orientation):
     return (df_f, bg_f) if has_any else (df, bride_groom_df)
 
 
+def _cosine_distance(vec_a, vec_b):
+    """Cosine distance in [0, 2]; None if either vector is missing or zero-norm."""
+    if vec_a is None or vec_b is None:
+        return None
+    a = np.asarray(vec_a, dtype=float)
+    b = np.asarray(vec_b, dtype=float)
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    if denom == 0:
+        return None
+    return 1.0 - float(np.dot(a, b) / denom)
+
+
+def _lookup_column(df, image_id, column):
+    """Return the first value of `column` for `image_id`, or None if missing."""
+    if column not in df.columns:
+        return None
+    row = df.loc[df['image_id'] == image_id, column]
+    if row.empty:
+        return None
+    val = row.iloc[0]
+    # Treat np.nan as missing for scalar columns (embeddings are arrays — check for None only)
+    if isinstance(val, float) and np.isnan(val):
+        return None
+    return val
+
+
+def _minmax_normalize(values):
+    """Min-max normalize to [0, 1]. Returns zeros if empty or constant."""
+    if not values:
+        return []
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        return [0.0] * len(values)
+    return [(v - lo) / (hi - lo) for v in values]
+
+
+def _pick_most_dissimilar(reference_id, candidate_ids, df, dist_weight=0.4, rating_weight=0.6):
+    """Pick the candidate that best balances dissimilarity to `reference_id` with its own rating.
+
+    Score = dist_weight * normalized_embedding_distance + rating_weight * normalized_image_order.
+    When embeddings are unavailable, prefers a differing `image_subquery_content`,
+    breaking ties by `image_order`.
+    """
+    if not candidate_ids:
+        return None
+    candidates = [c for c in candidate_ids if c != reference_id] or list(candidate_ids)
+    if len(candidates) == 1:
+        return candidates[0]
+
+    ratings = [_lookup_column(df, c, 'image_order') for c in candidates]
+    ref_emb = _lookup_column(df, reference_id, 'embedding')
+    distances = [
+        _cosine_distance(ref_emb, _lookup_column(df, c, 'embedding')) if ref_emb is not None else None
+        for c in candidates
+    ]
+
+    if any(d is not None for d in distances):
+        d_norm = _minmax_normalize([d if d is not None else 0.0 for d in distances])
+        r_norm = _minmax_normalize([r if r is not None else 0.0 for r in ratings])
+        scores = [dist_weight * d + rating_weight * r for d, r in zip(d_norm, r_norm)]
+        return candidates[int(np.argmax(scores))]
+
+    # No embeddings: prefer differing subquery_content, then highest rating
+    ref_content = _lookup_column(df, reference_id, 'image_subquery_content')
+    pool = candidates
+    if ref_content is not None:
+        different = [c for c in candidates if _lookup_column(df, c, 'image_subquery_content') != ref_content]
+        if different:
+            pool = different
+    return max(pool, key=lambda c: (_lookup_column(df, c, 'image_order') or float('-inf')))
+
+
+def _select_cover_image_ids(pool_df, pool_bg, logger):
+    """Return (first_page_ids, last_page_ids): first = top of its candidate list, last = most dissimilar to first."""
+    first_candidates, last_candidates = get_important_imgs(pool_df, pool_bg, logger)
+
+    # Degenerate case: at least one candidate list is missing/empty — can't run dissimilarity pick.
+    # Forward whatever we got, normalizing None to [] so the caller always gets (list, list).
+    if not first_candidates or not last_candidates:
+        first_page_ids = first_candidates if first_candidates else []
+        last_page_ids = last_candidates if last_candidates else []
+        return first_page_ids, last_page_ids
+
+    first_id = first_candidates[0]
+    last_id = _pick_most_dissimilar(first_id, last_candidates, pool_df)
+    last_page_ids = [last_id] if last_id is not None else []
+    return [first_id], last_page_ids
+
+
 def choose_good_wedding_images(df, bride_groom_df, logger):
     # Prefer landscape covers; fall back to the full pool only if no landscapes exist
     pool_df, pool_bg = _preferred_orientation_pool(df, bride_groom_df, "landscape")
-    first_page_ids, last_page_ids = get_important_imgs(pool_df, pool_bg, logger)
+    first_page_ids, last_page_ids = _select_cover_image_ids(pool_df, pool_bg, logger)
 
     if bride_groom_df is not None:
         if not bride_groom_df.empty and bride_groom_df['image_id'].isin(first_page_ids).any() and bride_groom_df['image_id'].isin(last_page_ids).any():
