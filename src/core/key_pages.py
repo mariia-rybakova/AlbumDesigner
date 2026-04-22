@@ -199,8 +199,24 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         return None, None
 
 
+def _filter_by_orientation(df, orientation):
+    if df is None or df.empty:
+        return df
+    return df[df['image_orientation'] == orientation].copy()
+
+
+def _preferred_orientation_pool(df, bride_groom_df, orientation):
+    """Return (df, bride_groom_df) filtered to `orientation`. Falls back to originals if neither filtered pool has images."""
+    df_f = _filter_by_orientation(df, orientation)
+    bg_f = _filter_by_orientation(bride_groom_df, orientation)
+    has_any = (df_f is not None and not df_f.empty) or (bg_f is not None and not bg_f.empty)
+    return (df_f, bg_f) if has_any else (df, bride_groom_df)
+
+
 def choose_good_wedding_images(df, bride_groom_df, logger):
-    first_page_ids, last_page_ids = get_important_imgs(df, bride_groom_df, logger)
+    # Prefer landscape covers; fall back to the full pool only if no landscapes exist
+    pool_df, pool_bg = _preferred_orientation_pool(df, bride_groom_df, "landscape")
+    first_page_ids, last_page_ids = get_important_imgs(pool_df, pool_bg, logger)
 
     if bride_groom_df is not None:
         if not bride_groom_df.empty and bride_groom_df['image_id'].isin(first_page_ids).any() and bride_groom_df['image_id'].isin(last_page_ids).any():
