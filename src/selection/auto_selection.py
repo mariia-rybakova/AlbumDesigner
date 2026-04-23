@@ -56,7 +56,7 @@ def get_tags_bins(tags,version,logger):
     return tags_features
 
 def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,is_artificial_time,
-                          logger):
+                          logger, rating=None):
     try:
         spreads_dict = {}
         min_total_spreads = None
@@ -66,7 +66,7 @@ def ai_selection(df, selected_photos, people_ids, focus,tags,is_wedding,density,
             tags_features = get_tags_bins(tags,model_version,logger)
             ai_images_selected, spreads_dict, min_total_spreads, errors = smart_wedding_selection(
                 df, selected_photos, people_ids, focus,
-                tags_features,density,is_artificial_time, logger)
+                tags_features,density,is_artificial_time, logger, rating=rating)
         else:
             # Select images for creating an album
             ai_images_selected, errors = smart_non_wedding_selection(df, logger=logger)

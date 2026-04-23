@@ -202,6 +202,7 @@ class SelectionStage(Stage):
                 focus = ai_metadata.get('focus', ['everyoneElse'])
                 tags = ai_metadata.get('subjects', ['Wedding dress', 'ceremony', 'bride', 'dancing', 'bride getting ready', 'groom getting ready', 'table setting', 'flowers', 'decorations', 'family', 'baby', 'kids', 'mother', 'father', 'Romance', 'affection', 'Intimacy', 'Happiness', 'Holding hands', 'smiling', 'Hugging', 'Kissing', 'ring', 'veil', 'soft light', 'portrait'])
                 density = ai_metadata.get('density', 3)
+                rating = _msg.content.get('rating', [])
                 is_wedding = _msg.content.get('is_wedding', False)
                 df = _msg.content.get('gallery_photos_info', pd.DataFrame())
 
@@ -223,7 +224,7 @@ class SelectionStage(Stage):
 
                 is_artificial_time = _msg.content['is_artificial_time']
                 ai_photos_selected, spreads_dict, min_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
-                                                  self.logger)
+                                                  self.logger, rating=rating)
 
                 if errors:
                     self.logger.error(f"Error for Selection images for this message {_msg}")
