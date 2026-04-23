@@ -562,7 +562,7 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
             """
             try:
                 # CASE 1: no scoring, all images are candidates
-                if len(people_ids) == 0 and len(user_selected_photos) == 0 and len(tags_features) == 0 and len(rating_dict) == 0:
+                if len(people_ids) == 0 and len(user_selected_photos) == 0 and len(tags_features) == 0:
                     scored_df = cluster_df.copy()
                     scored_df["total_score"] = 1.0  # assign dummy uniform score
                     scored_df = scored_df.sort_values(by='image_order', ascending=True)
