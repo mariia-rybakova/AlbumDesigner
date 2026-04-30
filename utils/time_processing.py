@@ -9,7 +9,7 @@ from sklearn.mixture import GaussianMixture
 from sklearn.cluster import DBSCAN
 
 from ptinfra.utils.gallery import Gallery
-
+from utils.anachronism_scene_detection import detect_anachronism_scene
 
 def convert_to_timestamp(time_integer):
     try:
@@ -336,24 +336,46 @@ def check_time_correctness(time_list):
     return True
 
 
-def get_artificial_images_time(base_url, gallery_info_df,time_correctness):
+def add_scene_info(base_url, gallery_info_df):
+    """Add scene_name, idx_in_scene, scenelist_idx columns to the dataframe."""
     photos_metadata = Gallery(base_url)
 
-    scenes=[]
+    scenes = []
     gallery_info_df['scene_name'] = ''
     gallery_info_df['idx_in_scene'] = None
     gallery_info_df['scenelist_idx'] = None
-    for scene_idx,scene in enumerate(photos_metadata.scenes):
+
+    for scene_idx, scene in enumerate(photos_metadata.scenes):
         if scene.isHighlights:
             continue
-        photo_count=0
-        for idx,photo in enumerate(scene.photos):
-            photo_count+=1
+        photo_count = 0
+        for idx, photo in enumerate(scene.photos):
+            photo_count += 1
             gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'scene_name'] = scene.name
             gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'idx_in_scene'] = idx
             gallery_info_df.loc[gallery_info_df['image_id'] == photo.photoId, 'scenelist_idx'] = scene_idx
-        if photo_count>0:
-            scenes.append({'name':scene.name,'photo_count':photo_count,'priority':scene.viewPrio,'scenelist_idx':scene_idx})
+        if photo_count > 0:
+            scenes.append({'name': scene.name, 'photo_count': photo_count,
+                          'priority': scene.viewPrio, 'scenelist_idx': scene_idx})
+
+    return gallery_info_df, scenes
+
+
+def get_artificial_images_time(base_url, gallery_info_df, time_correctness):
+    # Check if scene info already exists, otherwise add it
+    if 'scene_name' not in gallery_info_df.columns or gallery_info_df['scene_name'].eq('').all():
+        gallery_info_df, scenes = add_scene_info(base_url, gallery_info_df)
+    else:
+        # Build scenes list from existing data
+        photos_metadata = Gallery(base_url)
+        scenes = []
+        for scene_idx, scene in enumerate(photos_metadata.scenes):
+            if scene.isHighlights:
+                continue
+            photo_count = len([p for p in scene.photos if p.photoId in gallery_info_df['image_id'].values])
+            if photo_count > 0:
+                scenes.append({'name': scene.name, 'photo_count': photo_count,
+                              'priority': scene.viewPrio, 'scenelist_idx': scene_idx})
 
     scene_df = pd.DataFrame(scenes)
     scene_df = scene_df.sort_values(by=['priority'], ascending=True)
@@ -375,6 +397,11 @@ def get_artificial_images_time(base_url, gallery_info_df,time_correctness):
 
 
 def process_gallery_time(message, gallery_info_df, logger):
+    # Add scene info first so detect_anachronism_scene has access to scene_name
+    gallery_info_df, _ = add_scene_info(message.content['base_url'], gallery_info_df)
+
+    scene_name = detect_anachronism_scene(gallery_info_df,logger)
+
     if gallery_info_df is not None:
         gallery_info_df = process_image_time(gallery_info_df)
 
