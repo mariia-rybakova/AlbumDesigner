@@ -44,8 +44,8 @@ CONFIGS = {'DEBUG': True,
 
             #Qdrant
             "QDRANT_HOST": "10.0.44.13",
-            "QDRANT_COLLECTION": {1:"ImageEmbedding_V1",
-                                  2:"ImageEmbedding_V2",},
+            "QDRANT_COLLECTION": {1:"ImageEmbedding_V1_new",
+                                  2:"ImageEmbedding_V2_new",},
             #mongo DB
             "DB_NAME": "aimongo",
             "STATUS_COLLECTION_NAME": "aiprojectstatusdal",
@@ -94,6 +94,7 @@ CONFIGS = {'DEBUG': True,
         'user_rating_max_scale': 5,
         'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
         'MAX_PERSON_COMBINATION': 10000,
+        'use_rebalance_spreads': False,
 
 }
 

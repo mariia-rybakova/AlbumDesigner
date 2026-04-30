@@ -255,12 +255,14 @@ def calculate_scores(row_data,selected_photos_df, people_ids, tags):
     return class_matching_score, similarity_score, person_score, tags_score
 
 
-def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
+def get_scores(df, selected_photos_df, people_ids, tags_features, logger, rating_dict=None):
     try:
+        if rating_dict is None:
+            rating_dict = {}
         images_scores = {}
-        class_scores, similarity_scores, person_scores, tags_scores, user_rating_scores = [], [], [], [], []
+        class_scores, similarity_scores, person_scores, tags_scores, rating_scores = [], [], [], [], []
 
-        # Check if user_rating column exists
+        # Check if user_rating column exists in df, or use rating_dict from request
         has_user_rating = 'user_rating' in df.columns
         max_scale = CONFIGS.get('user_rating_max_scale', 5)
 
@@ -271,22 +273,20 @@ def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
             similarity_scores.append(sim_score)
             person_scores.append(person_score)
             tags_scores.append(tag_score)
-
-            # Handle user_rating: use neutral score (0.5) if column doesn't exist or value is missing
-            if has_user_rating and pd.notna(data.get('user_rating')):
-                # Normalize to 0-1 range based on max_scale
-                user_rating_scores.append(data['user_rating'] / max_scale)
+            # Get rating score: use rating_dict from request, or user_rating column, or 0
+            if rating_dict and image_id in rating_dict:
+                rating_scores.append(rating_dict.get(image_id, 0))
+            elif has_user_rating and pd.notna(data.get('user_rating')):
+                rating_scores.append(data['user_rating'] / max_scale * 5)  # Scale to match rating_dict range
             else:
-                # Neutral score - doesn't help or hurt the total score
-                user_rating_scores.append(0.5)
-
+                rating_scores.append(0)
             images_scores[image_id] = None  # Placeholder for now
 
         df['class_score'] = class_scores
         df['similarity_score'] = similarity_scores
         df['person_score'] = person_scores
         df['tags_score'] = tags_scores
-        df['user_rating_score'] = user_rating_scores
+        df['rating_score'] = rating_scores
 
         # Inline normalization function
         def normalize(col):
@@ -298,25 +298,29 @@ def get_scores(df, selected_photos_df, people_ids, tags_features, logger):
         df['similarity_score_norm'] = normalize(df['similarity_score'])
         df['person_score_norm'] = normalize(df['person_score'])
         df['tags_score_norm'] = normalize(df['tags_score'])
-        df['user_rating_score_norm'] = normalize(df['user_rating_score'])
+        df['rating_score_norm'] = normalize(df['rating_score'])
 
         # Invert and normalize image order
         df['image_order_score'] = 1 / (df['image_order'] + CONFIGS['ε'])
         df['image_order_score_norm'] = normalize(df['image_order_score'])
 
         #Ranking is better than order cause its normalized and higher is better
-        total_weight = sum(CONFIGS['weights'].values())
-        for key in CONFIGS['weights']:
-            CONFIGS['weights'][key] /= total_weight
+        # Add rating weight if not already in config
+        weights = CONFIGS['weights'].copy()
+        if 'rating' not in weights:
+            weights['rating'] = 0.3  # Give significant weight to user ratings
+        total_weight = sum(weights.values())
+        for key in weights:
+            weights[key] /= total_weight
 
         # Compute final weighted total score
         df['total_score'] = (
-                CONFIGS['weights']['class'] * df['class_score_norm'] +
-                CONFIGS['weights']['similarity'] * df['similarity_score_norm'] +
-                CONFIGS['weights']['person'] * df['person_score_norm'] +
-                CONFIGS['weights']['tags'] * df['tags_score_norm'] +
-                CONFIGS['weights']['rank'] * df['ranking'] +  # swap with image_order_score_norm if needed
-                CONFIGS['weights']['user_rating'] * df['user_rating_score_norm']
+                weights['class'] * df['class_score_norm'] +
+                weights['similarity'] * df['similarity_score_norm'] +
+                weights['person'] * df['person_score_norm'] +
+                weights['tags'] * df['tags_score_norm'] +
+                weights['rank'] * df['ranking'] +  # swap with image_order_score_norm if needed
+                weights['rating'] * df['rating_score_norm']
         )
 
         sorted_df = df.sort_values(by='total_score', ascending=False)
@@ -490,12 +494,12 @@ def calculate_optimal_selection(
 
     except Exception as e:
         logger.error(f"Error calculate_optimal_selection: {e}")
-        return None,None
+        return None, None, None
 
-    return selections,spreads
+    return selections, spreads, min_total_spreads
 
 def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, focus, tags_features,density,
-                            is_artificial_time,logger):
+                            is_artificial_time,logger, rating=None):
     try:
         error_message = None
         ai_images_selected = []
@@ -527,7 +531,7 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
         # if len(original_big_df) <= 200 and density >= 3:
         #     return original_big_df['image_id'].values.tolist(), {}, error_message
 
-        images_allocation,spreads_allocation = calculate_optimal_selection(
+        images_allocation, spreads_allocation, min_total_spreads = calculate_optimal_selection(
         actual_number_images_dict,
         relation_table,
         wedding_lookup_table,
@@ -538,9 +542,18 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
         )
 
         if images_allocation is None:
-            return None,None, "No images got selected!"
+            return None, None, None, "No images got selected!"
 
         user_selected_photos_df = original_big_df[original_big_df['image_id'].isin(user_selected_photos)]
+
+        # Convert rating list to dict for efficient lookup: {photoId: rating_value}
+        rating_dict = {}
+        if rating:
+            for item in rating:
+                photo_id = item.get('photoId')
+                rating_value = item.get('rating', 0)
+                if photo_id is not None:
+                    rating_dict[photo_id] = rating_value
 
         def get_candidate_images(cluster_df, cluster_name):
             """
@@ -556,7 +569,7 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
                     return scored_df, scored_df["image_id"].tolist(), True
 
                 # CASE 2: scoring required
-                scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger)
+                scores, scored_df = get_scores(cluster_df, user_selected_photos_df, people_ids, tags_features, logger, rating_dict)
                 if scores is None or all(score <= 0 for _, score in scores):
                     return None, [],True
                 candidates_images_scores = [
@@ -1071,9 +1084,9 @@ def smart_wedding_selection(original_big_df, user_selected_photos, people_ids, f
 
     except Exception as e:
         logger.error(f"Error in smart_wedding_selection: {e}")
-        return [] , f"Error in smart_wedding_selection: {e}"
+        return [], None, None, f"Error in smart_wedding_selection: {e}"
 
-    return list(dict.fromkeys(ai_images_selected)),spreads_allocation, error_message
+    return list(dict.fromkeys(ai_images_selected)), spreads_allocation, min_total_spreads, error_message
 
 
 

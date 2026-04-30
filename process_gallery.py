@@ -162,7 +162,8 @@ def get_selection(message, logger):
                                             'Happiness', 'Holding hands', 'smiling', 'Hugging', 'Kissing', 'ring',
                                             'veil', 'soft light', 'portrait'])
         density = ai_metadata.get('density', 3)
-        
+        rating = message.content.get('rating', [])
+
         is_wedding = message.content.get('is_wedding', False)
 
         if df.empty:
@@ -182,7 +183,7 @@ def get_selection(message, logger):
         message.content['modified_lut'] = modified_lut
         is_artificial_time = message.content['is_artificial_time']
         ai_photos_selected, spreads_dict, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
-                                                  logger)
+                                                  logger, rating=rating)
 
         if errors:
             logger.error(f"Error for Selection images for this message {message}")

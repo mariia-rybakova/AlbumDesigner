@@ -7,7 +7,10 @@ from utils.album_tools import get_images_per_groups, get_missing_columns, split_
 from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_merge_candidates_other,
                                          update_with_merges_bridegroom, update_with_merges_other,
                                          BRIDE_CENTRIC_CLASSES, GROOM_CENTRIC_CLASSES,
-                                         force_merge_portrait_singleton)
+                                         force_merge_portrait_singleton,
+                                         merge_illegal_group_by_time, find_reassignment_class,
+                                         apply_pair_merge_for_rebalance,
+                                         expected_spreads_float, expected_spreads_ceil)
 from src.groups_operations.split import (get_number_of_spreads, is_split_needed, get_split_points,
                                          split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
@@ -386,6 +389,151 @@ def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gall
     return photos_df
 
 
+# Spread rebalancing via pair merges
+def _compute_group_expected(group_key: Tuple[str, str, int], group: pd.DataFrame,
+                            look_up_table: dict) -> Tuple[float, int]:
+    """Return (raw_float_expected, ceil_expected) for a group against look_up_table."""
+    lut_key = group_key[1].split('_')[0] if '_' in group_key[1] else group_key[1]
+    lut_params = look_up_table.get(lut_key, (10, 1.5))
+    lut_val = lut_params[0]
+    size = len(group)
+    return expected_spreads_float(size, lut_val), expected_spreads_ceil(size, lut_val)
+
+
+def rebalance_spreads_by_pair_merge(photos_df: pd.DataFrame, resources: AlbumDesignResources,
+                                    target_total_spreads: int, logger) -> pd.DataFrame:
+    """
+    Reduce total expected spreads by pair-merging small groups and reassigning a LUT class.
+
+    Runs one pass. Each group participates at most once. For each candidate pair (both
+    with float expected <= 1.5, same time_cluster), finds a class whose LUT value brings
+    the merged pair's expected below the sum of the pair's pre-merge ceil expected.
+
+    Args:
+        photos_df: Full DataFrame of photos (modified in-place).
+        resources: AlbumDesignResources providing the look-up table.
+        target_total_spreads: Target total number of spreads (from AI image selection's min_total_spreads).
+        logger: Logger instance.
+
+    Returns:
+        The modified photos_df.
+    """
+    look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
+
+    groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
+    group_keys = list(groups.groups.keys())
+
+    expected_per_group = {}
+    eligible_keys = []
+    for key in group_keys:
+        group = groups.get_group(key)
+        exp_float, exp_ceil = _compute_group_expected(key, group, look_up_table)
+        expected_per_group[key] = {'float': exp_float, 'ceil': exp_ceil}
+        if exp_float <= 1.5:
+            eligible_keys.append(key)
+
+    total_expected = sum(v['ceil'] for v in expected_per_group.values())
+    initial_total = total_expected
+    logger.info(
+        f"rebalance_spreads_by_pair_merge: target={target_total_spreads}, "
+        f"initial_total_expected={initial_total}, total_groups={len(group_keys)}, "
+        f"eligible_small_groups={len(eligible_keys)}"
+    )
+
+    if total_expected <= target_total_spreads:
+        logger.info("rebalance_spreads_by_pair_merge: no rebalance needed, total already within target")
+        return photos_df
+
+    if len(eligible_keys) < 2:
+        logger.info("rebalance_spreads_by_pair_merge: fewer than 2 eligible small groups, cannot rebalance")
+        return photos_df
+
+    general_times_list, _ = get_groups_time(groups)
+
+    # Build ordered pair candidates: for each eligible source group, find closest
+    # eligible partner in the same time_cluster using time + class similarity.
+    pair_candidates = []  # list of (src_key, partner_key, time_diff)
+    for src_key in eligible_keys:
+        src_group = groups.get_group(src_key)
+        partner_df_list = [
+            groups.get_group(k) for k in eligible_keys
+            if k != src_key and k[0] == src_key[0]
+        ]
+        if not partner_df_list:
+            continue
+        selected_partner, time_diff = merge_illegal_group_by_time(
+            partner_df_list, src_group, general_times_list,
+            max_images_per_spread=CONFIGS['max_imges_per_spread']
+        )
+        if selected_partner is None:
+            continue
+        partner_key = (
+            selected_partner['time_cluster'].iloc[0],
+            selected_partner['cluster_context'].iloc[0],
+            selected_partner['group_sub_index'].iloc[0],
+        )
+        pair_candidates.append((src_key, partner_key, time_diff))
+
+    pair_candidates.sort(key=lambda x: x[2])
+
+    used = set()
+    merged_count = 0
+    for src_key, partner_key, time_diff in pair_candidates:
+        if total_expected <= target_total_spreads:
+            break
+        if src_key in used or partner_key in used:
+            continue
+
+        src_group = groups.get_group(src_key)
+        partner_group = groups.get_group(partner_key)
+
+        pair_size = len(src_group) + len(partner_group)
+        pre_pair_expected = expected_per_group[src_key]['ceil'] + expected_per_group[partner_key]['ceil']
+
+        if pre_pair_expected < 2:
+            logger.info(
+                f"rebalance: skip pair {src_key} + {partner_key}: pre_pair_expected={pre_pair_expected} < 2"
+            )
+            continue
+
+        new_class = find_reassignment_class(
+            pair_size=pair_size,
+            pre_pair_expected=pre_pair_expected,
+            lut_table=look_up_table,
+            src_classes=(src_key[1], partner_key[1]),
+        )
+        if new_class is None:
+            logger.info(
+                f"rebalance: skip pair {src_key} + {partner_key} (sizes={len(src_group)}+{len(partner_group)}, "
+                f"pre_pair_expected={pre_pair_expected}): no reassignment class reduces by >=1"
+            )
+            continue
+
+        new_expected = expected_spreads_ceil(pair_size, look_up_table[new_class][0])
+        apply_pair_merge_for_rebalance(photos_df, src_group, partner_group, new_class)
+
+        total_expected = total_expected - pre_pair_expected + new_expected
+        used.add(src_key)
+        used.add(partner_key)
+        merged_count += 1
+
+        logger.info(
+            f"rebalance: merged {src_key} + {partner_key} -> class='{new_class}' "
+            f"(sizes={len(src_group)}+{len(partner_group)}={pair_size}, "
+            f"pre_pair_expected={pre_pair_expected}, new_expected={new_expected}, "
+            f"running_total={total_expected})"
+        )
+
+    success = total_expected <= target_total_spreads
+    logger.info(
+        f"rebalance_spreads_by_pair_merge: done. target={target_total_spreads}, "
+        f"before={initial_total}, after={total_expected}, pairs_merged={merged_count}, "
+        f"spreads_reduced={initial_total - total_expected}, success={success}"
+    )
+
+    return photos_df
+
+
 # Illegal groups split/merge pipeline
 def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.DataFrame:
     """
@@ -436,8 +584,9 @@ def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.D
 
 def process_wedding_illegal_groups(
         photos_df: pd.DataFrame, resources: AlbumDesignResources, manual_selection: bool,
-        logger=None, max_iterations: int = 500, all_gallery_df=None
-    ) -> Tuple[Optional[Any], Optional[dict]]:
+        logger=None, max_iterations: int = 500, all_gallery_df=None,
+        selection_min_total_spreads: Optional[int] = None,
+    ) -> Tuple[Optional[Any], Optional[dict], pd.DataFrame]:
     """
     Full pipeline for splitting and merging photo groups into legal album spreads.
 
@@ -447,6 +596,8 @@ def process_wedding_illegal_groups(
       3. Merge complementary bride/groom groups.
       4. Iteratively merge remaining small groups until no more merges are possible
          or `max_iterations` is reached.
+      5. Optionally rebalance spreads to meet a minimum spread target
+         (only when `selection_min_total_spreads` is provided and not in manual mode).
 
     Args:
         photos_df: DataFrame of photos with classification and time columns.
@@ -457,6 +608,8 @@ def process_wedding_illegal_groups(
         logger: Optional logger instance for info/warning/error messages.
         max_iterations: Safety limit for the iterative merge loop to prevent
             infinite execution.
+        selection_min_total_spreads: Minimum total spreads target from the AI
+            selection stage; triggers pair-merge rebalancing when set.
 
     Returns:
         A tuple of:
@@ -491,6 +644,14 @@ def process_wedding_illegal_groups(
         photos_df = _resolve_singletons(
             photos_df, resources, manual_selection, logger, all_gallery_df
         )
+
+        # Rebalance spreads to meet the AI-selection target (skipped for manual selection)
+        if (CONFIGS.get('use_rebalance_spreads', False)
+                and not manual_selection
+                and selection_min_total_spreads is not None):
+            photos_df = rebalance_spreads_by_pair_merge(
+                photos_df, resources, selection_min_total_spreads, logger
+            )
     except Exception as ex:
         import traceback
         tb = traceback.extract_tb(ex.__traceback__)
