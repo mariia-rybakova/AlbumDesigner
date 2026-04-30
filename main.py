@@ -377,6 +377,7 @@ class ProcessStage(Stage):
                 final_response = assembly_output(album_result, message, df, first_last_pages_data_dict, message.content.get('album_ar',
                                                                                                                    {'anyPage':2})['anyPage'],self.logger)
 
+                message.content['gallery_photos_info'] = df
                 message.album_doc = copy.deepcopy(final_response)
                 processing_time = datetime.now() - start
 

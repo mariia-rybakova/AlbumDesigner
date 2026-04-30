@@ -30,88 +30,161 @@ from ptinfra.pt_queue import Message
 from main import ProcessStage
 
 
+def _group_placements_by_composition(placements_img):
+    """Bucket every placement under its compositionId."""
+    grouped = defaultdict(list)
+    for placement in placements_img:
+        grouped[placement['compositionId']].append(placement)
+    return grouped
+
+
+def _resolve_design_boxes(comp, placements, box_id2data):
+    """Return the box list aligned with placements: from the composition or looked up by boxId."""
+    if comp['boxes'] is not None:
+        return comp['boxes']
+    return [box_id2data.get(placement['boxId']) for placement in placements]
+
+
+def _find_image_for_photo(image_files, photo_id):
+    """First filename whose name starts with `photo_id`, or None."""
+    prefix = f"{photo_id}"
+    for name in image_files:
+        if name.startswith(prefix):
+            return name
+    return None
+
+
+def _box_to_page_rect(box, page_width, page_height):
+    """Convert relative box coordinates into a (x, y, w, h) pixel rect."""
+    return (
+        box['x'] * page_width,
+        box['y'] * page_height,
+        box['width'] * page_width,
+        box['height'] * page_height,
+    )
+
+
+def _load_cropped_image(img_path, placement, box_w, box_h):
+    """Open the source image, crop by placement ratios, resize to fit the box, return PNG bytes."""
+    with Image.open(img_path) as img:
+        width, height = img.size
+        crop_x = int(placement['cropX'] * width)
+        crop_y = int(placement['cropY'] * height)
+        crop_w = int(placement['cropWidth'] * width)
+        crop_h = int(placement['cropHeight'] * height)
+        cropped = img.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+        # Height is doubled to match the rest of the rendering pipeline.
+        cropped = cropped.resize((int(box_w), int(box_h * 2)))
+        buf = io.BytesIO()
+        cropped.save(buf, format='PNG')
+        buf.seek(0)
+        return buf
+
+
+def _draw_composition_header(c, comp_id, design_id, page_height):
+    c.setFont("Helvetica", 10)
+    c.drawString(30, page_height - 30, f"Composition ID: {comp_id}, Design ID: {design_id}")
+
+
+def _draw_image_in_box(c, img_io, box_rect, page_height):
+    """reportlab uses bottom-left origin, so flip y."""
+    box_x, box_y, box_w, box_h = box_rect
+    c.drawImage(ImageReader(img_io), box_x, page_height - box_y - box_h, width=box_w, height=box_h)
+
+
+def _draw_error_in_box(c, photo_id, box_rect, page_height):
+    box_x, box_y, _, _ = box_rect
+    c.setFillColorRGB(1, 0, 0)
+    c.drawString(box_x, page_height - box_y - 10, f"Error: {photo_id}")
+    c.setFillColorRGB(0, 0, 0)
+
+
+def _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height):
+    """Stamp time, group key, and original context inside the box bottom — red, 8pt."""
+    info_row = gallery_photos_info.loc[gallery_photos_info['image_id'] == photo_id]
+    if info_row.empty:
+        return
+
+    row = info_row.iloc[0]
+    general_time = row.get('image_time_date', '')
+    original_context = row.get('original_context', '')
+    group_key = (
+        row.get('time_cluster', ''),
+        row.get('cluster_context', ''),
+        row.get('group_sub_index', ''),
+    )
+
+    box_x, box_y, _, box_h = box_rect
+    base_y = page_height - box_y - box_h
+
+    c.setFont("Helvetica", 8)
+    c.setFillColorRGB(1, 0, 0)
+    c.drawString(box_x, base_y + 18, f"{general_time}")
+    c.drawString(box_x, base_y + 10, f"{group_key}")
+    c.drawString(box_x, base_y + 2, f"{original_context}")
+    c.setFillColorRGB(0, 0, 0)
+
+
+def _render_placement(c, placement, box, image_files, images_path,
+                      gallery_photos_info, page_width, page_height):
+    """Render one photo placement: image (cropped & sized) plus its metadata, or an error label."""
+    photo_id = placement['photoId']
+    if photo_id is None or not box:
+        return
+
+    image_name = _find_image_for_photo(image_files, photo_id)
+    if image_name is None:
+        return
+
+    img_path = os.path.join(images_path, image_name)
+    box_rect = _box_to_page_rect(box, page_width, page_height)
+    _, _, box_w, box_h = box_rect
+
+    try:
+        img_io = _load_cropped_image(img_path, placement, box_w, box_h)
+        _draw_image_in_box(c, img_io, box_rect, page_height)
+    except Exception:
+        _draw_error_in_box(c, photo_id, box_rect, page_height)
+        return
+
+    _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height)
+
+
+def _render_composition_page(c, comp, placements, box_id2data, image_files, images_path,
+                             gallery_photos_info, page_width, page_height):
+    """Render one composition as a single PDF page: header on top, then every placement."""
+    design_boxes = _resolve_design_boxes(comp, placements, box_id2data)
+    _draw_composition_header(c, comp['compositionId'], comp['designId'], page_height)
+    for placement, box in zip(placements, design_boxes):
+        _render_placement(c, placement, box, image_files, images_path,
+                          gallery_photos_info, page_width, page_height)
+    c.showPage()
+
+
 def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info):
     """
-    Visualize the album in a PDF file.
-    Args:
-        final_album: dict, as returned by process_gallery
-        images_path: str, directory where images are stored
-        output_pdf_path: str, path to save the PDF
-        box_id2data: dict, mapping boxId to box info (with x, y, width, height)
-        gallery_photos_info: pd.DataFrame, contains info for each photo (general_time, cluster_context)
-    """
+    Visualize the album in a PDF file: one composition per landscape A4 page.
 
+    Args:
+        final_album: dict, as returned by process_gallery.
+        images_path: str, directory where images are stored.
+        output_pdf_path: str, path to save the PDF.
+        box_id2data: dict, mapping boxId to box info (with x, y, width, height).
+        gallery_photos_info: pd.DataFrame with one row per photo (image_id, image_time_date,
+            time_cluster, cluster_context, group_sub_index, original_context).
+    """
     composition = final_album['composition']
     compositions = composition['compositions']
-    placementsImg = composition['placementsImg']
+    placements_by_comp = _group_placements_by_composition(composition['placementsImg'])
 
-    placements_by_comp = defaultdict(list)
-    for placement in placementsImg:
-        placements_by_comp[placement['compositionId']].append(placement)
+    image_files = os.listdir(images_path)
 
-    # Use landscape A4
     page_width, page_height = landscape(A4)
     c = canvas.Canvas(output_pdf_path, pagesize=(page_width, page_height))
-
     for comp in compositions:
-        comp_id = comp['compositionId']
-        design_id = comp['designId']
-        design_boxes = comp['boxes']
-        placements = placements_by_comp.get(comp_id, [])
-        if design_boxes is None:
-            design_boxes = [box_id2data.get(placement['boxId']) for placement in placements]
-        c.setFont("Helvetica", 10)
-        c.drawString(30, page_height - 30, f"Composition ID: {comp_id}, Design ID: {design_id}")
-        for placement, box in zip(placements, design_boxes):
-            photo_id = placement['photoId']
-            if photo_id is None:
-                continue
-            all_images_names = os.listdir(images_path)
-            all_images_with_this_name = [img for img in all_images_names if img.startswith(f"{photo_id}")]
-            if len(all_images_with_this_name) == 0:
-                continue
-            img_path = os.path.join(images_path, all_images_with_this_name[0])
-            if not box:
-                continue
-            # Box coordinates and size (relative to page)
-            box_x = box['x'] * page_width
-            box_y = box['y'] * page_height
-            box_w = box['width'] * page_width
-            box_h = box['height'] * page_height
-            try:
-
-                with Image.open(img_path) as img:
-                    # Crop image according to cropX, cropY, cropWidth, cropHeight (assume these are ratios)
-                    width, height = img.size
-                    crop_x = int(placement['cropX'] * width)
-                    crop_y = int(placement['cropY'] * height)
-                    crop_w = int(placement['cropWidth'] * width)
-                    crop_h = int(placement['cropHeight'] * height)
-                    crop_box = (crop_x, crop_y, crop_x + crop_w, crop_y + crop_h)
-                    cropped_img = img.crop(crop_box)
-                    # Resize to fit the box, but divide width by 2
-                    cropped_img = cropped_img.resize((int(box_w), int(box_h*2)))
-                    img_io = io.BytesIO()
-                    cropped_img.save(img_io, format='PNG')
-                    img_io.seek(0)
-                    # In reportlab, (0,0) is at the bottom-left
-                    c.drawImage(ImageReader(img_io), box_x, page_height - box_y - box_h, width=box_w, height=box_h)
-            except Exception as e:
-                c.setFillColorRGB(1, 0, 0)
-                c.drawString(box_x, page_height - box_y - 10, f"Error: {photo_id}")
-                c.setFillColorRGB(0, 0, 0)
-                continue
-            # Print general_time and cluster_context at the bottom of the image (inside the box)
-            info_row = gallery_photos_info.loc[gallery_photos_info['image_id'] == photo_id]
-            if not info_row.empty:
-                general_time = info_row.iloc[0].get('image_time_date', '')
-                cluster_context = info_row.iloc[0].get('cluster_context', '')
-                c.setFont("Helvetica", 8)
-                c.setFillColorRGB(1, 0, 0)  # White color for bright text
-                c.drawString(box_x, page_height - box_y - box_h + 10, f"{general_time}")
-                c.drawString(box_x, page_height - box_y - box_h + 2, f"{cluster_context}")
-                c.setFillColorRGB(0, 0, 0)  # Reset to black
-        c.showPage()
+        placements = placements_by_comp.get(comp['compositionId'], [])
+        _render_composition_page(c, comp, placements, box_id2data, image_files, images_path,
+                                 gallery_photos_info, page_width, page_height)
     c.save()
 
 
@@ -182,8 +255,9 @@ def get_selection(message, logger):
 
         message.content['modified_lut'] = modified_lut
         is_artificial_time = message.content['is_artificial_time']
-        ai_photos_selected, spreads_dict, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
-                                                  logger, rating=rating)
+
+        ai_photos_selected, spreads_dict, min_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
+                                                  logger)
 
         if errors:
             logger.error(f"Error for Selection images for this message {message}")
@@ -271,13 +345,16 @@ if __name__ == '__main__':
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
     intialize('AlbumDesigner', settings_filename)
 
-    with open('files/test_requests/request0.json', 'r') as f:
+    with open('files/test_requests/request2.json', 'r') as f:
         _input_request = json.load(f)
 
     # Run request
     final_album, _message = process_gallery(_input_request)
     gallery_photos_info = _message.content['gallery_photos_info']
     box_id2data = _message.designsInfo['anyPagebox_id2data']  # if 'designsInfo' in _message and 'anyPagebox_id2data' in _message['designsInfo'] else {}
+
+    print('FINAL SPREADS', len(final_album['composition']['compositions']))
+    print(final_album)
 
     # Debug with Plotting
     id = str(_input_request["projectId"])
@@ -287,8 +364,6 @@ if __name__ == '__main__':
     _output_pdf_path = os.path.join(_output_pdf_path, 'album1.pdf')
 
     visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info)
-
-    print(final_album)
-
+    print('album saved locally')
 
 
