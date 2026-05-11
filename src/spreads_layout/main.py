@@ -291,9 +291,9 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
     Returns:
         Dict mapping group_id_str to GroupProcessingResult, or None on error.
     """
-    layouts_df = resources.layouts_df
-    layout_id2data = resources.layout_id2data
-    design_box_id2data = resources.box_id2data
+    layouts_df = resources.printlab_data.layouts_df
+    layout_id2data = resources.printlab_data.layout_id2data
+    design_box_id2data = resources.printlab_data.box_id2data
     # print('\nprocessing group', group_name)
 
     largest_layout_size = max(list(layouts_df['number of boxes'].unique()))

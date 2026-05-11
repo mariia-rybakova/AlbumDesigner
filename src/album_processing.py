@@ -2,6 +2,7 @@ import time
 import copy
 from typing import List, Dict, Any, Optional, Tuple
 import os
+import json
 
 from src.groups_operations.groups_management import process_wedding_illegal_groups
 from src.core.models import AlbumDesignResources, SpreadSearchParams
@@ -10,6 +11,14 @@ from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_i
 from utils.time_processing import sort_groups_by_time
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
+
+
+def _json_default(o):
+    if hasattr(o, 'item'):
+        return o.item()
+    if isinstance(o, (set, frozenset)):
+        return sorted(o)
+    return str(o)
 
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
@@ -56,6 +65,8 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
 
     if CONFIGS['save_files']['spreads']:
         os.makedirs('files/stages_info/spreads', exist_ok=True)
+        with open('files/stages_info/spreads/_layouts.json', 'w') as f:
+            json.dump(resources.printlab_data.to_dict(), f, indent=2, default=_json_default)
 
     result_list = []
     for group_name in group2images.keys():

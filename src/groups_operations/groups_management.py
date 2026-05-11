@@ -233,7 +233,7 @@ def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResou
           - True if at least one merge was performed, False otherwise.
     """
     look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
-    possible_boxes_numbers = list(resources.layouts_df['number of boxes'].unique())
+    possible_boxes_numbers = list(resources.printlab_data.layouts_df['number of boxes'].unique())
 
     _update_group_spreads(photos_df, look_up_table)     # add 'group_spreads' field
 
@@ -398,7 +398,7 @@ def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gall
         The modified photos_df.
     """
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
-    possible_boxes_numbers = list(resources.layouts_df['number of boxes'].unique())
+    possible_boxes_numbers = list(resources.printlab_data.layouts_df['number of boxes'].unique())
 
     group_sizes = {k: len(g) for k, g in groups}
     logger.info(f"_resolve_singletons called. Groups: {group_sizes}")
