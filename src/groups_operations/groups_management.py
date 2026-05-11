@@ -1,4 +1,6 @@
 from typing import List, Tuple, Iterable, Callable, Any, Optional
+import os
+import json
 
 import pandas as pd
 
@@ -15,6 +17,23 @@ from src.groups_operations.split import (get_number_of_spreads, is_split_needed,
                                          split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
 from utils.configs import CONFIGS
+
+
+columns_simple = ['general_time', 'time_cluster', 'cluster_context', 'group_sub_index', 'group_size']
+columns_full = ['image_as', 'image_time', 'general_time', 'time_cluster', 'original_context', 'cluster_context', 'cluster_label', 'group_sub_index', 'group_size', 'groups_merged', 'merge_allowed', 'group_spreads']
+
+def export_df(df: pd.DataFrame, columns = None):
+    if not columns:
+        columns = columns_simple
+    try:
+        df_short = df.copy()[columns]
+    except Exception as e:
+        print(e)
+        raise e
+    return {
+        'columns': ['idx'] + columns,
+        'table': df_short.reset_index().values.tolist()
+    }
 
 
 # Splitting
@@ -72,6 +91,7 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
     split_groups_ = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups_)
 
+    export = []
     for group_key, group in split_groups_:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
         # Calculate average number of spreads for this group
@@ -85,9 +105,23 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
             split_points = get_split_points(general_times_list, group_key2time_list[group_key], group_key=group_key[1])
             updated_group = split_diverse_group(group, split_points)
 
+        if CONFIGS['save_files']['groups']:
+            export_group = {
+                'group_key': str(group_key),
+                'original_group': export_df(group, columns=['general_time', 'group_sub_index', 'group_size'])
+            }
+            if updated_group is not None:
+                export_group['updated_group'] = export_df(updated_group, columns=['general_time', 'group_sub_index'])
+            export.append(export_group)
+
         update_group_sub_index(photos_df, updated_group, logger)
 
     update_groups_size(photos_df)
+
+    if CONFIGS['save_files']['groups']:
+        with open("files/stages_info/groups/split.json", "w") as file:
+            json.dump(export, file, indent=4)
+
     return photos_df
 
 
@@ -616,11 +650,18 @@ def process_wedding_illegal_groups(
           - groups: A pandas GroupBy object of the final photo groups, or None on error.
           - group2images: Dict mapping group keys to their image lists, or None on error.
     """
+    if CONFIGS['save_files']['groups']:
+        os.makedirs('files/stages_info/groups', exist_ok=True)
+
     photos_df = _get_groups(photos_df, manual_selection, logger)
 
     iteration = 0
     try:
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
+
+        if CONFIGS['save_files']['groups']:
+            with open("files/stages_info/groups/merge.txt", "w") as file:
+                file.write('\nBRIDE GROOM\n\n')
 
         photos_df['merge_allowed'] = True
         photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
@@ -628,7 +669,15 @@ def process_wedding_illegal_groups(
         photos_df['groups_merged'] = 1
         photos_df = handle_wedding_bride_groom_merge(photos_df, logger)
 
+        if CONFIGS['save_files']['groups']:
+            with open("files/stages_info/groups/merge.txt", "a") as file:
+                file.write('\nOTHER\n\n')
+
         while True:
+            if CONFIGS['save_files']['groups']:
+                with open("files/stages_info/groups/merge.txt", "a") as file:
+                    file.write(f'* Iteration {iteration}\n')
+
             # Build groups_to_change directly here
             if iteration >= max_iterations:
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")

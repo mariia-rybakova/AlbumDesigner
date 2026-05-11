@@ -1,6 +1,7 @@
 import time
 import copy
 from typing import List, Dict, Any, Optional, Tuple
+import os
 
 from src.groups_operations.groups_management import process_wedding_illegal_groups
 from src.core.models import AlbumDesignResources, SpreadSearchParams
@@ -52,6 +53,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
 
     resources.look_up_table.update_with_limit(group2images, max_total_spreads=max_total_spreads,
                                               min_total_spreads=min_total_spreads,logger = logger)
+
+    if CONFIGS['save_files']['spreads']:
+        os.makedirs('files/stages_info/spreads', exist_ok=True)
 
     result_list = []
     for group_name in group2images.keys():

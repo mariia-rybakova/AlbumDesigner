@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import math
 from gc import collect
 import time
+import json
 
 import pandas as pd
 
@@ -10,6 +11,7 @@ from src.core.photos import get_photos_from_df, Photo
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
 from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts
+from utils.configs import CONFIGS
 
 
 def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
@@ -244,10 +246,25 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
 
             group_id_str, structured_group = structure_layout(best_layout, group_name, group_idx, is_wedding)
 
+            if CONFIGS['save_files']['spreads']:
+                export_subgroup(group_id_str, subgroup_layouts, subgroup_photos)
+
             local_result[group_id_str] = structured_group
             group_idx += 1
 
     return local_result
+
+
+def export_subgroup(group_id_str, subgroup_layouts, subgroup_photos):
+    k = CONFIGS['save_files']['top_k']
+    top_k = subgroup_layouts[:k]
+    export = {
+        'photos': [{'id': photo.id} for photo in subgroup_photos],
+        'top_layouts': [group_layout.to_dict() for group_layout in top_k]
+    }
+    name = group_id_str.replace(" ", "_").replace("*", "_")
+    with open(f"files/stages_info/spreads/{name}.json", "w") as file:
+        json.dump(export, file, indent=4)
 
 
 def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_params: List[float],

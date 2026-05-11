@@ -62,6 +62,16 @@ class SingleSpreadLayout:
                 f'Photos: [left page: {self.left_page_photo_idxs}, right page: {self.right_page_photo_idxs}]; '
                 f'Square boxes in spread: {self.number_of_squares}')
 
+    def to_dict(self):
+        return {
+            'layout_idx': self.layout_idx,
+            'left_page_photo_idxs': list(self.left_page_photo_idxs),
+            'right_page_photo_idxs': list(self.right_page_photo_idxs),
+            'number_of_squares': self.number_of_squares,
+            'score': self.score,
+            'weight': self.weight
+        }
+
     def resolve_photos(self, photos: List[Photo]) -> None:
         """Map photo indices to Photo objects for both pages."""
         self.left_page_photos = {photos[idx] for idx in self.left_page_photo_idxs}

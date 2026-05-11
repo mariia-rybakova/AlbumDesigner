@@ -1,4 +1,12 @@
 CONFIGS = {'DEBUG': True,
+
+           # Debug info saving flags
+           'save_files': {
+               'groups': False,
+               'spreads': False,
+               'top_k': 5
+               },
+
            'queries_file': r'files/queries_embeddings_v1.pkl',
            'queries_file_v2': r'files/queries_embeddings_v2.pkl',
            'queries_file_v3': r'files/queries_embeddings_v3.pkl',

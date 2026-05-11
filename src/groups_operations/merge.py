@@ -7,6 +7,23 @@ import pandas as pd
 
 from utils.configs import CONFIGS
 
+columns_simple = ['general_time', 'time_cluster', 'cluster_context', 'group_sub_index', 'group_size']
+columns_full = ['image_as', 'image_time', 'general_time', 'time_cluster', 'original_context', 'cluster_context', 'cluster_label', 'group_sub_index', 'group_size', 'groups_merged', 'merge_allowed', 'group_spreads']
+
+def export_df(df: pd.DataFrame, columns = None):
+    if not columns:
+        columns = columns_simple
+    try:
+        df_short = df.copy()[columns]
+    except Exception as e:
+        print(e)
+        raise e
+    with pd.option_context('display.max_rows', None,
+                           'display.max_columns', None,
+                           'display.width', None,
+                           'display.max_colwidth', None):
+        return df_short.to_string() + '\n\n'
+
 
 SIMILAR_CLASSES_L1 = [
     ['bride', 'bride getting dressed', 'getting hair-makeup', 'bride party'],
@@ -568,12 +585,33 @@ def _update_with_merges(
         selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0],
                         selected_cluster['group_sub_index'].iloc[0])
 
+        if CONFIGS['save_files']['groups']:
+            with open("files/stages_info/groups/merge.txt", "a") as file:
+                file.write(f'\n\nFinding merge for {group_key}\n')
+                file.write(export_df(to_merge_group))
+                if group_key in current_merges:
+                    file.write(f'{group_key} already merged\n')
+                file.write(f'Trying to merge with {selected_key}\n')
+                file.write(export_df(selected_cluster))
+                if selected_key in current_merges:
+                    file.write(f'{selected_key} already merged\n')
+
         if group_key in current_merges or selected_key in current_merges:
             continue
 
         merged_group, reminder_group = _get_merged_group(to_merge_group, selected_cluster, group_key, *args, **kwargs)
         if merged_group is None:
             continue
+
+        # export
+        if CONFIGS['save_files']['groups']:
+            with open("files/stages_info/groups/merge.txt", "a") as file:
+                if merged_group is not None:
+                    file.write(f'Merged group\n')
+                    file.write(export_df(merged_group))
+                if reminder_group is not None:
+                    file.write(f'Reminder group\n')
+                    file.write(export_df(reminder_group))
 
         # Update df
         _update_merged_photos(photos_df, to_merge_group, selected_cluster, merged_group, reminder_group)

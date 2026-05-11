@@ -20,6 +20,13 @@ class GroupSingleLayout:
     score: Optional[float] = None
     weight: Optional[float] = None
 
+    def to_dict(self):
+        return {
+            'score': self.score,
+            'weight': self.weight,
+            'spreads_layouts': [spread.to_dict() for spread in self.spreads_layouts],
+        }
+
     def update_weight(self, factor: float) -> None:
         self.weight *= factor
 
