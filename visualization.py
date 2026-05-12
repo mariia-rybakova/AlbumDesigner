@@ -71,7 +71,7 @@ def _load_group_files(stages_dir: str) -> List[Tuple[str, dict]]:
     """List `(group_name, parsed_json)` for every per-group file.
 
     Skips `_layouts.json` and non-JSON files. The returned name is the bare
-    stem (e.g. `0_bride_0`).
+    stem (e.g. `0_bride_-1_0`).
     """
     out = []
     for fname in sorted(os.listdir(stages_dir)):

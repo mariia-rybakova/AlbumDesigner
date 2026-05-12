@@ -204,7 +204,7 @@ def structure_layout(best_layout: GroupSingleLayout, group_name: Tuple,
         for s in best_layout.spreads_layouts
     ]
 
-    group_id_str = str(group_name[0]) + '_' + group_name[1] if is_wedding else str(group_name[0])
+    group_id_str = str(group_name[0]) + '_' + group_name[1] + '_' + str(group_name[2]) if is_wedding else str(group_name[0])
     group_id_str += '*' + str(group_idx)
 
     structured_group = GroupProcessingResult(group_name=group_id_str, spreads=structured_spreads,
