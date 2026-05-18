@@ -7,22 +7,62 @@ import pandas as pd
 
 from utils.configs import CONFIGS
 
-columns_simple = ['general_time', 'time_cluster', 'cluster_context', 'group_sub_index', 'group_size']
-columns_full = ['image_as', 'image_time', 'general_time', 'time_cluster', 'original_context', 'cluster_context', 'cluster_label', 'group_sub_index', 'group_size', 'groups_merged', 'merge_allowed', 'group_spreads']
 
-def export_df(df: pd.DataFrame, columns = None):
-    if not columns:
-        columns = columns_simple
-    try:
-        df_short = df.copy()[columns]
-    except Exception as e:
-        print(e)
-        raise e
-    with pd.option_context('display.max_rows', None,
-                           'display.max_columns', None,
-                           'display.width', None,
-                           'display.max_colwidth', None):
-        return df_short.to_string() + '\n\n'
+# Module-level accumulator for successful-merge records. Consumed by the
+# grouping pipeline at the end of process_wedding_illegal_groups (it calls
+# reset_merge_records() at the start and reads get_merge_records() at the end
+# to write merge.json). Records carry image_id / general_time / original_context
+# per photo so the visualizer can render thumbnails with time + cluster captions.
+_merge_records: List[dict] = []
+
+
+def reset_merge_records() -> None:
+    _merge_records.clear()
+
+
+def get_merge_records() -> List[dict]:
+    return list(_merge_records)
+
+
+def _photos_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
+    """Project a photo DataFrame to JSON-safe dicts for the merge.json file."""
+    if df is None or len(df) == 0:
+        return []
+    keep_cols = ('image_id', 'general_time', 'original_context',
+                 'cluster_context', 'time_cluster',
+                 'group_sub_index', 'group_size')
+    keep = [c for c in keep_cols if c in df.columns]
+    out = []
+    for _, row in df[keep].iterrows():
+        rec = {}
+        for c in keep:
+            v = row[c]
+            if hasattr(v, 'item'):
+                try:
+                    v = v.item()
+                except Exception:
+                    pass
+            rec[c] = v
+        out.append(rec)
+    return out
+
+
+def _record_merge(merge_type: str, src_key: tuple, partner_key: tuple,
+                  merged_group: pd.DataFrame,
+                  reminder_group: Optional[pd.DataFrame] = None) -> None:
+    if not CONFIGS.get('save_files', {}).get('groups', False):
+        return
+    _merge_records.append({
+        'merge_type': merge_type,
+        'src_key': list(src_key),
+        'partner_key': list(partner_key),
+        'merged_photos': _photos_to_records(
+            merged_group.sort_values('general_time') if merged_group is not None and 'general_time' in merged_group.columns
+            else merged_group),
+        'reminder_photos': _photos_to_records(
+            reminder_group.sort_values('general_time') if reminder_group is not None and 'general_time' in reminder_group.columns
+            else reminder_group),
+    })
 
 
 SIMILAR_CLASSES_L1 = [
@@ -580,21 +620,11 @@ def _update_with_merges(
         None: Updates are applied directly to `photos_df`.
     """
     current_merges = set()
+    merge_type = 'bridegroom' if _update_merged_photos is _update_merged_photos_bridegroom else 'other'
     for group_key, selected_cluster, selected_time_difference in merge_candidates:
         to_merge_group = merge_groups.get_group(group_key)
         selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0],
                         selected_cluster['group_sub_index'].iloc[0])
-
-        if CONFIGS['save_files']['groups']:
-            with open("files/stages_info/groups/merge.txt", "a") as file:
-                file.write(f'\n\nFinding merge for {group_key}\n')
-                file.write(export_df(to_merge_group))
-                if group_key in current_merges:
-                    file.write(f'{group_key} already merged\n')
-                file.write(f'Trying to merge with {selected_key}\n')
-                file.write(export_df(selected_cluster))
-                if selected_key in current_merges:
-                    file.write(f'{selected_key} already merged\n')
 
         if group_key in current_merges or selected_key in current_merges:
             continue
@@ -603,15 +633,7 @@ def _update_with_merges(
         if merged_group is None:
             continue
 
-        # export
-        if CONFIGS['save_files']['groups']:
-            with open("files/stages_info/groups/merge.txt", "a") as file:
-                if merged_group is not None:
-                    file.write(f'Merged group\n')
-                    file.write(export_df(merged_group))
-                if reminder_group is not None:
-                    file.write(f'Reminder group\n')
-                    file.write(export_df(reminder_group))
+        _record_merge(merge_type, group_key, selected_key, merged_group, reminder_group)
 
         # Update df
         _update_merged_photos(photos_df, to_merge_group, selected_cluster, merged_group, reminder_group)
@@ -712,6 +734,10 @@ def force_merge_portrait_singleton(
 
     # Apply metadata updates (same pattern as _update_merged_photos_other)
     merged_group = pd.concat([singleton_group, selected_cluster])
+    partner_key = (selected_cluster['time_cluster'].iloc[0],
+                   selected_cluster['cluster_context'].iloc[0],
+                   selected_cluster['group_sub_index'].iloc[0])
+    _record_merge('singleton', singleton_key, partner_key, merged_group, reminder_group=None)
     _update_merged_photos_singleton(photos_df, selected_cluster, merged_group, cross_cluster_merge)
 
     return True

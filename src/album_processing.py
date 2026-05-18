@@ -3,6 +3,7 @@ import copy
 from typing import List, Dict, Any, Optional, Tuple
 import os
 import json
+import shutil
 
 from src.groups_operations.groups_management import process_wedding_illegal_groups
 from src.core.models import AlbumDesignResources, SpreadSearchParams
@@ -64,6 +65,10 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
                                               min_total_spreads=min_total_spreads,logger = logger)
 
     if CONFIGS['save_files']['spreads']:
+        # Wipe stale per-group jsons from any previous run. Without this, files
+        # whose group key isn't reused by the new run linger and mix into the
+        # next visualization with photo ids that won't exist on disk.
+        shutil.rmtree('files/stages_info/spreads', ignore_errors=True)
         os.makedirs('files/stages_info/spreads', exist_ok=True)
         with open('files/stages_info/spreads/_layouts.json', 'w') as f:
             json.dump(resources.printlab_data.to_dict(), f, indent=2, default=_json_default)

@@ -12,28 +12,43 @@ from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_me
                                          force_merge_portrait_singleton,
                                          merge_illegal_group_by_time, find_reassignment_class,
                                          apply_pair_merge_for_rebalance,
-                                         expected_spreads_float, expected_spreads_ceil)
+                                         expected_spreads_float, expected_spreads_ceil,
+                                         reset_merge_records, get_merge_records)
 from src.groups_operations.split import (get_number_of_spreads, is_split_needed, get_split_points,
                                          split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
 from utils.configs import CONFIGS
 
 
-columns_simple = ['general_time', 'time_cluster', 'cluster_context', 'group_sub_index', 'group_size']
-columns_full = ['image_as', 'image_time', 'general_time', 'time_cluster', 'original_context', 'cluster_context', 'cluster_label', 'group_sub_index', 'group_size', 'groups_merged', 'merge_allowed', 'group_spreads']
+PHOTO_RECORD_COLUMNS = ('image_id', 'general_time', 'original_context',
+                        'cluster_context', 'time_cluster',
+                        'group_sub_index', 'group_size')
 
-def export_df(df: pd.DataFrame, columns = None):
-    if not columns:
-        columns = columns_simple
-    try:
-        df_short = df.copy()[columns]
-    except Exception as e:
-        print(e)
-        raise e
-    return {
-        'columns': ['idx'] + columns,
-        'table': df_short.reset_index().values.tolist()
-    }
+
+def photos_to_records(df: pd.DataFrame) -> List[dict]:
+    """Project a photo DataFrame to a list of JSON-safe dicts.
+
+    Carries the fields the visualizers need: `image_id` (to locate the file
+    on disk), `general_time` (for time-strip captions), `original_context`
+    (for merge captions), plus group-membership context. Missing columns are
+    silently skipped.
+    """
+    if df is None or len(df) == 0:
+        return []
+    keep = [c for c in PHOTO_RECORD_COLUMNS if c in df.columns]
+    out = []
+    for _, row in df[keep].iterrows():
+        rec = {}
+        for c in keep:
+            v = row[c]
+            if hasattr(v, 'item'):
+                try:
+                    v = v.item()
+                except Exception:
+                    pass
+            rec[c] = v
+        out.append(rec)
+    return out
 
 
 # Splitting
@@ -91,36 +106,51 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
     split_groups_ = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups_)
 
-    export = []
+    splits_records = []
     for group_key, group in split_groups_:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
         # Calculate average number of spreads for this group
         number_of_spreads = get_number_of_spreads(group, group_spread_size)
         # Check if group is too big and need to be split
         if is_split_needed(number_of_spreads, group_spread_size, group_key):
-            # Split big group
+            split_method = 'size_based'
             updated_group = split_big_group(group, group_spread_size)
         else:
-            # Check if group is diverse in time and get split time points
+            split_method = 'time_based'
             split_points = get_split_points(general_times_list, group_key2time_list[group_key], group_key=group_key[1])
             updated_group = split_diverse_group(group, split_points)
 
-        if CONFIGS['save_files']['groups']:
-            export_group = {
-                'group_key': str(group_key),
-                'original_group': export_df(group, columns=['general_time', 'group_sub_index', 'group_size'])
-            }
-            if updated_group is not None:
-                export_group['updated_group'] = export_df(updated_group, columns=['general_time', 'group_sub_index'])
-            export.append(export_group)
+        # Only record actual splits. split_diverse_group returns None for most
+        # groups (it's evaluated for every candidate; only a few diverge in
+        # time enough to be split), so suppressing those keeps the visualizer
+        # focused on splits that actually happened.
+        if CONFIGS['save_files']['groups'] and updated_group is not None and 'group_sub_index' in updated_group.columns:
+            sub_groups_records = []
+            for sub_idx in sorted(updated_group['group_sub_index'].dropna().unique()):
+                sub_df = updated_group[updated_group['group_sub_index'] == sub_idx].sort_values('general_time')
+                sub_groups_records.append({
+                    'sub_index': int(sub_idx) if hasattr(sub_idx, '__int__') else sub_idx,
+                    'photos': photos_to_records(sub_df),
+                })
+
+            if sub_groups_records:
+                splits_records.append({
+                    'group_key': list(group_key),
+                    'split_method': split_method,
+                    'group_spread_size': group_spread_size,
+                    'number_of_spreads': number_of_spreads,
+                    'original_photos': photos_to_records(group.sort_values('general_time')),
+                    'sub_groups': sub_groups_records,
+                })
 
         update_group_sub_index(photos_df, updated_group, logger)
 
     update_groups_size(photos_df)
 
     if CONFIGS['save_files']['groups']:
-        with open("files/stages_info/groups/split.json", "w") as file:
-            json.dump(export, file, indent=4)
+        os.makedirs('files/stages_info/groups', exist_ok=True)
+        with open('files/stages_info/groups/split.json', 'w', encoding='utf-8') as file:
+            json.dump({'splits': splits_records}, file, indent=2, default=str)
 
     return photos_df
 
@@ -652,6 +682,7 @@ def process_wedding_illegal_groups(
     """
     if CONFIGS['save_files']['groups']:
         os.makedirs('files/stages_info/groups', exist_ok=True)
+        reset_merge_records()
 
     photos_df = _get_groups(photos_df, manual_selection, logger)
 
@@ -659,26 +690,13 @@ def process_wedding_illegal_groups(
     try:
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
 
-        if CONFIGS['save_files']['groups']:
-            with open("files/stages_info/groups/merge.txt", "w") as file:
-                file.write('\nBRIDE GROOM\n\n')
-
         photos_df['merge_allowed'] = True
         photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
         photos_df['original_context'] = photos_df['cluster_context'].copy()
         photos_df['groups_merged'] = 1
         photos_df = handle_wedding_bride_groom_merge(photos_df, logger)
 
-        if CONFIGS['save_files']['groups']:
-            with open("files/stages_info/groups/merge.txt", "a") as file:
-                file.write('\nOTHER\n\n')
-
         while True:
-            if CONFIGS['save_files']['groups']:
-                with open("files/stages_info/groups/merge.txt", "a") as file:
-                    file.write(f'* Iteration {iteration}\n')
-
-            # Build groups_to_change directly here
             if iteration >= max_iterations:
                 logger.warning(f"Maximum iterations ({max_iterations}) reached in process_illegal_groups. Exiting to avoid infinite loop.")
                 break
@@ -707,6 +725,10 @@ def process_wedding_illegal_groups(
         filename, lineno, func, text = tb[-1]
         logger.error(f"Groups management error: {str(ex)}. Exception in function: {func}, line {lineno}, file {filename}")
         return None, None, None
+
+    if CONFIGS['save_files']['groups']:
+        with open('files/stages_info/groups/merge.json', 'w', encoding='utf-8') as file:
+            json.dump({'merges': get_merge_records()}, file, indent=2, default=str)
 
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     group2images = get_images_per_groups(groups)
