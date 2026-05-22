@@ -29,16 +29,24 @@ from utils.configs import CONFIGS
 from stages_visualizer import spreads as spreads_visualizer
 from stages_visualizer import splits as splits_visualizer
 from stages_visualizer import merges as merges_visualizer
+from stages_visualizer import subgroups as subgroups_visualizer
 
 
 DEFAULT_STAGES_INFO_DIR = os.path.join('files', 'stages_info')
 ANALYSIS_DIR_NAME = 'album1_analysis'
 
-# Stage flag -> (subdir under stages_info, output filename, renderer module)
+# Each entry: (save_flag, subdir under stages_info, input_filename_or_None,
+#              output filename, renderer module).
+# When input_filename is None, the renderer's render() takes the whole subdir
+# (spreads/splits/merges scan it for their own files). When set, it points to
+# a specific JSON inside the subdir — render(json_path, images, out).
 STAGE_RENDERERS = (
-    ('spreads', 'spreads', 'spreads_layouts.pdf', spreads_visualizer),
-    ('groups',  'groups',  'split.pdf',          splits_visualizer),
-    ('groups',  'groups',  'merge.pdf',          merges_visualizer),
+    ('spreads', 'spreads', None,                 'spreads_layouts.pdf', spreads_visualizer),
+    ('groups',  'groups',  None,                 'split.pdf',           splits_visualizer),
+    ('groups',  'groups',  None,                 'merge.pdf',           merges_visualizer),
+    ('groups',  'groups',  'subgroups_0.json',   'subgroups_0.pdf',     subgroups_visualizer),
+    ('groups',  'groups',  'subgroups_1.json',   'subgroups_1.pdf',     subgroups_visualizer),
+    ('groups',  'groups',  'subgroups_2.json',   'subgroups_2.pdf',     subgroups_visualizer),
 )
 
 
@@ -71,7 +79,7 @@ def main() -> None:
     save_files = CONFIGS.get('save_files', {}) or {}
 
     any_rendered = False
-    for flag_name, subdir, out_name, renderer in STAGE_RENDERERS:
+    for flag_name, subdir, input_file, out_name, renderer in STAGE_RENDERERS:
         if not save_files.get(flag_name, False):
             print(f"[skip] save_files[{flag_name!r}] is off -> {out_name} not generated")
             continue
@@ -80,8 +88,19 @@ def main() -> None:
             print(f"[skip] {stages_subdir} missing -> {out_name} not generated")
             continue
         out_path = os.path.join(analysis_dir, out_name)
+
+        if input_file is None:
+            # Renderer takes the whole subdir.
+            renderer_input = stages_subdir
+        else:
+            # Renderer takes a specific JSON path.
+            renderer_input = os.path.join(stages_subdir, input_file)
+            if not os.path.isfile(renderer_input):
+                print(f"[skip] {renderer_input} missing -> {out_name} not generated")
+                continue
+
         try:
-            renderer.render(stages_subdir, images_path, out_path)
+            renderer.render(renderer_input, images_path, out_path)
             print(f"[ok] wrote {out_path}")
             any_rendered = True
         except Exception as ex:

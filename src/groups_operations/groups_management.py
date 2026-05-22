@@ -20,18 +20,93 @@ from src.groups_operations.split import (get_number_of_spreads, is_split_needed,
 from utils.configs import CONFIGS
 
 
-PHOTO_RECORD_COLUMNS = ('image_id', 'general_time', 'original_context',
-                        'cluster_context', 'time_cluster',
+PHOTO_RECORD_COLUMNS = ('image_id', 'image_time_date', 'general_time',
+                        'original_context', 'cluster_context', 'time_cluster',
                         'group_sub_index', 'group_size')
+
+
+def _snapshot_subgroups(photos_df: pd.DataFrame) -> List[dict]:
+    """Project `photos_df` to a chronologically-ordered list of subgroup records.
+
+    "Subgroup" here is one `(time_cluster, cluster_context, group_sub_index)`
+    bucket — same key the rest of the pipeline uses. For each bucket we record:
+      - `group_key`
+      - `mean_general_time`: the value the merge logic in
+        `merge.py:merge_illegal_group_by_time` actually compares groups by
+        (`illegal_group['general_time'].values.mean()`).
+      - `mean_image_time_date`: ISO mean of `image_time_date`, used by
+        the visualizer's wall-clock display.
+      - `n_photos`
+      - `photos`: same projection `photos_to_records` produces, sorted by
+        `general_time` so the strip reads chronologically left-to-right.
+
+    The outer list is sorted by `mean_general_time` so subgroups appear in
+    chronological order in the visualizer.
+    """
+    if photos_df is None or len(photos_df) == 0:
+        return []
+    if not all(c in photos_df.columns for c in ('time_cluster', 'cluster_context', 'group_sub_index')):
+        return []
+
+    snapshots = []
+    for key, group in photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']):
+        sorted_group = group.sort_values('general_time') if 'general_time' in group.columns else group
+
+        mean_general = None
+        if 'general_time' in group.columns:
+            try:
+                mean_general = float(group['general_time'].mean())
+            except Exception:
+                mean_general = None
+
+        mean_date = None
+        if 'image_time_date' in group.columns:
+            try:
+                ts = pd.to_datetime(group['image_time_date'], errors='coerce').dropna()
+                if len(ts) > 0:
+                    mean_date = ts.mean().isoformat()
+            except Exception:
+                mean_date = None
+
+        snapshots.append({
+            'group_key': [(k.item() if hasattr(k, 'item') else k) for k in key],
+            'mean_general_time': mean_general,
+            'mean_image_time_date': mean_date,
+            'n_photos': int(len(group)),
+            'photos': photos_to_records(sorted_group),
+        })
+
+    snapshots.sort(key=lambda s: s['mean_general_time'] if s['mean_general_time'] is not None else 0.0)
+    return snapshots
+
+
+def _save_subgroups_snapshot(photos_df: pd.DataFrame, filename: str) -> None:
+    """Write a chronological snapshot of `photos_df`'s subgroups to JSON.
+
+    No-op when `save_files['groups']` is disabled. Creates the parent dir.
+    Failures are swallowed (visualizer code already handles missing files).
+    """
+    if not CONFIGS.get('save_files', {}).get('groups', False):
+        return
+    try:
+        os.makedirs('files/stages_info/groups', exist_ok=True)
+        snapshot = {'subgroups': _snapshot_subgroups(photos_df)}
+        path = os.path.join('files/stages_info/groups', filename)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(snapshot, f, indent=2, default=str)
+    except Exception:
+        pass
 
 
 def photos_to_records(df: pd.DataFrame) -> List[dict]:
     """Project a photo DataFrame to a list of JSON-safe dicts.
 
     Carries the fields the visualizers need: `image_id` (to locate the file
-    on disk), `general_time` (for time-strip captions), `original_context`
-    (for merge captions), plus group-membership context. Missing columns are
-    silently skipped.
+    on disk), `image_time_date` (absolute wall-clock time, matches what
+    album1.pdf shows), `general_time` (relative offset, kept for completeness),
+    `original_context` (for merge captions), plus group-membership context.
+    Missing columns are silently skipped; pd.Timestamp values are serialized
+    as ISO strings.
     """
     if df is None or len(df) == 0:
         return []
@@ -41,7 +116,9 @@ def photos_to_records(df: pd.DataFrame) -> List[dict]:
         rec = {}
         for c in keep:
             v = row[c]
-            if hasattr(v, 'item'):
+            if isinstance(v, pd.Timestamp):
+                v = v.isoformat()
+            elif hasattr(v, 'item'):
                 try:
                     v = v.item()
                 except Exception:
@@ -685,10 +762,14 @@ def process_wedding_illegal_groups(
         reset_merge_records()
 
     photos_df = _get_groups(photos_df, manual_selection, logger)
+    # subgroups_0: initial groups, before any splitting/merging.
+    _save_subgroups_snapshot(photos_df, 'subgroups_0.json')
 
     iteration = 0
     try:
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
+        # subgroups_1: after splitting, before any merge.
+        _save_subgroups_snapshot(photos_df, 'subgroups_1.json')
 
         photos_df['merge_allowed'] = True
         photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
@@ -729,6 +810,10 @@ def process_wedding_illegal_groups(
     if CONFIGS['save_files']['groups']:
         with open('files/stages_info/groups/merge.json', 'w', encoding='utf-8') as file:
             json.dump({'merges': get_merge_records()}, file, indent=2, default=str)
+
+    # subgroups_2: final state after splitting, all merges, singleton resolution
+    # and rebalance — i.e. what the layouting stage actually sees.
+    _save_subgroups_snapshot(photos_df, 'subgroups_2.json')
 
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     group2images = get_images_per_groups(groups)

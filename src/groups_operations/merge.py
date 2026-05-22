@@ -25,11 +25,16 @@ def get_merge_records() -> List[dict]:
 
 
 def _photos_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
-    """Project a photo DataFrame to JSON-safe dicts for the merge.json file."""
+    """Project a photo DataFrame to JSON-safe dicts for the merge.json file.
+
+    Mirrors `photos_to_records` in groups_management.py: includes
+    `image_time_date` (absolute timestamp, matches album1.pdf) alongside
+    `general_time` (relative offset). pd.Timestamp values become ISO strings.
+    """
     if df is None or len(df) == 0:
         return []
-    keep_cols = ('image_id', 'general_time', 'original_context',
-                 'cluster_context', 'time_cluster',
+    keep_cols = ('image_id', 'image_time_date', 'general_time',
+                 'original_context', 'cluster_context', 'time_cluster',
                  'group_sub_index', 'group_size')
     keep = [c for c in keep_cols if c in df.columns]
     out = []
@@ -37,7 +42,9 @@ def _photos_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
         rec = {}
         for c in keep:
             v = row[c]
-            if hasattr(v, 'item'):
+            if isinstance(v, pd.Timestamp):
+                v = v.isoformat()
+            elif hasattr(v, 'item'):
                 try:
                     v = v.item()
                 except Exception:
