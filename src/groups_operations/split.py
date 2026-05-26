@@ -248,7 +248,7 @@ def get_split_points(general_times_list: List[float], group_time_list: List[floa
         is too small, not an eligible category, or has no gaps.
     """
     allowed = ['walking the aisle', 'bride', 'groom', 'bride and groom',
-               'groom party', 'bride party', 'portrait']
+               'groom party', 'bride party', 'portrait', 'ceremony', 'kiss']
 
     if details is not None:
         details.update({
