@@ -56,6 +56,14 @@ class SingleSpreadLayout:
     weight: Optional[float] = None
     left_page_photos: Optional[Set[Photo] | List[Photo]] = None   # set of Photos after resolve_photos,
     right_page_photos: Optional[Set[Photo] | List[Photo]] = None  # list after set_photos_order
+    # Per-spread scoring trace, populated by `get_score`. Carries:
+    #   - left_page / right_page: PageProperties dicts (color/class/context flags)
+    #   - spread_flags: double_color_mix, number_of_squares, time_inversions,
+    #                   layout_left_mixed_orientation, layout_right_mixed_orientation
+    #   - penalties_applied: ordered list of {name, factor, [exponent]} entries
+    #     for every multiplier that actually fired
+    # JSON-safe; consumed by the spreads visualizer to explain score differences.
+    penalty_breakdown: Optional[Dict[str, Any]] = None
 
     def __str__(self) -> str:
         return (f'Layout_idx: {self.layout_idx}; '
@@ -69,7 +77,8 @@ class SingleSpreadLayout:
             'right_page_photo_idxs': list(self.right_page_photo_idxs),
             'number_of_squares': self.number_of_squares,
             'score': self.score,
-            'weight': self.weight
+            'weight': self.weight,
+            'penalty_breakdown': self.penalty_breakdown,
         }
 
     def resolve_photos(self, photos: List[Photo]) -> None:
@@ -142,7 +151,9 @@ class SingleSpreadLayout:
             number_of_unique_contexts=number_of_unique_contexts
         )
 
-    def apply_page_penalties(self, page_check_result: PageProperties, penalty: Penalties) -> None:
+    def apply_page_penalties(self, page_check_result: PageProperties, penalty: Penalties,
+                             page_prefix: str = '',
+                             record: Optional[List[Dict[str, Any]]] = None) -> None:
         """
         Apply multiplicative penalties to self.score based on page consistency.
 
@@ -152,20 +163,53 @@ class SingleSpreadLayout:
         Args:
             page_check_result: PageProperties for the page being evaluated.
             penalty: Penalty configuration.
+            page_prefix: 'left_' / 'right_' / '' — prepended to penalty names in
+                `record` so breakdowns from both pages stay distinguishable.
+            record: Optional accumulator; when provided, each fired penalty is
+                appended as `{'name': ..., 'factor': ...}` (with `'exponent'`
+                for power-style penalties).
         """
         if not page_check_result.is_same_color:
             self.score *= penalty.color_mix
+            if record is not None:
+                record.append({'name': f'{page_prefix}color_mix',
+                               'factor': float(penalty.color_mix)})
         if not page_check_result.is_same_class:
             self.score *= penalty.class_mix
+            if record is not None:
+                record.append({'name': f'{page_prefix}class_mix',
+                               'factor': float(penalty.class_mix)})
         if page_check_result.is_bride_groom_mix:
             self.score *= penalty.color_mix
+            if record is not None:
+                record.append({'name': f'{page_prefix}bride_groom_mix',
+                               'factor': float(penalty.color_mix)})
 
-        self.score *= np.power(penalty.context_mix_penalty, max(1, page_check_result.number_of_unique_contexts) - 1)
+        ctx_exp = max(1, page_check_result.number_of_unique_contexts) - 1
+        if ctx_exp > 0:
+            ctx_factor = float(np.power(penalty.context_mix_penalty, ctx_exp))
+            self.score *= ctx_factor
+            if record is not None:
+                record.append({'name': f'{page_prefix}context_mix',
+                               'factor': ctx_factor,
+                               'exponent': int(ctx_exp)})
+
+    @staticmethod
+    def _page_props_to_dict(p: 'SingleSpreadLayout.PageProperties') -> Dict[str, Any]:
+        return {
+            'is_same_color': bool(p.is_same_color),
+            'is_same_class': bool(p.is_same_class),
+            'is_bride_groom_mix': bool(p.is_bride_groom_mix),
+            'number_of_unique_contexts': int(p.number_of_unique_contexts),
+        }
 
     def get_score(self, photos: List[Photo], layouts_df: pd.DataFrame, penalty: Penalties) -> float:
         """
         Score this spread layout based on page consistency, orientation, cropping,
         and time ordering penalties. Sets and returns self.score.
+
+        Also populates `self.penalty_breakdown` with the trace of every applied
+        penalty so the analysis PDF can show why this layout scored as it did.
 
         Args:
             photos: List of Photo objects for the group.
@@ -176,31 +220,69 @@ class SingleSpreadLayout:
             The computed score for this spread layout.
         """
         self.score = 1.0
+        applied: List[Dict[str, Any]] = []
 
+        # ---- left page ----
         left_check = self.check_page_properties(self.left_page_photo_idxs, photos)
-        self.apply_page_penalties(left_check, penalty)
-        if layouts_df.at[self.layout_idx, 'left_mixed']:
+        self.apply_page_penalties(left_check, penalty, page_prefix='left_', record=applied)
+        layout_left_mixed = bool(layouts_df.at[self.layout_idx, 'left_mixed'])
+        if layout_left_mixed:
             self.score *= penalty.orientation_mix
+            applied.append({'name': 'left_orientation_mix',
+                            'factor': float(penalty.orientation_mix)})
 
+        # ---- right page ----
         right_check = self.check_page_properties(self.right_page_photo_idxs, photos)
-        self.apply_page_penalties(right_check, penalty)
-        if layouts_df.at[self.layout_idx, 'right_mixed']:
+        self.apply_page_penalties(right_check, penalty, page_prefix='right_', record=applied)
+        layout_right_mixed = bool(layouts_df.at[self.layout_idx, 'right_mixed'])
+        if layout_right_mixed:
             self.score *= penalty.orientation_mix
+            applied.append({'name': 'right_orientation_mix',
+                            'factor': float(penalty.orientation_mix)})
 
-        # if two pages has gray colors, give it much worse rating
-        if not left_check.is_same_color and not right_check.is_same_color:
+        # ---- both-pages-grey extra penalty ----
+        double_color = (not left_check.is_same_color) and (not right_check.is_same_color)
+        if double_color:
             self.score *= penalty.double_mix_color
+            applied.append({'name': 'double_color_mix',
+                            'factor': float(penalty.double_mix_color)})
 
-        # penalty for cropping photos to square boxes
-        self.score *= np.power(penalty.crop_penalty, self.number_of_squares)
+        # ---- crop penalty per square slot ----
+        if self.number_of_squares > 0:
+            crop_factor = float(np.power(penalty.crop_penalty, self.number_of_squares))
+            self.score *= crop_factor
+            applied.append({'name': 'crop',
+                            'factor': crop_factor,
+                            'exponent': int(self.number_of_squares)})
 
-        # if time order is not correct, give it a penalty
+        # ---- time-order penalty per pairwise inversion ----
         photo_order_time = [photos[photo_id].general_time for photo_id in
                             list(self.left_page_photo_idxs) + list(self.right_page_photo_idxs)]
+        time_inversions = 0
         for time_idx1 in range(len(photo_order_time)):
             for time_idx2 in range(time_idx1 + 1, len(photo_order_time)):
                 if photo_order_time[time_idx1] > photo_order_time[time_idx2]:
                     self.score *= penalty.time_order_penalty
+                    time_inversions += 1
+        if time_inversions > 0:
+            time_factor = float(np.power(penalty.time_order_penalty, time_inversions))
+            applied.append({'name': 'time_order',
+                            'factor': time_factor,
+                            'exponent': int(time_inversions)})
+
+        self.penalty_breakdown = {
+            'left_page': self._page_props_to_dict(left_check),
+            'right_page': self._page_props_to_dict(right_check),
+            'spread_flags': {
+                'layout_left_mixed_orientation': layout_left_mixed,
+                'layout_right_mixed_orientation': layout_right_mixed,
+                'double_color_mix': double_color,
+                'number_of_squares': int(self.number_of_squares),
+                'time_inversions': int(time_inversions),
+            },
+            'penalties_applied': applied,
+            'final_score': float(self.score),
+        }
 
         return self.score
 

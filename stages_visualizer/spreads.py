@@ -158,6 +158,131 @@ def _format_metric(v: Any) -> str:
         return str(v)
 
 
+# Short codes for compact display, mapped to nicer one-line labels for the
+# breakdown block. Keeping it terse so the cell can show every applied factor.
+_PENALTY_LABELS = {
+    'left_color_mix':       'L color_mix',
+    'right_color_mix':      'R color_mix',
+    'left_class_mix':       'L class_mix',
+    'right_class_mix':      'R class_mix',
+    'left_bride_groom_mix': 'L bride/groom mix',
+    'right_bride_groom_mix':'R bride/groom mix',
+    'left_context_mix':     'L context_mix',
+    'right_context_mix':    'R context_mix',
+    'left_orientation_mix': 'L orientation_mix',
+    'right_orientation_mix':'R orientation_mix',
+    'double_color_mix':     'both pages color mix',
+    'crop':                 'crop (square slots)',
+    'time_order':           'time order inversions',
+}
+
+
+def _draw_penalty_breakdown(c: canvas.Canvas, rect: Tuple[float, float, float, float],
+                            breakdown: Optional[dict]) -> None:
+    """Render the spread-score breakdown inside `rect` (text only, no images).
+
+    `rect` is (x, y, w, h) with y as the bottom edge (reportlab convention).
+    Layout:
+      • Header line 1: "dominant: <name>×<factor>" — the harshest multiplier
+        that hit, so the eye lands on what mattered most for this score.
+      • Header line 2: page-state flags (color/class/contexts on each side).
+      • Then one row per applied penalty, top-down, with factor (and exponent
+        when it's a power-style penalty like crop or time_order).
+    Rows beyond what fits in `rect` are silently dropped — the dominant header
+    still tells the headline story even if the tail is clipped.
+    """
+    if not breakdown:
+        return
+    x, y, w, h = rect
+    if h <= 0:
+        return
+
+    applied = breakdown.get('penalties_applied') or []
+    flags = breakdown.get('spread_flags') or {}
+    left = breakdown.get('left_page') or {}
+    right = breakdown.get('right_page') or {}
+
+    # Dominant = the entry with the smallest factor (most punishing).
+    dominant = None
+    for entry in applied:
+        try:
+            f = float(entry.get('factor', 1.0))
+        except (TypeError, ValueError):
+            continue
+        if dominant is None or f < dominant[1]:
+            dominant = (entry, f)
+
+    line_h = 7.0
+    cursor_y = y + h - 6  # top edge minus a tiny lead
+
+    # ---- header line 1: dominant ----
+    c.setFont('Helvetica-Bold', 6)
+    c.setFillColorRGB(0.45, 0.0, 0.0)
+    if dominant is None:
+        c.drawString(x, cursor_y, "dominant: (none — score=1.0)")
+    else:
+        entry, factor = dominant
+        label = _PENALTY_LABELS.get(entry.get('name'), entry.get('name', '?'))
+        exp = entry.get('exponent')
+        suffix = f"^{exp}" if exp else ""
+        c.drawString(x, cursor_y, f"dom: {label}{suffix}  ×{factor:.3g}")
+    c.setFillColorRGB(0, 0, 0)
+    cursor_y -= line_h
+
+    # ---- header line 2: page-state flags ----
+    def _page_state_summary(p: dict) -> str:
+        parts = []
+        if not p.get('is_same_color', True):
+            parts.append('!color')
+        if not p.get('is_same_class', True):
+            parts.append('!class')
+        if p.get('is_bride_groom_mix'):
+            parts.append('b/g')
+        n_ctx = p.get('number_of_unique_contexts')
+        if n_ctx and n_ctx > 1:
+            parts.append(f'ctx={n_ctx}')
+        return ','.join(parts) if parts else 'clean'
+
+    c.setFont('Helvetica', 6)
+    c.setFillColorRGB(0.2, 0.2, 0.2)
+    n_squares = flags.get('number_of_squares', 0)
+    n_inv = flags.get('time_inversions', 0)
+    flag_bits = []
+    if flags.get('layout_left_mixed_orientation'):
+        flag_bits.append('L mix-orient')
+    if flags.get('layout_right_mixed_orientation'):
+        flag_bits.append('R mix-orient')
+    if flags.get('double_color_mix'):
+        flag_bits.append('both gray')
+    state = (f"L[{_page_state_summary(left)}]  R[{_page_state_summary(right)}]"
+             + (f"  sq={n_squares}" if n_squares else "")
+             + (f"  inv={n_inv}" if n_inv else "")
+             + ("  " + " ".join(flag_bits) if flag_bits else ""))
+    c.drawString(x, cursor_y, state[:120])
+    c.setFillColorRGB(0, 0, 0)
+    cursor_y -= line_h
+
+    # ---- per-penalty rows ----
+    c.setFont('Helvetica', 6)
+    c.setFillColorRGB(0.15, 0.15, 0.15)
+    for entry in applied:
+        if cursor_y < y + 2:
+            # cell would clip the next line; stop early
+            break
+        name = entry.get('name', '?')
+        label = _PENALTY_LABELS.get(name, name)
+        try:
+            f = float(entry.get('factor', 1.0))
+            f_str = f"{f:.3g}"
+        except (TypeError, ValueError):
+            f_str = str(entry.get('factor'))
+        exp = entry.get('exponent')
+        suffix = f"^{exp}" if exp else ""
+        c.drawString(x + 4, cursor_y, f"• {label}{suffix}  ×{f_str}")
+        cursor_y -= line_h
+    c.setFillColorRGB(0, 0, 0)
+
+
 def _draw_candidate(c: canvas.Canvas,
                     cell_rect: Tuple[float, float, float, float],
                     candidate: dict, photos: List[dict],
@@ -204,8 +329,20 @@ def _draw_candidate(c: canvas.Canvas,
         c.drawString(sub_cell[0], sub_cell[1] + sub_cell[3] - caption_h + 1, caption)
         c.setFillColorRGB(0, 0, 0)
 
-        ill_cell = (sub_cell[0], sub_cell[1],
-                    sub_cell[2], max(1.0, sub_cell[3] - caption_h))
+        # Reserve ~40% of the sub-cell height for the breakdown block when one
+        # is present. With per_h ≈ 180pt that's ~70pt = ~10 lines of text at
+        # 7pt pitch — enough room to list every applied penalty. The spread
+        # illustration takes the remaining space above.
+        breakdown = spread.get('penalty_breakdown')
+        breakdown_h = 0.0
+        if breakdown:
+            breakdown_h = min(max(0.35 * (sub_cell[3] - caption_h), 40.0),
+                              sub_cell[3] - caption_h - 20.0)
+            breakdown_h = max(0.0, breakdown_h)
+
+        ill_h = max(1.0, sub_cell[3] - caption_h - breakdown_h)
+        ill_cell = (sub_cell[0], sub_cell[1] + breakdown_h,
+                    sub_cell[2], ill_h)
         spread_rect = _fit_spread_rect_in_cell(*ill_cell)
 
         left_pids = [photos[i]['id'] for i in sorted(spread['left_page_photo_idxs'])
@@ -215,6 +352,11 @@ def _draw_candidate(c: canvas.Canvas,
 
         _draw_spread(c, spread_rect, left_boxes, right_boxes,
                      left_pids, right_pids, images_path, image_files)
+
+        if breakdown and breakdown_h > 0:
+            breakdown_rect = (sub_cell[0], sub_cell[1],
+                              sub_cell[2], breakdown_h)
+            _draw_penalty_breakdown(c, breakdown_rect, breakdown)
 
 
 def _pick_grid(n: int) -> Tuple[int, int]:

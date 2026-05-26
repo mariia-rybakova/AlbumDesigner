@@ -8,20 +8,43 @@ import pandas as pd
 from utils.configs import CONFIGS
 
 
-# Module-level accumulator for successful-merge records. Consumed by the
-# grouping pipeline at the end of process_wedding_illegal_groups (it calls
-# reset_merge_records() at the start and reads get_merge_records() at the end
-# to write merge.json). Records carry image_id / general_time / original_context
-# per photo so the visualizer can render thumbnails with time + cluster captions.
-_merge_records: List[dict] = []
+# Chronological event log for the entire merge pipeline. Consumed at the end
+# of process_wedding_illegal_groups, written to merge.json as `{'events': ...}`.
+# Each entry has `type` plus event-specific fields. Three event types:
+#
+#   search:          one src group's search for a partner. Includes every
+#                    candidate evaluated by `merge_illegal_group_by_time`,
+#                    with raw + adjusted time distances, long-distance flag,
+#                    size-limit fit, and which one was selected (if any).
+#
+#   merge_skipped:   the proposed merge for a src group was rejected during
+#                    apply: partner already used, src already used, bridegroom
+#                    size-balance failure, or singleton fallback found nothing.
+#
+#   merge_succeeded: the merge actually happened. Carries photo records for
+#                    both merged and reminder groups so the visualizer can
+#                    render thumbnails (like the previous version).
+_merge_events: List[dict] = []
 
 
 def reset_merge_records() -> None:
-    _merge_records.clear()
+    """Clear the per-run event log. Called once at the start of grouping."""
+    _merge_events.clear()
 
 
-def get_merge_records() -> List[dict]:
-    return list(_merge_records)
+def get_merge_events() -> List[dict]:
+    """Snapshot of the event log so far."""
+    return list(_merge_events)
+
+
+def _save_on() -> bool:
+    return bool(CONFIGS.get('save_files', {}).get('groups', False))
+
+
+def _record_event(event_type: str, **fields: Any) -> None:
+    if not _save_on():
+        return
+    _merge_events.append({'type': event_type, **fields})
 
 
 def _photos_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
@@ -54,22 +77,61 @@ def _photos_to_records(df: Optional[pd.DataFrame]) -> List[dict]:
     return out
 
 
-def _record_merge(merge_type: str, src_key: tuple, partner_key: tuple,
-                  merged_group: pd.DataFrame,
-                  reminder_group: Optional[pd.DataFrame] = None) -> None:
-    if not CONFIGS.get('save_files', {}).get('groups', False):
+def _df_group_key(df: pd.DataFrame) -> tuple:
+    """Extract `(time_cluster, cluster_context, group_sub_index)` from a group df."""
+    row = df.iloc[0]
+    def _scalar(v):
+        if hasattr(v, 'item'):
+            try:
+                return v.item()
+            except Exception:
+                pass
+        return v
+    return (_scalar(row['time_cluster']),
+            _scalar(row['cluster_context']),
+            _scalar(row['group_sub_index']))
+
+
+def _mean_general_time(df: pd.DataFrame) -> Optional[float]:
+    if df is None or 'general_time' not in df.columns or len(df) == 0:
+        return None
+    try:
+        return float(df['general_time'].mean())
+    except Exception:
+        return None
+
+
+def _mean_image_time_date(df: pd.DataFrame) -> Optional[str]:
+    if df is None or 'image_time_date' not in df.columns or len(df) == 0:
+        return None
+    try:
+        ts = pd.to_datetime(df['image_time_date'], errors='coerce').dropna()
+        if len(ts) == 0:
+            return None
+        return ts.mean().isoformat()
+    except Exception:
+        return None
+
+
+def _record_succeeded(merge_type: str, src_key: tuple, partner_key: tuple,
+                      time_diff: Optional[float],
+                      merged_group: pd.DataFrame,
+                      reminder_group: Optional[pd.DataFrame] = None) -> None:
+    if not _save_on():
         return
-    _merge_records.append({
-        'merge_type': merge_type,
-        'src_key': list(src_key),
-        'partner_key': list(partner_key),
-        'merged_photos': _photos_to_records(
-            merged_group.sort_values('general_time') if merged_group is not None and 'general_time' in merged_group.columns
-            else merged_group),
-        'reminder_photos': _photos_to_records(
-            reminder_group.sort_values('general_time') if reminder_group is not None and 'general_time' in reminder_group.columns
-            else reminder_group),
-    })
+    if merged_group is not None and 'general_time' in merged_group.columns:
+        merged_group = merged_group.sort_values('general_time')
+    if reminder_group is not None and 'general_time' in reminder_group.columns:
+        reminder_group = reminder_group.sort_values('general_time')
+    _record_event(
+        'merge_succeeded',
+        merge_type=merge_type,
+        src_key=list(src_key),
+        partner_key=list(partner_key),
+        time_diff=time_diff,
+        merged_photos=_photos_to_records(merged_group),
+        reminder_photos=_photos_to_records(reminder_group),
+    )
 
 
 SIMILAR_CLASSES_L1 = [
@@ -156,7 +218,9 @@ def add_class_preference(illegal_group: Optional[pd.DataFrame], selected_group: 
 
 def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: pd.DataFrame,
                                 general_times_list: List[float],
-                                max_images_per_spread: int = 24) -> Tuple[Optional[pd.DataFrame], Optional[float]]:
+                                max_images_per_spread: int = 24,
+                                details: Optional[List[dict]] = None,
+                                ) -> Tuple[Optional[pd.DataFrame], Optional[float]]:
     """
     Find the closest group by time that can be merged without exceeding size limits.
 
@@ -169,6 +233,10 @@ def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: 
         illegal_group: DataFrame of the group to be merged.
         general_times_list: Sorted list of all photo times across the album.
         max_images_per_spread: Maximum combined size allowed after merging.
+        details: Optional list; when provided, one dict is appended per evaluated
+            candidate (partner_key, n_photos, time_diff_raw, time_diff_adjusted,
+            images_in_between, long_distance, within_size_limit, was_selected).
+            Used by the merge-events recorder.
 
     Returns:
         A tuple of:
@@ -182,54 +250,80 @@ def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: 
     illegal_min_time = illegal_group['general_time'].min()
     illegal_max_time = illegal_group['general_time'].max()
 
-    time_differences = []
-    valid_groups = []
-    long_distance_groups=[]
-    long_time_differences = []
+    time_differences: List[float] = []
+    valid_groups: List[pd.DataFrame] = []
+    long_distance_groups: List[pd.DataFrame] = []
+    long_time_differences: List[float] = []
+
+    # Parallel lists to slot `details` entries back to their candidate after
+    # the selection loop runs. Each entry: index in `details` (or None).
+    detail_index_valid: List[Optional[int]] = []
+    detail_index_long: List[Optional[int]] = []
+
     for group in main_groups:
-        # Calculate mean time and time range for the current group
         group_times = group['general_time'].values
-        group_mean_time = group_times.mean()
         group_min_time = group_times.min()
         group_max_time = group_times.max()
 
-        # Check if there are more than 2 images in between the groups
         images_in_between = sum(illegal_max_time < t < group_min_time or group_max_time < t < illegal_min_time
                                 for t in general_times_list)
+
+        min_time_diff = float(np.min(np.abs(group_times - intended_group_time)))
+        updated_time_diff = float(add_class_preference(illegal_group, group, min_time_diff))
+        within_size_limit = (len(group) + len(illegal_group)) <= max_images_per_spread
+
+        det_idx: Optional[int] = None
+        if details is not None:
+            try:
+                partner_key = _df_group_key(group)
+            except Exception:
+                partner_key = None
+            det_idx = len(details)
+            details.append({
+                'partner_key': list(partner_key) if partner_key is not None else None,
+                'n_photos': int(len(group)),
+                'time_diff_raw': min_time_diff,
+                'time_diff_adjusted': updated_time_diff,
+                'images_in_between': int(images_in_between),
+                'long_distance': images_in_between > 2,
+                'within_size_limit': within_size_limit,
+                'was_selected': False,
+            })
+
         if images_in_between > 2:
-            min_time_diff = np.min(np.abs(group_times - intended_group_time))
-            updated_time_diff = add_class_preference(illegal_group, group, min_time_diff)
             long_time_differences.append(updated_time_diff)
             long_distance_groups.append(group)
+            detail_index_long.append(det_idx)
+            continue
 
-            continue  # Skip this group if more than 2 images are between the time ranges
-
-        # Calculate the minimum time difference between the illegal group and this group
-        min_time_diff = np.min(np.abs(group_times - intended_group_time))
-        updated_time_diff = add_class_preference(illegal_group, group, min_time_diff)
         time_differences.append(updated_time_diff)
         valid_groups.append(group)
+        detail_index_valid.append(det_idx)
 
-    # If no valid groups are found, return None
+    # If no near candidates, fall back to long-distance ones.
+    used_long_fallback = False
     if not valid_groups and long_distance_groups:
         valid_groups = long_distance_groups
         time_differences = long_time_differences
+        detail_index_valid = detail_index_long
+        used_long_fallback = True
     elif not valid_groups and not long_distance_groups:
         return None, None
-    # Sort by time differences and find the best group for merging
-    time_differences = np.array(time_differences)
-    sorted_indices = np.argsort(time_differences)
+
+    time_differences_arr = np.array(time_differences)
+    sorted_indices = np.argsort(time_differences_arr)
 
     for idx in sorted_indices:
         selected_cluster = valid_groups[idx]
-        len_combine_group = len(selected_cluster) + len(illegal_group)
-
-        # Check if the combination meets size requirements
-        if len_combine_group <= max_images_per_spread:
-            selected_time_difference = time_differences[idx]
+        if (len(selected_cluster) + len(illegal_group)) <= max_images_per_spread:
+            selected_time_difference = float(time_differences_arr[idx])
+            if details is not None:
+                det_idx = detail_index_valid[idx]
+                if det_idx is not None and 0 <= det_idx < len(details):
+                    details[det_idx]['was_selected'] = True
+                    details[det_idx]['used_long_fallback'] = used_long_fallback
             return selected_cluster, selected_time_difference
 
-    # If no suitable group is found, return None
     return None, None
 
 
@@ -359,6 +453,7 @@ def _get_merge_candidates(
         targets_df: pd.DataFrame,
         general_times_list: List[float],
         *args,
+        merge_type: str = 'unknown',
         **kwargs
     ) -> List[Tuple[Tuple[str, str, int], pd.DataFrame, float]]:
     """
@@ -399,9 +494,30 @@ def _get_merge_candidates(
         merge_targets = _filter_merge_targets(targets_df, group, group_key)
         merge_target_groups = merge_targets.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
         main_groups = _get_main_groups(merge_target_groups, group_key, group, *args, **kwargs)
-        selected_cluster, selected_time_difference = merge_illegal_group_by_time(main_groups, group,
-                                                                                 general_times_list,
-                                                                                 max_images_per_spread=CONFIGS['max_imges_per_spread'])
+
+        details: Optional[List[dict]] = [] if _save_on() else None
+        selected_cluster, selected_time_difference = merge_illegal_group_by_time(
+            main_groups, group, general_times_list,
+            max_images_per_spread=CONFIGS['max_imges_per_spread'],
+            details=details,
+        )
+
+        if _save_on():
+            try:
+                selected_partner_key = _df_group_key(selected_cluster) if selected_cluster is not None else None
+            except Exception:
+                selected_partner_key = None
+            _record_event(
+                'search',
+                merge_type=merge_type,
+                src_key=list(group_key),
+                src_n_photos=int(len(group)),
+                src_mean_general_time=_mean_general_time(group),
+                src_mean_image_time_date=_mean_image_time_date(group),
+                candidates=details or [],
+                selected_partner_key=list(selected_partner_key) if selected_partner_key else None,
+                selected_time_diff=selected_time_difference,
+            )
 
         if selected_cluster is not None:
             merge_candidates.append((group_key, selected_cluster, selected_time_difference))
@@ -410,10 +526,14 @@ def _get_merge_candidates(
     return merge_candidates
 
 
-# Convenience wrapper for filtering merge candidates in bride/groom groups
-get_merge_candidates_bridegroom = lambda *args, **kwargs: _get_merge_candidates(_filter_merge_targets_bridegroom, _get_main_groups_bridegroom, *args, **kwargs)
-# Wrapper for merge candidates using "other" filtering logic
-get_merge_candidates_other = lambda *args, **kwargs: _get_merge_candidates(_filter_merge_targets_other, _get_main_groups_other, *args, **kwargs)
+# Convenience wrappers. `merge_type` is threaded through so the recorder can
+# tag search/merge events by which pipeline phase produced them.
+get_merge_candidates_bridegroom = lambda *args, **kwargs: _get_merge_candidates(
+    _filter_merge_targets_bridegroom, _get_main_groups_bridegroom,
+    *args, merge_type='bridegroom', **kwargs)
+get_merge_candidates_other = lambda *args, **kwargs: _get_merge_candidates(
+    _filter_merge_targets_other, _get_main_groups_other,
+    *args, merge_type='other', **kwargs)
 
 
 # Merge updates
@@ -633,14 +753,38 @@ def _update_with_merges(
         selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0],
                         selected_cluster['group_sub_index'].iloc[0])
 
-        if group_key in current_merges or selected_key in current_merges:
+        if group_key in current_merges:
+            _record_event('merge_skipped',
+                          merge_type=merge_type,
+                          src_key=list(group_key),
+                          partner_key=list(selected_key),
+                          time_diff=selected_time_difference,
+                          reason='src_already_merged')
+            continue
+        if selected_key in current_merges:
+            _record_event('merge_skipped',
+                          merge_type=merge_type,
+                          src_key=list(group_key),
+                          partner_key=list(selected_key),
+                          time_diff=selected_time_difference,
+                          reason='partner_already_merged')
             continue
 
         merged_group, reminder_group = _get_merged_group(to_merge_group, selected_cluster, group_key, *args, **kwargs)
         if merged_group is None:
+            # Currently only the bride/groom helper rejects a proposal — it
+            # requires |size diff| of 0 or >= 2. Record so the user can see
+            # which proposals didn't survive that balance check.
+            _record_event('merge_skipped',
+                          merge_type=merge_type,
+                          src_key=list(group_key),
+                          partner_key=list(selected_key),
+                          time_diff=selected_time_difference,
+                          reason='bridegroom_size_mismatch')
             continue
 
-        _record_merge(merge_type, group_key, selected_key, merged_group, reminder_group)
+        _record_succeeded(merge_type, group_key, selected_key,
+                          selected_time_difference, merged_group, reminder_group)
 
         # Update df
         _update_merged_photos(photos_df, to_merge_group, selected_cluster, merged_group, reminder_group)
@@ -725,18 +869,50 @@ def force_merge_portrait_singleton(
 
     if not candidate_groups:
         logger.warning(f"force_merge_singleton: no candidates for {singleton_key}")
+        _record_event('merge_skipped',
+                      merge_type='singleton',
+                      src_key=list(singleton_key),
+                      partner_key=None,
+                      time_diff=None,
+                      reason='singleton_no_candidates')
         return False
 
     logger.info(f"force_merge_singleton: {len(candidate_groups)} candidates for {singleton_key}"
                 f"{' (cross-cluster)' if cross_cluster_merge else ''}")
 
-    selected_cluster, _ = merge_illegal_group_by_time(
+    details: Optional[List[dict]] = [] if _save_on() else None
+    selected_cluster, selected_time_diff = merge_illegal_group_by_time(
         candidate_groups, singleton_group, general_times_list,
-        max_images_per_spread=CONFIGS['max_imges_per_spread']
+        max_images_per_spread=CONFIGS['max_imges_per_spread'],
+        details=details,
     )
+
+    if _save_on():
+        try:
+            selected_partner_key = _df_group_key(selected_cluster) if selected_cluster is not None else None
+        except Exception:
+            selected_partner_key = None
+        _record_event(
+            'search',
+            merge_type='singleton',
+            src_key=list(singleton_key),
+            src_n_photos=int(len(singleton_group)),
+            src_mean_general_time=_mean_general_time(singleton_group),
+            src_mean_image_time_date=_mean_image_time_date(singleton_group),
+            candidates=details or [],
+            selected_partner_key=list(selected_partner_key) if selected_partner_key else None,
+            selected_time_diff=selected_time_diff,
+            cross_cluster_merge=bool(cross_cluster_merge),
+        )
 
     if selected_cluster is None:
         logger.warning(f"force_merge_singleton: merge_illegal_group_by_time returned None for {singleton_key}")
+        _record_event('merge_skipped',
+                      merge_type='singleton',
+                      src_key=list(singleton_key),
+                      partner_key=None,
+                      time_diff=None,
+                      reason='singleton_no_time_match')
         return False
 
     # Apply metadata updates (same pattern as _update_merged_photos_other)
@@ -744,7 +920,8 @@ def force_merge_portrait_singleton(
     partner_key = (selected_cluster['time_cluster'].iloc[0],
                    selected_cluster['cluster_context'].iloc[0],
                    selected_cluster['group_sub_index'].iloc[0])
-    _record_merge('singleton', singleton_key, partner_key, merged_group, reminder_group=None)
+    _record_succeeded('singleton', singleton_key, partner_key,
+                      selected_time_diff, merged_group, reminder_group=None)
     _update_merged_photos_singleton(photos_df, selected_cluster, merged_group, cross_cluster_merge)
 
     return True

@@ -224,7 +224,8 @@ def split_big_group(illegal_group: pd.DataFrame, single_spread_size: int) -> Opt
 
 # Main logic
 def get_split_points(general_times_list: List[float], group_time_list: List[float],
-                     group_key: str) -> Optional[List[float]]:
+                     group_key: str,
+                     details: Optional[dict] = None) -> Optional[List[float]]:
     """
     Identify temporal split points where a group is interrupted by other photos.
 
@@ -237,24 +238,61 @@ def get_split_points(general_times_list: List[float], group_time_list: List[floa
         group_time_list: Sorted list of times for the current group.
         group_key: The cluster context string (e.g. 'bride', 'ceremony').
             Only specific wedding categories are eligible for splitting.
+        details: Optional dict; when provided, it's populated so the split visualizer
+            can render the log: `group_key_matched`, `n_group_times`,
+            `intervals` per consecutive pair with the between-times, and the
+            final `split_points`.
 
     Returns:
         A list of time values at which to split the group, or None if the group
         is too small, not an eligible category, or has no gaps.
     """
+    allowed = ['walking the aisle', 'bride', 'groom', 'bride and groom',
+               'groom party', 'bride party', 'portrait']
+
+    if details is not None:
+        details.update({
+            'group_key': group_key,
+            'allowed_keys': list(allowed),
+            'n_group_times': len(group_time_list),
+            'group_key_matched': False,
+            'intervals': [],
+            'split_points': None,
+        })
+
     if len(group_time_list) < 2:
         return None
-    if group_key not in ['walking the aisle', 'bride', 'groom', 'bride and groom', 'groom party', 'bride party', 'portrait']:
+
+    if group_key not in allowed:
         return None
 
+    if details is not None:
+        details['group_key_matched'] = True
+
     split_points = list()
+    end_time = group_time_list[-1]
     for i in range(len(group_time_list) - 1):
         start_time = group_time_list[i]
         end_time = group_time_list[i + 1]
 
-        count_between = sum(start_time < t < end_time for t in general_times_list)
-        if count_between > 2:
+        times_between_list = [t for t in general_times_list if start_time < t < end_time]
+        count_between = len(times_between_list)
+        appended = count_between > 2
+
+        if appended:
             split_points.append(start_time)
+
+        if details is not None:
+            details['intervals'].append({
+                'start': float(start_time),
+                'end': float(end_time),
+                'between_times': [float(t) for t in times_between_list],
+                'count_between': int(count_between),
+                'appended': bool(appended),
+            })
+
+    if details is not None:
+        details['split_points'] = [float(p) for p in split_points] if split_points else None
 
     if len(split_points) == 0:
         return None
