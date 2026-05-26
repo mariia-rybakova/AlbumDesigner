@@ -1,6 +1,4 @@
 from typing import List, Tuple, Iterable, Callable, Any, Dict, Optional
-import os
-import json
 
 import pandas as pd
 
@@ -12,120 +10,22 @@ from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_me
                                          force_merge_portrait_singleton,
                                          merge_illegal_group_by_time, find_reassignment_class,
                                          apply_pair_merge_for_rebalance,
-                                         expected_spreads_float, expected_spreads_ceil,
-                                         reset_merge_records, get_merge_events)
+                                         expected_spreads_float, expected_spreads_ceil)
 from src.groups_operations.split import (get_number_of_spreads, is_split_needed, get_split_points,
                                          split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
 from utils.configs import CONFIGS
 
-
-PHOTO_RECORD_COLUMNS = ('image_id', 'image_time_date', 'general_time',
-                        'original_context', 'cluster_context', 'time_cluster',
-                        'group_sub_index', 'group_size')
-
-
-def _snapshot_subgroups(photos_df: pd.DataFrame) -> List[dict]:
-    """Project `photos_df` to a chronologically-ordered list of subgroup records.
-
-    "Subgroup" here is one `(time_cluster, cluster_context, group_sub_index)`
-    bucket — same key the rest of the pipeline uses. For each bucket we record:
-      - `group_key`
-      - `mean_general_time`: the value the merge logic in
-        `merge.py:merge_illegal_group_by_time` actually compares groups by
-        (`illegal_group['general_time'].values.mean()`).
-      - `mean_image_time_date`: ISO mean of `image_time_date`, used by
-        the visualizer's wall-clock display.
-      - `n_photos`
-      - `photos`: same projection `photos_to_records` produces, sorted by
-        `general_time` so the strip reads chronologically left-to-right.
-
-    The outer list is sorted by `mean_general_time` so subgroups appear in
-    chronological order in the visualizer.
-    """
-    if photos_df is None or len(photos_df) == 0:
-        return []
-    if not all(c in photos_df.columns for c in ('time_cluster', 'cluster_context', 'group_sub_index')):
-        return []
-
-    snapshots = []
-    for key, group in photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']):
-        sorted_group = group.sort_values('general_time') if 'general_time' in group.columns else group
-
-        mean_general = None
-        if 'general_time' in group.columns:
-            try:
-                mean_general = float(group['general_time'].mean())
-            except Exception:
-                mean_general = None
-
-        mean_date = None
-        if 'image_time_date' in group.columns:
-            try:
-                ts = pd.to_datetime(group['image_time_date'], errors='coerce').dropna()
-                if len(ts) > 0:
-                    mean_date = ts.mean().isoformat()
-            except Exception:
-                mean_date = None
-
-        snapshots.append({
-            'group_key': [(k.item() if hasattr(k, 'item') else k) for k in key],
-            'mean_general_time': mean_general,
-            'mean_image_time_date': mean_date,
-            'n_photos': int(len(group)),
-            'photos': photos_to_records(sorted_group),
-        })
-
-    snapshots.sort(key=lambda s: s['mean_general_time'] if s['mean_general_time'] is not None else 0.0)
-    return snapshots
-
-
-def _save_subgroups_snapshot(photos_df: pd.DataFrame, filename: str) -> None:
-    """Write a chronological snapshot of `photos_df`'s subgroups to JSON.
-
-    No-op when `save_files['groups']` is disabled. Creates the parent dir.
-    Failures are swallowed (visualizer code already handles missing files).
-    """
-    if not CONFIGS.get('save_files', {}).get('groups', False):
-        return
-    try:
-        os.makedirs('files/stages_info/groups', exist_ok=True)
-        snapshot = {'subgroups': _snapshot_subgroups(photos_df)}
-        path = os.path.join('files/stages_info/groups', filename)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(snapshot, f, indent=2, default=str)
-    except Exception:
-        pass
-
-
-def photos_to_records(df: pd.DataFrame) -> List[dict]:
-    """Project a photo DataFrame to a list of JSON-safe dicts.
-
-    Carries the fields the visualizers need: `image_id` (to locate the file
-    on disk), `image_time_date` (absolute wall-clock time, matches what
-    album1.pdf shows), `general_time` (relative offset, kept for completeness),
-    `original_context` (for merge captions), plus group-membership context.
-    Missing columns are silently skipped; pd.Timestamp values are serialized
-    as ISO strings.
-    """
-    if df is None or len(df) == 0:
-        return []
-    keep = [c for c in PHOTO_RECORD_COLUMNS if c in df.columns]
-    out = []
-    for _, row in df[keep].iterrows():
-        rec = {}
-        for c in keep:
-            v = row[c]
-            if isinstance(v, pd.Timestamp):
-                v = v.isoformat()
-            elif hasattr(v, 'item'):
-                try:
-                    v = v.item()
-                except Exception:
-                    pass
-            rec[c] = v
-        out.append(rec)
-    return out
+# All stage-info data collection (photo projections, subgroup snapshots,
+# split.json / merge.json accumulation, wall-clock time maps) lives in
+# utils/stages_recorder/. Pipeline code just calls these recorder hooks.
+from utils.stages_recorder import (
+    SplitRecorder,
+    build_split_notes,
+    flush_merge_events,
+    reset_merge_events,
+    save_subgroups_snapshot,
+)
 
 
 # Splitting
@@ -183,119 +83,36 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
     split_groups_ = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups_)
 
-    # Build a general_time -> wall-clock-HH:MM:SS map so the split.pdf log can
-    # show the same time-of-day strings the image captions show (which use
-    # image_time_date). Built once across the whole pipeline call.
-    def _hhmmss_from_iso(v: Any) -> str:
-        if v is None or v == '':
-            return ''
-        if isinstance(v, pd.Timestamp):
-            v = v.isoformat()
-        s = str(v)
-        if 'T' in s:
-            s = s.split('T', 1)[1]
-        elif ' ' in s:
-            s = s.split(' ', 1)[1]
-        return s[:8]
+    recorder = SplitRecorder(photos_df)
 
-    general_time_to_clock: Dict[float, str] = {}
-    if 'general_time' in photos_df.columns and 'image_time_date' in photos_df.columns:
-        for _, row in photos_df[['general_time', 'image_time_date']].iterrows():
-            gt = row['general_time']
-            if hasattr(gt, 'item'):
-                try:
-                    gt = gt.item()
-                except Exception:
-                    pass
-            try:
-                key = float(gt)
-            except (TypeError, ValueError):
-                continue
-            general_time_to_clock.setdefault(key, _hhmmss_from_iso(row['image_time_date']))
-
-    splits_records = []
     for group_key, group in split_groups_:
         group_spread_size = look_up_table.get(group_key[1], [10])[0]
         # Calculate average number of spreads for this group
         number_of_spreads = get_number_of_spreads(group, group_spread_size)
         # Check if group is too big and need to be split
-        split_points_log: Optional[dict] = None
-        notes = ''
         if is_split_needed(number_of_spreads, group_spread_size, group_key):
             split_method = 'size_based'
             updated_group = split_big_group(group, group_spread_size)
-            notes = ('size-based split applied' if updated_group is not None
-                     else 'size-based: split_big_group returned None')
+            split_points_log = None
+            split_points = None
         else:
             split_method = 'time_based'
-            split_points_log = {}
+            split_points_log = {} if recorder.enabled else None
             split_points = get_split_points(
                 general_times_list, group_key2time_list[group_key],
                 group_key=group_key[1], details=split_points_log,
             )
             updated_group = split_diverse_group(group, split_points)
 
-            if not split_points_log.get('group_key_matched'):
-                notes = f"time-based skipped: group_key {group_key[1]!r} not in allowed list"
-            elif split_points_log.get('n_group_times', 0) < 2:
-                notes = 'time-based skipped: fewer than 2 group times'
-            elif split_points is None:
-                notes = 'time-based: no interval with >2 photos between'
-            else:
-                notes = f'time-based split applied at {len(split_points)} points'
-
-            # Augment the log with wall-clock HH:MM:SS strings so the split.pdf
-            # text matches the image captions (which display image_time_date,
-            # not the relative general_time).
-            def _clock(gt: Any) -> str:
-                if gt is None:
-                    return ''
-                try:
-                    return general_time_to_clock.get(float(gt), '')
-                except (TypeError, ValueError):
-                    return ''
-
-            for interval in split_points_log.get('intervals') or []:
-                interval['start_clock'] = _clock(interval.get('start'))
-                interval['end_clock'] = _clock(interval.get('end'))
-                interval['between_clocks'] = [_clock(t) for t in (interval.get('between_times') or [])]
-            sp = split_points_log.get('split_points') or []
-            split_points_log['split_points_clock'] = [_clock(t) for t in sp]
-
-        if CONFIGS['save_files']['groups']:
-            # Every split attempt is recorded — including those where
-            # split_diverse_group returned None — so the visualizer can show
-            # the decision trace (group_key mismatch, no qualifying interval,
-            # etc.) alongside the few attempts that actually split.
-            sub_groups_records = []
-            if updated_group is not None and 'group_sub_index' in updated_group.columns:
-                for sub_idx in sorted(updated_group['group_sub_index'].dropna().unique()):
-                    sub_df = updated_group[updated_group['group_sub_index'] == sub_idx].sort_values('general_time')
-                    sub_groups_records.append({
-                        'sub_index': int(sub_idx) if hasattr(sub_idx, '__int__') else sub_idx,
-                        'photos': photos_to_records(sub_df),
-                    })
-
-            splits_records.append({
-                'group_key': list(group_key),
-                'split_method': split_method,
-                'group_spread_size': group_spread_size,
-                'number_of_spreads': number_of_spreads,
-                'notes': notes,
-                'split_points_log': split_points_log,
-                'original_photos': photos_to_records(group.sort_values('general_time')),
-                'sub_groups': sub_groups_records,
-            })
+        notes = build_split_notes(group_key[1], split_method, split_points_log,
+                                  split_points, updated_group)
+        recorder.record(group_key, group, group_spread_size, number_of_spreads,
+                        split_method, notes, split_points_log, updated_group)
 
         update_group_sub_index(photos_df, updated_group, logger)
 
     update_groups_size(photos_df)
-
-    if CONFIGS['save_files']['groups']:
-        os.makedirs('files/stages_info/groups', exist_ok=True)
-        with open('files/stages_info/groups/split.json', 'w', encoding='utf-8') as file:
-            json.dump({'splits': splits_records}, file, indent=2, default=str)
-
+    recorder.flush()
     return photos_df
 
 
@@ -824,19 +641,15 @@ def process_wedding_illegal_groups(
           - groups: A pandas GroupBy object of the final photo groups, or None on error.
           - group2images: Dict mapping group keys to their image lists, or None on error.
     """
-    if CONFIGS['save_files']['groups']:
-        os.makedirs('files/stages_info/groups', exist_ok=True)
-        reset_merge_records()
+    reset_merge_events()
 
     photos_df = _get_groups(photos_df, manual_selection, logger)
-    # subgroups_0: initial groups, before any splitting/merging.
-    _save_subgroups_snapshot(photos_df, 'subgroups_0.json')
+    save_subgroups_snapshot(photos_df, 'subgroups_0.json')
 
     iteration = 0
     try:
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
-        # subgroups_1: after splitting, before any merge.
-        _save_subgroups_snapshot(photos_df, 'subgroups_1.json')
+        save_subgroups_snapshot(photos_df, 'subgroups_1.json')
 
         photos_df['merge_allowed'] = True
         photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
@@ -874,13 +687,8 @@ def process_wedding_illegal_groups(
         logger.error(f"Groups management error: {str(ex)}. Exception in function: {func}, line {lineno}, file {filename}")
         return None, None, None
 
-    if CONFIGS['save_files']['groups']:
-        with open('files/stages_info/groups/merge.json', 'w', encoding='utf-8') as file:
-            json.dump({'events': get_merge_events()}, file, indent=2, default=str)
-
-    # subgroups_2: final state after splitting, all merges, singleton resolution
-    # and rebalance — i.e. what the layouting stage actually sees.
-    _save_subgroups_snapshot(photos_df, 'subgroups_2.json')
+    flush_merge_events()
+    save_subgroups_snapshot(photos_df, 'subgroups_2.json')
 
     groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     group2images = get_images_per_groups(groups)

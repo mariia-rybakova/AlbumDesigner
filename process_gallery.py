@@ -345,7 +345,7 @@ if __name__ == '__main__':
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
     intialize('AlbumDesigner', settings_filename)
 
-    with open('files/test_requests/request2.json', 'r') as f:
+    with open('files/test_requests/request0.json', 'r') as f:
         _input_request = json.load(f)
 
     # Run request

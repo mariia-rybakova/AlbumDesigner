@@ -270,7 +270,6 @@ def get_split_points(general_times_list: List[float], group_time_list: List[floa
         details['group_key_matched'] = True
 
     split_points = list()
-    end_time = group_time_list[-1]
     for i in range(len(group_time_list) - 1):
         start_time = group_time_list[i]
         end_time = group_time_list[i + 1]
