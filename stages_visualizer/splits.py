@@ -21,6 +21,7 @@ from reportlab.pdfgen import canvas
 from stages_visualizer._shared import (
     DEFAULT_CELL_SIZE,
     PAGE_SIZE,
+    caption_fields_for,
     draw_photo_grid,
     format_general_time,
     grid_cols_for_width,
@@ -32,6 +33,7 @@ from stages_visualizer._shared import (
 SPLIT_FILE = 'split.json'
 
 # Match album1.pdf's caption source so the same photo shows the same time.
+# Swapped to general_time for artificial-time galleries (see caption_fields_for).
 CAPTION_FIELDS = ('image_time_date',)
 
 PAGE_MARGIN = 24.0
@@ -44,16 +46,17 @@ LOG_FONT = 'Courier'
 LOG_FONT_SIZE = 7.5
 
 
-def _load_splits(stages_dir: str) -> List[dict]:
+def _load_splits(stages_dir: str) -> tuple:
+    """Return `(splits, is_artificial_time)` from split.json."""
     path = os.path.join(stages_dir, SPLIT_FILE)
     if not os.path.isfile(path):
-        return []
+        return [], False
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    return data.get('splits', []) or []
+    return data.get('splits', []) or [], bool(data.get('is_artificial_time', False))
 
 
-def _decision_log_lines(split: dict) -> List[str]:
+def _decision_log_lines(split: dict, is_artificial_time: bool = False) -> List[str]:
     """Build the monospaced decision-log lines, mirroring `get_split_points`'s prints.
 
     Returns the same trace the console output emits — `...getting split points`,
@@ -61,6 +64,9 @@ def _decision_log_lines(split: dict) -> List[str]:
     `Split points: [...]`. Times are formatted HH:MM:SS for readability.
     For non-time-based attempts (size-based, or rejected before evaluation),
     returns a single-line description of why no per-interval trace exists.
+
+    When `is_artificial_time`, the saved `*_clock` wall-clock strings are stale,
+    so the elapsed `general_time` values are shown instead (matches the captions).
     """
     lines: List[str] = []
     notes = split.get('notes') or ''
@@ -93,9 +99,10 @@ def _decision_log_lines(split: dict) -> List[str]:
 
     # Prefer wall-clock HH:MM:SS strings (matches image captions / album1.pdf);
     # fall back to the relative general_time format if the log was written
-    # before the wall-clock fields were added.
+    # before the wall-clock fields were added. For artificial-time galleries the
+    # clock strings are stale, so always show the elapsed general_time instead.
     def _show(clock: Any, raw: Any) -> str:
-        if clock:
+        if clock and not is_artificial_time:
             return str(clock)
         return format_general_time(raw)
 
@@ -179,7 +186,8 @@ def _draw_decision_log(c: canvas.Canvas, x: float, y_top: float,
 
 
 def _draw_split(c: canvas.Canvas, split: dict,
-                images_path: str, image_files: List[str]) -> None:
+                images_path: str, image_files: List[str],
+                caption_fields: tuple, is_artificial_time: bool = False) -> None:
     """Draw one split entry across as many pages as it needs."""
     page_w, page_h = PAGE_SIZE
     panel_w = page_w - 2 * PAGE_MARGIN
@@ -194,7 +202,7 @@ def _draw_split(c: canvas.Canvas, split: dict,
     # Decision-log block, mirroring the console prints. Useful both for
     # successful splits ("appended at 02:11:00 because 3 photos were
     # between...") and for skipped ones ("group key doesn't match").
-    log_lines = _decision_log_lines(split)
+    log_lines = _decision_log_lines(split, is_artificial_time)
     if log_lines:
         cursor_y = _draw_decision_log(c, PAGE_MARGIN, cursor_y, log_lines, top, bottom)
         cursor_y -= 6.0  # gap before the photo grids
@@ -212,7 +220,7 @@ def _draw_split(c: canvas.Canvas, split: dict,
 
     for label_text, photos in panels:
         n = len(photos)
-        grid_h = grid_height_for(n, cols, CAPTION_FIELDS, DEFAULT_CELL_SIZE)
+        grid_h = grid_height_for(n, cols, caption_fields, DEFAULT_CELL_SIZE)
         panel_h = LABEL_H + grid_h
 
         if cursor_y - panel_h < bottom:
@@ -230,7 +238,7 @@ def _draw_split(c: canvas.Canvas, split: dict,
         grid_bottom = grid_top - grid_h
         grid_rect = (PAGE_MARGIN, grid_bottom, panel_w, grid_h)
         draw_photo_grid(c, grid_rect, photos, images_path, image_files,
-                        caption_fields=CAPTION_FIELDS,
+                        caption_fields=caption_fields,
                         cell_size=DEFAULT_CELL_SIZE, label=None)
         cursor_y = grid_bottom - GRID_PAD
 
@@ -242,7 +250,8 @@ def _draw_split(c: canvas.Canvas, split: dict,
 
 
 def render(stages_dir: str, images_path: str, output_pdf_path: str) -> None:
-    splits = _load_splits(stages_dir)
+    splits, is_artificial_time = _load_splits(stages_dir)
+    caption_fields = caption_fields_for(CAPTION_FIELDS, is_artificial_time)
     image_files = list_image_files(images_path)
     if not image_files:
         print(f"[warn] no images found under {images_path}; cells will show photo ids only")
@@ -254,6 +263,6 @@ def render(stages_dir: str, images_path: str, output_pdf_path: str) -> None:
         c.showPage()
     else:
         for split in splits:
-            _draw_split(c, split, images_path, image_files)
+            _draw_split(c, split, images_path, image_files, caption_fields, is_artificial_time)
             c.showPage()
     c.save()

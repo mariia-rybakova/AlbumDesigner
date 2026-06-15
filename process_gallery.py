@@ -5,7 +5,7 @@ import sys
 
 
 from typing import Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 import multiprocessing as mp
 from collections import defaultdict
 
@@ -81,9 +81,14 @@ def _load_cropped_image(img_path, placement, box_w, box_h):
         return buf
 
 
-def _draw_composition_header(c, comp_id, design_id, page_height):
+def _draw_composition_header(c, comp_id, design_id, page_height, is_artificial_time=False):
     c.setFont("Helvetica", 10)
     c.drawString(30, page_height - 30, f"Composition ID: {comp_id}, Design ID: {design_id}")
+    if is_artificial_time:
+        c.setFont("Helvetica-Bold", 10)
+        c.setFillColorRGB(1, 0, 0)
+        c.drawString(30, page_height - 44, "ARTIFICIAL TIME APPLIED")
+        c.setFillColorRGB(0, 0, 0)
 
 
 def _draw_image_in_box(c, img_io, box_rect, page_height):
@@ -99,14 +104,32 @@ def _draw_error_in_box(c, photo_id, box_rect, page_height):
     c.setFillColorRGB(0, 0, 0)
 
 
-def _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height):
+def _format_photo_time(row, is_artificial_time):
+    """Human-readable per-photo time for the debug stamp.
+
+    Real EXIF -> the actual datetime. Artificial-time galleries have a stale,
+    identical image_time_date, so render the synthetic general_time (seconds
+    from the first photo) as an elapsed H:MM:SS — readable and distinct.
+    """
+    if is_artificial_time:
+        seconds = row.get('general_time', None)
+        if pd.notnull(seconds):
+            try:
+                return str(timedelta(seconds=int(seconds)))
+            except (ValueError, TypeError):
+                return str(seconds)
+        return ''
+    return str(row.get('image_time_date', ''))
+
+
+def _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height, is_artificial_time=False):
     """Stamp time, group key, and original context inside the box bottom — red, 8pt."""
     info_row = gallery_photos_info.loc[gallery_photos_info['image_id'] == photo_id]
     if info_row.empty:
         return
 
     row = info_row.iloc[0]
-    general_time = row.get('image_time_date', '')
+    general_time = _format_photo_time(row, is_artificial_time)
     original_context = row.get('original_context', '')
     group_key = (
         row.get('time_cluster', ''),
@@ -126,7 +149,7 @@ def _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height
 
 
 def _render_placement(c, placement, box, image_files, images_path,
-                      gallery_photos_info, page_width, page_height):
+                      gallery_photos_info, page_width, page_height, is_artificial_time=False):
     """Render one photo placement: image (cropped & sized) plus its metadata, or an error label."""
     photo_id = placement['photoId']
     if photo_id is None or not box:
@@ -147,21 +170,22 @@ def _render_placement(c, placement, box, image_files, images_path,
         _draw_error_in_box(c, photo_id, box_rect, page_height)
         return
 
-    _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height)
+    _draw_photo_metadata(c, photo_id, gallery_photos_info, box_rect, page_height, is_artificial_time)
 
 
 def _render_composition_page(c, comp, placements, box_id2data, image_files, images_path,
-                             gallery_photos_info, page_width, page_height):
+                             gallery_photos_info, page_width, page_height, is_artificial_time=False):
     """Render one composition as a single PDF page: header on top, then every placement."""
     design_boxes = _resolve_design_boxes(comp, placements, box_id2data)
-    _draw_composition_header(c, comp['compositionId'], comp['designId'], page_height)
+    _draw_composition_header(c, comp['compositionId'], comp['designId'], page_height, is_artificial_time)
     for placement, box in zip(placements, design_boxes):
         _render_placement(c, placement, box, image_files, images_path,
-                          gallery_photos_info, page_width, page_height)
+                          gallery_photos_info, page_width, page_height, is_artificial_time)
     c.showPage()
 
 
-def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info):
+def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info,
+                           is_artificial_time=False):
     """
     Visualize the album in a PDF file: one composition per landscape A4 page.
 
@@ -172,6 +196,8 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
         box_id2data: dict, mapping boxId to box info (with x, y, width, height).
         gallery_photos_info: pd.DataFrame with one row per photo (image_id, image_time_date,
             time_cluster, cluster_context, group_sub_index, original_context).
+        is_artificial_time: bool, whether synthetic time was applied to this gallery (stamped
+            as a banner on each page when True).
     """
     composition = final_album['composition']
     compositions = composition['compositions']
@@ -184,7 +210,7 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
     for comp in compositions:
         placements = placements_by_comp.get(comp['compositionId'], [])
         _render_composition_page(c, comp, placements, box_id2data, image_files, images_path,
-                                 gallery_photos_info, page_width, page_height)
+                                 gallery_photos_info, page_width, page_height, is_artificial_time)
     c.save()
 
 
@@ -350,8 +376,14 @@ if __name__ == '__main__':
 
     # Run request
     final_album, _message = process_gallery(_input_request)
+    if _message is None:
+        raise SystemExit(f"process_gallery failed: {final_album}")
+
     gallery_photos_info = _message.content['gallery_photos_info']
     box_id2data = _message.designsInfo['anyPagebox_id2data']  # if 'designsInfo' in _message and 'anyPagebox_id2data' in _message['designsInfo'] else {}
+
+    is_artificial_time = _message.content.get('is_artificial_time', False)
+    print('ARTIFICIAL TIME APPLIED:', is_artificial_time)
 
     print('FINAL SPREADS', len(final_album['composition']['compositions']))
     print(final_album)
@@ -363,7 +395,8 @@ if __name__ == '__main__':
     os.makedirs(_output_pdf_path, exist_ok=True)
     _output_pdf_path = os.path.join(_output_pdf_path, 'album1.pdf')
 
-    visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info)
+    visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info,
+                           is_artificial_time)
     print('album saved locally')
 
 

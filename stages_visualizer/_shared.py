@@ -84,6 +84,27 @@ def format_image_time_date(t: Any) -> str:
     return s[:8]
 
 
+def caption_fields_for(base_fields: Sequence[str], is_artificial_time: bool) -> Tuple[str, ...]:
+    """Pick the per-photo caption fields for the gallery's time flavour.
+
+    When `is_artificial_time`, the stored `image_time_date` is stale/identical
+    across photos (the real timeline lives in the synthetic `general_time`), so
+    swap that field for `general_time`. Otherwise the base fields are used as-is.
+    Mirrors the source switch `process_gallery.py` makes for album1.pdf.
+    """
+    if not is_artificial_time:
+        return tuple(base_fields)
+    return tuple('general_time' if f == 'image_time_date' else f for f in base_fields)
+
+
+def mean_time_label(mean_image_time_date: Any, mean_general_time: Any,
+                    is_artificial_time: bool) -> str:
+    """Header/meta mean-time label: wall-clock normally, elapsed when artificial."""
+    if is_artificial_time:
+        return format_general_time(mean_general_time)
+    return format_image_time_date(mean_image_time_date)
+
+
 # ---------- caption assembly ----------
 
 def captions_for_photo(p: dict, caption_fields: Sequence[str]) -> List[str]:

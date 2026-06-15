@@ -324,7 +324,8 @@ class ProcessStage(Stage):
                 album_result, df = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
                                                 logger=self.logger,density=density, manual_selection=manual_selection,
                                                 all_gallery_df=all_gallery_df,
-                                                selection_min_total_spreads=selection_min_total_spreads)
+                                                selection_min_total_spreads=selection_min_total_spreads,
+                                                is_artificial_time=message.content.get('is_artificial_time', False))
 
                 wait_start = datetime.now()
                 try:

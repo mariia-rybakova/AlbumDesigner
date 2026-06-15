@@ -12,6 +12,7 @@ from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_i
 from utils.time_processing import sort_groups_by_time
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
+from utils.stages_recorder import set_is_artificial_time
 
 
 def _json_default(o):
@@ -23,7 +24,12 @@ def _json_default(o):
 
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
-                     manual_selection=False, all_gallery_df=None, selection_min_total_spreads=None):
+                     manual_selection=False, all_gallery_df=None, selection_min_total_spreads=None,
+                     is_artificial_time=False):
+    # Make the artificial-time flag available to the stage recorders so the
+    # split/merge/subgroups JSONs carry it and the visualizers can pick the
+    # right time field (mirrors album1.pdf in process_gallery.py).
+    set_is_artificial_time(is_artificial_time)
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
 
     LookUpTable = WeddingLookUpTable if is_wedding else NonWeddingLookUpTable

@@ -27,12 +27,13 @@ from reportlab.pdfgen import canvas
 from stages_visualizer._shared import (
     DEFAULT_CELL_SIZE,
     PAGE_SIZE,
+    caption_fields_for,
     draw_photo_grid,
     format_general_time,
-    format_image_time_date,
     grid_cols_for_width,
     grid_height_for,
     list_image_files,
+    mean_time_label,
 )
 
 
@@ -43,20 +44,22 @@ PAD = 10.0
 PAGE_MARGIN = 20.0
 
 
-def _load_subgroups(json_path: str) -> List[dict]:
+def _load_subgroups(json_path: str) -> tuple:
+    """Return `(subgroups, is_artificial_time)` from a subgroups_*.json file."""
     if not os.path.isfile(json_path):
-        return []
+        return [], False
     with open(json_path, 'r', encoding='utf-8') as f:
         d = json.load(f)
-    return d.get('subgroups', []) or []
+    return d.get('subgroups', []) or [], bool(d.get('is_artificial_time', False))
 
 
 def _draw_header(c: canvas.Canvas, x: float, y_top: float, w: float,
-                 sg: dict) -> None:
+                 sg: dict, is_artificial_time: bool = False) -> None:
     """Bold group key on the left, right-aligned mean-time / count metadata."""
     gk = sg.get('group_key', [])
     n = sg.get('n_photos', 0)
-    mean_date = format_image_time_date(sg.get('mean_image_time_date'))
+    mean_date = mean_time_label(sg.get('mean_image_time_date'),
+                                sg.get('mean_general_time'), is_artificial_time)
     mean_general = format_general_time(sg.get('mean_general_time'))
 
     header_y = y_top - 11
@@ -74,7 +77,8 @@ def _draw_header(c: canvas.Canvas, x: float, y_top: float, w: float,
 
 def render(json_path: str, images_path: str, output_pdf_path: str) -> None:
     """Render the PDF for one subgroups_*.json file."""
-    subgroups = _load_subgroups(json_path)
+    subgroups, is_artificial_time = _load_subgroups(json_path)
+    caption_fields = caption_fields_for(CAPTION_FIELDS, is_artificial_time)
     image_files = list_image_files(images_path)
     if not image_files:
         print(f"[warn] no images found under {images_path}; cells will show photo ids only")
@@ -101,7 +105,7 @@ def render(json_path: str, images_path: str, output_pdf_path: str) -> None:
     for sg in subgroups:
         photos = sg.get('photos') or []
         n = sg.get('n_photos') or len(photos)
-        grid_h = grid_height_for(n, cols, CAPTION_FIELDS, DEFAULT_CELL_SIZE)
+        grid_h = grid_height_for(n, cols, caption_fields, DEFAULT_CELL_SIZE)
         panel_h = HEADER_H + grid_h
 
         # If this panel won't fit on the current page, start a new one. A
@@ -113,12 +117,12 @@ def render(json_path: str, images_path: str, output_pdf_path: str) -> None:
             cursor_y = top
             page_started = False
 
-        _draw_header(c, PAGE_MARGIN, cursor_y, panel_w, sg)
+        _draw_header(c, PAGE_MARGIN, cursor_y, panel_w, sg, is_artificial_time)
         grid_top = cursor_y - HEADER_H
         grid_bottom = grid_top - grid_h
         grid_rect = (PAGE_MARGIN, grid_bottom, panel_w, grid_h)
         draw_photo_grid(c, grid_rect, photos, images_path, image_files,
-                        caption_fields=CAPTION_FIELDS,
+                        caption_fields=caption_fields,
                         cell_size=DEFAULT_CELL_SIZE, label=None)
         cursor_y = grid_bottom - PAD
         page_started = True

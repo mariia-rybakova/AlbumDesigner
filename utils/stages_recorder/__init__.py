@@ -21,6 +21,10 @@ All collection is gated on `CONFIGS['save_files']['groups']`; when off, the
 record/flush calls are cheap no-ops so they can be left in the pipeline.
 """
 
+from utils.stages_recorder.context import (
+    set_is_artificial_time,
+    get_is_artificial_time,
+)
 from utils.stages_recorder.photo_records import PHOTO_RECORD_COLUMNS, photos_to_records
 from utils.stages_recorder.time_utils import (
     build_general_time_to_clock,
@@ -45,6 +49,8 @@ from utils.stages_recorder.merges import (
 )
 
 __all__ = [
+    'set_is_artificial_time',
+    'get_is_artificial_time',
     'PHOTO_RECORD_COLUMNS',
     'photos_to_records',
     'build_general_time_to_clock',

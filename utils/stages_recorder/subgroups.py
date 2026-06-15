@@ -9,6 +9,7 @@ from typing import List
 import pandas as pd
 
 from utils.configs import CONFIGS
+from utils.stages_recorder.context import get_is_artificial_time
 from utils.stages_recorder.photo_records import photos_to_records
 
 
@@ -78,7 +79,8 @@ def save_subgroups_snapshot(photos_df: pd.DataFrame, filename: str) -> None:
         return
     try:
         os.makedirs(_GROUPS_OUT_DIR, exist_ok=True)
-        snapshot = {'subgroups': snapshot_subgroups(photos_df)}
+        snapshot = {'is_artificial_time': get_is_artificial_time(),
+                    'subgroups': snapshot_subgroups(photos_df)}
         path = os.path.join(_GROUPS_OUT_DIR, filename)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(snapshot, f, indent=2, default=str)

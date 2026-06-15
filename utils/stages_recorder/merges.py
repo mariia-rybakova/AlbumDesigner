@@ -27,6 +27,7 @@ from typing import Any, List, Optional
 import pandas as pd
 
 from utils.configs import CONFIGS
+from utils.stages_recorder.context import get_is_artificial_time
 from utils.stages_recorder.photo_records import photos_to_records
 
 
@@ -59,7 +60,8 @@ def flush_merge_events() -> None:
     try:
         os.makedirs(_GROUPS_OUT_DIR, exist_ok=True)
         with open(os.path.join(_GROUPS_OUT_DIR, _OUT_FILE), 'w', encoding='utf-8') as f:
-            json.dump({'events': list(_merge_events)}, f, indent=2, default=str)
+            json.dump({'is_artificial_time': get_is_artificial_time(),
+                       'events': list(_merge_events)}, f, indent=2, default=str)
     except Exception:
         pass
 

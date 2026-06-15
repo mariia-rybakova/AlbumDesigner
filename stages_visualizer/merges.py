@@ -33,8 +33,9 @@ from stages_visualizer._shared import (
     PAGE_SIZE,
     caption_height,
     draw_photo_grid,
+    caption_fields_for,
     format_general_time,
-    format_image_time_date,
+    mean_time_label,
     grid_cols_for_width,
     grid_height_for,
     list_image_files,
@@ -55,18 +56,20 @@ CAND_TABLE_PAD = 4.0
 
 # ---------- load ----------
 
-def _load_events(stages_dir: str) -> List[dict]:
-    """Load the events list. Falls back to legacy `merges` format gracefully."""
+def _load_events(stages_dir: str) -> tuple:
+    """Load `(events, is_artificial_time)`. Falls back to legacy `merges` format gracefully."""
     path = os.path.join(stages_dir, MERGE_FILE)
     if not os.path.isfile(path):
-        return []
+        return [], False
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
+    is_artificial_time = bool(data.get('is_artificial_time', False))
     events = data.get('events')
     if events is not None:
-        return events
+        return events, is_artificial_time
     # Legacy format: a list of successful merges only.
-    return [dict(e, type='merge_succeeded') for e in (data.get('merges') or [])]
+    return ([dict(e, type='merge_succeeded') for e in (data.get('merges') or [])],
+            is_artificial_time)
 
 
 # ---------- helpers ----------
@@ -105,30 +108,31 @@ def _skipped_height(_ev: dict) -> float:
     return 2 * LINE_H
 
 
-def _succeeded_height(ev: dict, cols: int) -> float:
+def _succeeded_height(ev: dict, cols: int, caption_fields: tuple) -> float:
     merged = ev.get('merged_photos') or []
     reminder = ev.get('reminder_photos') or []
-    h = LABEL_H + grid_height_for(len(merged), cols, CAPTION_FIELDS, DEFAULT_CELL_SIZE)
+    h = LABEL_H + grid_height_for(len(merged), cols, caption_fields, DEFAULT_CELL_SIZE)
     if reminder:
-        h += GRID_PAD + LABEL_H + grid_height_for(len(reminder), cols, CAPTION_FIELDS, DEFAULT_CELL_SIZE)
+        h += GRID_PAD + LABEL_H + grid_height_for(len(reminder), cols, caption_fields, DEFAULT_CELL_SIZE)
     # title above
     return h + 28.0
 
 
-def _event_height(ev: dict, cols: int) -> float:
+def _event_height(ev: dict, cols: int, caption_fields: tuple) -> float:
     t = ev.get('type')
     if t == 'search':
         return _search_height(ev)
     if t == 'merge_skipped':
         return _skipped_height(ev)
     if t == 'merge_succeeded':
-        return _succeeded_height(ev, cols)
+        return _succeeded_height(ev, cols, caption_fields)
     return LINE_H
 
 
 # ---------- drawing per event ----------
 
-def _draw_search(c: canvas.Canvas, x: float, y_top: float, w: float, ev: dict) -> float:
+def _draw_search(c: canvas.Canvas, x: float, y_top: float, w: float, ev: dict,
+                 is_artificial_time: bool = False) -> float:
     """Draw a search event; return the y of the bottom edge below the block."""
     candidates = ev.get('candidates') or []
     selected_key = ev.get('selected_partner_key')
@@ -146,7 +150,7 @@ def _draw_search(c: canvas.Canvas, x: float, y_top: float, w: float, ev: dict) -
     c.setFont('Helvetica', 8)
     c.setFillColorRGB(0.3, 0.3, 0.3)
     c.drawString(x, cursor - 8,
-                 f"src mean t={format_image_time_date(ev.get('src_mean_image_time_date'))}  "
+                 f"src mean t={mean_time_label(ev.get('src_mean_image_time_date'), ev.get('src_mean_general_time'), is_artificial_time)}  "
                  f"(general_time={format_general_time(ev.get('src_mean_general_time'))})    "
                  f"selected={_fmt_key(selected_key)}  "
                  f"time_diff={_fmt_time(ev.get('selected_time_diff'))}")
@@ -224,7 +228,8 @@ def _draw_skipped(c: canvas.Canvas, x: float, y_top: float, ev: dict) -> float:
 
 def _draw_succeeded(c: canvas.Canvas, x: float, y_top: float, w: float,
                     ev: dict, cols: int,
-                    images_path: str, image_files: List[str]) -> float:
+                    images_path: str, image_files: List[str],
+                    caption_fields: tuple) -> float:
     merged_photos = ev.get('merged_photos') or []
     reminder_photos = ev.get('reminder_photos') or []
 
@@ -249,7 +254,7 @@ def _draw_succeeded(c: canvas.Canvas, x: float, y_top: float, w: float,
 
     for label_text, photos in panels:
         n = len(photos)
-        grid_h = grid_height_for(n, cols, CAPTION_FIELDS, DEFAULT_CELL_SIZE)
+        grid_h = grid_height_for(n, cols, caption_fields, DEFAULT_CELL_SIZE)
         # label
         c.setFont('Helvetica-Bold', 8)
         c.setFillColorRGB(0.1, 0.1, 0.1)
@@ -260,7 +265,7 @@ def _draw_succeeded(c: canvas.Canvas, x: float, y_top: float, w: float,
         grid_bottom = grid_top - grid_h
         grid_rect = (x, grid_bottom, w, grid_h)
         draw_photo_grid(c, grid_rect, photos, images_path, image_files,
-                        caption_fields=CAPTION_FIELDS,
+                        caption_fields=caption_fields,
                         cell_size=DEFAULT_CELL_SIZE, label=None)
         cursor = grid_bottom - GRID_PAD
 
@@ -270,7 +275,8 @@ def _draw_succeeded(c: canvas.Canvas, x: float, y_top: float, w: float,
 # ---------- main render ----------
 
 def render(stages_dir: str, images_path: str, output_pdf_path: str) -> None:
-    events = _load_events(stages_dir)
+    events, is_artificial_time = _load_events(stages_dir)
+    caption_fields = caption_fields_for(CAPTION_FIELDS, is_artificial_time)
     image_files = list_image_files(images_path)
     if not image_files:
         print(f"[warn] no images found under {images_path}; cells will show photo ids only")
@@ -294,7 +300,7 @@ def render(stages_dir: str, images_path: str, output_pdf_path: str) -> None:
     page_started = False
 
     for ev in events:
-        needed = _event_height(ev, cols)
+        needed = _event_height(ev, cols, caption_fields)
         if page_started and cursor_y - needed < bottom:
             c.showPage()
             cursor_y = top
@@ -302,12 +308,12 @@ def render(stages_dir: str, images_path: str, output_pdf_path: str) -> None:
 
         t = ev.get('type')
         if t == 'search':
-            cursor_y = _draw_search(c, PAGE_MARGIN, cursor_y, panel_w, ev)
+            cursor_y = _draw_search(c, PAGE_MARGIN, cursor_y, panel_w, ev, is_artificial_time)
         elif t == 'merge_skipped':
             cursor_y = _draw_skipped(c, PAGE_MARGIN, cursor_y, ev)
         elif t == 'merge_succeeded':
             cursor_y = _draw_succeeded(c, PAGE_MARGIN, cursor_y, panel_w, ev,
-                                       cols, images_path, image_files)
+                                       cols, images_path, image_files, caption_fields)
         else:
             # Unknown event types render as a single annotation line.
             c.setFont('Helvetica-Oblique', 8)
