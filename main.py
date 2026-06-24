@@ -224,7 +224,7 @@ class SelectionStage(Stage):
                 _msg.content['modified_lut'] = modified_lut
 
                 is_artificial_time = _msg.content['is_artificial_time']
-                ai_photos_selected, spreads_dict, min_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
+                ai_photos_selected, spreads_dict, min_total_spreads, max_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
                                                   self.logger, rating=rating)
 
                 if errors:
@@ -238,6 +238,7 @@ class SelectionStage(Stage):
                 _msg.content['photos'] = ai_photos_selected
                 _msg.content['spreads_dict'] = spreads_dict
                 _msg.content['min_total_spreads'] = min_total_spreads
+                _msg.content['max_total_spreads'] = max_total_spreads
 
                 if _msg.pagesInfo.get("firstPage"):
                     if _msg.content.get('is_wedding', True):
@@ -321,10 +322,12 @@ class ProcessStage(Stage):
 
                 all_gallery_df = message.content.get('gallery_all_photos_info', None)
                 selection_min_total_spreads = message.content.get('min_total_spreads', None)
+                selection_max_total_spreads = message.content.get('max_total_spreads', None)
                 album_result, df = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
                                                 logger=self.logger,density=density, manual_selection=manual_selection,
                                                 all_gallery_df=all_gallery_df,
                                                 selection_min_total_spreads=selection_min_total_spreads,
+                                                selection_max_total_spreads=selection_max_total_spreads,
                                                 is_artificial_time=message.content.get('is_artificial_time', False))
 
                 wait_start = datetime.now()

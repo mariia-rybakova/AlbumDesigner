@@ -282,7 +282,7 @@ def get_selection(message, logger):
         message.content['modified_lut'] = modified_lut
         is_artificial_time = message.content['is_artificial_time']
 
-        ai_photos_selected, spreads_dict, min_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
+        ai_photos_selected, spreads_dict, min_total_spreads, max_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
                                                   logger)
 
         if errors:
@@ -294,6 +294,8 @@ def get_selection(message, logger):
         message.content['gallery_photos_info'] = filtered_df
         message.content['photos'] = ai_photos_selected
         message.content['spreads_dict'] = spreads_dict
+        message.content['min_total_spreads'] = min_total_spreads
+        message.content['max_total_spreads'] = max_total_spreads
         logger.info('Photos selected: {}'.format(sorted(ai_photos_selected)))
         logger.info('Spreads dict sum: {}'.format(sum([item for key, item in spreads_dict.items()])))
 

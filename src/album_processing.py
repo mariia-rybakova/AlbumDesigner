@@ -25,7 +25,7 @@ def _json_default(o):
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
                      manual_selection=False, all_gallery_df=None, selection_min_total_spreads=None,
-                     is_artificial_time=False):
+                     selection_max_total_spreads=None, is_artificial_time=False):
     # Make the artificial-time flag available to the stage recorders so the
     # split/merge/subgroups JSONs carry it and the visualizers can pick the
     # right time field (mirrors album1.pdf in process_gallery.py).
@@ -41,7 +41,12 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
 
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
 
-    max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
+    # Hard ceiling from the album design - the album can never exceed this.
+    hard_max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
+    # Wedding selection proposes a tighter, gallery-aware limit; clamp it to the hard ceiling.
+    # Non-wedding has no selection target and keeps the design limit alone.
+    max_total_spreads = (min(selection_max_total_spreads, hard_max_total_spreads)
+                         if selection_max_total_spreads is not None else hard_max_total_spreads)
     min_total_spreads = min(max_total_spreads, designs_info['minPages']+6)
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
                                     min_total_spreads=min_total_spreads,logger = logger)
