@@ -78,7 +78,7 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
         The updated photos DataFrame with split groups reflected in
         'group_sub_index' and 'group_size' columns.
     """
-    look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
+    look_up_table = resources.look_up_table if hasattr(resources, 'look_up_table') else None
     split_df = photos_df[photos_df['group_size'] >= CONFIGS['max_img_split']]
     split_groups_ = split_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, group_key2time_list = get_groups_time(split_groups_)
@@ -86,7 +86,7 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
     recorder = SplitRecorder(photos_df)
 
     for group_key, group in split_groups_:
-        group_spread_size = look_up_table.get(group_key[1], [10])[0]
+        group_spread_size = look_up_table.get_spread_size(group_key) if look_up_table is not None else 10
         # Calculate average number of spreads for this group
         number_of_spreads = get_number_of_spreads(group, group_spread_size)
         # Check if group is too big and need to be split
@@ -155,7 +155,7 @@ def handle_wedding_bride_groom_merge(photos_df: pd.DataFrame, logger=None) -> pd
 
 
 # Other groups
-def _update_group_spreads(photos_df: pd.DataFrame, look_up_table: dict) -> None:
+def _update_group_spreads(photos_df: pd.DataFrame, look_up_table) -> None:
     """
     Calculate group spread ratios and store them in a new 'group_spreads' column.
 
@@ -166,13 +166,12 @@ def _update_group_spreads(photos_df: pd.DataFrame, look_up_table: dict) -> None:
     Args:
         photos_df: DataFrame of photos with 'cluster_context' and 'group_size' columns.
             Modified in place by adding a 'group_spreads' column.
-        look_up_table: Dict mapping cluster context strings to lists where the
-            first element is the recommended number of photos per spread.
+        look_up_table: A LookUpTable instance exposing compute_spreads_number.
     """
     def compute_spread(row: pd.Series) -> float:
-        if row['cluster_context'] in look_up_table:
-            return row['group_size'] / look_up_table[row['cluster_context']][0]
-        return 1
+        if look_up_table is None:
+            return 1
+        return look_up_table.compute_spreads_number(row['cluster_context'], row['group_size'])
 
     photos_df['group_spreads'] = photos_df.apply(compute_spread, axis=1)
 
@@ -223,7 +222,7 @@ def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResou
           - The updated photos DataFrame.
           - True if at least one merge was performed, False otherwise.
     """
-    look_up_table = resources.look_up_table.table if hasattr(resources, 'look_up_table') else {}
+    look_up_table = resources.look_up_table if hasattr(resources, 'look_up_table') else None
     possible_boxes_numbers = list(resources.printlab_data.layouts_df['number of boxes'].unique())
 
     _update_group_spreads(photos_df, look_up_table)     # add 'group_spreads' field

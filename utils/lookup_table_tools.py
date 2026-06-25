@@ -64,11 +64,24 @@ class LookUpTable:
     default_table = None
 
     def __init__(self, table: Dict[str, Tuple[float, float]] = None):
+        # Content-keyed prior (e.g. {'bride': (4, 0.5)}). Shared by every group
+        # of that content unless overridden below.
         self._table = {} if not table else table
+        # Per-group overrides, keyed by the full group key
+        # (time_cluster, cluster_context, group_sub_index). Populated by the
+        # spread rebalancing in update_with_limit so a change to one crowded
+        # group no longer leaks onto every other group of the same content.
+        self._group_table: Dict[Tuple, Tuple[float, float]] = {}
 
     @property
     def table(self):
         return self._table.copy()
+
+    def get_spread_params(self, group_key) -> Tuple[float, float]:
+        """Resolve (mean, std) for a group: per-group override -> content default -> fallback."""
+        if group_key in self._group_table:
+            return self._group_table[group_key]
+        return self._table.get(self._get_content_key(group_key), (10, 1.5))
 
     @staticmethod
     def _get_group_id(group_name):
@@ -106,10 +119,7 @@ class LookUpTable:
             logger.error(f"Error: Unexpected error while updating lookup table: {str(e)}")
 
     def get_current_spread_parameters(self, group_key, number_of_images):
-        # Extract the correct lookup key
-        content_key = self._get_content_key(group_key)
-
-        group_params = self._table.get(content_key, (10, 1.5))
+        group_params = self.get_spread_params(group_key)
         group_value = group_params[0]
         if group_value == 0:
             spreads = 0
@@ -229,54 +239,80 @@ class LookUpTable:
                 spreads_per_group, group2images, min_total_spreads, min_photos_per_spread=1)
         return spreads_per_group
 
-    def _apply_table_reduction(self, spreads_per_group: Dict, group2images: Dict) -> None:
+    def _write_value(self, key, new_value, extra_value, per_group: bool) -> None:
+        """Write a recomputed value either as a per-group override or onto the content prior.
+
+        per_group=True targets the full group key (refines one group only). per_group=False
+        targets the content key (shifts the shared prior so the change survives re-grouping
+        in the split/merge phase).
+        """
+        if per_group:
+            self._group_table[key] = (new_value, extra_value)
+        else:
+            self._table[self._get_content_key(key)] = (new_value, extra_value)
+
+    def _apply_table_reduction(self, spreads_per_group: Dict, group2images: Dict,
+                               per_group: bool = False) -> None:
         """Write back LUT after reduction: only increase values (to produce fewer spreads).
 
-        For each group, computes ceil(n_images / target_spreads) and writes it
-        to the LUT only if it exceeds the current value.
+        For each group, computes ceil(n_images / target_spreads) and writes it only if it
+        exceeds the group's current effective value.
         """
         for key, target_spreads in spreads_per_group.items():
-            content_key = self._get_content_key(key)
-            current_value, extra_value = self._table.get(content_key, (10, 1.5))
+            current_value, extra_value = self.get_spread_params(key)
             new_value = min(24, math.ceil(group2images[key] / target_spreads))
             if new_value > current_value:
-                self._table[content_key] = (new_value, extra_value)
+                self._write_value(key, new_value, extra_value, per_group)
 
     def _apply_table_expansion(self, spreads_per_group: Dict,
-                               group2images: Dict) -> None:
+                               group2images: Dict, per_group: bool = False) -> None:
         """Write back LUT after expansion: only decrease values (to produce more spreads).
 
-        For each group, computes int(n_images / target_spreads) and writes it
-        to the LUT only if it is below the current value.
+        For each group, computes int(n_images / target_spreads) and writes it only if it
+        is below the group's current effective value.
         """
         for key, target_spreads in spreads_per_group.items():
-            content_key = self._get_content_key(key)
-            current_value, extra_value = self._table.get(content_key, (10, 1.5))
+            current_value, extra_value = self.get_spread_params(key)
             new_value = max(1, int(group2images[key] / target_spreads))
             if new_value < current_value:
-                self._table[content_key] = (new_value, extra_value)
+                self._write_value(key, new_value, extra_value, per_group)
 
-    def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None, logger=None):
+    def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None, logger=None,
+                          per_group: bool = False):
         """Adjust LUT values so total spreads across all groups stays within [min, max].
 
         1. Computes initial spread count per group from current LUT.
         2. If total > max: reduces spreads (largest groups first), then increases LUT values.
         3. If total < min: expands spreads (most crowded groups first), then decreases LUT values.
         4. If within range: no changes to LUT.
+
+        per_group=False (default) shifts the content prior, so the budget decision carries into
+        the split/merge phase (which reads content-keyed values). per_group=True writes per-group
+        overrides instead, used on the final groups to refine individual groups for the layout.
         """
         spreads_per_group = self._compute_initial_spreads(group2images)
         total_spreads = sum(spreads_per_group.values())
 
         if total_spreads > max_total_spreads:
             spreads_per_group = self._reduce_spreads(spreads_per_group, group2images, max_total_spreads)
-            self._apply_table_reduction(spreads_per_group, group2images)
+            self._apply_table_reduction(spreads_per_group, group2images, per_group=per_group)
         elif min_total_spreads is not None and total_spreads < min_total_spreads:
             spreads_per_group = self._expand_spreads(spreads_per_group, group2images, min_total_spreads)
-            self._apply_table_expansion(spreads_per_group, group2images)
+            self._apply_table_expansion(spreads_per_group, group2images, per_group=per_group)
             if logger:
                 logger.debug(f'Expanded LUT: {total_spreads} -> {sum(spreads_per_group.values())} (target {min_total_spreads})')
         # else:
-        #     self._apply_table_reduction(spreads_per_group, group2images)
+        #     self._apply_table_reduction(spreads_per_group, group2images, per_group=per_group)
+
+    def view(self):
+        print('Look Up Table - recommended #photos per spread')
+        for key, value in self._table.items():
+            print(f"{key}: {value[0]}")
+        if self._group_table:
+            print('Per-group overrides:')
+            for key, value in self._group_table.items():
+                print(f"{key}: {value[0]}")
+        print()
 
 
 class WeddingLookUpTable(LookUpTable):
@@ -292,6 +328,24 @@ class WeddingLookUpTable(LookUpTable):
             return group_key[1].split("_")[0]
         else:
             return group_key[1]
+
+    def get_spread_size(self, group_key):
+        '''
+        Recommended number of photos per spread for this group (group_key[1] := cluster_context).
+        Prefers a per-group override; otherwise falls back to the content prior.
+        '''
+        if group_key in self._group_table:
+            return self._group_table[group_key][0]
+        return self._table.get(group_key[1], [10])[0]
+
+    def compute_spreads_number(self, cluster_context, group_size):
+        '''
+        Computes an average amount of spreads per group. It's equal:
+        Number of photos in group / Recommended number of photos per spread for this class (cluster_context)
+        '''
+        if cluster_context in self._table:
+            return group_size / self._table[cluster_context][0]
+        return 1
 
 
 class NonWeddingLookUpTable(LookUpTable):

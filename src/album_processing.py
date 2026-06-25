@@ -73,7 +73,8 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
         updated_groups = original_groups
 
     resources.look_up_table.update_with_limit(group2images, max_total_spreads=max_total_spreads,
-                                              min_total_spreads=min_total_spreads,logger = logger)
+                                              min_total_spreads=min_total_spreads,logger = logger,
+                                              per_group=True)
 
     if CONFIGS['save_files']['spreads']:
         # Wipe stale per-group jsons from any previous run. Without this, files
