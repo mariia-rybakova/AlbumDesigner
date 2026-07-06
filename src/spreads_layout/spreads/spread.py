@@ -311,52 +311,69 @@ class SingleSpreadLayout:
             Tuple of (photos_order, remaining_portraits, remaining_landscapes) where
             photos_order is a list aligned with boxes containing assigned Photo objects.
         """
+        # Split the incoming photos into portrait (aspect ratio < 1) and landscape (ar >= 1) pools.
         photos_portrait = [photo for photo in photos if photo.ar < 1]
         photos_landscape = [photo for photo in photos if photo.ar >= 1]
+        # Cursors marking how many photos from each pool have been consumed so far.
         port_idx = 0
         land_idx = 0
 
+        # Output list aligned with `boxes`: photos_order[i] is the photo assigned to boxes[i].
         photos_order = [None] * len(boxes)
+        # First pass: fill portrait and landscape boxes (skip squares for now).
         for idx, box_data in enumerate(boxes):
             if box_data['orientation'] == 'portrait':
+                # Prefer a portrait photo for a portrait box.
                 if port_idx != len(photos_portrait):
                     cur_photos = photos_portrait[port_idx]
                     port_idx += 1
                     photos_order[idx] = cur_photos
+                # If no portraits are left, fall back to a landscape photo.
                 elif land_idx != len(photos_landscape):
                     cur_photos = photos_landscape[land_idx]
                     land_idx += 1
                     photos_order[idx] = cur_photos
+                # No photos of any orientation remain — this tier is under-supplied.
                 else:
                     print("Error: no more photos to add")
             if box_data['orientation'] == 'landscape':
+                # Prefer a landscape photo for a landscape box.
                 if land_idx != len(photos_landscape):
                     cur_photos = photos_landscape[land_idx]
                     land_idx += 1
                     photos_order[idx] = cur_photos
+                # If no landscapes are left, fall back to a portrait photo.
                 elif port_idx != len(photos_portrait):
                     cur_photos = photos_portrait[port_idx]
                     port_idx += 1
                     photos_order[idx] = cur_photos
+                # No photos of any orientation remain — this tier is under-supplied.
                 else:
                     print("Error: no more photos to add")
 
+        # `portraits_total`/`landscapes_total` came in as photos reserved for LATER area tiers.
+        # Subtract what we just consumed so the square pass knows how many must stay reserved.
         portraits_total = portraits_total - port_idx
         landscapes_total = landscapes_total - land_idx
 
+        # Second pass: fill square boxes with whatever is left, without eating into the reserve.
         for idx, box_data in enumerate(boxes):
             if box_data['orientation'] == 'square':
+                # Use a portrait photo only if doing so leaves the reserved portraits untouched.
                 if port_idx != len(photos_portrait) - portraits_total:
                     cur_photos = photos_portrait[port_idx]
                     port_idx += 1
                     photos_order[idx] = cur_photos
+                # Otherwise use a landscape photo, again respecting the landscape reserve.
                 elif land_idx != len(photos_landscape) - landscapes_total:
                     cur_photos = photos_landscape[land_idx]
                     land_idx += 1
                     photos_order[idx] = cur_photos
+                # Nothing available within the reserve limits.
                 else:
                     print("Error: no more photos to add")
 
+        # Return the box-aligned assignment plus the reserve counts left for the next area tier.
         return photos_order, portraits_total, landscapes_total
 
     @classmethod
@@ -380,35 +397,46 @@ class SingleSpreadLayout:
             Tuple of (left_photos_order, right_photos_order), each a list of Photo
             objects indexed by box position within that page.
         """
+        # Total portrait/landscape boxes across the whole set — used as the running "reserve"
+        # counters that _assign_photos_order_by_area decrements tier by tier.
         portraits_total = len([box for box in boxes if box['orientation'] == 'portrait'])
         landscapes_total = len([box for box in boxes if box['orientation'] == 'landscape'])
 
+        # Bucket boxes by area, treating areas within 0.01 of each other as the same tier.
         area2boxes = dict()
         for box in boxes:
             cur_area = box['area']
             added = False
+            # Try to fold this box into an existing area bucket (fuzzy match).
             for saved_area in area2boxes.keys():
                 if abs(cur_area - saved_area) < 0.01:
                     area2boxes[saved_area].append(box)
                     added = True
                     break
+            # Already placed into a matching bucket — move on to the next box.
             if added:
                 continue
+            # No close bucket found: start a new one keyed by this exact area.
             if cur_area not in area2boxes:
                 area2boxes[cur_area] = list()
             area2boxes[cur_area].append(box)
 
+        # Size each page's output list by the highest box position on that side (+1); -1/+1 -> 0 if empty.
         left_size = max([box['position'] for box in boxes if box['side'] == 0], default=-1) + 1
         right_size = max([box['position'] for box in boxes if box['side'] == 1], default=-1) + 1
         left_photos_order = [None] * left_size
         right_photos_order = [None] * right_size
 
+        # Process area tiers from largest to smallest so the biggest boxes get first pick of photos.
         for area in sorted(area2boxes.keys(), reverse=True):
             cur_boxes = area2boxes[area]
+            # Assign photos to this tier's boxes by orientation; get back updated reserve counts.
             photos_order, portraits_total, landscapes_total = cls._assign_photos_order_by_area(photos, cur_boxes,
                                                                                           portraits_total,
                                                                                           landscapes_total)
+            # Re-order the assigned photos chronologically within the tier.
             photos_order = sorted(photos_order, key=lambda x: x.general_time)
+            # Scatter each assigned photo into its left/right page slot by side and position.
             for idx, box_data in enumerate(cur_boxes):
                 cur_photo = photos_order[idx]
                 if box_data['side'] == 0:
@@ -419,9 +447,11 @@ class SingleSpreadLayout:
             # Remove assigned photos from all_photos so they aren't reused
             assigned_photos = [p for p in photos_order if p is not None]
             if assigned_photos:
+                # Match by object identity (id) so equal-but-distinct Photo objects aren't confused.
                 assigned_ids = set(id(p) for p in assigned_photos)
                 photos = [p for p in photos if id(p) not in assigned_ids]
 
+        # Final per-page ordering, indexed by box position within each page.
         return left_photos_order, right_photos_order
 
     def assign_photos_order(self, layout_id2data: Dict[int, Any],
@@ -442,15 +472,19 @@ class SingleSpreadLayout:
             merge_pages: If True, pool photos from both pages before assignment;
                 if False, assign each page's photos independently.
         """
+        # Look up the layout chosen for this spread and the box ids it defines per page.
         layout_data = layout_id2data[self.layout_idx]
         left_boxes_ids = layout_data['left_box_ids']
         right_boxes_ids = layout_data['right_box_ids']
+        # Build box metadata for the left page: side 0, sequential position, plus area/orientation
+        # pulled from the design data keyed by (layout_id, box_id).
         left_page_boxes = [{'id': bid,
                       'side': 0,
                       'position': idx,
                       'area': design_box_id2data[(layout_data['layout_id'],bid)]['area'],
                       'orientation': design_box_id2data[(layout_data['layout_id'],bid)]['orientation']
                       } for idx, bid in enumerate(left_boxes_ids)]
+        # Same for the right page: side 1.
         right_page_boxes = [{'id': bid,
                        'side': 1,
                        'position': idx,
@@ -459,13 +493,18 @@ class SingleSpreadLayout:
                        } for idx, bid in enumerate(right_boxes_ids)]
 
         if merge_pages:
+            # Merged mode: pool both pages' photos, sort by (rank, time), and assign across all
+            # boxes at once so the best photos can land on either page.
             all_photos = sorted(list(self.left_page_photos) + list(self.right_page_photos),
                                 key=lambda ph: (ph.rank, ph.general_time))
             left_photos_order, right_photos_order = self._assign_part_photos_order(left_page_boxes + right_page_boxes, all_photos)
         else:
+            # Independent mode: sort each page's photos by (rank, time) separately...
             left_page_photos = sorted(self.left_page_photos, key=lambda ph: (ph.rank, ph.general_time))
             right_page_photos = sorted(self.right_page_photos, key=lambda ph: (ph.rank, ph.general_time))
+            # ...and assign each page against only its own boxes (ignore the other page's result).
             left_photos_order, _ = self._assign_part_photos_order(left_page_boxes, left_page_photos)
             _, right_photos_order = self._assign_part_photos_order(right_page_boxes, right_page_photos)
 
+        # Persist the computed orderings back onto the spread.
         self.set_photos_order(left_photos_order, right_photos_order)

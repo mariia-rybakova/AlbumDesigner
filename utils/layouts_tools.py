@@ -35,15 +35,52 @@ def classify_box(box, tolerance, album_ar=2):
         return 'large square', area
 
 
+def order_boxes_indices(boxes, y_tol=0.02):
+    """
+    Return box indices in album reading order: left page before right page,
+    then top-to-bottom by row, then left-to-right within a row.
+
+    Boxes whose top edge (`y`) differs by <= y_tol are treated as the same row.
+    This makes ordering tolerant to the sub-pixel `y` differences that appear in
+    real design data (e.g. two side-by-side boxes at y=0.24513 and y=0.24537),
+    which a plain lexsort on `y` would otherwise use to flip their left/right
+    order. Within a row, `x` decides. Must be used identically everywhere box
+    order is derived so positions stay consistent (see `sort_boxes`).
+
+    Args:
+        boxes: List of box dicts, each with 'x' and 'y' (normalized [0, 1]).
+        y_tol: Max `y` gap for two boxes to count as the same row.
+
+    Returns:
+        np.ndarray of indices into `boxes` in reading order.
+    """
+    if len(boxes) == 0:
+        return np.array([], dtype=int)
+
+    xs = np.array([box['x'] for box in boxes], dtype=float)
+    ys = np.array([box['y'] for box in boxes], dtype=float)
+    page_flag = np.where(xs < 0.5, 0, 1)
+
+    # Cluster boxes into rows by y: walk boxes top-to-bottom and start a new row
+    # whenever the gap to the current row's anchor exceeds y_tol.
+    order = np.argsort(ys, kind='stable')
+    row = np.empty(len(boxes), dtype=int)
+    r = 0
+    anchor = ys[order[0]]
+    for i in order:
+        if ys[i] - anchor > y_tol:
+            r += 1
+            anchor = ys[i]
+        row[i] = r
+
+    # page (primary) -> row (secondary) -> x (tertiary)
+    return np.lexsort((xs, row, page_flag))
+
+
 def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,album_ar=2):
     num_boxes = len(boxes)
 
-    xs = [box['x'] for box in boxes]
-    ys = [box['y'] for box in boxes]
-    page_flag = [0 if box['x'] < 0.5 else 1 for box in boxes]
-    # sorted_indices = np.lexsort((ys, xs))
-
-    sorted_indices = np.lexsort((xs, ys, page_flag))
+    sorted_indices = order_boxes_indices(boxes)
 
     boxes_s = [boxes[ind] for ind in sorted_indices]
     boxes = boxes_s

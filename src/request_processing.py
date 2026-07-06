@@ -7,7 +7,7 @@ from datetime import datetime
 from pycparser.c_ast import Continue
 
 from utils.configs import CONFIGS
-from utils.layouts_tools import generate_layouts_df, get_layouts_data
+from utils.layouts_tools import generate_layouts_df, get_layouts_data, order_boxes_indices
 from utils.read_protos_files import get_info_protobufs
 from utils.time_processing import process_gallery_time
 from ptinfra.azure.pt_file import PTFile
@@ -691,12 +691,10 @@ def customize_box(image_info, box_info, album_ar=2):
 
 
 def sort_boxes(boxes):
-    xs = [box['x'] for box in boxes]
-    ys = [box['y'] for box in boxes]
-    page_flag = [0 if box['x'] < 0.5 else 1 for box in boxes]
-
-    sorted_indices = np.lexsort((xs, ys, page_flag))
-
+    # Reading order with a y-tolerance so sub-pixel y noise in design data
+    # doesn't flip the left/right order of side-by-side boxes. Must match the
+    # ordering used to build left_box_ids/right_box_ids (utils.layouts_tools).
+    sorted_indices = order_boxes_indices(boxes)
     sorted_boxes = [boxes[ind] for ind in sorted_indices]
     return sorted_boxes
 
