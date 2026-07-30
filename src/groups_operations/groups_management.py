@@ -14,7 +14,7 @@ from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_me
 from src.groups_operations.split import (get_number_of_spreads, is_split_needed, get_split_points,
                                          split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
-from utils.configs import CONFIGS
+from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
 
 # All stage-info data collection (photo projections, subgroup snapshots,
 # split.json / merge.json accumulation, wall-clock time maps) lives in
@@ -417,7 +417,7 @@ def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gall
 def _compute_group_expected(group_key: Tuple[str, str, int], group: pd.DataFrame,
                             look_up_table: dict) -> Tuple[float, int]:
     """Return (raw_float_expected, ceil_expected) for a group against look_up_table."""
-    lut_key = group_key[1].split('_')[0] if '_' in group_key[1] else group_key[1]
+    lut_key = group_key[1].split(SPECIAL_GROUP_SEP)[0]
     lut_params = look_up_table.get(lut_key, (10, 1.5))
     lut_val = lut_params[0]
     size = len(group)

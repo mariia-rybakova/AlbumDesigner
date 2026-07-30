@@ -3,6 +3,8 @@ from datetime import datetime
 from itertools import chain
 import pandas as pd
 
+from utils.configs import SPECIAL_GROUP_SEP
+
 
 def get_images_per_groups(original_groups):
     group2images_data_list = dict()
@@ -107,8 +109,9 @@ def get_wedding_groups(df, manual_selection, logger):
         # Split groups to special and regular
         df_special, df_regular, groups_special = split_groups(df)
         for idx, (key, group_df) in enumerate(groups_special):
-            group_size = len(group_df)
-            new_context = f"{key[1]}_{idx}_{group_size}"
+            # idx is a global enumerate, so 'class|idx' is already unique; the
+            # content key is recovered as split(SEP)[0]. No size suffix needed.
+            new_context = f"{key[1]}{SPECIAL_GROUP_SEP}{idx}"
             df_special.loc[group_df.index, 'cluster_context'] = new_context
 
         # Merge modified df_special with df_regular

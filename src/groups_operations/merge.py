@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 # from sklearn.metrics.pairwise import pairwise_distances
 
-from utils.configs import CONFIGS
+from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
 
 # Merge events (search / merge_skipped / merge_succeeded) and the
 # `merge_illegal_group_by_time(... details=...)` accumulator are all defined in
@@ -88,8 +88,8 @@ def add_class_preference(illegal_group: Optional[pd.DataFrame], selected_group: 
     if not all([illegal_group_key, merge_target_key]):
         return time_diff
 
-    source_class = illegal_group_key.split('_')[0] if '_' in illegal_group_key else illegal_group_key
-    target_class = merge_target_key.split('_')[0] if '_' in merge_target_key else merge_target_key
+    source_class = illegal_group_key.split(SPECIAL_GROUP_SEP)[0]
+    target_class = merge_target_key.split(SPECIAL_GROUP_SEP)[0]
 
     multiplied = False
     # Prefer merging similar classes

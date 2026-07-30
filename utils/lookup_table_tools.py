@@ -1,7 +1,7 @@
 # Lookup table with category preferences (mean, std)
 import math
 from typing import Dict, Tuple, Optional
-from utils.configs import CONFIGS
+from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
 
 
 wedding_lookup_table = {
@@ -320,14 +320,14 @@ class WeddingLookUpTable(LookUpTable):
 
     @staticmethod
     def _get_group_id(group_name):
-        return group_name[1].split('_')[0]
+        return group_name[1].split(SPECIAL_GROUP_SEP)[0]
 
     @staticmethod
     def _get_content_key(group_key):
-        if "_" in group_key[1]:
-            return group_key[1].split("_")[0]
-        else:
-            return group_key[1]
+        # Strip a special-group suffix ('None|0' -> 'None'); split() returns
+        # the whole string when the separator is absent, so real class names that
+        # contain '_' (e.g. 'large_portrait') pass through untouched.
+        return group_key[1].split(SPECIAL_GROUP_SEP)[0]
 
     def get_spread_size(self, group_key):
         '''
@@ -336,15 +336,16 @@ class WeddingLookUpTable(LookUpTable):
         '''
         if group_key in self._group_table:
             return self._group_table[group_key][0]
-        return self._table.get(group_key[1], [10])[0]
+        return self._table.get(self._get_content_key(group_key), [10])[0]
 
     def compute_spreads_number(self, cluster_context, group_size):
         '''
         Computes an average amount of spreads per group. It's equal:
         Number of photos in group / Recommended number of photos per spread for this class (cluster_context)
         '''
-        if cluster_context in self._table:
-            return group_size / self._table[cluster_context][0]
+        content_key = cluster_context.split(SPECIAL_GROUP_SEP)[0]
+        if content_key in self._table:
+            return group_size / self._table[content_key][0]
         return 1
 
 
@@ -353,8 +354,8 @@ class NonWeddingLookUpTable(LookUpTable):
 
     @staticmethod
     def _get_group_id(group_name):
-        return group_name[0].split('_')[0]
+        return group_name[0].split(SPECIAL_GROUP_SEP)[0]
 
     @staticmethod
     def _get_content_key(group_key):
-        return group_key[0].split("_")[0]
+        return group_key[0].split(SPECIAL_GROUP_SEP)[0]

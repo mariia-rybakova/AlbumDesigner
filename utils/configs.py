@@ -529,5 +529,12 @@ selection_threshold = {
     'suit':0.15,
     'may kiss bride':0.15,
     'parents portrait':0.15,
-
 }
+
+
+# Reserved separator for special-group name suffixes (e.g. 'None|0|14'). Must
+# never appear in a real class name, so content-key resolution can strip the
+# suffix by splitting on this symbol without corrupting names that legitimately
+# contain '_' (e.g. 'large_portrait', 'small_portrait').
+SPECIAL_GROUP_SEP = '|'
+
