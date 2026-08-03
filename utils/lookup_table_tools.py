@@ -1,6 +1,6 @@
 # Lookup table with category preferences (mean, std)
 import math
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, Set
 from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
 
 
@@ -193,19 +193,24 @@ class LookUpTable:
 
     @staticmethod
     def _expand_with_floor(spreads_per_group: Dict, group2images: Dict,
-                           min_total_spreads: int, min_photos_per_spread: int) -> Tuple[Dict, int]:
+                           min_total_spreads: int, min_photos_per_spread: int,
+                           skip_keys: Optional[Set] = None) -> Tuple[Dict, int]:
         """Expand spreads one at a time until total >= min_total_spreads.
 
         Each iteration picks the group with the highest photos-per-spread ratio
         that can still grow without going below min_photos_per_spread per spread.
-        Modifies spreads_per_group in place. Returns (spreads_per_group, total).
+        Groups listed in skip_keys are never chosen here. Modifies
+        spreads_per_group in place. Returns (spreads_per_group, total).
         """
+        skip_keys = skip_keys or set()
         total_spreads = sum(spreads_per_group.values())
         while total_spreads < min_total_spreads:
             # Find the group with the highest photos-per-spread ratio that can still expand
             best_key = None
             best_ratio = 0
             for key, current_spreads in spreads_per_group.items():
+                if key in skip_keys:
+                    continue
                 num_images_in_group = group2images[key]
                 max_spreads = max(1, num_images_in_group // min_photos_per_spread)
                 if current_spreads >= max_spreads:
@@ -224,19 +229,32 @@ class LookUpTable:
         return spreads_per_group, total_spreads
 
     @staticmethod
-    def _expand_spreads(spreads_per_group: Dict, group2images: Dict, min_total_spreads: int) -> Dict:
-        """Expand spreads in two phases to reach min_total_spreads.
+    def _expand_spreads(spreads_per_group: Dict, group2images: Dict, min_total_spreads: int,
+                        protected_keys: Optional[Set] = None) -> Dict:
+        """Expand spreads to reach min_total_spreads, preferring non-dense groups.
 
-        Phase 1: expand keeping >= 2 photos per spread.
-        Phase 2 (if still short): allow 1 photo per spread as last resort.
-        Modifies spreads_per_group in place.
+        Passes run in order; each stops early once the floor is met:
+          1. non-protected groups, keeping >= 2 photos per spread
+          2. non-protected groups, allowing 1 photo per spread
+          3. protected (dense) groups, keeping >= 2 photos per spread  (last resort)
+          4. protected (dense) groups, allowing 1 photo per spread     (last resort)
+
+        Protected groups (e.g. 'dancing', packed at max density) are diluted only
+        when the rest can't reach the floor - e.g. a dancing-only gallery, where
+        the last-resort passes let it grow instead of stranding the album under
+        the floor. Modifies spreads_per_group in place.
         """
-        spreads_per_group, total_spreads = LookUpTable._expand_with_floor(
-            spreads_per_group, group2images, min_total_spreads, min_photos_per_spread=2)
-
-        if total_spreads < min_total_spreads:
-            spreads_per_group, total_spreads = LookUpTable._expand_with_floor(
-                spreads_per_group, group2images, min_total_spreads, min_photos_per_spread=1)
+        protected_keys = protected_keys or set()
+        total_spreads = sum(spreads_per_group.values())
+        # First protect the dense groups (skip them); then, only if still short,
+        # allow them by skipping nothing.
+        for skip_keys in (protected_keys, set()):
+            for min_photos_per_spread in (2, 1):
+                if total_spreads >= min_total_spreads:
+                    break
+                spreads_per_group, total_spreads = LookUpTable._expand_with_floor(
+                    spreads_per_group, group2images, min_total_spreads,
+                    min_photos_per_spread=min_photos_per_spread, skip_keys=skip_keys)
         return spreads_per_group
 
     def _write_value(self, key, new_value, extra_value, per_group: bool) -> None:
@@ -292,12 +310,27 @@ class LookUpTable:
         """
         spreads_per_group = self._compute_initial_spreads(group2images)
         total_spreads = sum(spreads_per_group.values())
+        if logger:
+            logger.debug(f'LuT update. Spreads per group: {spreads_per_group}')
+            logger.info(f'LuT update. Estimated total spreads: {total_spreads}')
 
         if total_spreads > max_total_spreads:
+            if logger:
+                logger.info('LuT update. Reduction applied')
             spreads_per_group = self._reduce_spreads(spreads_per_group, group2images, max_total_spreads)
             self._apply_table_reduction(spreads_per_group, group2images, per_group=per_group)
         elif min_total_spreads is not None and total_spreads < min_total_spreads:
-            spreads_per_group = self._expand_spreads(spreads_per_group, group2images, min_total_spreads)
+            if logger:
+                logger.info('LuT update. Expansion applied')
+            # Groups packed densely by design (e.g. 'dancing' at 24/spread) are
+            # expanded only as a last resort, so the floor is reached by diluting
+            # other groups first and dancing keeps its density - unless nothing
+            # else can absorb the floor (e.g. a dancing-only gallery).
+            dense_threshold = CONFIGS.get('expansion_dense_threshold', 12)
+            protected_keys = {key for key in spreads_per_group
+                              if self.get_spread_params(key)[0] >= dense_threshold}
+            spreads_per_group = self._expand_spreads(spreads_per_group, group2images,
+                                                     min_total_spreads, protected_keys)
             self._apply_table_expansion(spreads_per_group, group2images, per_group=per_group)
             if logger:
                 logger.debug(f'Expanded LUT: {total_spreads} -> {sum(spreads_per_group.values())} (target {min_total_spreads})')

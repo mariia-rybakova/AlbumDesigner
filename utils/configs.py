@@ -17,6 +17,11 @@ CONFIGS = {'DEBUG': True,
            'max_total_spreads':20,
            'max_group_spread':3,
            'max_imges_per_spread':24,
+           # Photos-per-spread at/above which a class counts as "densely packed"
+           # (e.g. 'dancing' at 24). Such groups are diluted by the min-floor
+           # expansion only as a last resort, so dense classes keep their density
+           # unless nothing else can reach the floor (e.g. a dancing-only gallery).
+           'expansion_dense_threshold': 12,
            'min_per_spread': 4,
            'max_per_spread': 38,
            'distance_weight': 10,

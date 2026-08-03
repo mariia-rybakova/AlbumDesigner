@@ -48,6 +48,8 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     max_total_spreads = (min(selection_max_total_spreads, hard_max_total_spreads)
                          if selection_max_total_spreads is not None else hard_max_total_spreads)
     min_total_spreads = min(max_total_spreads, designs_info['minPages']+6)
+    logger.info(f"Printlab data: minPages={designs_info['minPages']}. Calculated: min_total_spreads={min_total_spreads}")
+    logger.info(f"Printlab data: maxPages={designs_info['maxPages']}. Calculated: max_total_spreads={max_total_spreads}")
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
                                     min_total_spreads=min_total_spreads,logger = logger)
 
