@@ -116,23 +116,17 @@ def assign_special_group_contexts(df_special, groups_special):
 
 
 def get_wedding_groups(df, manual_selection, logger):
-    # Check if required columns exist
+    # Group by content only. Special ('None'/'other') groups are intentionally
+    # NOT tagged here: the unique 'class|idx' tagging now happens in _get_groups
+    # (inside process_wedding_illegal_groups), i.e. AFTER the first LUT budget
+    # pass. That pass therefore sees raw un-fragmented groups (one 'None'/'other'
+    # group per time_cluster) instead of one spread per special sub-group, which
+    # used to inflate the initial spread count. manual_selection is unused now but
+    # kept for the call sites' signature.
     if get_missing_columns({'time_cluster', 'cluster_context', 'cluster_label'}, df, logger):
         return None
 
-    if not manual_selection:
-        # Split groups to special and regular, then give special groups unique tags
-        df_special, df_regular, groups_special = split_groups(df)
-        df_special = assign_special_group_contexts(df_special, groups_special)
-
-        # Merge modified df_special with df_regular
-        final_df = pd.concat([df_special, df_regular], ignore_index=True)
-    else:
-        final_df = df
-
-    # Group the DataFrame by ['time_cluster', 'cluster_context']
-    groups_final = final_df.groupby(['time_cluster', 'cluster_context'])
-    return groups_final
+    return df.groupby(['time_cluster', 'cluster_context'])
 
 
 def get_none_wedding_groups(df, logger):
