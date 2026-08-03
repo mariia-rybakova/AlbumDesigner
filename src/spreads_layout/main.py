@@ -11,7 +11,7 @@ from src.core.photos import get_photos_from_df, Photo
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
 from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts
-from utils.configs import CONFIGS
+from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
 
 
 def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
@@ -262,7 +262,10 @@ def export_subgroup(group_id_str, subgroup_layouts, subgroup_photos):
         'photos': [{'id': photo.id} for photo in subgroup_photos],
         'top_layouts': [group_layout.to_dict() for group_layout in top_k]
     }
-    name = group_id_str.replace(" ", "_").replace("*", "_")
+    # SPECIAL_GROUP_SEP ('|') is illegal in Windows filenames, so a surviving
+    # special group ('None|0') would raise OSError here and get swallowed by
+    # process_group's try/except, dropping the whole group. Sanitize it out.
+    name = group_id_str.replace(" ", "_").replace("*", "_").replace(SPECIAL_GROUP_SEP, "_")
     with open(f"files/stages_info/spreads/{name}.json", "w") as file:
         json.dump(export, file, indent=4)
 

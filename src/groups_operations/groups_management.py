@@ -3,7 +3,8 @@ from typing import List, Tuple, Iterable, Callable, Any, Dict, Optional
 import pandas as pd
 
 from src.core.models import AlbumDesignResources
-from utils.album_tools import get_images_per_groups, get_missing_columns, split_groups
+from utils.album_tools import (get_images_per_groups, get_missing_columns, split_groups,
+                               assign_special_group_contexts)
 from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_merge_candidates_other,
                                          update_with_merges_bridegroom, update_with_merges_other,
                                          BRIDE_CENTRIC_CLASSES, GROOM_CENTRIC_CLASSES,
@@ -227,7 +228,10 @@ def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResou
 
     _update_group_spreads(photos_df, look_up_table)     # add 'group_spreads' field
 
-    mask_special = photos_df['cluster_context'].isin(['None', 'other'])
+    # Match on the content class, not the raw context, so special groups keep
+    # their 'None'/'other' merge limit after being tagged 'None|idx' / 'other|idx'.
+    content_class = photos_df['cluster_context'].apply(lambda c: c.split(SPECIAL_GROUP_SEP)[0])
+    mask_special = content_class.isin(['None', 'other'])
     df_special = photos_df[mask_special].copy()
     df_regular = photos_df[~mask_special].copy()
 
@@ -311,7 +315,7 @@ def _try_add_unused_photo(photos_df, group_key, singleton_group, all_gallery_df,
     new_row['group_sub_index'] = group_key[2]
     new_row['group_size'] = 2
     new_row['merge_allowed'] = False
-    new_row['original_context'] = candidate.get('cluster_context', singleton_context)
+    new_row['original_context'] = candidate.get('cluster_context', singleton_context).split(SPECIAL_GROUP_SEP)[0]
     new_row['groups_merged'] = 1
     if 'group_spreads' in photos_df.columns:
         new_row['group_spreads'] = 1
@@ -563,10 +567,14 @@ def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.D
     """
     Initialize photo groups by assigning 'group_sub_index' and 'group_size' columns.
 
-    In automatic mode, splits photos into special and regular subsets using
-    `split_groups`, then assigns sub-indices and sizes to special groups
-    individually. In manual mode, all photos are treated as regular groups.
-    Regular group sizes are computed by ('time_cluster', 'cluster_context').
+    In automatic mode, splits photos into special ('None'/'other') and regular
+    subsets using `split_groups`, then gives each special group a unique
+    'class|idx' cluster_context via `assign_special_group_contexts`, so same-class
+    special groups no longer share a (time_cluster, cluster_context) key. In
+    manual mode, all photos are treated as regular groups. 'group_sub_index' stays
+    -1 for every group here (uniqueness now comes from the context tag); the
+    general split assigns sub-indices later. Group sizes are computed by
+    ('time_cluster', 'cluster_context'), which covers special and regular alike.
 
     Args:
         photos_df: DataFrame of photos with 'time_cluster', 'cluster_context',
@@ -591,18 +599,14 @@ def _get_groups(photos_df: pd.DataFrame, manual_selection: bool, logger) -> pd.D
     photos_df['group_size'] = -1
     if not manual_selection:
         df_special, df_regular, groups_special = split_groups(photos_df)
-        for idx, (key, group_df) in enumerate(groups_special):
-            group_size = len(group_df)
-            df_special.loc[group_df.index, 'group_sub_index'] = idx
-            df_special.loc[group_df.index, 'group_size'] = group_size
+        df_special = assign_special_group_contexts(df_special, groups_special)
+        photos_df = pd.concat([df_special, df_regular], ignore_index=True)
     else:
-        df_special = photos_df.copy().iloc[0:0]
-        df_regular = photos_df.copy()
+        photos_df = photos_df.copy()
 
-    # Update regular groups
-    update_groups_size(df_regular, clusters=['time_cluster', 'cluster_context'])
-
-    photos_df = pd.concat([df_special, df_regular], ignore_index=True)
+    # Each special group now has a unique context, so sizing by
+    # (time_cluster, cluster_context) covers special and regular groups alike.
+    update_groups_size(photos_df, clusters=['time_cluster', 'cluster_context'])
     return photos_df
 
 
@@ -652,7 +656,9 @@ def process_wedding_illegal_groups(
 
         photos_df['merge_allowed'] = True
         photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
-        photos_df['original_context'] = photos_df['cluster_context'].copy()
+        # original_context feeds layout scoring (class diversity / time ordering),
+        # which wants the content class, so strip any special 'class|idx' tag.
+        photos_df['original_context'] = photos_df['cluster_context'].apply(lambda c: c.split(SPECIAL_GROUP_SEP)[0])
         photos_df['groups_merged'] = 1
         photos_df = handle_wedding_bride_groom_merge(photos_df, logger)
 

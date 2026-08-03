@@ -100,19 +100,30 @@ def split_groups(df):
     return df_special, df_regular, groups_special
 
 
+def assign_special_group_contexts(df_special, groups_special):
+    """Give each special ('None'/'other') group a unique 'class|idx' cluster_context.
+
+    Same-class special groups otherwise share a (time_cluster, cluster_context)
+    key and are told apart only by group_sub_index, which a later split reindexes
+    from 0 and can collide. A unique context tag removes that overlap; the content
+    class is recovered as context.split(SPECIAL_GROUP_SEP)[0]. idx is a global
+    enumerate over groups_special, so 'class|idx' is unique on its own (no size
+    suffix needed). Modifies df_special in place and returns it.
+    """
+    for idx, (key, group_df) in enumerate(groups_special):
+        df_special.loc[group_df.index, 'cluster_context'] = f"{key[1]}{SPECIAL_GROUP_SEP}{idx}"
+    return df_special
+
+
 def get_wedding_groups(df, manual_selection, logger):
     # Check if required columns exist
     if get_missing_columns({'time_cluster', 'cluster_context', 'cluster_label'}, df, logger):
         return None
 
     if not manual_selection:
-        # Split groups to special and regular
+        # Split groups to special and regular, then give special groups unique tags
         df_special, df_regular, groups_special = split_groups(df)
-        for idx, (key, group_df) in enumerate(groups_special):
-            # idx is a global enumerate, so 'class|idx' is already unique; the
-            # content key is recovered as split(SEP)[0]. No size suffix needed.
-            new_context = f"{key[1]}{SPECIAL_GROUP_SEP}{idx}"
-            df_special.loc[group_df.index, 'cluster_context'] = new_context
+        df_special = assign_special_group_contexts(df_special, groups_special)
 
         # Merge modified df_special with df_regular
         final_df = pd.concat([df_special, df_regular], ignore_index=True)
