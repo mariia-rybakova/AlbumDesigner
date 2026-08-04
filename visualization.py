@@ -3,6 +3,7 @@
 Reads `CONFIGS['save_files']` flags to decide which stage PDFs to produce:
 
     save_files.spreads -> stages_visualizer.spreads.render() -> spreads_layouts.pdf
+                          stages_visualizer.layouts.render() -> layouts.pdf
     save_files.groups  -> stages_visualizer.splits.render()  -> split.pdf
                           stages_visualizer.merges.render()  -> merge.pdf
 
@@ -30,6 +31,7 @@ from stages_visualizer import spreads as spreads_visualizer
 from stages_visualizer import splits as splits_visualizer
 from stages_visualizer import merges as merges_visualizer
 from stages_visualizer import subgroups as subgroups_visualizer
+from stages_visualizer import layouts as layouts_visualizer
 from process_gallery import request_name, album_name
 
 
@@ -44,6 +46,7 @@ request_path = os.path.join('files', 'test_requests', request_name + '.json')
 # a specific JSON inside the subdir — render(json_path, images, out).
 STAGE_RENDERERS = (
     ('spreads', 'spreads', None,                 'spreads_layouts.pdf', spreads_visualizer),
+    ('spreads', 'spreads', '_layouts.json',      'layouts.pdf',         layouts_visualizer),
     ('groups',  'groups',  None,                 'split.pdf',           splits_visualizer),
     ('groups',  'groups',  None,                 'merge.pdf',           merges_visualizer),
     ('groups',  'groups',  'subgroups_0.json',   'subgroups_0.pdf',     subgroups_visualizer),
