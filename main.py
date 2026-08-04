@@ -28,6 +28,8 @@ from src.selection.auto_selection import ai_selection
 from src.core.key_pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
+from src.predefined.models import PredefinedLayoutInput
+from src.predefined.processing import predefined_layout_processing, build_first_last_pages
 from src.request_processing import read_messages, assembly_output
 from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
@@ -172,6 +174,20 @@ class SelectionStage(Stage):
         #Iterate over message and start the selection process
         try:
             for _msg in messages:
+                predefined = PredefinedLayoutInput.from_request(_msg.content)
+                if predefined is not None:
+                    # Predefined-spreads mode: skip AI selection, narrow gallery to the
+                    # union of spread + cover photos.
+                    df = _msg.content.get('gallery_photos_info', pd.DataFrame())
+                    if df.empty:
+                        raise Exception(f"Gallery photos info DataFrame is empty for message {_msg}")
+                    _msg.content['predefined_layout'] = predefined
+                    _msg.content['gallery_all_photos_info'] = df.copy()
+                    _msg.content['gallery_photos_info'] = df[df['image_id'].isin(predefined.all_photo_ids())]
+                    self.logger.info(f"Predefined layout: {len(predefined.spreads)} spreads, skipping selection.")
+                    updated_messages.append(_msg)
+                    continue
+
                 ai_metadata = _msg.content.get('aiMetadata', None)
                 if ai_metadata is None or ai_metadata['photoIds'] is None:
                     self.logger.info(f"aiMetadata not found for message {_msg}. Continue with chosen photos.")
@@ -306,7 +322,15 @@ class ProcessStage(Stage):
                 # generate time clusters for the gallery photos
                 sorted_df = generate_time_clusters(message, sorted_df, self.logger)
 
-                df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
+                predefined = message.content.get('predefined_layout', None)
+                if predefined is not None:
+                    # Covers come from the input, not from choose_good_wedding_images —
+                    # that removes cover photos from df, which would steal photos from
+                    # the fixed spreads. Body spreads are explicit, so no removal here.
+                    first_last_pages_data_dict = build_first_last_pages(predefined, sorted_df, message, self.logger)
+                    df = sorted_df
+                else:
+                    df, first_last_pages_data_dict = generate_first_last_pages(message, sorted_df, self.logger)
 
                 # Handle the processing time logging
                 start = datetime.now()
@@ -323,7 +347,13 @@ class ProcessStage(Stage):
                 all_gallery_df = message.content.get('gallery_all_photos_info', None)
                 selection_min_total_spreads = message.content.get('min_total_spreads', None)
                 selection_max_total_spreads = message.content.get('max_total_spreads', None)
-                album_result, df = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
+                if predefined is not None:
+                    # Stages 1+2 (partitions/combinations) are given by the input;
+                    # only stage 3 (layout + page split + box assignment) runs.
+                    album_result, df = predefined_layout_processing(df, message.designsInfo, predefined, params,
+                                                                   message.content['is_wedding'], self.logger)
+                else:
+                    album_result, df = album_processing(df, message.designsInfo, message.content['is_wedding'], modified_lut, params,
                                                 logger=self.logger,density=density, manual_selection=manual_selection,
                                                 all_gallery_df=all_gallery_df,
                                                 selection_min_total_spreads=selection_min_total_spreads,

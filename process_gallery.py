@@ -25,12 +25,13 @@ from PIL import Image
 import io
 from utils.lookup_table_tools import wedding_lookup_table
 from utils.configs import CONFIGS
+from src.predefined.models import PredefinedLayoutInput
 
 from ptinfra.pt_queue import Message
 from main import ProcessStage
 
-request_name = 'request0'
-album_name = 'album1'
+request_name = 'request_cameron_predefined'
+album_name = 'album_predefined'
 
 
 def _group_placements_by_composition(placements_img):
@@ -226,6 +227,19 @@ def get_selection(message, logger):
     start = datetime.now()
     # Iterate over message and start the selection process
     try:
+        predefined = PredefinedLayoutInput.from_request(message.content)
+        if predefined is not None:
+            # Predefined-spreads mode: skip AI selection, narrow gallery to the
+            # union of spread + cover photos.
+            df = message.content.get('gallery_photos_info', pd.DataFrame())
+            if df.empty:
+                raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+            message.content['predefined_layout'] = predefined
+            message.content['gallery_all_photos_info'] = df.copy()
+            message.content['gallery_photos_info'] = df[df['image_id'].isin(predefined.all_photo_ids())]
+            logger.info(f"Predefined layout: {len(predefined.spreads)} spreads, skipping selection.")
+            return message
+
         ai_metadata = message.content.get('aiMetadata', None)
         # condition for  manual selection
         if ai_metadata is None or ai_metadata['photoIds'] is None:
