@@ -98,7 +98,7 @@ def _split_by_chunk_size(illegal_group: pd.DataFrame, split_size: int, n_samples
         return None
 
     # Create chunks of size `split_size`
-    illegal_group = illegal_group.sort_values(['image_as', 'general_time'], ascending=[False, True])
+    illegal_group = illegal_group.sort_values(['general_time'], ascending=[True])
     chunks = [illegal_group.iloc[max(i - split_size, 0):i] for i in range(n_samples, 0, -split_size)]
     chunks.reverse()
 

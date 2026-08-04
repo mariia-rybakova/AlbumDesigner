@@ -302,10 +302,7 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
     largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
     start = time.time()
     try:
-        if is_wedding and 'dancing' in group_name[1]:
-            group_images_df = group_images_df.sort_values(['image_as', 'image_time'])
-        else:
-            group_images_df = group_images_df.sort_values(['image_time'])
+        group_images_df = group_images_df.sort_values(['image_time'])
 
         group_photos = get_photos_from_df(group_images_df, is_wedding)
 
