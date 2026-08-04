@@ -29,6 +29,9 @@ from utils.configs import CONFIGS
 from ptinfra.pt_queue import Message
 from main import ProcessStage
 
+request_name = 'request0'
+album_name = 'album1'
+
 
 def _group_placements_by_composition(placements_img):
     """Bucket every placement under its compositionId."""
@@ -373,7 +376,7 @@ if __name__ == '__main__':
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
     intialize('AlbumDesigner', settings_filename)
 
-    with open('files/test_requests/request0.json', 'r') as f:
+    with open(f'files/test_requests/{request_name}.json', 'r') as f:
         _input_request = json.load(f)
 
     # Run request
@@ -395,7 +398,7 @@ if __name__ == '__main__':
     _images_path = os.path.join(input_dir, id)
     _output_pdf_path = os.path.join(output_dir, id)
     os.makedirs(_output_pdf_path, exist_ok=True)
-    _output_pdf_path = os.path.join(_output_pdf_path, 'album1.pdf')
+    _output_pdf_path = os.path.join(_output_pdf_path, album_name + '.pdf')
 
     visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info,
                            is_artificial_time)

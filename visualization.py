@@ -30,10 +30,12 @@ from stages_visualizer import spreads as spreads_visualizer
 from stages_visualizer import splits as splits_visualizer
 from stages_visualizer import merges as merges_visualizer
 from stages_visualizer import subgroups as subgroups_visualizer
+from process_gallery import request_name, album_name
 
 
 DEFAULT_STAGES_INFO_DIR = os.path.join('files', 'stages_info')
-ANALYSIS_DIR_NAME = 'album1_analysis'
+ANALYSIS_DIR_NAME = album_name + '_analysis'
+request_path = os.path.join('files', 'test_requests', request_name + '.json')
 
 # Each entry: (save_flag, subdir under stages_info, input_filename_or_None,
 #              output filename, renderer module).
@@ -57,8 +59,8 @@ def _parse_args() -> argparse.Namespace:
                         help="Directory holding per-project image subdirs (matches process_gallery.py).")
     parser.add_argument("output_dir",
                         help="Where the analysis folder should be written.")
-    parser.add_argument("--request", default=os.path.join('files', 'test_requests', 'request1.json'),
-                        help="Request file used to look up projectId (default: request1.json).")
+    parser.add_argument("--request", default=request_path,
+                        help="Request file used to look up projectId (default: same as 'process_gallery.py').")
     parser.add_argument("--stages-info-dir", default=DEFAULT_STAGES_INFO_DIR,
                         help=f"Stages-info root dir (default: {DEFAULT_STAGES_INFO_DIR}).")
     return parser.parse_args()
