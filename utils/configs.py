@@ -543,3 +543,12 @@ selection_threshold = {
 # contain '_' (e.g. 'large_portrait', 'small_portrait').
 SPECIAL_GROUP_SEP = '|'
 
+# Content classes that mean "the classifier had nothing to say" rather than a
+# real subject. Groups with one of these are the "special" groups: they are the
+# ones `album_tools.split_groups` singles out to be tagged 'class|idx', get
+# their own merge limit ('none_limit_times'), all count as one context in
+# `merge.count_contexts`, and are the only classes whose groups do not treat a
+# shared label as shared content when merging. Every one of those rules reads
+# this tuple, so they cannot drift apart.
+SPECIAL_CONTENT_CLASSES = ('None', 'other')
+

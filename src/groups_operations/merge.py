@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 # from sklearn.metrics.pairwise import pairwise_distances
 
-from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
+from utils.configs import CONFIGS, SPECIAL_CONTENT_CLASSES, SPECIAL_GROUP_SEP
 
 # Merge events (search / merge_skipped / merge_succeeded) and the
 # `merge_illegal_group_by_time(... details=...)` accumulator are all defined in
@@ -47,16 +47,13 @@ SAME_CLASS_SIMILARITY = 0.2
 L1_SIMILARITY = 0.3
 L2_SIMILARITY = 0.5
 
-# Classes that mean "the classifier had nothing to say", not a shared subject.
-# Must match the set `album_tools.split_groups` treats as special, since only
-# those groups get the unique 'class|idx' tag this rule keys on.
-# Two such groups are distinct visual clusters (`assign_special_group_contexts`
-# tags them 'other|4', 'other|5', ...) that merely landed in the same bucket, so
-# sharing that label is no evidence of shared content: they get the loose
-# L2-level pull instead of the same-class one. Set to SAME_CLASS_SIMILARITY to
-# switch this off; L1_SIMILARITY is the milder setting (tried on real galleries,
-# too weak to stop the bad merges).
-SPECIAL_CONTENT_CLASSES = ('None', 'other')
+# Pull between two groups of the same SPECIAL_CONTENT_CLASSES class. They are
+# distinct visual clusters (`assign_special_group_contexts` tags them 'other|4',
+# 'other|5', ...) that merely landed in the same catch-all bucket, so sharing
+# that label is no evidence of shared content and they get the loose L2-level
+# pull instead of the same-class one. Set to SAME_CLASS_SIMILARITY to switch
+# this off; L1_SIMILARITY is the milder setting (tried on real galleries, too
+# weak to stop the bad merges).
 SPECIAL_CLASS_SIMILARITY = L2_SIMILARITY
 
 BRIDE_CENTRIC_CLASSES = [('bride', 'getting hair-makeup', 'bride getting dressed'), ('bride party',)]
@@ -379,7 +376,7 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
 
 def count_contexts(group: pd.DataFrame):
     contexts = group['original_context'].copy()
-    contexts = contexts.replace({'None': '*', 'other': '*'})
+    contexts = contexts.replace({c: '*' for c in SPECIAL_CONTENT_CLASSES})
     return contexts.nunique()
 
 

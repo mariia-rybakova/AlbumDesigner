@@ -15,7 +15,7 @@ from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_me
 from src.groups_operations.split import (get_number_of_spreads, is_split_needed, get_split_points,
                                          split_big_group, split_diverse_group,
                                          update_groups_size, update_group_sub_index)
-from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
+from utils.configs import CONFIGS, SPECIAL_CONTENT_CLASSES, SPECIAL_GROUP_SEP
 
 # All stage-info data collection (photo projections, subgroup snapshots,
 # split.json / merge.json accumulation, wall-clock time maps) lives in
@@ -231,7 +231,7 @@ def process_wedding_merging(photos_df: pd.DataFrame, resources: AlbumDesignResou
     # Match on the content class, not the raw context, so special groups keep
     # their 'None'/'other' merge limit after being tagged 'None|idx' / 'other|idx'.
     content_class = photos_df['cluster_context'].apply(lambda c: c.split(SPECIAL_GROUP_SEP)[0])
-    mask_special = content_class.isin(['None', 'other'])
+    mask_special = content_class.isin(SPECIAL_CONTENT_CLASSES)
     df_special = photos_df[mask_special].copy()
     df_regular = photos_df[~mask_special].copy()
 

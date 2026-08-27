@@ -3,7 +3,7 @@ from datetime import datetime
 from itertools import chain
 import pandas as pd
 
-from utils.configs import SPECIAL_GROUP_SEP
+from utils.configs import SPECIAL_CONTENT_CLASSES, SPECIAL_GROUP_SEP
 
 
 def get_images_per_groups(original_groups):
@@ -90,8 +90,8 @@ def get_missing_columns(required_columns: set, df: pd.DataFrame, logger) -> set:
 
 
 def split_groups(df):
-    # Split DataFrame based on cluster_context being 'None' or 'other' (as strings)
-    mask_special = df['cluster_context'].isin(['None', 'other'])
+    # Split DataFrame based on cluster_context being a special class (as strings)
+    mask_special = df['cluster_context'].isin(SPECIAL_CONTENT_CLASSES)
     df_special = df[mask_special].copy()
     df_regular = df[~mask_special].copy()
 
