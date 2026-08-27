@@ -41,6 +41,24 @@ SIMILAR_CLASSES_L2 = [
     ['bride and groom', 'kiss', 'rings', 'first dance']
     ]
 
+# Affinity multipliers applied to a candidate's time distance. Lower pulls the
+# candidate up the merge ranking; 1.0 is "no relation, judge on time alone".
+SAME_CLASS_SIMILARITY = 0.2
+L1_SIMILARITY = 0.3
+L2_SIMILARITY = 0.5
+
+# Classes that mean "the classifier had nothing to say", not a shared subject.
+# Must match the set `album_tools.split_groups` treats as special, since only
+# those groups get the unique 'class|idx' tag this rule keys on.
+# Two such groups are distinct visual clusters (`assign_special_group_contexts`
+# tags them 'other|4', 'other|5', ...) that merely landed in the same bucket, so
+# sharing that label is no evidence of shared content: they get the loose
+# L2-level pull instead of the same-class one. Set to SAME_CLASS_SIMILARITY to
+# switch this off; L1_SIMILARITY is the milder setting (tried on real galleries,
+# too weak to stop the bad merges).
+SPECIAL_CONTENT_CLASSES = ('None', 'other')
+SPECIAL_CLASS_SIMILARITY = L2_SIMILARITY
+
 BRIDE_CENTRIC_CLASSES = [('bride', 'getting hair-makeup', 'bride getting dressed'), ('bride party',)]
 GROOM_CENTRIC_CLASSES = [('groom', 'suit'), ('groom party',)]
 
@@ -61,15 +79,79 @@ def _df_group_key(df: pd.DataFrame) -> tuple:
             _scalar(row['group_sub_index']))
 
 
+def _content_class(context: Any) -> Optional[str]:
+    """Content class behind a `cluster_context` value ('other|4' -> 'other').
+
+    Returns None for anything unusable (NaN, empty), so callers can skip it
+    instead of crashing - a NaN context used to raise AttributeError here.
+    """
+    if not isinstance(context, str):
+        return None
+    return context.split(SPECIAL_GROUP_SEP)[0].strip() or None
+
+
+def _class_pair_factor(source_class: str, target_class: str,
+                       same_special_group: bool = False) -> float:
+    """Affinity multiplier for one (source class, target class) pair.
+
+    Lower is a stronger pull toward merging. Identical classes are the strongest
+    signal - except for the special catch-all classes, where sharing a label
+    means only that the classifier had nothing to say about either group.
+
+    `same_special_group` exempts them from that demotion: the two groups carry
+    the same 'class|idx' tag, so they are halves of one visual cluster that a
+    split broke apart, and putting them back together is the whole point.
+    """
+    if source_class == target_class:
+        if source_class in SPECIAL_CONTENT_CLASSES and not same_special_group:
+            return SPECIAL_CLASS_SIMILARITY
+        return SAME_CLASS_SIMILARITY
+
+    for similar_list in SIMILAR_CLASSES_L1:
+        if source_class in similar_list and target_class in similar_list:
+            return L1_SIMILARITY
+
+    for similar_list in SIMILAR_CLASSES_L2:
+        if source_class in similar_list and target_class in similar_list:
+            return L2_SIMILARITY
+
+    return 1.0
+
+
+def _context_tag(group: pd.DataFrame) -> Optional[str]:
+    """The group's full `cluster_context`, tag included ('other|4').
+
+    Unique per special group (`assign_special_group_contexts` enumerates them
+    globally), so two groups sharing a tag are two pieces of one original group
+    - what `handle_wedding_splitting` leaves behind when it splits one: it runs
+    after the tagging and separates the halves by `group_sub_index` only.
+    """
+    contexts = group.get('cluster_context')
+    if contexts is None or len(contexts) == 0:
+        return None
+    value = contexts.iloc[0]
+    return value if isinstance(value, str) else None
+
+
 def add_class_preference(illegal_group: Optional[pd.DataFrame], selected_group: Optional[pd.DataFrame],
                          time_diff: float) -> float:
     """
     Adjust a time difference score based on content class similarity.
 
-    Applies multipliers to favour merging related wedding categories:
-      - Same class: ×0.2
-      - L1 similar classes (e.g. ceremony/walking the aisle): ×0.3
-      - L2 similar classes (e.g. accessories/food/settings): ×0.5
+    Each group is described by its own label - `cluster_context` of its first
+    row, with any special 'class|idx' tag stripped. Applies multipliers to
+    favour merging related wedding categories:
+      - Same class: x0.2
+      - L1 similar classes (e.g. ceremony/walking the aisle): x0.3
+      - L2 similar classes (e.g. accessories/food/settings): x0.5
+
+    Two groups of the same *special* class ('other', 'None') are the exception:
+    sharing that label means only that the classifier had nothing to say about
+    either of them, so 'other|4' and 'other|5' - distinct visual clusters that
+    both landed in the catch-all bucket - get the loose x0.5 instead of x0.2.
+    Groups sharing the same tag are exempt: they are two halves of one cluster
+    that `handle_wedding_splitting` broke apart, so they keep the full x0.2.
+
     Additionally penalises bride/groom cross-merges with uneven group sizes.
 
     Args:
@@ -83,35 +165,20 @@ def add_class_preference(illegal_group: Optional[pd.DataFrame], selected_group: 
     if illegal_group is None or selected_group is None:
         return time_diff
 
-    illegal_group_key = illegal_group['cluster_context'].iloc[0]
-    merge_target_key = selected_group['cluster_context'].iloc[0]
-    if not all([illegal_group_key, merge_target_key]):
+    source_tag, target_tag = _context_tag(illegal_group), _context_tag(selected_group)
+    source_class, target_class = _content_class(source_tag), _content_class(target_tag)
+    if not source_class or not target_class:
         return time_diff
 
-    source_class = illegal_group_key.split(SPECIAL_GROUP_SEP)[0]
-    target_class = merge_target_key.split(SPECIAL_GROUP_SEP)[0]
+    # Same 'class|idx' tag => two halves of one special group, not two unrelated
+    # clusters that happen to share the catch-all label.
+    same_special_group = source_tag is not None and source_tag == target_tag
 
-    multiplied = False
-    # Prefer merging similar classes
-    if source_class == target_class:
-        time_diff *= 0.2
-        multiplied = True
+    time_diff *= _class_pair_factor(source_class, target_class, same_special_group)
 
-    # Prefer merging related classes
-    if not multiplied:
-        for similar_list in SIMILAR_CLASSES_L1:
-            if source_class in similar_list and target_class in similar_list:
-                time_diff *= 0.3
-                multiplied = True
-                break
-    if not multiplied:
-        for similar_list in SIMILAR_CLASSES_L2:
-            if source_class in similar_list and target_class in similar_list:
-                time_diff *= 0.5
-
+    # Prefer not merging bride and groom classes with different size
     bride_centric_list = SIMILAR_CLASSES_L1[0]
     groom_centric_list = SIMILAR_CLASSES_L2[3]
-    # Prefer not merging bride and groom classes with different size
     if (source_class in bride_centric_list and target_class in groom_centric_list or
         source_class in groom_centric_list and target_class in bride_centric_list):
         photos_diff = abs(illegal_group.shape[0] - selected_group.shape[0])
