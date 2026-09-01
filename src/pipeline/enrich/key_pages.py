@@ -7,8 +7,12 @@ nevertheless always run inside ProcessStage, in
 clustering and the layout search. This substage is the first half of moving it
 where it belongs.
 
+Weddings only, for now, like the other substages built around the couple --
+``enrich.content_class`` and ``enrich.identities``. ProcessStage keeps handling
+non-wedding galleries.
+
 **This phase changes nothing about the album.** The substage calls the same
-functions ProcessStage calls, so there is one implementation of the rule and no
+function ProcessStage calls, so there is one implementation of the rule and no
 chance of the two drifting; the only difference is the pool it is handed. Enrich
 runs before selection, so that pool is the whole gallery instead of the few
 hundred frames selection kept. ProcessStage still runs its own copy and still
@@ -40,7 +44,7 @@ from typing import List, Tuple
 
 import pandas as pd
 
-from src.core.key_pages import choose_good_non_wedding_images, choose_good_wedding_images
+from src.core.key_pages import choose_good_wedding_images
 from src.pipeline.contracts import AlbumContext, Col, KeyPages, ctx, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
@@ -54,9 +58,9 @@ CLOSING = "closing"
 #: The content category the wedding rule draws its covers from.
 COUPLE = "bride and groom"
 
-#: `choose_good_non_wedding_images` logs unconditionally, and unlike the wedding
-#: path it has no try/except to swallow the AttributeError a bare `None` would
-#: raise. A context without a logger is normal offline, so stand one in.
+#: `get_important_imgs` logs from inside its own try/except, so a bare `None`
+#: logger does not raise -- it quietly costs the album its covers, which is
+#: worse. A context without a logger is normal offline, so stand one in.
 _QUIET = logging.getLogger(__name__)
 _QUIET.addHandler(logging.NullHandler())
 
@@ -64,6 +68,10 @@ _QUIET.addHandler(logging.NullHandler())
 @register
 class KeyPagesSubStage(SubStage):
     """Pick the album's opening and closing photos from the whole gallery.
+
+    Wedding-only, like `enrich.content_class` and `enrich.identities`: the rule
+    is built around the couple, and it reads the `cluster_context` column that
+    non-wedding galleries never get. ProcessStage keeps handling those.
 
     Optional: an album without a cover is a worse album, not a failed one, and
     the rule reaches into enough columns (subquery tags, identities, embeddings)
@@ -83,12 +91,14 @@ class KeyPagesSubStage(SubStage):
     optional = True
 
     def applies_to(self, context: AlbumContext) -> bool:
-        """Skip when the album has no first page.
+        """Weddings with a first page.
 
-        ``generate_first_last_pages`` gates on the same flag. An empty
-        ``pagesInfo`` means no design data was read at all -- an offline run or
-        a test -- and there the covers are worth computing anyway.
+        ``generate_first_last_pages`` gates on the same ``firstPage`` flag. An
+        empty ``pagesInfo`` means no design data was read at all -- an offline
+        run or a test -- and there the covers are worth computing anyway.
         """
+        if not context.facts.is_wedding:
+            return False
         pages = context.designs.pages
         if not pages:
             return True
@@ -114,36 +124,31 @@ class KeyPagesSubStage(SubStage):
     # -- the rule ----------------------------------------------------------
 
     def _choose(self, context: AlbumContext) -> Tuple[List[int], List[int]]:
-        """Delegate to the same functions ProcessStage uses.
+        """Delegate to the same function ProcessStage uses.
 
         Sorted by ``image_order`` descending because that is the frame
         ProcessStage passes, and ``_pick_cover_subset``'s last-resort branch --
         the one that runs when neither ``time_cluster`` nor ``image_time``
         exists -- reads whatever order it is given.
+
+        The couple frame stands in for ``message.content['bride and groom']``,
+        which ``select.publish`` caches for ProcessStage out of the *selected*
+        photos. Here it is the whole gallery's worth.
         """
         pool = context.photos.sort_values(Col.IMAGE_ORDER, ascending=False)
-        logger = context.logger or _QUIET
+        couple = pool[pool[Col.CLUSTER_CONTEXT] == COUPLE]
 
-        if context.facts.is_wedding:
-            couple = pool[pool[Col.CLUSTER_CONTEXT] == COUPLE]
-            _, opening, _, closing, _ = choose_good_wedding_images(pool, couple, logger)
-        else:
-            # Note the different tuple order, and that `number_of_images=1`
-            # leaves `opening` empty by construction: the function splits its
-            # picks down the middle, and one picture has no first half. That is
-            # today's behaviour in ProcessStage too -- non-wedding albums get a
-            # closing photo and no opening one.
-            _, opening, closing, _, _ = choose_good_non_wedding_images(pool, 1, logger)
+        _, opening, _, closing, _ = choose_good_wedding_images(
+            pool, couple, context.logger or _QUIET)
 
         return _ids(opening), _ids(closing)
 
 
 def _ids(value) -> List[int]:
-    """Normalise the several empties these functions return to a list.
+    """Normalise the several empties the rule can return to a list.
 
-    ``get_important_imgs`` answers ``None`` when it raises internally,
-    ``_select_cover_image_ids`` answers ``[]``, and the non-wedding path can
-    answer either.
+    ``get_important_imgs`` answers ``None`` when it raises internally, and
+    ``_select_cover_image_ids`` answers ``[]``.
     """
     if value is None:
         return []

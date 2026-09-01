@@ -132,28 +132,17 @@ def test_portrait_only_gallery_still_gets_covers():
     assert context.key_pages.opening and context.key_pages.closing
 
 
-# -- the non-wedding path --------------------------------------------------
-
-
-def test_non_wedding_uses_the_other_rule():
-    photos = pd.DataFrame({
-        Col.IMAGE_ID: [1, 2, 3],
-        Col.IMAGE_ORDER: [0.9, 0.5, 0.1],
-        Col.IMAGE_ORIENTATION: ["landscape"] * 3,
-        Col.PERSONS_IDS: [[1, 2], [1, 2], [1]],
-        Col.N_FACES: [2, 2, 1],
-    })
-    context = run(photos, is_wedding=False)
-
-    assert not context.failed
-    # Known quirk of `choose_good_non_wedding_images`, carried over unchanged:
-    # it splits its picks down the middle and is asked for one, so the opening
-    # half is always empty. Non-wedding albums get a closing photo only.
-    assert context.key_pages.opening == []
-    assert context.key_pages.closing == [1]
-
-
 # -- gating and failure ----------------------------------------------------
+
+
+def test_skipped_on_a_non_wedding_gallery():
+    """The rule is built around the couple and reads `cluster_context`, which
+    non-wedding galleries never get. ProcessStage keeps handling those."""
+    context = run(couple_gallery(), is_wedding=False)
+
+    assert context.key_pages is None
+    assert Col.KEY_PAGE not in context.photos.columns
+    assert context.diagnostics[-1].note == "skipped"
 
 
 def test_skipped_when_the_album_has_no_first_page():

@@ -164,8 +164,9 @@ synthetic-blob tests do not cover.
 | `enrich.ceremony_anchor` | The kiss and the send-off, from one shared anchor | `send_off_score` |
 | `enrich.key_pages` | Which photo opens the album and which closes it | `key_page` |
 
-`enrich.content_class` and `enrich.identities` are wedding-only, matching the
-original: non-wedding galleries never get a `cluster_context` column.
+`enrich.content_class`, `enrich.identities` and `enrich.key_pages` are
+wedding-only, matching the original: non-wedding galleries never get a
+`cluster_context` column.
 
 #### `enrich.ceremony_anchor`
 
@@ -225,7 +226,10 @@ inference about photos, not a step of page layout, but it has always run inside
 ProcessStage — `src/core/key_pages.py::generate_first_last_pages`, wedged
 between time clustering and the layout search.
 
-**This is the first half of moving it.** The substage calls the same functions
+Weddings only, for now, alongside the other substages built around the couple.
+ProcessStage keeps handling non-wedding galleries.
+
+**This is the first half of moving it.** The substage calls the same function
 ProcessStage calls, so there is one implementation of the rule and no chance of
 the two drifting. The only difference is the pool: enrich runs before selection,
 so it sees the whole gallery instead of the few hundred frames selection kept.
@@ -251,10 +255,11 @@ Both argue for the consumer resolving a ranked list against the photos it
 actually has rather than this substage guessing the survivors, which is why
 `KeyPages` holds lists and not two ids.
 
-Carried over unchanged, and worth fixing when the rule itself is revisited:
-`choose_good_non_wedding_images` splits its picks down the middle and is asked
-for one, so the opening half is always empty — **non-wedding albums get a
-closing photo and never an opening one.**
+One thing found while testing the rule, not addressed here because the
+non-wedding path is out of scope for now: `choose_good_non_wedding_images`
+splits its picks down the middle and is asked for one, so the opening half is
+always empty — **non-wedding albums get a closing photo and never an opening
+one.**
 
 ### Select
 
