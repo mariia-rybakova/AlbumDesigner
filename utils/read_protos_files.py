@@ -1,4 +1,3 @@
-import io
 import os
 import traceback
 from datetime import datetime
@@ -10,56 +9,42 @@ import pandas as pd
 from collections import Counter
 from ptinfra.azure.pt_file import PTFile
 
+# Protobuf schemas, the versioned-blob loader and the PAI codec all come from
+# ptinfra rather than being vendored here. ptinfra.proto is the shared kernel:
+# its pb/ modules are copied verbatim from pic-time/protobufs at a recorded
+# commit (ptinfra.proto.PROTOBUFS_COMMIT), so every service parses the same
+# schema. Note protobuf keys its global descriptor pool by .proto file name and
+# rejects a second registration whose bytes differ, so a local copy of any of
+# these cannot coexist with ptinfra's in one process.
+from ptinfra.exporter.pai_writer import parse_pai
+from ptinfra.proto.pb import BGSegmentation_pb2 as meta_vector
+from ptinfra.proto.pb import ContentCluster_pb2 as content_cluster
+from ptinfra.proto.pb import FaceVector_pb2 as face_vector
+from ptinfra.proto.pb import PersonInfo_pb2 as person_info
+from ptinfra.proto.pb import PersonVector_pb2 as person_vector
+from ptinfra.proto.pb import SocialCircle_pb2 as social_circle
+from ptinfra.read_stage import load_versioned
+
 from utils.reading_tools import generate_dict_key, check_gallery_type, process_content, _flatten
 from utils.configs import CONFIGS
 from utils.image_queries import generate_query
-from utils.protos import FaceVector_pb2 as face_vector
-from utils.protos import BGSegmentation_pb2 as meta_vector
-from utils.protos import PersonInfo_pb2 as person_info
-from utils.protos  import ContentCluster_pb2 as content_cluster
-from utils.protos import PersonVector_pb2 as person_vector
-from utils.protos import SocialCircle_pb2 as social_circle
 
 
 def get_image_embeddings(file, logger):
-    embed = {}
+    """Read the CLIP embedding matrix (`ai_search_matrix.pai`).
 
+    The PAI v2/v3 binary format is decoded by ptinfra's codec, the same one the
+    exporter writes with.
+    """
     try:
-        fb = PTFile(file)
-        fileBytes = fb.read_blob()
-        fileBytes = io.BytesIO(fileBytes)
-
-        header_b = fileBytes.read1(4)
-        header = header_b.decode('utf-8')
-        if header == 'pai3':
-            model_version_b = fileBytes.read(4)
-            model_version = int.from_bytes(model_version_b, 'little')
-        elif header == 'pai2':
-            model_version = 1
-        else:
-            raise Exception('Unexpected header {}, clip_file {}'.format(header, file))
-
-        num_images_b = fileBytes.read1(4)
-        num_images = int.from_bytes(num_images_b, 'little')
-
-        for _ in range(num_images):
-            photo_id_b = fileBytes.read1(8)
-            photo_id = int.from_bytes(photo_id_b, 'little')
-
-            emb_size_b = fileBytes.read1(4)
-            emb_size = int.from_bytes(emb_size_b, 'little')
-            embedding_b = fileBytes.read1(4 * emb_size)
-            embedding = np.frombuffer(embedding_b, dtype='float32').reshape((emb_size,))
-
-            embed[photo_id] = {'embedding': embedding}
-
+        model_version, embeddings = parse_pai(PTFile(file).read_blob())
     except Exception as e:
         logger.error(f"Error reading image embeddings from file: {e}")
         return None
 
     df = pd.DataFrame([
-        {"image_id": photo_id, "embedding": data["embedding"]}
-        for photo_id, data in embed.items()
+        {"image_id": photo_id, "embedding": embedding}
+        for photo_id, embedding in embeddings.items()
     ])
 
     df['model_version'] = model_version
@@ -68,16 +53,7 @@ def get_image_embeddings(file, logger):
 
 def get_faces_info(faces_file, logger):
     try:
-        faces_info_bytes = PTFile(faces_file)  # load file
-        faces_info_bytes = faces_info_bytes.read_blob()
-        face_descriptor = face_vector.FaceVectorMessageWrapper()
-        face_descriptor.ParseFromString(faces_info_bytes)
-
-        if face_descriptor.WhichOneof("versions") == 'v1':
-            message_data = face_descriptor.v1
-        else:
-            logger.error("There is no appropriate version of face vector message.")
-            return None
+        message_data = load_versioned(faces_file, face_vector.FaceVectorMessageWrapper)
 
         images_photos = message_data.photos
 
@@ -107,16 +83,7 @@ def get_faces_info(faces_file, logger):
 
 def get_photo_meta(file, logger):
     try:
-        meta_info_bytes = PTFile(file)  # load file
-        meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
-        meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
-        meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
-
-        if meta_descriptor.WhichOneof("versions") == 'v1':
-            message_data = meta_descriptor.v1
-        else:
-            logger.warning('There is no appropriate version of image meta message.')
-            return None
+        message_data = load_versioned(file, meta_vector.PhotoBGSegmentationMessageWrapper)
 
         images_photos = message_data.photos
         # Prepare lists to collect data
@@ -164,18 +131,10 @@ def get_photo_meta(file, logger):
 
 def get_persons_ids(persons_file, logger):
     try:
-        person_info_bytes = PTFile(persons_file)  # load file
-        if not person_info_bytes.exists():
+        message_data = load_versioned(persons_file, person_info.PersonInfoMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        person_info_bytes = person_info_bytes.read_blob()
-        person_descriptor = person_info.PersonInfoMessageWrapper()
-        person_descriptor.ParseFromString(person_info_bytes)
-
-        if person_descriptor.WhichOneof("versions") == 'v1':
-            message_data = person_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of Person vector message.')
-            raise ValueError('There is no appropriate version of Person vector message.')
 
         identity_info = message_data.identities
 
@@ -245,18 +204,10 @@ def get_persons_ids(persons_file, logger):
 
 def get_clusters_info(cluster_file, logger):
     try:
-        cluster_info_bytes = PTFile(cluster_file)  # load file
-        if not cluster_info_bytes.exists():
+        message_data = load_versioned(cluster_file, content_cluster.ContentClusterMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        cluster_info_bytes = cluster_info_bytes.read_blob()
-        cluster_descriptor = content_cluster.ContentClusterMessageWrapper()
-        cluster_descriptor.ParseFromString(cluster_info_bytes)
-
-        if cluster_descriptor.WhichOneof("versions") == 'v1':
-            message_data = cluster_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of cluster vector message.')
-            raise ValueError('There is no appropriate version of cluster vector message.')
 
         images_photos = message_data.photos
 
@@ -296,18 +247,10 @@ def get_clusters_info(cluster_file, logger):
 
 def get_person_vectors(persons_file, logger):
     try:
-        person_info_bytes = PTFile(persons_file)  # Load file
-        if not person_info_bytes.exists():
+        message_data = load_versioned(persons_file, person_vector.PersonVectorMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        person_info_bytes = person_info_bytes.read_blob()
-        person_descriptor = person_vector.PersonVectorMessageWrapper()
-        person_descriptor.ParseFromString(person_info_bytes)
-
-        if person_descriptor.WhichOneof("versions") == 'v1':
-            message_data = person_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of Person vector message.')
-            raise ValueError('There is no appropriate version of Person vector message.')
 
         images = message_data.photos
 
@@ -328,24 +271,12 @@ def get_person_vectors(persons_file, logger):
 
 def get_social_circle(social_circle_file, logger):
     try:
-        social_info_bytes = PTFile(social_circle_file)  # Load file
-        if not social_info_bytes.exists():
+        message_data = load_versioned(social_circle_file, social_circle.SocialCircleMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        social_info_bytes = social_info_bytes.read_blob()
-        social_descriptor = social_circle.SocialCircleMessageWrapper()
-        social_descriptor.ParseFromString(social_info_bytes)
 
-        if social_descriptor.WhichOneof("versions") == 'v1':
-            message_data = social_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of Social Circle message.')
-            raise ValueError('There is no appropriate version of  Social Circle message.')
-
-        # --- 1. Access the v1 version ---
-        data_v1 = message_data
-
-        # --- 2. Extract social circles ---
-        social_circles = data_v1.socialCircles
+        social_circles = message_data.socialCircles
 
         circle_data = []
 

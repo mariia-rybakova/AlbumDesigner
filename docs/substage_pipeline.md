@@ -92,6 +92,62 @@ substage is conditional. `optional = True` downgrades a failure to a warning.
 | `ingest.merge_ratings` | Join ratings onto the table | — |
 | `ingest.scenes` | Gallery scene ordering | — |
 
+Ingest decodes through **ptinfra** rather than its own parsing — see §3.1.
+
+### 3.1 What ingest takes from ptinfra
+
+`ptinfra.proto` is the shared protobuf kernel: its `pb/` modules are copied
+verbatim from `pic-time/protobufs` at a recorded commit
+(`ptinfra.proto.PROTOBUFS_COMMIT`), so every service parses the same schema.
+AlbumDesigner used to carry its own copy under `utils/protos/` and its own
+decode loop for each file. Both are gone.
+
+| Was | Now |
+|-----|-----|
+| `utils/protos/*_pb2.py` (7 vendored schema modules) | `ptinfra.proto.pb` |
+| `PTFile(...).read_blob()` + `WhichOneof("versions")` + `.v1`, repeated 6× | `ptinfra.read_stage.load_versioned(url, WrapperCls, missing_ok=...)` |
+| `PTFile(...).exists()` guards | `missing_ok=True` |
+| Hand-rolled `pai2`/`pai3` binary reader in `get_image_embeddings` | `ptinfra.exporter.pai_writer.parse_pai` — the codec the exporter writes with |
+
+That is 411 lines deleted for 40 added, and the DataFrames the readers return
+are unchanged (see `tests/test_ingest_readers.py`).
+
+**The vendored copies had already drifted.** Field-by-field, ptinfra's schemas
+are ahead by two fields AlbumDesigner never saw:
+
+- `PersonInfo.Identity.PersonInfo.bibNumber`
+- `PersonVector.Photo.Body.backboneEmbedding` (the 384-d DINOv3 backbone
+  embedding, present from `bodyModelVersion` 3)
+
+**A local copy cannot coexist with ptinfra's.** protobuf keys its global
+descriptor pool by `.proto` file name and rejects a second registration whose
+serialized bytes differ. Importing both copies of `PersonInfo_pb2` in one
+process raises `TypeError: duplicate file name PersonInfo.proto`. So the
+migration had to remove `utils/protos/` outright — there is no gradual path.
+
+#### Not adopted yet: the canonical dataclasses
+
+`ptinfra.proto.data_convert` also offers plain dataclasses per blob type
+(`FaceVectors`, `BgSegmentation`, `ContentCluster`, ...), reachable through
+`BaseReadStage.load_*`, with embeddings already decoded to numpy and bboxes as
+`(x1, y1, x2, y2)` tuples. ptinfra's intent is that "consumers never touch
+protobuf".
+
+AlbumDesigner still stores raw protobuf objects in the `faces_info` and
+`bodies_info` columns and a proto `Point` in `background_centroid`, so adopting
+them would touch:
+
+- `src/smart_cropping.py` — `face.bbox.x1..y2` (2 sites), `centroid.x/.y`
+  (3 sites)
+- `utils/selection/time_orientation_selection.py::_determine_shot_style` —
+  `face.bbox.x2 * face.bbox.y2` (dead code, see the deep dive §1)
+
+Worth doing — the dataclasses pickle cleanly across the cropping subprocess
+boundary, where protobuf objects currently round-trip through serialization,
+and `Body.embedding` gets the right dtype for its `bodyModelVersion`. It is
+left out of this change because it alters cropping arithmetic, which the
+synthetic-blob tests do not cover.
+
 ### Enrich — everything the read stage used to derive
 
 | Name | Infers | Provides |
@@ -223,7 +279,9 @@ changes.
 
 | File | Change |
 |------|--------|
-| `utils/read_protos_files.py` | `get_info_protobufs` split into `load_gallery_assets` (pure read) + `classify_gallery_type`, `add_content_class`, `resolve_bride_groom`, `add_semantic_tags`, `require_cluster_data`, `add_people_cluster`. `get_info_protobufs` remains as their composition, in the original order, with its original signature |
+| `utils/read_protos_files.py` | `get_info_protobufs` split into `load_gallery_assets` (pure read) + `classify_gallery_type`, `add_content_class`, `resolve_bride_groom`, `add_semantic_tags`, `require_cluster_data`, `add_people_cluster`. `get_info_protobufs` remains as their composition, in the original order, with its original signature. Every reader now decodes through ptinfra (§3.1) |
+| `utils/protos/` | Deleted — replaced by `ptinfra.proto.pb` (§3.1) |
+| `src/smart_cropping.py` | Its two `utils.protos` imports repointed at `ptinfra.proto.pb` |
 | `src/request_processing.py` | `read_messages` is now a thin driver over the ingest + enrich pipeline. Same signature, same `(messages, error)` contract. Helper functions unchanged |
 | `main.py` | `SelectionStage.get_selection` is a thin driver over the select pipeline |
 | `process_gallery.py` | `get_selection` — previously a drifted near-copy of the service's — now drives the same pipeline |
@@ -236,8 +294,7 @@ serves as the reference implementation the equivalence tests compare against.
 ## 8. Tests
 
 ```
-python tests/test_selection_equivalence.py   # or: python -m pytest tests/ -v
-python tests/test_pipeline_contracts.py
+python -m pytest tests/ -v          # or run each file directly
 ```
 
 `test_selection_equivalence.py` runs the untouched monolith
@@ -251,6 +308,14 @@ resolves, no pipeline has an ordering violation, unmet requirements and broken
 `provides` contracts fail loudly, the context round-trips through a message,
 and — the one that matters most over time — **no ingest substage may declare a
 derived column**, so the reading/inferring split cannot quietly erode.
+
+`test_ingest_readers.py` builds synthetic protobuf and PAI blobs with known
+content, serves them through a patched `PTFile`, and asserts each reader
+returns exactly the DataFrame the rest of the pipeline expects — columns,
+dtypes and the proto-shaped `faces_info` / `bodies_info` / `background_centroid`
+cells cropping depends on. It covers the missing-blob paths and runs
+`load_gallery_assets` and the registered `ingest.gallery_assets` substage
+end to end.
 
 ---
 

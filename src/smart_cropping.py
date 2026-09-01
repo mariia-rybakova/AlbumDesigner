@@ -269,8 +269,8 @@ if __name__ == "__main__":
     from multiprocessing import Queue
     q = Queue()
     input_path = rf'C:\Users\ZivRotman\PycharmProjects\logAnalysis\galleries_pbs2\{project_id}'
-    from utils.protos import FaceVector_pb2 as face_vector
-    from utils.protos import BGSegmentation_pb2 as meta_vector
+    from ptinfra.proto.pb import FaceVector_pb2 as face_vector
+    from ptinfra.proto.pb import BGSegmentation_pb2 as meta_vector
     import os
     
     face_file = os.path.join(input_path, "ai_face_vectors.pb")
