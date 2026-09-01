@@ -47,7 +47,9 @@ wedding_lookup_table = {
     # Deliberately small: 'send off' is a 'yes' event in focus_csv.csv, so it is
     # not filled from the percentage pool. A mean of 2 keeps the top-up steps
     # small on the rare gallery where it is used as filler.
-    'send off': (2, 1)
+    'send off': (2, 1),
+    'bride walking the aisle': (2, 1),
+    'groom walking the aisle': (2, 1)
     }
 
 non_wedding_lookup_table = {

@@ -20,32 +20,51 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.pipeline import AlbumContext, Col  # noqa: E402
 from src.pipeline.contracts import GalleryFacts  # noqa: E402
 from src.pipeline.enrich.ceremony_anchor import (  # noqa: E402
-    MAY_KISS_BRIDE, SEND_OFF, CeremonyAnchorSubStage)
+    BRIDE_AISLE, GROOM_AISLE, MAY_KISS_BRIDE, SEND_OFF, CeremonyAnchorSubStage)
 from src.selection.auto_selection import load_pre_queries_embeddings  # noqa: E402
 from utils.configs import CONFIGS  # noqa: E402
 
 MODEL_VERSION = 2
-CONCEPT = load_pre_queries_embeddings(CONFIGS['send_off_concept'], MODEL_VERSION).astype(np.float32)
-CONCEPT /= np.linalg.norm(CONCEPT, axis=1, keepdims=True)
+
+
+def _bank(name):
+    bank = np.asarray(load_pre_queries_embeddings(name, MODEL_VERSION), dtype=np.float32)
+    return bank / np.linalg.norm(bank, axis=1, keepdims=True)
+
+
+#: The real concept banks, so "looks like X" means the same here as in production.
+CONCEPT = _bank(CONFIGS['send_off_concept'])
+BANKS = {'send_off': CONCEPT,
+         'bride': _bank(CONFIGS['aisle_concepts']['bride']),
+         'groom': _bank(CONFIGS['aisle_concepts']['groom'])}
 DIM = CONCEPT.shape[1]
 
 #: image_class indices into utils.configs.label_list
 CLASS = {'ceremony': 6, 'bride and groom': 2, 'other': 30, 'dancing': 8,
          'walking the aisle': 28, 'portrait': 21, 'kiss': 19}
 
+BRIDE_ID, GROOM_ID, GUEST_ID = 101, 202, 303
 
-def _embedding(rng, send_off_like: float) -> np.ndarray:
-    """A unit vector whose cosine to the concept is roughly `send_off_like`."""
-    base = CONCEPT[rng.integers(len(CONCEPT))]
+
+def _embedding(rng, like: float, bank=None) -> np.ndarray:
+    """A unit vector whose cosine to `bank` is roughly `like`.
+
+    Defaults to the send-off bank; the processional frames need to resemble
+    their own concept instead, or they score near zero against it.
+    """
+    bank = CONCEPT if bank is None else bank
+    base = bank[rng.integers(len(bank))]
     noise = rng.normal(size=DIM).astype(np.float32)
     noise -= noise.dot(base) * base
     noise /= np.linalg.norm(noise)
-    vector = send_off_like * base + np.sqrt(max(0.0, 1 - send_off_like ** 2)) * noise
+    vector = like * base + np.sqrt(max(0.0, 1 - like ** 2)) * noise
     return vector / np.linalg.norm(vector)
 
 
 def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
-                 burst_at='after', kiss_frames=4, kiss_offset=0, seed=3) -> pd.DataFrame:
+                 burst_at='after', kiss_frames=4, kiss_offset=0,
+                 bride_walk=5, groom_walk=4, walk_subquery=True, walk_score=0.55,
+                 seed=3) -> pd.DataFrame:
     """A synthetic wedding timeline with an optional planted send-off.
 
     Layout: prep -> ceremony (with a climax) -> [burst] -> portraits -> dancing.
@@ -53,7 +72,7 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
     rng = np.random.default_rng(seed)
     rows = []
 
-    def add(n, label, subquery, score):
+    def add(n, label, subquery, score, people=(), bank=None):
         for _ in range(n):
             rows.append({
                 'image_id': 900000 + len(rows),
@@ -61,30 +80,43 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
                 'cluster_class': CLASS[label],
                 'cluster_context': label,
                 'image_subquery_content': subquery,
-                'embedding': _embedding(rng, score),
+                'embedding': _embedding(rng, score, bank),
                 'model_version': MODEL_VERSION,
                 'general_time': len(rows) * 10.0,
+                'persons_ids': list(people),
+                'bride_id': BRIDE_ID,
+                'groom_id': GROOM_ID,
             })
 
-    add(30, 'portrait', 'bride only portrait', 0.10)          # prep
-    add(25, 'ceremony', 'guests watching ceremony', 0.12)
-    add(10, 'ceremony', 'bride and groom exchanging vows', 0.12)   # climax
+    add(30, 'portrait', 'bride only portrait', 0.10, [BRIDE_ID])      # prep
+    # the processional, before the ceremony
+    add(groom_walk, 'walking the aisle',
+        'groom waiting for bride at the aisle' if walk_subquery else 'unknown_walking_the_aisle',
+        walk_score, [GROOM_ID], BANKS['groom'])
+    add(bride_walk, 'walking the aisle',
+        'bride walking down aisle with father' if walk_subquery else 'unknown_walking_the_aisle',
+        walk_score, [BRIDE_ID, GUEST_ID], BANKS['bride'])
+    add(25, 'ceremony', 'guests watching ceremony', 0.12, [BRIDE_ID, GROOM_ID])
+    add(10, 'ceremony', 'bride and groom exchanging vows', 0.12, [BRIDE_ID, GROOM_ID])
     if burst_at == 'before':
-        add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score)
+        add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score,
+            [BRIDE_ID, GROOM_ID])
     if kiss_offset < 0:                                            # kiss placed early
-        add(-kiss_offset, 'ceremony', 'guests watching ceremony', 0.12)
-    add(kiss_frames, 'kiss', 'wedding kiss at ceremony', 0.12)     # climax + the kiss itself
-    add(8, 'ceremony', 'ring exchange during ceremony', 0.12)      # climax
+        add(-kiss_offset, 'ceremony', 'guests watching ceremony', 0.12, [BRIDE_ID, GROOM_ID])
+    add(kiss_frames, 'kiss', 'wedding kiss at ceremony', 0.12, [BRIDE_ID, GROOM_ID])
+    add(8, 'ceremony', 'ring exchange during ceremony', 0.12, [BRIDE_ID, GROOM_ID])
     if burst_at == 'after':
-        add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score)
-    add(40, 'portrait', 'bride and groom posing for a portrait', 0.15)
-    add(60, 'dancing', 'guests dancing at wedding reception', 0.12)
+        add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score,
+            [BRIDE_ID, GROOM_ID])
+    add(40, 'portrait', 'bride and groom posing for a portrait', 0.15, [BRIDE_ID, GROOM_ID])
+    add(60, 'dancing', 'guests dancing at wedding reception', 0.12, [GUEST_ID])
     return pd.DataFrame(rows)
 
 
 def run(df: pd.DataFrame, is_wedding=True) -> AlbumContext:
     context = AlbumContext(photos=df,
-                           facts=GalleryFacts(is_wedding=is_wedding, is_artificial_time=False))
+                           facts=GalleryFacts(is_wedding=is_wedding, is_artificial_time=False,
+                                              bride_id=BRIDE_ID, groom_id=GROOM_ID))
     return CeremonyAnchorSubStage()(context)
 
 
@@ -166,8 +198,10 @@ def test_only_one_send_off_per_gallery():
     """Two qualifying bursts: the better-scoring one wins, not both."""
     df = make_gallery(burst_size=12, burst_score=0.60)
     rng = np.random.default_rng(11)
-    # a second, weaker burst right after the first
-    idx = df.index[73:85]
+    # a second, weaker burst right after the first -- located from the fixture
+    # rather than hardcoded, so it survives changes to the timeline above it
+    planted = df.index[df['image_subquery_content'] == 'bride and groom during the ceremony']
+    idx = df.index[planted.max() + 1: planted.max() + 13]
     for i in idx:
         # .at, not .loc: pandas will not broadcast a list of ndarrays
         df.at[i, 'embedding'] = _embedding(rng, 0.42)
@@ -256,6 +290,134 @@ def test_no_ceremony_means_neither_moment():
     context = run(df)
     assert not context.failed
     assert len(kissed(context)) == 0 and len(tagged(context)) == 0
+
+
+# --------------------------------------------------------------------------
+# the processional: the anchor read as an upper bound
+# --------------------------------------------------------------------------
+
+
+def walked(context, tag) -> pd.DataFrame:
+    return context.photos[context.photos[Col.CLUSTER_CONTEXT] == tag]
+
+
+def test_detects_both_processionals_as_separate_classes():
+    context = run(make_gallery())
+    assert not context.failed, context.error
+    assert len(walked(context, BRIDE_AISLE)) > 0, "bride's walk in should be tagged"
+    assert len(walked(context, GROOM_AISLE)) > 0, "groom's walk in should be tagged"
+
+
+def test_identity_is_mandatory():
+    """No solo-bride frame before the ceremony means no bride processional,
+    however aisle-like the photos look."""
+    df = make_gallery(bride_walk=6)
+    # keep the frames but put the groom in every one of them
+    walk = df.index[30 + 4: 30 + 4 + 6]
+    for i in walk:
+        df.at[i, 'persons_ids'] = [BRIDE_ID, GROOM_ID]
+    context = run(df)
+    assert len(walked(context, BRIDE_AISLE)) == 0
+
+
+def test_the_couple_together_is_neither_processional():
+    context = run(make_gallery(bride_walk=0, groom_walk=0))
+    assert len(walked(context, BRIDE_AISLE)) == 0
+    assert len(walked(context, GROOM_AISLE)) == 0
+
+
+def test_subquery_is_an_indication_not_a_requirement():
+    """The groom has no 'walking to the altar' subquery at all, so a matching
+    subquery cannot be required."""
+    context = run(make_gallery(walk_subquery=False))
+    assert len(walked(context, BRIDE_AISLE)) > 0, "should tag without a matching subquery"
+    assert len(walked(context, GROOM_AISLE)) > 0
+
+
+def test_a_solo_bride_frame_after_the_ceremony_is_not_the_processional():
+    df = make_gallery(bride_walk=0, groom_walk=0)
+    for i in df.index[-30:-24]:                       # late, during dancing
+        df.at[i, 'persons_ids'] = [BRIDE_ID]
+        df.at[i, 'image_class'] = CLASS['walking the aisle']
+    context = run(df)
+    assert len(walked(context, BRIDE_AISLE)) == 0
+
+
+def test_processional_is_capped():
+    context = run(make_gallery(bride_walk=30))
+    assert len(walked(context, BRIDE_AISLE)) <= CONFIGS['aisle_max_photos']
+
+
+def test_a_single_frame_is_not_a_processional():
+    context = run(make_gallery(bride_walk=1, groom_walk=1))
+    assert len(walked(context, BRIDE_AISLE)) == 0
+    assert len(walked(context, GROOM_AISLE)) == 0
+
+
+def test_the_four_moments_never_share_a_photo():
+    """One anchor, four readings — but each photo belongs to at most one."""
+    context = run(make_gallery())
+    sets = {
+        'kiss': set(kissed(context)[Col.IMAGE_ID]),
+        'send off': set(tagged(context)[Col.IMAGE_ID]),
+        'bride aisle': set(walked(context, BRIDE_AISLE)[Col.IMAGE_ID]),
+        'groom aisle': set(walked(context, GROOM_AISLE)[Col.IMAGE_ID]),
+    }
+    names = list(sets)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            assert not (sets[a] & sets[b]), f"{a} and {b} share {len(sets[a] & sets[b])} photos"
+
+
+def test_processionals_precede_the_ceremony_climax():
+    from src.pipeline.enrich import timeline as tl
+    df = make_gallery()
+    frame = tl.ordered(df)
+    ceremony = tl.ceremony_timeline(frame, CONFIGS['send_off_min_photos'])
+    context = run(df)
+    for tag in (BRIDE_AISLE, GROOM_AISLE):
+        picked = walked(context, tag)
+        if len(picked):
+            assert frame.loc[picked.index, tl.POSITION].max() <= ceremony.anchor,                 f"{tag} should sit before the climax"
+
+
+def test_a_processional_with_no_visual_evidence_is_not_tagged():
+    """Indications only rank -- but a run with no resemblance at all must not
+    tag, or a gallery without a processional labels its prep portraits."""
+    context = run(make_gallery(walk_score=0.05, walk_subquery=False))
+    assert len(walked(context, BRIDE_AISLE)) == 0
+    assert len(walked(context, GROOM_AISLE)) == 0
+
+
+def test_aisle_classes_are_known_content_classes_everywhere():
+    from utils.configs import (limit_imgs, min_images_per_category, priority_categories,
+                               relations, selection_threshold,
+                               spreads_required_per_category)
+    from utils.lookup_table_tools import wedding_lookup_table
+    for cls in (BRIDE_AISLE, GROOM_AISLE):
+        for focus in ('brideAndGroom', 'parents', 'everyoneElse'):
+            assert cls in relations[focus], f"relations[{focus}] missing {cls}"
+        for name, table in (('limit_imgs', limit_imgs),
+                            ('spreads_required', spreads_required_per_category),
+                            ('min_images', min_images_per_category),
+                            ('selection_threshold', selection_threshold),
+                            ('wedding_lookup_table', wedding_lookup_table)):
+            assert cls in table, f"{name} missing {cls}"
+        assert cls in priority_categories
+        assert wedding_lookup_table[cls] == (2, 1), "mean 2, std 1 as specified"
+
+
+def test_aisle_classes_get_one_photo_on_a_well_stocked_gallery():
+    """'yes' events, like the send-off: present without taking spreads."""
+    images, spreads = _allocate({
+        'ceremony': 40, SEND_OFF: 21, BRIDE_AISLE: 8, GROOM_AISLE: 6,
+        'bride and groom': 80, 'dancing': 120, 'portrait': 40, 'bride': 30,
+        'groom': 30, 'first dance': 20, 'speech': 15, 'bride party': 20,
+        'groom party': 20, 'settings': 20, 'detail': 20, 'food': 20,
+    })
+    for cls in (BRIDE_AISLE, GROOM_AISLE):
+        assert images.get(cls) == 1, f"{cls} got {images.get(cls)} photos"
+        assert spreads.get(cls) == 0
 
 
 def test_send_off_is_a_known_content_class_everywhere():

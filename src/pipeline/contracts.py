@@ -92,8 +92,9 @@ class Col:
     # -- enrich.parents ----------------------------------------------------
     PARENT_CATEGORY = "parent_category"
 
-    # -- enrich.send_off ---------------------------------------------------
+    # -- enrich.ceremony_anchor --------------------------------------------
     SEND_OFF_SCORE = "send_off_score"
+    AISLE_SCORE = "aisle_score"
 
     # -- select.* (scoring columns, per category) --------------------------
     TOTAL_SCORE = "total_score"

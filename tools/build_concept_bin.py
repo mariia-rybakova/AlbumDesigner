@@ -114,6 +114,30 @@ CONCEPTS = {
         "bride and groom exiting through a tunnel of cheering guests",
         "guests lining both sides of a path cheering the couple",
     ],
+
+    # The processional: entering the ceremony, before it starts. Split by who
+    # is walking, because the two produce different classes and look different
+    # -- the bride is escorted up the aisle, the groom is usually already at
+    # the altar facing back.
+    "bride_aisle": [
+        "bride walking down the aisle with her father",
+        "bride walking down the wedding aisle",
+        "bride entering the ceremony on her father's arm",
+        "bride processional down the aisle while guests stand and watch",
+        "bride walking toward the altar in her wedding dress",
+        "father giving the bride away at the end of the aisle",
+    ],
+    # No subquery in the query bank describes the groom walking in -- the
+    # closest is "groom waiting for bride at the aisle" -- so this concept is
+    # the only signal for it.
+    "groom_aisle": [
+        "groom walking down the aisle to the altar",
+        "groom entering the wedding ceremony",
+        "groom walking down the aisle with his mother",
+        "groom standing at the altar waiting for the bride",
+        "groom at the altar watching the bride approach",
+        "groom and officiant waiting at the front of the ceremony",
+    ],
 }
 
 

@@ -122,6 +122,30 @@ CONFIGS = {'DEBUG': True,
         'kiss_max_photos': 6,
         'kiss_eligible_labels': ('ceremony', 'kiss', 'bride and groom', 'other', 'None'),
 
+        # -- enrich.ceremony_anchor: the processional -----------------------
+        # Entering the ceremony, so the anchor is read as an UPPER bound.
+        # Identity is mandatory (it is the point of the class); the subquery
+        # and concept signals only rank, because the query bank has no phrase
+        # at all for the groom walking in and the 'walking the aisle' label is
+        # sparse -- 1, 9, 5 and 24 photos on the validation galleries.
+        'aisle_lead_in': 80,
+        # Upper bound is the START of the ceremony, not the climax anchor:
+        # "before the ceremony" means before it begins. A small overlap absorbs
+        # the fuzziness of the core boundary. Using the anchor instead pulled in
+        # mid-ceremony frames -- vows and officiant shots -- as "processional".
+        'aisle_upper_overlap': 20,
+        # Indications are not mandatory, but "no evidence at all" should not
+        # tag. Real processionals score 0.44-0.60 on the validation galleries;
+        # the prep-portrait false positives scored 0.19-0.29.
+        'aisle_score_floor': 0.32,
+        'aisle_max_gap': 4,
+        'aisle_min_photos': 2,
+        'aisle_max_photos': 6,
+        'aisle_eligible_labels': ('walking the aisle', 'ceremony', 'bride', 'groom',
+                                  'bride and groom', 'bride party', 'groom party', 'other'),
+        'aisle_concepts': {'bride': 'bride_aisle', 'groom': 'groom_aisle'},
+        'aisle_subquery_bonus': 0.15,
+
         # -- enrich.ceremony_anchor: the send-off ---------------------------
         'send_off_concept': 'send_off',
         'send_off_eligible_labels': ('ceremony', 'walking the aisle', 'other', 'bride and groom'),
@@ -252,6 +276,8 @@ relations = {'brideAndGroom':{
     'rings':(1,0.5),
     'may kiss bride': (1, 0.2),
     'send off': (4, 0.3),
+    'bride walking the aisle': (2, 0.2),
+    'groom walking the aisle': (2, 0.2),
     'bride and groom with parents': (1, 0.2),
     'groom with his parents': (1, 0.2),
     'bride with her parents': (1, 0.2),
@@ -300,6 +326,8 @@ relations = {'brideAndGroom':{
         'rings': (1, 0.5),
         'may kiss bride': (1, 0.2),
         'send off': (4, 0.3),
+        'bride walking the aisle': (2, 0.2),
+        'groom walking the aisle': (2, 0.2),
         'bride and groom with parents': (1, 0.2),
         'groom with his parents': (1, 0.2),
         'bride with her parents': (1, 0.2),
@@ -346,6 +374,8 @@ relations = {'brideAndGroom':{
     'rings': (1, 0.5),
     'may kiss bride': (1, 0.2),
     'send off': (4, 0.3),
+    'bride walking the aisle': (2, 0.2),
+    'groom walking the aisle': (2, 0.2),
     'bride and groom with parents': (1, 0.2),
     'groom with his parents': (1, 0.2),
     'bride with her parents': (1, 0.2),
@@ -388,7 +418,9 @@ limit_imgs = {
     'vehicle': 1,
     'parents portrait':2,
     'may kiss bride':1,
-    'send off':4
+    'send off':4,
+    'bride walking the aisle':2,
+    'groom walking the aisle':2
 
 }
 
@@ -464,6 +496,8 @@ spreads_required_per_category = {
     'inside vehicle':0,
     'may kiss bride':1,
     'send off':1,
+    'bride walking the aisle':1,
+    'groom walking the aisle':1,
     'parents portrait':1,
 
 }
@@ -471,6 +505,7 @@ spreads_required_per_category = {
 priority_categories = ['bride and groom',
                        'bride','groom','ceremony', 'may kiss bride','bride party',
     'groom party','full party','dancing','large_portrait', 'parents portrait', 'send off',
+    'bride walking the aisle','groom walking the aisle',
     'portrait','very large group',
     'walking the aisle',
     'first dance','cake cutting','bride getting dressed',
@@ -526,7 +561,9 @@ min_images_per_category = {
     'rings':1,
     'parents portrait':2,
     'may kiss bride':1,
-    'send off':4
+    'send off':4,
+    'bride walking the aisle':2,
+    'groom walking the aisle':2
 
 }
 
@@ -566,6 +603,8 @@ selection_threshold = {
     'suit':0.15,
     'may kiss bride':0.15,
     'send off':0.15,
+    'bride walking the aisle':0.15,
+    'groom walking the aisle':0.15,
     'parents portrait':0.15,
 }
 

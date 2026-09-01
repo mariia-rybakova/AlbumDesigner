@@ -184,7 +184,21 @@ validation gallery has 2 distinct `image_time` values across 528 photos.
 | | reads the anchor as | evidence |
 |---|---|---|
 | `may kiss bride` | a **centre** — the kiss is itself a climax signal, so it cannot anchor on itself | subqueries the query bank already carries |
+| `bride walking the aisle` / `groom walking the aisle` | an **upper bound** — the processional is before the ceremony *starts*, so the bound is the ceremony core start, not the anchor | identity is mandatory; subquery and concept only rank |
 | `send off` | a **lower bound** — guests shower the couple as they *leave* | a CLIP concept bank, because nothing else sees it |
+
+The processional deliberately does **not** key on the `walking the aisle` class.
+That label is sparse — 1, 9, 5 and 24 photos on the validation galleries — and
+the groom almost never gets it, because he is waiting at the altar rather than
+walking. Of the photos the detector tags, only 6 of 16 carried it; the rest came
+from `groom party`, `ceremony`, `groom`, `bride and groom` and `other`. What
+does the discriminating is **identity**: the bride present and the groom absent,
+or the reverse. The couple walking in together is neither of them walking in.
+
+Indications rank rather than gate, because the query bank has no phrase at all
+for the groom walking to the altar — but a floor still applies, or a gallery
+with no processional tags its prep portraits instead. Real processionals score
+0.44–0.60; the false positives that floor removes scored 0.19–0.29.
 
 The send-off needs a burst of ≥5 **and** visual confirmation; sequence alone
 cannot separate it from the plain recessional, and visual evidence alone picks
