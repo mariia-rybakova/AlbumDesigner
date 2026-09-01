@@ -308,10 +308,14 @@ modes
     process_gallery.py <input_dir> <output_dir> --from-datadog
     process_gallery.py <input_dir> <output_dir> --from-datadog --project-id 53496523
 
-    Finds the newest request the service completed, saves it under
-    files/test_requests/<projectId>.json, downloads that gallery's photos into
-    <input_dir>/<projectId>/ and runs it. Needs DD_API_KEY and DD_APP_KEY for
-    the log lookup, and the Azure network (VPN) for the photos.
+    Finds the newest request the service completed and saves it under
+    files/test_requests/<projectId>.json, so it can be replayed later with
+    --request <projectId>. Needs DD_API_KEY and DD_APP_KEY.
+
+Both modes download the gallery's photos into <input_dir>/<projectId>/ (the
+Azure network, i.e. VPN, is needed for that) and render the album to
+<output_dir>/<projectId>/. Photos already on disk are skipped, so re-runs are
+cheap. Pass --no-download to work purely off what is already local.
 """,
     )
     ap.add_argument("input_dir",
@@ -332,11 +336,13 @@ modes
                     help="Reproduce this project's newest successful run instead of the newest overall.")
     dd.add_argument("--lookback-hours", type=int, default=48,
                     help="How far back to search the logs. Default: 48.")
-    dd.add_argument("--no-download", action="store_true",
+
+    ph = ap.add_argument_group("photos (both modes)")
+    ph.add_argument("--no-download", action="store_true",
                     help="Skip the photo download (the PDF will have gaps unless they are already local).")
-    dd.add_argument("--all-gallery-photos", action="store_true",
+    ph.add_argument("--all-gallery-photos", action="store_true",
                     help="Download the whole gallery, not just the photos the request named.")
-    dd.add_argument("--max-photos", type=int,
+    ph.add_argument("--max-photos", type=int,
                     help="Cap how many photos to download.")
 
     ap.add_argument("--album-name", default=album_name,
@@ -409,8 +415,9 @@ if __name__ == '__main__':
     os.makedirs(_images_path, exist_ok=True)
     os.makedirs(_output_dir, exist_ok=True)
 
-    if args.from_datadog:
-        _ensure_photos(args, _input_request, _images_path, log)
+    # Replaying a saved request needs the photos just as much as reproducing a
+    # fresh one; the request carries base_url either way.
+    _ensure_photos(args, _input_request, _images_path, log)
 
     # Run request
     final_album, _message = process_gallery(_input_request)
