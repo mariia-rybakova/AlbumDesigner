@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pipeline import ENRICH, AlbumContext, Col, KeyPages  # noqa: E402
 from src.pipeline.contracts import DesignSpec, GalleryFacts  # noqa: E402
+from src.core.key_pages import _pick_cover_subset  # noqa: E402
 from src.pipeline.enrich.key_pages import CLOSING, OPENING  # noqa: E402
 from src.pipeline.registry import get  # noqa: E402
 
@@ -44,6 +45,7 @@ def couple_gallery(n=24, orientation="landscape"):
             Col.IMAGE_ORDER: float(i % 7),
             Col.IMAGE_ORIENTATION: orientation,
             Col.IMAGE_TIME: 1_700_000_000 + i * 60,
+            Col.GENERAL_TIME: i * 60,
             Col.PERSONS_IDS: [BRIDE, GROOM],
             Col.N_FACES: 2,
             Col.CLUSTER_CONTEXT: "bride and groom",
@@ -130,6 +132,60 @@ def test_portrait_only_gallery_still_gets_covers():
     """Landscape is a preference, not a requirement."""
     context = run(couple_gallery(orientation="portrait"))
     assert context.key_pages.opening and context.key_pages.closing
+
+
+# -- which axis splits the day ---------------------------------------------
+#
+# `_pick_cover_subset` is shared with ProcessStage, so these guard both callers.
+
+
+def axis_frame():
+    """`image_time` unusable, `general_time` the rebuilt sequence.
+
+    This is what an artificial-time gallery looks like: the EXIF collapsed onto
+    a couple of values, and a synthetic monotonic day beside it. The two orders
+    disagree completely -- `image_time` ascending is 3, 1, 2.
+    """
+    return pd.DataFrame({
+        Col.IMAGE_ID: [1, 2, 3],
+        Col.IMAGE_TIME: [900, 900, 100],
+        Col.GENERAL_TIME: [0, 1800, 3600],
+    })
+
+
+def test_time_cluster_still_wins_when_it_exists():
+    """ProcessStage always builds one, so its behaviour must not move."""
+    frame = axis_frame()
+    frame["time_cluster"] = [7, 7, 9]
+
+    assert list(_pick_cover_subset(frame, "first")[Col.IMAGE_ID]) == [1, 2]
+    assert list(_pick_cover_subset(frame, "last")[Col.IMAGE_ID]) == [3]
+
+
+def test_general_time_beats_image_time_without_a_cluster():
+    """Enrich runs before time clustering. On an artificial-time gallery the
+    EXIF order is meaningless, and picking along it put one validation
+    gallery's closing photo earlier in the day than its opening one."""
+    frame = axis_frame()
+
+    assert list(_pick_cover_subset(frame, "first", window_size=1)[Col.IMAGE_ID]) == [1]
+    assert list(_pick_cover_subset(frame, "last", window_size=1)[Col.IMAGE_ID]) == [3]
+
+
+def test_photos_with_no_time_are_dropped_not_sorted_to_one_end():
+    """Otherwise `tail` hands back a window whose place in the day is unknown."""
+    frame = pd.DataFrame({
+        Col.IMAGE_ID: [1, 2, 3],
+        Col.GENERAL_TIME: [0, 1800, None],
+    })
+
+    assert list(_pick_cover_subset(frame, "last", window_size=1)[Col.IMAGE_ID]) == [2]
+
+
+def test_falls_back_to_image_time_when_there_is_no_general_time():
+    frame = axis_frame().drop(columns=[Col.GENERAL_TIME])
+
+    assert list(_pick_cover_subset(frame, "first", window_size=1)[Col.IMAGE_ID]) == [3]
 
 
 # -- gating and failure ----------------------------------------------------

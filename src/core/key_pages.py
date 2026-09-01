@@ -51,11 +51,26 @@ def _pick_time_cluster(df, position="first"):
     return df["time_cluster"].min() if position == "first" else df["time_cluster"].max()
 
 
+#: Time axes to fall back through, best first, when there is no `time_cluster`.
+#:
+#: `general_time` before `image_time`: the two are the same seconds whenever the
+#: EXIF is trustworthy, but when it is not, `general_time` has been rebuilt from
+#: scene order into a synthetic monotonic day while `image_time` still holds the
+#: unusable original. Two of the four validation galleries carry **2 distinct
+#: `image_time` values across 528 and 582 photos** — sorting those by
+#: `image_time` does not pick the first and last of the day, it picks an
+#: arbitrary ten.
+#:
+#: ProcessStage never reaches either: `generate_time_clusters` runs first and
+#: always sets `time_cluster`. This matters to callers that run before it.
+_TIME_AXES = ("general_time", "image_time")
+
+
 def _pick_cover_subset(df, position="first", window_size=10):
     """
     Returns a subset DataFrame for the cover selection:
       - If 'time_cluster' exists: all rows at min/max cluster.
-      - Else if 'time' exists: first/last N rows after sorting by 'time' asc.
+      - Else along the best available time axis: first/last N rows.
       - Else: first/last N rows by current order.
     """
     if df.empty:
@@ -65,11 +80,17 @@ def _pick_cover_subset(df, position="first", window_size=10):
         tc = df["time_cluster"].min() if position == "first" else df["time_cluster"].max()
         return df[df["time_cluster"] == tc].copy()
 
-    if "image_time" in df.columns:
-        # Ensure numeric (don’t convert to datetime)
+    for column in _TIME_AXES:
+        if column not in df.columns:
+            continue
+        # Ensure numeric (don’t convert to datetime). Rows with no time at all
+        # are dropped rather than sorted to one end, where `tail` would hand
+        # back a window of photos whose position in the day is unknown.
         tmp = df.copy()
-        tmp["__t"] = pd.to_numeric(tmp["image_time"], errors="coerce")
-        tmp = tmp.sort_values("__t", ascending=True)
+        tmp["__t"] = pd.to_numeric(tmp[column], errors="coerce")
+        tmp = tmp.dropna(subset=["__t"]).sort_values("__t", ascending=True)
+        if tmp.empty:
+            continue
         subset = tmp.head(window_size) if position == "first" else tmp.tail(window_size)
         return subset.drop(columns="__t")
 

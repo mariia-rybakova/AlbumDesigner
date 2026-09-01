@@ -18,23 +18,26 @@ runs before selection, so that pool is the whole gallery instead of the few
 hundred frames selection kept. ProcessStage still runs its own copy and still
 decides the covers -- nothing downstream reads what this writes yet.
 
-Two properties of the wider pool matter for the second half of the move:
+Two properties of the wider pool matter for the second half of the move.
 
 ``time_cluster`` does not exist yet
-    It is built in ProcessStage. Without it the shared ``_pick_cover_subset``
-    helper falls through to its ``image_time`` branch and takes the ten earliest
-    and ten latest couple photos rather than the whole first and last time
-    cluster. On a gallery whose EXIF is unusable -- the reason ``general_time``
-    exists at all -- those ten are not the start of the day.
+    It is built in ProcessStage, so the shared ``_pick_cover_subset`` helper
+    cannot take the whole first and last time cluster and falls back to a window
+    of ten. It now takes that window along ``general_time`` rather than
+    ``image_time``, which is the difference between splitting the real day and
+    splitting an arbitrary ten photos: two of the four validation galleries have
+    2 distinct ``image_time`` values across 528 and 582 photos, and on one of
+    them the old axis put the closing photo *before* the opening one. A window
+    of ten is still not a time cluster.
 
 The pool is not quality-filtered
     Selection is what removes the weak frames. Over the full gallery a mediocre
     early couple shot competes on equal terms with the good one, separated only
     by ``image_order`` and only after the subquery priority has already tied.
 
-Both argue for the consumer resolving the ranked list against what it actually
-has, rather than this substage trying to guess the survivors. Hence ``KeyPages``
-holding lists.
+The second argues for the consumer resolving the ranked list against what it
+actually has, rather than this substage trying to guess the survivors. Hence
+``KeyPages`` holding lists.
 """
 
 from __future__ import annotations
@@ -86,6 +89,10 @@ class KeyPagesSubStage(SubStage):
         photo(Col.IMAGE_ORIENTATION),
         photo(Col.PERSONS_IDS),
         photo(Col.N_FACES),
+        # The axis `_pick_cover_subset` splits the day along, here. Declared so
+        # a gallery that somehow reaches this substage without a timeline fails
+        # at the boundary rather than picking two covers out of the same hour.
+        photo(Col.GENERAL_TIME),
     })
     provides = frozenset({photo(Col.KEY_PAGE), ctx("key_pages")})
     optional = True

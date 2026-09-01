@@ -239,13 +239,16 @@ downstream reads `key_page` or `ctx.key_pages` yet.
 Two properties of the wider pool have to be dealt with before the second half:
 
 - **`time_cluster` does not exist yet.** It is built in ProcessStage, so the
-  shared `_pick_cover_subset` helper falls through to its `image_time` branch
-  and takes the ten earliest and ten latest couple photos instead of the whole
-  first and last time cluster. On a gallery with unusable EXIF — the reason
-  `general_time` exists — that window means nothing: two of the four validation
-  galleries have **2 distinct `image_time` values across 528 and 582 photos**,
-  and on one of them the chosen closing photo lands at 48% of the day while the
-  opening lands at 64%, i.e. the wrong way round.
+  shared `_pick_cover_subset` helper cannot take the whole first and last time
+  cluster and falls back to a window of ten. That window is now taken along
+  `general_time` rather than `image_time`, which is the difference between
+  splitting the real day and splitting an arbitrary ten photos: two of the four
+  validation galleries have **2 distinct `image_time` values across 528 and 582
+  photos**, and on one of them the old axis put the closing photo at 48% of the
+  day and the opening at 64% — the wrong way round. It now reads 48% → 62%.
+  ProcessStage is unaffected, because `generate_time_clusters` always sets
+  `time_cluster` and that branch still wins. A window of ten is still not a
+  time cluster.
 - **The pool is not quality-filtered.** Selection is what removes the weak
   frames. Over the full gallery a mediocre early couple shot competes on equal
   terms with a good one, separated only by `image_order` and only after the
@@ -254,6 +257,13 @@ Two properties of the wider pool have to be dealt with before the second half:
 Both argue for the consumer resolving a ranked list against the photos it
 actually has rather than this substage guessing the survivors, which is why
 `KeyPages` holds lists and not two ids.
+
+One thing the wider pool exposed that is the rule's own, not the wiring's:
+`_pick_most_dissimilar` ranks the closing candidates by rating (0.6) and
+dissimilarity to the opening (0.4), with **no recency term at all**. On
+49995684 the last-ten window correctly spans to 75% of the day, and the rule
+still picks a frame at 30% because it rates higher. Worth revisiting when the
+rule itself is, rather than here.
 
 One thing found while testing the rule, not addressed here because the
 non-wedding path is out of scope for now: `choose_good_non_wedding_images`
