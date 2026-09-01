@@ -13,6 +13,7 @@ none of them is reading — each one *infers* something:
 ``enrich.temporal``          usable timeline + artificial-time detection
 ``enrich.parents``           couple-with-parents portraits
 ``enrich.ceremony_anchor``   the kiss and the send-off, from one anchor
+``enrich.key_pages``         the photos that open and close the album
 ===========================  =========================================
 
 Each is a candidate for replacement by a better model without touching
@@ -26,8 +27,9 @@ from src.pipeline.enrich import (  # noqa: F401  (imported for registration)
     classification,
     hygiene,
     identities,
+    key_pages,
     temporal,
 )
 
 __all__ = ["ceremony_anchor", "classification", "hygiene", "identities",
-           "temporal", "timeline"]
+           "key_pages", "temporal", "timeline"]

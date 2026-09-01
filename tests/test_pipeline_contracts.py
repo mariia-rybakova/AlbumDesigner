@@ -44,6 +44,7 @@ DERIVED_COLUMNS = {
     Col.PARENT_CATEGORY,
     Col.GENERAL_TIME,
     Col.IMAGE_TIME_DATE,
+    Col.KEY_PAGE,
 }
 
 

@@ -41,6 +41,7 @@ Everything moves inside one object, `src/pipeline/contracts.AlbumContext`.
 | `facts` (`GalleryFacts`) | `is_wedding`, `is_artificial_time`, `model_version`, `bride_id`, `groom_id` |
 | `clip_embeddings`, `ratings`, `social_circles`, `person_details`, `is_in_vector_db` | Ingest sidecars |
 | `selection_inputs`, `selection_plan` | Selection working state |
+| `key_pages` (`KeyPages`) | The photos that open and close the album |
 | `selection` (`SelectionOutcome`) | Chosen photo ids, spread budget, lookup table |
 | `services` (`Services`) | Injected Mongo/Qdrant clients |
 | `error`, `diagnostics` | Outcome and the execution trace |
@@ -161,6 +162,7 @@ synthetic-blob tests do not cover.
 | `enrich.temporal` | Usable timeline, artificial-time detection | `image_time_date`, `general_time` |
 | `enrich.parents` | Couple-with-parents portraits | `parent_category` |
 | `enrich.ceremony_anchor` | The kiss and the send-off, from one shared anchor | `send_off_score` |
+| `enrich.key_pages` | Which photo opens the album and which closes it | `key_page` |
 
 `enrich.content_class` and `enrich.identities` are wedding-only, matching the
 original: non-wedding galleries never get a `cluster_context` column.
@@ -215,6 +217,44 @@ and 1.
 Shared machinery lives in `src/pipeline/enrich/timeline.py` — ordering, the
 ceremony core, the anchor, concept scoring and burst grouping — so the
 walking-the-aisle detector can reuse it rather than fork it.
+
+#### `enrich.key_pages`
+
+Which photo opens the album and which closes it. Choosing a cover is an
+inference about photos, not a step of page layout, but it has always run inside
+ProcessStage — `src/core/key_pages.py::generate_first_last_pages`, wedged
+between time clustering and the layout search.
+
+**This is the first half of moving it.** The substage calls the same functions
+ProcessStage calls, so there is one implementation of the rule and no chance of
+the two drifting. The only difference is the pool: enrich runs before selection,
+so it sees the whole gallery instead of the few hundred frames selection kept.
+ProcessStage still runs its own copy and still decides the covers — nothing
+downstream reads `key_page` or `ctx.key_pages` yet.
+
+Two properties of the wider pool have to be dealt with before the second half:
+
+- **`time_cluster` does not exist yet.** It is built in ProcessStage, so the
+  shared `_pick_cover_subset` helper falls through to its `image_time` branch
+  and takes the ten earliest and ten latest couple photos instead of the whole
+  first and last time cluster. On a gallery with unusable EXIF — the reason
+  `general_time` exists — that window means nothing: two of the four validation
+  galleries have **2 distinct `image_time` values across 528 and 582 photos**,
+  and on one of them the chosen closing photo lands at 48% of the day while the
+  opening lands at 64%, i.e. the wrong way round.
+- **The pool is not quality-filtered.** Selection is what removes the weak
+  frames. Over the full gallery a mediocre early couple shot competes on equal
+  terms with a good one, separated only by `image_order` and only after the
+  subquery priority has already tied.
+
+Both argue for the consumer resolving a ranked list against the photos it
+actually has rather than this substage guessing the survivors, which is why
+`KeyPages` holds lists and not two ids.
+
+Carried over unchanged, and worth fixing when the rule itself is revisited:
+`choose_good_non_wedding_images` splits its picks down the middle and is asked
+for one, so the opening half is always empty — **non-wedding albums get a
+closing photo and never an opening one.**
 
 ### Select
 

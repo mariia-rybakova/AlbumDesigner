@@ -96,6 +96,9 @@ class Col:
     SEND_OFF_SCORE = "send_off_score"
     AISLE_SCORE = "aisle_score"
 
+    # -- enrich.key_pages --------------------------------------------------
+    KEY_PAGE = "key_page"
+
     # -- select.* (scoring columns, per category) --------------------------
     TOTAL_SCORE = "total_score"
     CLASS_SCORE = "class_score"
@@ -218,6 +221,35 @@ class SelectionOutcome:
 
 
 @dataclass
+class KeyPages:
+    """The photos that open and close the album.
+
+    Ranked best-first, though today each list holds at most one id -- the rule
+    that fills them picks a single cover per end. Lists rather than scalars
+    because the consumer has to be able to fall through: the photo that best
+    opens the gallery is not guaranteed to be one selection kept.
+    """
+
+    opening: List[int] = field(default_factory=list)
+    closing: List[int] = field(default_factory=list)
+
+    @property
+    def photo_ids(self) -> List[int]:
+        """Every id spoken for, in either role."""
+        return list(self.opening) + list(self.closing)
+
+    def as_content(self) -> Dict[str, List[int]]:
+        return {"opening": list(self.opening), "closing": list(self.closing)}
+
+    @classmethod
+    def from_content(cls, payload: Any) -> Optional["KeyPages"]:
+        if not isinstance(payload, dict):
+            return None
+        return cls(opening=list(payload.get("opening") or []),
+                   closing=list(payload.get("closing") or []))
+
+
+@dataclass
 class Services:
     """External clients, injected rather than constructed inside substages so a
     substage can be exercised against fakes."""
@@ -264,6 +296,7 @@ class AlbumContext:
 
     # -- derived ------------------------------------------------------------
     facts: GalleryFacts = field(default_factory=GalleryFacts)
+    key_pages: Optional[KeyPages] = None
     selection: Optional[SelectionOutcome] = None
 
     # -- selection working state -------------------------------------------
@@ -356,6 +389,7 @@ class AlbumContext:
         context.all_photos = content.get("gallery_all_photos_info")
         context.available_photo_ids = content.get("photos", []) or []
         context.hints = AiHints.from_request(content)
+        context.key_pages = KeyPages.from_content(content.get("key_pages"))
         context.facts = GalleryFacts(
             is_wedding=content.get("is_wedding"),
             is_artificial_time=content.get("is_artificial_time", False),
@@ -387,6 +421,9 @@ class AlbumContext:
         if self.facts.is_wedding is not None:
             content["is_wedding"] = self.facts.is_wedding
         content["is_artificial_time"] = self.facts.is_artificial_time
+
+        if self.key_pages is not None:
+            content["key_pages"] = self.key_pages.as_content()
 
         if self.selection is not None:
             content["photos"] = self.selection.photo_ids
