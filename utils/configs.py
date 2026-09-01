@@ -121,6 +121,17 @@ CONFIGS = {'DEBUG': True,
         'kiss_max_gap': 3,
         'kiss_max_photos': 6,
         'kiss_eligible_labels': ('ceremony', 'kiss', 'bride and groom', 'other', 'None'),
+        # The query bank's two kiss subqueries do not fire on every gallery: on
+        # 47981912 the only kiss frame is labelled "officiant leading wedding
+        # ceremony" and carries no identity, so there is no label evidence at
+        # all. A concept bank finds it -- that frame scores at the 99.5th
+        # percentile of its gallery. Frames clearing the floor join the
+        # subquery-matched ones as candidates; ranking is concept-led, since
+        # proximity to the anchor cannot separate a kiss from the vows (the
+        # anchor is the median of both).
+        'kiss_concept': 'ceremony_kiss',
+        'kiss_concept_floor': {2: 0.40, 1: 1.0},
+        'kiss_subquery_bonus': 0.05,
 
         # -- enrich.ceremony_anchor: the processional -----------------------
         # Entering the ceremony, so the anchor is read as an UPPER bound -- and
@@ -157,17 +168,27 @@ CONFIGS = {'DEBUG': True,
         # bride 4/4, groom 5/6.
         'aisle_rank_weights': {'subquery': 1.0, 'proximity': 1.0, 'concept': 1.0},
         'aisle_proximity_half': 10,
+        # Distance to the ceremony start is ASYMMETRIC: a run beginning after
+        # the ceremony has started is charged this multiple per position it
+        # overruns. It has to be a penalty rather than a hard cut-off -- the
+        # detected ceremony start is fuzzy, and on one gallery the real bride
+        # walk begins 10 positions after it while on another a mid-ceremony run
+        # 9 positions after it is not the processional at all. 6 separates them;
+        # 3 was not enough, because the wrong run's concept score is higher.
+        'aisle_after_penalty': 6.0,
         # A floor on the WINNING run, keyed by embedding space. Ranking is
         # scale-free, but a floor is not -- so it applies only where it works.
-        #   v2: 0.32. Real processionals score 0.44-0.60 here; the prep runs a
-        #       gallery falls back to when it has no processional score
-        #       0.19-0.21. The gate is what stops those reaching the album.
+        #   v2: 0.22. Ground truth spans a wide range -- 0.44-0.49 on three
+        #       galleries but 0.244-0.308 on 47981912, whose real processional
+        #       a 0.32 floor rejected. The prep runs a gallery falls back to
+        #       when it has none score 0.05-0.18, so the gate still does its
+        #       job with room to spare.
         #   v1: 0 (ungated). No floor survives this space: on the one v1 gallery
         #       with ground truth, the groom's real walk in scores BELOW his own
         #       gallery's median, so any floor -- absolute or relative -- rejects
         #       the correct answer. v1 relies on the ranking alone and accepts
         #       the fallback described in the tests.
-        'aisle_score_floor': {2: 0.32, 1: 0.0},
+        'aisle_score_floor': {2: 0.22, 1: 0.0},
 
         # -- enrich.ceremony_anchor: the send-off ---------------------------
         'send_off_concept': 'send_off',

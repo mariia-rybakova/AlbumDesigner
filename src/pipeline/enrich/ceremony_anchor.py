@@ -103,6 +103,8 @@ class CeremonyAnchorSubStage(SubStage):
         bride_score = tl.concept_scores(photos, aisle['bride'])
         groom_score = tl.concept_scores(photos, aisle['groom'])
         photos[Col.AISLE_SCORE] = np.maximum(bride_score, groom_score)
+        self._kiss_scores = pd.Series(
+            tl.concept_scores(photos, CONFIGS['kiss_concept']), index=photos.index)
         # Indexed by the photo table's own labels, NOT left as bare arrays.
         # tl.ordered() re-sorts by general_time, so pairing a positional array
         # with the sorted frame's index silently attaches each score to the
@@ -143,26 +145,37 @@ class CeremonyAnchorSubStage(SubStage):
         radius = CONFIGS['kiss_radius']
         start, end = ceremony.window(before=radius, after=radius)
 
-        candidates = tl.eligible(ceremony.frame, CONFIGS['kiss_eligible_labels'], start, end)
-        candidates = candidates[candidates[Col.IMAGE_SUBQUERY_CONTENT].isin(KISS_QUERIES)]
+        in_window = tl.eligible(ceremony.frame, CONFIGS['kiss_eligible_labels'], start, end)
+        by_subquery = in_window[Col.IMAGE_SUBQUERY_CONTENT].isin(KISS_QUERIES)
+
+        # Two independent routes in: the label says kiss, or it looks like one.
+        floor = tl.floor_for(CONFIGS['kiss_concept_floor'], self._model_version)
+        kiss_score = self._kiss_scores.reindex(in_window.index)
+        candidates = in_window[by_subquery | (kiss_score >= floor)]
 
         if candidates.empty:
             if context.logger:
                 context.logger.info(
-                    f"No kiss: no kiss-subquery frame within {radius} positions of the anchor")
+                    f"No kiss: nothing within {radius} positions of the anchor carries a "
+                    f"kiss subquery or clears {floor}")
             return []
 
-        # A kiss is one moment, not a scatter across the ceremony: keep the run
-        # closest to the anchor rather than every kiss-like frame in range.
-        runs = tl.group_adjacent(candidates, CONFIGS['kiss_max_gap'])
-        best = min(runs, key=lambda r: abs(ceremony.frame.loc[r, tl.POSITION].median() - ceremony.anchor))
-        best = best[:CONFIGS['kiss_max_photos']]
+        # Concept-led: proximity to the anchor cannot tell a kiss from the vows,
+        # because the anchor is the median of both.
+        ranked = candidates.assign(
+            _k=kiss_score.reindex(candidates.index).fillna(0.0)
+            + by_subquery.reindex(candidates.index).fillna(False) * CONFIGS['kiss_subquery_bonus'])
+        best = list(ranked.nlargest(CONFIGS['kiss_max_photos'], '_k').index)
+        best = sorted(best, key=lambda i: int(ceremony.frame.loc[i, tl.POSITION]))
 
         context.photos.loc[best, Col.CLUSTER_CONTEXT] = MAY_KISS_BRIDE
         if context.logger:
             offset = int(ceremony.frame.loc[best, tl.POSITION].median() - ceremony.anchor)
+            hits = int(by_subquery.reindex(best).fillna(False).sum())
             context.logger.info(
-                f"Kiss detected: {len(best)} photos, {offset:+d} positions from the anchor")
+                f"Kiss detected: {len(best)} photos, {offset:+d} positions from the anchor, "
+                f"{hits} with a kiss subquery, concept mean="
+                f"{self._kiss_scores.loc[best].mean():.3f}")
         return best
 
     # -- the processional: anchor as upper bound -----------------------------
@@ -196,8 +209,8 @@ class CeremonyAnchorSubStage(SubStage):
         if identity is None or (isinstance(identity, float) and np.isnan(identity)):
             return []
 
-        # Identity is the mandatory signal. Solo: the couple walking in together
-        # is not either of them walking in.
+        # 1. Identity is the one hard requirement. Solo: the couple walking in
+        #    together is not either of them walking in.
         solo = window[window[Col.PERSONS_IDS].apply(
             lambda ids: identity in ids and other not in ids)]
         solo = solo.drop(index=[i for i in exclude if i in solo.index])
@@ -206,19 +219,22 @@ class CeremonyAnchorSubStage(SubStage):
                 logger.info(f"No {who} processional: no solo-{who} frame before the ceremony")
             return []
 
-        runs = [r for r in tl.group_adjacent(solo, CONFIGS['aisle_max_gap'])
-                if len(r) >= CONFIGS['aisle_min_photos']]
-        if not runs:
+        position = ceremony.frame[tl.POSITION]
+
+        # 2. Group into runs; only runs of a real length are candidates.
+        clusters = tl.group_adjacent(solo, CONFIGS['aisle_max_gap'])
+        candidates = [c for c in clusters if len(c) >= CONFIGS['aisle_min_photos']]
+        if not candidates:
             if logger:
                 logger.info(f"No {who} processional: no run of at least "
                             f"{CONFIGS['aisle_min_photos']} solo-{who} frames")
             return []
 
+        # 3. Rank and pick.
         concept = self._aisle_scores[who]
-        best = max(runs, key=lambda r: self._rank_run(ceremony, solo, concept, who, r))
+        best = max(candidates, key=lambda c: self._rank_run(ceremony, solo, concept, who, c))
 
-        # Judge the run the ranking actually chose, before it is padded out. A
-        # floor only where the embedding space supports one -- see the config.
+        # 4. Judge the run the ranking chose, before it is padded out.
         floor = tl.floor_for(CONFIGS['aisle_score_floor'], self._model_version)
         mean_concept = concept.loc[best].mean()
         if floor > 0 and mean_concept < floor:
@@ -227,57 +243,48 @@ class CeremonyAnchorSubStage(SubStage):
                             f"{mean_concept:.3f}, under {floor}")
             return []
 
-        best = self._absorb_stragglers(ceremony, solo, runs, best)
-        best = best[:CONFIGS['aisle_max_photos']]
+        # 5. Absorb genuine singletons just off the ends -- the groom's
+        #    "waiting at the altar" frame is usually one of these. Frames in any
+        #    other multi-frame cluster belong to that cluster, not here.
+        low, high = int(position.loc[best].min()), int(position.loc[best].max())
+        reach = CONFIGS['aisle_extend_gap']
+        singletons = [c[0] for c in clusters if len(c) == 1]
+        picked = list(best) + [i for i in singletons
+                               if low - reach <= int(position.loc[i]) <= high + reach]
 
-        context.photos.loc[best, Col.CLUSTER_CONTEXT] = tag
+        # 6. Keep position order and cap, so the tag reads as one moment.
+        picked = sorted(picked, key=lambda i: int(position.loc[i]))[:CONFIGS['aisle_max_photos']]
+
+        context.photos.loc[picked, Col.CLUSTER_CONTEXT] = tag
         if logger:
-            hits = int(solo.reindex(best)[Col.IMAGE_SUBQUERY_CONTENT]
+            hits = int(solo.reindex(picked)[Col.IMAGE_SUBQUERY_CONTENT]
                        .isin(AISLE_QUERIES[who]).sum())
-            span = sorted(int(p) for p in ceremony.frame.loc[best, tl.POSITION])
-            logger.info(f"{who.capitalize()} processional: {len(best)} photos at "
-                        f"{span[0]}-{span[-1]}, concept={concept.loc[best].mean():.3f}, "
+            span = [int(position.loc[i]) for i in picked]
+            logger.info(f"{who.capitalize()} processional: {len(picked)} photos at "
+                        f"{span[0]}-{span[-1]}, concept={mean_concept:.3f}, "
                         f"{hits} with a matching subquery")
-        return list(best)
+        return picked
 
     @staticmethod
     def _rank_run(ceremony, solo, concept, who, run) -> float:
         """Rank a candidate run. See CONFIGS['aisle_rank_weights'].
 
-        The concept term is the raw mean, not normalised across runs: raw, it
-        contributes in proportion to how much the embedding space actually
-        separates the concept, which keeps this working in both CLIP spaces.
+        Distance runs from the run's END back to the ceremony start, plus a
+        penalty for any part that begins after the ceremony already has — see
+        CONFIGS['aisle_after_penalty']. The concept term is the raw mean, not
+        normalised across runs: raw, it contributes in proportion to how much
+        the embedding space actually separates the concept, which keeps this
+        working in both CLIP spaces.
         """
         weights = CONFIGS['aisle_rank_weights']
-        distance = min(abs(int(p) - ceremony.core_start)
-                       for p in ceremony.frame.loc[run, tl.POSITION])
+        positions = [int(p) for p in ceremony.frame.loc[run, tl.POSITION]]
+        distance = (max(0, ceremony.core_start - max(positions))
+                    + CONFIGS['aisle_after_penalty']
+                    * max(0, min(positions) - ceremony.core_start))
         subquery_rate = solo.loc[run, Col.IMAGE_SUBQUERY_CONTENT].isin(AISLE_QUERIES[who]).mean()
         return (weights['subquery'] * subquery_rate
                 + weights['proximity'] / (1 + distance / CONFIGS['aisle_proximity_half'])
                 + weights['concept'] * concept.loc[run].mean())
-
-    @staticmethod
-    def _absorb_stragglers(ceremony, solo, runs, run) -> List:
-        """Pull in isolated solo frames just off the ends of the winning run.
-
-        Only frames that belong to no qualifying run of their own: the groom's
-        "waiting at the altar" shot sits a few frames past the end of his walk
-        in and is a run of one, so it would otherwise be lost. Frames that are
-        part of another qualifying run are left alone — absorbing those diluted
-        the winning run badly enough to push it under its own floor.
-        """
-        claimed = {i for other in runs for i in other}
-        positions = ceremony.frame.loc[solo.index, tl.POSITION]
-        low = int(ceremony.frame.loc[run, tl.POSITION].min())
-        high = int(ceremony.frame.loc[run, tl.POSITION].max())
-        reach = CONFIGS['aisle_extend_gap']
-
-        stragglers = [i for i in solo.index
-                      if i not in claimed
-                      and low - reach <= int(positions.loc[i]) <= high + reach]
-        ordered = list(run) + stragglers
-        # keep position order so the tag reads as one moment
-        return sorted(ordered, key=lambda i: int(positions.loc[i]))
 
     # -- the send-off: anchor as lower bound ---------------------------------
 

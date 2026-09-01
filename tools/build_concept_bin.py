@@ -115,6 +115,19 @@ CONCEPTS = {
         "guests lining both sides of a path cheering the couple",
     ],
 
+    # The ceremony kiss. The query bank does carry two kiss subqueries, but they
+    # do not fire on every gallery -- one validation gallery's only kiss frame
+    # is labelled "religious or cultural wedding ritual" and carries no identity
+    # at all, so there is no label evidence to find it by.
+    "ceremony_kiss": [
+        "bride and groom kissing at the wedding ceremony",
+        "the first kiss as a married couple",
+        "bride and groom kissing in front of the officiant and guests",
+        "newlyweds kissing at the altar",
+        "bride and groom leaning in to kiss during the ceremony",
+        "close up of the bride and groom kissing",
+    ],
+
     # The processional: entering the ceremony, before it starts. Split by who
     # is walking, because the two produce different classes and look different
     # -- the bride is escorted up the aisle, the groom is usually already at

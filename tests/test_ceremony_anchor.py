@@ -499,6 +499,32 @@ def test_the_aisle_floor_is_applied_per_space():
     assert tl.floor_for(setting, 1) == 0, "v1 must be ungated"
 
 
+def test_kiss_is_found_without_a_kiss_subquery():
+    """The query bank's kiss subqueries do not fire on every gallery -- one
+    validation gallery's only kiss frame is labelled "officiant leading wedding
+    ceremony" and carries no identity. A concept bank is the second route in."""
+    df = make_gallery(kiss_frames=5)
+    # strip the label evidence, leave the frames looking like a kiss
+    kiss_rows = df.index[df['image_subquery_content'] == 'wedding kiss at ceremony']
+    rng = np.random.default_rng(21)
+    kiss_bank = _bank(CONFIGS['kiss_concept'])
+    for i in kiss_rows:
+        df.at[i, 'image_subquery_content'] = 'officiant leading wedding ceremony'
+        df.at[i, 'embedding'] = _embedding(rng, 0.60, kiss_bank)
+        df.at[i, 'persons_ids'] = []
+    context = run(df)
+    picked = set(kissed(context)['image_id'])
+    assert picked & set(df.loc[kiss_rows, 'image_id']), (
+        "a kiss with no subquery and no identity should still be found by concept")
+
+
+def test_kiss_concept_floor_is_per_space():
+    from src.pipeline.enrich import timeline as tl
+    setting = CONFIGS['kiss_concept_floor']
+    assert 0 < tl.floor_for(setting, 2) < 1.0, "v2 gated"
+    assert tl.floor_for(setting, 1) >= 1.0, "v1 falls back to subqueries only"
+
+
 def test_aisle_classes_are_known_content_classes_everywhere():
     from utils.configs import (limit_imgs, min_images_per_category, priority_categories,
                                relations, selection_threshold,
