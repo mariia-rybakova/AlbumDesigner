@@ -131,6 +131,11 @@ CONFIGS = {'DEBUG': True,
         # anchor is the median of both).
         'kiss_concept': 'ceremony_kiss',
         'kiss_concept_floor': {2: 0.40, 1: 1.0},
+        # Ablated: on v2 the subquery route is redundant -- the concept alone
+        # finds the same frames on all four galleries, including the one whose
+        # only kiss frame carries no kiss subquery. It is kept because on v1
+        # kiss_concept_floor is inert, making the subquery the ONLY route in;
+        # removing it would silently kill kiss detection on every v1 gallery.
         'kiss_subquery_bonus': 0.05,
 
         # -- enrich.ceremony_anchor: the processional -----------------------
@@ -166,6 +171,11 @@ CONFIGS = {'DEBUG': True,
         # absolute thresholds break across spaces, which is why the floor is
         # gone. Verified against ground truth on 47981912 (a v1 gallery):
         # bride 4/4, groom 5/6.
+        # Ablated across the four validation galleries: dropping the subquery
+        # term changes exactly one of eight aisle picks -- 49995684's bride goes
+        # from the run carrying "bride walking down aisle with father" x4 to a
+        # nearer unlabelled run. Marginal, but it is the deciding vote in the
+        # one case where proximity misleads, and it costs nothing.
         'aisle_rank_weights': {'subquery': 1.0, 'proximity': 1.0, 'concept': 1.0},
         'aisle_proximity_half': 10,
         # Distance to the ceremony start is ASYMMETRIC: a run beginning after
