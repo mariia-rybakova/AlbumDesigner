@@ -106,6 +106,23 @@ CONFIGS = {'DEBUG': True,
          },
         'user_rating_max_scale': 5,
         'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
+        # -- enrich.send_off ------------------------------------------------
+        # The ceremony exit: guests showering the couple as they leave
+        # (confetti, petals, bubbles, rice, sparklers). Detected as a temporal
+        # burst after the ceremony climax that also looks like a send-off; the
+        # visual evidence is mandatory, sequence alone never tags.
+        # Thresholds calibrated on galleries 49994361 / 49995684 (send-offs
+        # present, burst means 0.42 and 0.44) against 47981912 / 53496523
+        # (none, gallery maxima 0.30 and 0.42 but no qualifying burst).
+        'send_off_concept': 'send_off',
+        'send_off_eligible_labels': ('ceremony', 'walking the aisle', 'other', 'bride and groom'),
+        'send_off_photo_floor': 0.35,
+        'send_off_burst_floor': 0.38,
+        'send_off_min_photos': 5,
+        'send_off_max_gap': 3,
+        'send_off_back_slack': 40,
+        'send_off_horizon': 250,
+
         'MAX_PERSON_COMBINATION': 10000,
         'use_rebalance_spreads': False,
 
@@ -225,6 +242,7 @@ relations = {'brideAndGroom':{
     'suit':(1, 0.5),
     'rings':(1,0.5),
     'may kiss bride': (1, 0.2),
+    'send off': (4, 0.3),
     'bride and groom with parents': (1, 0.2),
     'groom with his parents': (1, 0.2),
     'bride with her parents': (1, 0.2),
@@ -272,6 +290,7 @@ relations = {'brideAndGroom':{
         'suit': (0, 0.5),
         'rings': (1, 0.5),
         'may kiss bride': (1, 0.2),
+        'send off': (4, 0.3),
         'bride and groom with parents': (1, 0.2),
         'groom with his parents': (1, 0.2),
         'bride with her parents': (1, 0.2),
@@ -317,6 +336,7 @@ relations = {'brideAndGroom':{
     'suit':(1, 0.5),
     'rings': (1, 0.5),
     'may kiss bride': (1, 0.2),
+    'send off': (4, 0.3),
     'bride and groom with parents': (1, 0.2),
     'groom with his parents': (1, 0.2),
     'bride with her parents': (1, 0.2),
@@ -358,7 +378,8 @@ limit_imgs = {
     'rings': 1,
     'vehicle': 1,
     'parents portrait':2,
-    'may kiss bride':1
+    'may kiss bride':1,
+    'send off':4
 
 }
 
@@ -433,13 +454,14 @@ spreads_required_per_category = {
     'vehicle':0,
     'inside vehicle':0,
     'may kiss bride':1,
+    'send off':1,
     'parents portrait':1,
 
 }
 
 priority_categories = ['bride and groom',
                        'bride','groom','ceremony', 'may kiss bride','bride party',
-    'groom party','full party','dancing','large_portrait', 'parents portrait',
+    'groom party','full party','dancing','large_portrait', 'parents portrait', 'send off',
     'portrait','very large group',
     'walking the aisle',
     'first dance','cake cutting','bride getting dressed',
@@ -494,7 +516,8 @@ min_images_per_category = {
     'inside vehicle': 1,
     'rings':1,
     'parents portrait':2,
-    'may kiss bride':1
+    'may kiss bride':1,
+    'send off':4
 
 }
 
@@ -533,6 +556,7 @@ selection_threshold = {
     'rings':0.15,
     'suit':0.15,
     'may kiss bride':0.15,
+    'send off':0.15,
     'parents portrait':0.15,
 }
 

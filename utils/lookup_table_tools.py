@@ -43,7 +43,8 @@ wedding_lookup_table = {
     'bride and groom with parents': (3, 0.9),
     'groom with his parents': (2, 0.9),
     'bride with her parents': (2, 0.9),
-    'parents portrait': (3, 0.9)
+    'parents portrait': (3, 0.9),
+    'send off': (4, 0.75)
     }
 
 non_wedding_lookup_table = {
