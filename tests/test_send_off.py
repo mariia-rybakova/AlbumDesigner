@@ -208,22 +208,58 @@ def test_send_off_is_a_known_content_class_everywhere():
 
 def test_budget_allocator_handles_the_new_class():
     """The end-to-end integration point: calculate_optimal_selection indexes the
-    lookup table for every focus-profile event."""
+    lookup table for every focus-profile event, so a missing entry is a
+    KeyError mid-allocation."""
+    images, spreads = _allocate({'ceremony': 40, SEND_OFF: 21, 'bride and groom': 60,
+                                 'dancing': 100})
+    assert images is not None, "allocator failed"
+    assert SEND_OFF in images and SEND_OFF in spreads
+
+
+def test_send_off_does_not_draw_from_the_spread_pool():
+    """It is a 'yes' event, not a percentage: on a gallery with plenty of
+    everything it earns exactly one photo and no spreads, so it never competes
+    with the categories the album is actually built from."""
+    images, spreads = _allocate({
+        'ceremony': 40, SEND_OFF: 21, 'bride and groom': 80, 'dancing': 120,
+        'portrait': 40, 'bride': 30, 'groom': 30, 'first dance': 20, 'speech': 15,
+        'bride party': 20, 'groom party': 20, 'settings': 20, 'detail': 20, 'food': 20,
+    })
+    assert images.get(SEND_OFF) == 1, (
+        f"a 'yes' event should earn one photo on a well-stocked gallery, "
+        f"got {images.get(SEND_OFF)}")
+    assert spreads.get(SEND_OFF) == 0
+
+
+def test_send_off_grows_only_as_filler_and_only_in_pairs():
+    """On a starved gallery the rebalance loop may top it up — but the lookup
+    table's mean of 2 keeps each step to a pair of photos."""
+    images, _spreads = _allocate({'ceremony': 40, SEND_OFF: 21, 'bride and groom': 60,
+                                  'dancing': 100})
+    grown = images.get(SEND_OFF)
+    assert grown > 1, "a starved gallery should be allowed to fill from send off"
+    assert (grown - 1) % 2 == 0, (
+        f"top-ups should come in pairs (lookup table mean 2), got {grown}")
+
+
+def _allocate(actual_counts):
+    """Run the budget allocator over a category->count mapping."""
     import logging
     from src.selection.ai_wedding_selection import calculate_optimal_selection, load_event_mapping
     from utils.configs import relations
     from utils.lookup_table_tools import wedding_lookup_table
 
-    log = logging.getLogger("t"); log.addHandler(logging.NullHandler())
+    log = logging.getLogger("t")
+    log.addHandler(logging.NullHandler())
+    # reloaded per call: the allocator mutates the mapping it is handed
     mapping = load_event_mapping(CONFIGS['focus_csv_path'], log)
     assert SEND_OFF in mapping['brideAndGroom'], "focus_csv.csv row missing"
 
     images, spreads, _lo, _hi = calculate_optimal_selection(
-        {'ceremony': 40, SEND_OFF: 21, 'bride and groom': 60, 'dancing': 100},
-        relations['brideAndGroom'], wedding_lookup_table, mapping['brideAndGroom'], 3,
-        pd.DataFrame({'persons_ids': [[1, 2]] * 50}), log)
-    assert images is not None, "allocator failed"
-    assert images.get(SEND_OFF, 0) > 0, "send off got no photo budget"
+        actual_counts, relations['brideAndGroom'], wedding_lookup_table,
+        mapping['brideAndGroom'], 3,
+        pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log)
+    return images, spreads
 
 
 if __name__ == "__main__":
