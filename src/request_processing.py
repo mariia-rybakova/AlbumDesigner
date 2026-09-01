@@ -8,12 +8,9 @@ from pycparser.c_ast import Continue
 
 from utils.configs import CONFIGS
 from utils.layouts_tools import generate_layouts_df, get_layouts_data, order_boxes_indices
-from utils.read_protos_files import get_info_protobufs
-from utils.time_processing import process_gallery_time
 from ptinfra.azure.pt_file import PTFile
 from ptinfra.utils.gallery import Gallery
 import json
-from bson.objectid import ObjectId
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from experiments.plotting import plot_selected_rows_to_pdf
@@ -531,121 +528,47 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
 
 
 def read_messages(messages, project_status_collection, qdrant_client, logger):
+    """Read and enrich each incoming message.
+
+    A thin driver over the ingest + enrich substages. The work that used to be
+    inlined here now lives in `src/pipeline/ingest` (reading) and
+    `src/pipeline/enrich` (everything derived from what was read); see
+    `src.pipeline.registry.INGEST` / `ENRICH` for the order.
+
+    Signature and return contract are unchanged: `(messages, error)`, where a
+    non-None error aborts the whole batch.
+    """
+    # Imported here rather than at module scope: the ingest substages import
+    # helpers from this module, so a top-level import would be circular.
+    from src.pipeline import AlbumContext, Services, build_read
+
+    pipeline = build_read(logger=logger)
+    services = Services(
+        project_status_collection=project_status_collection,
+        qdrant_client=qdrant_client,
+    )
+
     enriched_messages = []
 
     for _msg in messages:
         reading_message_time = datetime.now()
+        logger.info('Received message: {}/{}'.format(_msg.content, _msg))
 
-        json_content = _msg.content
-        if not (type(json_content) is dict or type(json_content) is list):
-            logger.warning('Incorrect message format: {}.'.format(json_content))
-        logger.info('Received message: {}/{}'.format(json_content, _msg))
+        context = pipeline.run(
+            AlbumContext.from_message(_msg, logger=logger, services=services)
+        )
 
-        if 'photos' not in json_content or 'base_url' not in json_content:
-            return None, 'There are missing fields in input request: {}. Skipping.'.format(json_content)
+        if context.failed:
+            return None, context.error
 
-        try:
-            message = read_layouts_data(_msg, json_content, logger=logger)
+        if context.photos is None or context.photos.empty:
+            return None, 'Failed to enrich image data for message: {}. Skipping.'.format(_msg.content)
 
-            if message is None or isinstance(message, tuple):
-                err = message[1] if isinstance(message, tuple) and len(message) > 1 else 'unknown error'
-                raise ValueError('read_layouts_data failed: {}'.format(err))
+        enriched_messages.append(context.sync_to_message())
 
-            message = read_rating_data(message, json_content, logger=logger)
-
-            _msg = message
-            json_content = _msg.content
-
-            proto_start = datetime.now()
-            project_url = json_content['base_url']
-            project_id = json_content['projectId']
-            # Fetch the document from the collection
-            try:
-                logger.info(f"Fetch the document from the collection {project_status_collection}")
-                if isinstance(project_id, int):
-                    doc = project_status_collection.find_one({"_id": project_id},
-                                                                  {"isInVectorDatabase": 1, "imageModelVersion": 1})
-                else:
-                    doc = project_status_collection.find_one({"_id": ObjectId(project_id)},
-                                                                  {"isInVectorDatabase": 1, "imageModelVersion": 1})
-
-                if doc is None:
-                    logger.info(f"doc not found for project_id {project_id}")
-                    is_in_vector_db = None
-                    image_model_version = None
-                else:
-                    logger.info(f"doc found for project_id {project_id}: {doc}")
-                    is_in_vector_db = doc.get("isInVectorDatabase")
-                    image_model_version = doc.get("imageModelVersion")
-            except Exception as ex:
-                logger.warning(f"Failed to read one message: {ex}")
-                is_in_vector_db = None
-                image_model_version = None
-
-            # Retrieve the isInVectorDB field
-
-            if is_in_vector_db is not None and is_in_vector_db == True:
-                logger.info(
-                    f'Project {project_id} has isInVectorDB = True, loading Clip embeddings from qdrant')
-                collection_name = CONFIGS["QDRANT_COLLECTION"][image_model_version]
-                try:
-                    clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, project_id,
-                                                          logger=logger)
-                    clip_version = image_model_version
-                    _msg.clip_version = clip_version
-                    clip_df = pd.DataFrame([
-                        {"image_id": photo_id, "embedding": np.array(data)}
-                        for photo_id, data in clip_dict.items()
-                    ])
-                    clip_df['model_version'] = image_model_version
-                except Exception as ex:
-                    _msg.error = True
-                    raise Exception('Qdrant fetch error: {}'.format(ex))
-            else:
-                clip_df = None
-
-
-            gallery_info_df, is_wedding,social_circle_df,persons_details_df, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
-            if pt_error is not None:
-                return None, pt_error
-            logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
-
-            # merge user ratings (0 for photos without a rating)
-            rating_df = getattr(message, 'rating_df', None)
-            if rating_df is not None and not gallery_info_df.empty:
-                gallery_info_df = gallery_info_df.merge(rating_df, on='image_id', how='left')
-                gallery_info_df['user_rating'] = gallery_info_df['user_rating'].fillna(0)
-                if logger:
-                    matched = int(gallery_info_df['user_rating'].gt(0).sum())
-                    logger.info(f"Merged user_rating into gallery_info_df: {matched}/{len(gallery_info_df)} photos have a rating.")
-
-            # add scenes info to gallery_info_df
-            gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
-
-            # add time data
-            gallery_info_df,is_artificial_time = process_gallery_time(_msg, gallery_info_df, logger)
-
-            # detect Ceremony kiss photos
-            gallery_info_df = identify_kiss_ceremony(gallery_info_df, logger=logger)
-
-            # parents detection
-            gallery_info_df = identify_parents(social_circle_df,persons_details_df,gallery_info_df, logger=logger)
-
-            if not gallery_info_df.empty:
-                _msg.content['gallery_photos_info'] = gallery_info_df
-                _msg.content['is_wedding'] = is_wedding
-                _msg.content['is_artificial_time'] = is_artificial_time
-                enriched_messages.append(_msg)
-            else:
-                return None, 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
-
-            logger.info(
-                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
-
-        except Exception as ex:
-            tb = traceback.extract_tb(ex.__traceback__)
-            filename, lineno, func, text = tb[-1]
-            return None, f'Error reading messages at reading stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+        logger.info(
+            f"Reading Time Stage for one Gallery  {len(context.photos)} images is: "
+            f"{datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
     return enriched_messages, None
 

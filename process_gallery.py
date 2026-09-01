@@ -16,14 +16,13 @@ from qdrant_client import QdrantClient
 
 from src.request_processing import read_messages
 
-from src.selection.auto_selection import ai_selection
+from src.pipeline import AlbumContext, build_select
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
-from utils.lookup_table_tools import wedding_lookup_table
 from utils.configs import CONFIGS
 
 from ptinfra.pt_queue import Message
@@ -223,100 +222,38 @@ class Source:
 
 
 def get_selection(message, logger):
+    """Run the selection substages over one message.
+
+    This used to be a near-copy of `SelectionStage.get_selection`, and the two
+    had already drifted apart. Both now drive the same pipeline, so a local run
+    exercises exactly what the service does.
+    """
     start = datetime.now()
-    # Iterate over message and start the selection process
+
     try:
-        ai_metadata = message.content.get('aiMetadata', None)
-        # condition for  manual selection
-        if ai_metadata is None or ai_metadata['photoIds'] is None:
-            logger.info(f"aiMetadata not found for message {message}. Continue with chosen photos.")
-            photos = message.content.get('photos', [])
-            df = pd.DataFrame(photos, columns=['image_id'])
-            message.content['gallery_photos_info'] = df.merge(message.content['gallery_photos_info'], how='inner', on='image_id')
-            # handle LUT for manual selection
-            is_wedding = message.content.get('is_wedding', False)
-            if is_wedding:
-                modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-                modified_lut['Other'] = (24, 4)  # Set 'Other' event to have max spreads
-                modified_lut['None'] = (24, 4)
-                message.content['modified_lut'] = modified_lut
-            message.content['manual_selection'] = True
-            return message
-
-        available_photos = message.content.get('photos', [])
-        df = message.content.get('gallery_photos_info', pd.DataFrame())
-        if df.empty:
-            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-            raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
-        if len(available_photos) != 0:
-            df = df[df['image_id'].isin(available_photos)]
-            message.content['gallery_photos_info'] = df
-
-        message.content['gallery_all_photos_info'] = df.copy()
-
-        ten_photos = ai_metadata.get('photoIds', [])
-        people_ids = ai_metadata.get('personIds', [])
-        focus = ai_metadata.get('focus', ['everyoneElse'])
-        tags = ai_metadata.get('subjects', ['Wedding dress', 'ceremony', 'bride', 'dancing', 'bride getting ready',
-                                            'groom getting ready', 'table setting', 'flowers', 'decorations', 'family',
-                                            'baby', 'kids', 'mother', 'father', 'Romance', 'affection', 'Intimacy',
-                                            'Happiness', 'Holding hands', 'smiling', 'Hugging', 'Kissing', 'ring',
-                                            'veil', 'soft light', 'portrait'])
-        density = ai_metadata.get('density', 3)
-        rating = message.content.get('rating', [])
-
-        is_wedding = message.content.get('is_wedding', False)
-
-        if df.empty:
-            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-            return message
-
-        if is_wedding:
-            modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-
-            density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
-            for event, pair in modified_lut.items():
-                modified_lut[event] = (min(24, max(1, pair[0] * density_factor)), pair[1])  # Ensure base spreads are at least 1 and not above 24
-        else:
-            modified_lut = None
-
-        message.content['modified_lut'] = modified_lut
-        is_artificial_time = message.content['is_artificial_time']
-
-        ai_photos_selected, spreads_dict, min_total_spreads, max_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
-                                                  logger)
-
-        if errors:
-            logger.error(f"Error for Selection images for this message {message}")
-            message.error = f"Error for Selection images for this message {message}"
-            return message
-
-        filtered_df = df[df['image_id'].isin(ai_photos_selected)]
-        message.content['gallery_photos_info'] = filtered_df
-        message.content['photos'] = ai_photos_selected
-        message.content['spreads_dict'] = spreads_dict
-        message.content['min_total_spreads'] = min_total_spreads
-        message.content['max_total_spreads'] = max_total_spreads
-        logger.info('Photos selected: {}'.format(sorted(ai_photos_selected)))
-        logger.info('Spreads dict sum: {}'.format(sum([item for key, item in spreads_dict.items()])))
-
-        if message.pagesInfo.get("firstPage"):
-            if message.content.get('is_wedding', True):
-                all_bride_groom = df[
-                    (df["cluster_context"] == "bride and groom")]
-                message.content['bride and groom'] = all_bride_groom
-        else:
-            message.content['bride and groom'] = None
-
-        return message
-
+        context = build_select(logger=logger).run(
+            AlbumContext.for_message(message, logger=logger)
+        )
     except Exception as e:
         tb = traceback.extract_tb(e.__traceback__)
         filename, lineno, func, text = tb[-1]
         logger.error(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
         raise Exception(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
+
+    if context.failed:
+        logger.error(f"Error for Selection images for this message {message}")
+        message.error = f"Error for Selection images for this message {message}"
+        return message
+
+    message = context.sync_to_message()
+
+    selection = context.selection
+    if not selection.manual:
+        logger.info('Photos selected: {}'.format(sorted(selection.photo_ids)))
+        logger.info('Spreads dict sum: {}'.format(sum(selection.spreads.values())))
+    logger.info('Selection took {}'.format(datetime.now() - start))
+
+    return message
 
 
 def process_gallery(input_request):
