@@ -105,9 +105,8 @@ ENRICH: Sequence[str] = (
     "ingest.merge_ratings",
     "ingest.scenes",
     "enrich.temporal",
-    "enrich.ceremony_kiss",
     "enrich.parents",
-    "enrich.send_off",
+    "enrich.ceremony_anchor",
 )
 
 #: Choosing the photos and the per-category spread budget.

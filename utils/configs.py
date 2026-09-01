@@ -106,7 +106,6 @@ CONFIGS = {'DEBUG': True,
          },
         'user_rating_max_scale': 5,
         'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
-        # -- enrich.send_off ------------------------------------------------
         # The ceremony exit: guests showering the couple as they leave
         # (confetti, petals, bubbles, rice, sparklers). Detected as a temporal
         # burst after the ceremony climax that also looks like a send-off; the
@@ -114,6 +113,16 @@ CONFIGS = {'DEBUG': True,
         # Thresholds calibrated on galleries 49994361 / 49995684 (send-offs
         # present, burst means 0.42 and 0.44) against 47981912 / 53496523
         # (none, gallery maxima 0.30 and 0.42 but no qualifying burst).
+        # -- enrich.ceremony_anchor: the kiss -------------------------------
+        # The kiss is one of the climax signals the anchor is built from, so it
+        # is found around the anchor rather than after it. It has real
+        # vocabulary in the query bank, so no concept bin is needed.
+        'kiss_radius': 60,
+        'kiss_max_gap': 3,
+        'kiss_max_photos': 6,
+        'kiss_eligible_labels': ('ceremony', 'kiss', 'bride and groom', 'other', 'None'),
+
+        # -- enrich.ceremony_anchor: the send-off ---------------------------
         'send_off_concept': 'send_off',
         'send_off_eligible_labels': ('ceremony', 'walking the aisle', 'other', 'bride and groom'),
         'send_off_photo_floor': 0.35,

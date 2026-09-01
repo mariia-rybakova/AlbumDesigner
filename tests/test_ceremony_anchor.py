@@ -1,10 +1,10 @@
-"""Tests for the send-off detector (enrich.send_off).
+"""Tests for the ceremony-anchored detectors (enrich.ceremony_anchor).
 
 Embeddings are synthesised from the real concept bin, so "looks like a
 send-off" means the same thing here as in production.
 
-    python -m pytest tests/test_send_off.py -v
-    python tests/test_send_off.py
+    python -m pytest tests/test_ceremony_anchor.py -v
+    python tests/test_ceremony_anchor.py
 """
 
 from __future__ import annotations
@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pipeline import AlbumContext, Col  # noqa: E402
 from src.pipeline.contracts import GalleryFacts  # noqa: E402
-from src.pipeline.enrich.send_off import SEND_OFF, SendOffSubStage  # noqa: E402
+from src.pipeline.enrich.ceremony_anchor import (  # noqa: E402
+    MAY_KISS_BRIDE, SEND_OFF, CeremonyAnchorSubStage)
 from src.selection.auto_selection import load_pre_queries_embeddings  # noqa: E402
 from utils.configs import CONFIGS  # noqa: E402
 
@@ -30,7 +31,7 @@ DIM = CONCEPT.shape[1]
 
 #: image_class indices into utils.configs.label_list
 CLASS = {'ceremony': 6, 'bride and groom': 2, 'other': 30, 'dancing': 8,
-         'walking the aisle': 28, 'portrait': 21}
+         'walking the aisle': 28, 'portrait': 21, 'kiss': 19}
 
 
 def _embedding(rng, send_off_like: float) -> np.ndarray:
@@ -44,7 +45,7 @@ def _embedding(rng, send_off_like: float) -> np.ndarray:
 
 
 def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
-                 burst_at='after', seed=3) -> pd.DataFrame:
+                 burst_at='after', kiss_frames=4, kiss_offset=0, seed=3) -> pd.DataFrame:
     """A synthetic wedding timeline with an optional planted send-off.
 
     Layout: prep -> ceremony (with a climax) -> [burst] -> portraits -> dancing.
@@ -70,7 +71,10 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
     add(10, 'ceremony', 'bride and groom exchanging vows', 0.12)   # climax
     if burst_at == 'before':
         add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score)
-    add(8, 'ceremony', 'wedding kiss at ceremony', 0.12)           # climax
+    if kiss_offset < 0:                                            # kiss placed early
+        add(-kiss_offset, 'ceremony', 'guests watching ceremony', 0.12)
+    add(kiss_frames, 'kiss', 'wedding kiss at ceremony', 0.12)     # climax + the kiss itself
+    add(8, 'ceremony', 'ring exchange during ceremony', 0.12)      # climax
     if burst_at == 'after':
         add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score)
     add(40, 'portrait', 'bride and groom posing for a portrait', 0.15)
@@ -81,7 +85,7 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
 def run(df: pd.DataFrame, is_wedding=True) -> AlbumContext:
     context = AlbumContext(photos=df,
                            facts=GalleryFacts(is_wedding=is_wedding, is_artificial_time=False))
-    return SendOffSubStage()(context)
+    return CeremonyAnchorSubStage()(context)
 
 
 def tagged(context) -> pd.DataFrame:
@@ -104,7 +108,7 @@ def test_always_provides_the_score_column():
     context = run(make_gallery(burst_size=0))
     assert not context.failed, context.error
     assert Col.SEND_OFF_SCORE in context.photos.columns
-    assert context.missing(SendOffSubStage.provides) == []
+    assert context.missing(CeremonyAnchorSubStage.provides) == []
     assert len(tagged(context)) == 0
 
 
@@ -176,15 +180,82 @@ def test_only_one_send_off_per_gallery():
     assert max(positions) - min(positions) + 1 == len(picked), "tagged photos must be one burst"
 
 
-def test_send_off_is_wired_into_the_enrich_pipeline():
+def test_ceremony_anchor_is_wired_into_the_enrich_pipeline():
     from src.pipeline import build_enrich
     from src.pipeline.registry import ENRICH
-    assert "enrich.send_off" in ENRICH
+    assert "enrich.ceremony_anchor" in ENRICH
     pipeline = build_enrich()
     assert pipeline.unsatisfied() == []
     # it must run after the classifier that produces the labels it reads
     names = [s.name for s in pipeline]
-    assert names.index("enrich.send_off") > names.index("enrich.content_class")
+    assert names.index("enrich.ceremony_anchor") > names.index("enrich.content_class")
+
+
+# --------------------------------------------------------------------------
+# the kiss: the anchor read as a centre
+# --------------------------------------------------------------------------
+
+
+def kissed(context) -> pd.DataFrame:
+    return context.photos[context.photos[Col.CLUSTER_CONTEXT] == MAY_KISS_BRIDE]
+
+
+def test_detects_the_kiss():
+    context = run(make_gallery())
+    assert not context.failed, context.error
+    assert len(kissed(context)) > 0, "kiss frames next to the climax should be tagged"
+
+
+def test_kiss_is_capped_to_one_moment():
+    """A kiss is a moment, not a run of thirty frames."""
+    context = run(make_gallery(kiss_frames=30))
+    assert len(kissed(context)) <= CONFIGS['kiss_max_photos']
+
+
+def test_no_kiss_frames_means_no_kiss_tag():
+    context = run(make_gallery(kiss_frames=0))
+    assert len(kissed(context)) == 0
+
+
+def test_kiss_far_from_the_anchor_is_ignored():
+    """A kiss-subquery frame at the reception is not the ceremony kiss."""
+    df = make_gallery(kiss_frames=0)
+    # relabel a late reception run as kiss-like, well outside kiss_radius
+    for i in df.index[-25:-20]:
+        df.at[i, 'image_subquery_content'] = 'bride and groom kissing romantically'
+        df.at[i, 'image_class'] = CLASS['kiss']
+    context = run(df)
+    assert len(kissed(context)) == 0
+
+
+def test_kiss_and_send_off_do_not_share_photos():
+    """Both read the same anchor; a photo must not be claimed by both."""
+    context = run(make_gallery())
+    overlap = set(kissed(context)[Col.IMAGE_ID]) & set(tagged(context)[Col.IMAGE_ID])
+    assert not overlap, f"{len(overlap)} photos tagged as both kiss and send off"
+
+
+def test_both_detectors_share_one_anchor():
+    """The point of merging them: one timeline, one anchor."""
+    from src.pipeline.enrich import timeline as tl
+    df = make_gallery()
+    frame = tl.ordered(df)
+    ceremony = tl.ceremony_timeline(frame, CONFIGS['send_off_min_photos'])
+    assert ceremony is not None and ceremony.has_climax
+    context = run(df)
+    # kiss sits near the anchor, send-off after it
+    k = frame.loc[kissed(context).index, tl.POSITION] if len(kissed(context)) else None
+    s = frame.loc[tagged(context).index, tl.POSITION] if len(tagged(context)) else None
+    if k is not None and s is not None:
+        assert k.median() < s.median(), "the kiss should precede the send-off"
+
+
+def test_no_ceremony_means_neither_moment():
+    df = make_gallery()
+    df = df[~df['image_class'].isin([CLASS['ceremony'], CLASS['kiss']])].reset_index(drop=True)
+    context = run(df)
+    assert not context.failed
+    assert len(kissed(context)) == 0 and len(tagged(context)) == 0
 
 
 def test_send_off_is_a_known_content_class_everywhere():

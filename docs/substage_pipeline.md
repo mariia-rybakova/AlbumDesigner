@@ -159,11 +159,48 @@ synthetic-blob tests do not cover.
 | `enrich.require_cluster_data` | (hygiene gate) drop rows without cluster data | — |
 | `enrich.people_cluster` | People-composition key | `people_cluster` |
 | `enrich.temporal` | Usable timeline, artificial-time detection | `image_time_date`, `general_time` |
-| `enrich.ceremony_kiss` | The "may kiss bride" moment | — |
 | `enrich.parents` | Couple-with-parents portraits | `parent_category` |
+| `enrich.ceremony_anchor` | The kiss and the send-off, from one shared anchor | `send_off_score` |
 
 `enrich.content_class` and `enrich.identities` are wedding-only, matching the
 original: non-wedding galleries never get a `cluster_context` column.
+
+#### `enrich.ceremony_anchor`
+
+Two detectors sharing one reading of the ceremony, because two detectors
+deriving the climax independently can disagree on the same gallery.
+
+The anchor is the **median** of the climax frames (vows, rings, kiss) inside the
+ceremony core (p5–p95 of ceremony positions). Median, not last: the subquery
+classifier scatters stray "exchanging vows" labels minutes late — on the
+validation galleries the last climax frame sits 85, 171 and 72 positions after
+the median, far enough to put the search window past the event it is meant to
+find.
+
+Everything works in **positions** (rank by `general_time`), not wall-clock
+minutes. That is the only axis that survives galleries with unusable EXIF — one
+validation gallery has 2 distinct `image_time` values across 528 photos.
+
+| | reads the anchor as | evidence |
+|---|---|---|
+| `may kiss bride` | a **centre** — the kiss is itself a climax signal, so it cannot anchor on itself | subqueries the query bank already carries |
+| `send off` | a **lower bound** — guests shower the couple as they *leave* | a CLIP concept bank, because nothing else sees it |
+
+The send-off needs a burst of ≥5 **and** visual confirmation; sequence alone
+cannot separate it from the plain recessional, and visual evidence alone picks
+the wrong event (on one gallery the highest-scoring photo is a couple portrait
+session with bubbles two hours later).
+
+Supersedes `enrich.ceremony_kiss`, which anchored on the last "officiant leading
+wedding ceremony" frame within a real-timestamp window, ±6 minutes. That
+combination tagged **1 photo across 3,361 in four galleries**: two were rejected
+outright by its SAT gate for unusable EXIF, and on a third the kiss frames sat
+11 minutes from the officiant anchor. The same four galleries now yield 3, 5, 0
+and 1.
+
+Shared machinery lives in `src/pipeline/enrich/timeline.py` — ordering, the
+ceremony core, the anchor, concept scoring and burst grouping — so the
+walking-the-aisle detector can reuse it rather than fork it.
 
 ### Select
 
