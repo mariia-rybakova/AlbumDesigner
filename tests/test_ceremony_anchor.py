@@ -42,7 +42,7 @@ DIM = CONCEPT.shape[1]
 
 #: image_class indices into utils.configs.label_list
 CLASS = {'ceremony': 6, 'bride and groom': 2, 'other': 30, 'dancing': 8,
-         'walking the aisle': 28, 'portrait': 21, 'kiss': 19}
+         'walking the aisle': 28, 'portrait': 21, 'kiss': 19, 'settings': 23}
 
 BRIDE_ID, GROOM_ID, GUEST_ID = 101, 202, 303
 
@@ -90,6 +90,7 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
             })
 
     add(30, 'portrait', 'bride only portrait', 0.10, [BRIDE_ID])      # prep
+    add(40, 'settings', 'table with decorations', 0.05)               # venue, no people
     # the processional, before the ceremony
     add(groom_walk, 'walking the aisle',
         'groom waiting for bride at the aisle' if walk_subquery else 'unknown_walking_the_aisle',
@@ -311,21 +312,36 @@ def test_detects_both_processionals_as_separate_classes():
 
 
 def test_identity_is_mandatory():
-    """No solo-bride frame before the ceremony means no bride processional,
-    however aisle-like the photos look."""
+    """Identity is the one hard requirement: a frame with both of them in it is
+    neither of them walking in, so it can never be tagged."""
     df = make_gallery(bride_walk=6)
-    # keep the frames but put the groom in every one of them
-    walk = df.index[30 + 4: 30 + 4 + 6]
+    walk = df.index[df['image_subquery_content'] == 'bride walking down aisle with father']
     for i in walk:
         df.at[i, 'persons_ids'] = [BRIDE_ID, GROOM_ID]
     context = run(df)
-    assert len(walked(context, BRIDE_AISLE)) == 0
+    tagged_ids = set(walked(context, BRIDE_AISLE)['image_id'])
+    both = set(df.loc[walk, 'image_id'])
+    assert not (tagged_ids & both), "a couple-together frame must never be tagged"
 
 
-def test_the_couple_together_is_neither_processional():
+def test_with_no_processional_it_falls_back_to_the_nearest_solo_run():
+    """A known consequence of ranking without a floor, recorded deliberately.
+
+    There is no evidence gate, because none survives both embedding spaces: on
+    the one v1 gallery with ground truth, the groom's real walk in scores BELOW
+    his gallery's median on the groom concept, so any relative floor would
+    reject it. With the processional removed from the fixture the detector still
+    picks the nearest pre-ceremony solo run -- prep, in that case.
+
+    The cost is bounded: it is a 'yes' event, so it reaches the album as one
+    photo. If that turns out to be too loose, the lever is a floor on
+    `_rank_run`, not a change to the ranking.
+    """
     context = run(make_gallery(bride_walk=0, groom_walk=0))
-    assert len(walked(context, BRIDE_AISLE)) == 0
-    assert len(walked(context, GROOM_AISLE)) == 0
+    picked = walked(context, BRIDE_AISLE)
+    assert len(picked) > 0, "documents the fallback; see the docstring"
+    # but it must still be a solo-bride run from before the ceremony
+    assert all(BRIDE_ID in ids and GROOM_ID not in ids for ids in picked['persons_ids'])
 
 
 def test_subquery_is_an_indication_not_a_requirement():
@@ -336,13 +352,16 @@ def test_subquery_is_an_indication_not_a_requirement():
     assert len(walked(context, GROOM_AISLE)) > 0
 
 
-def test_a_solo_bride_frame_after_the_ceremony_is_not_the_processional():
+def test_frames_after_the_ceremony_are_never_the_processional():
+    """The window is bounded above by the ceremony start, so a solo-bride run
+    during the reception cannot be picked however aisle-like it looks."""
     df = make_gallery(bride_walk=0, groom_walk=0)
-    for i in df.index[-30:-24]:                       # late, during dancing
+    late = df.index[-30:-24]
+    for i in late:
         df.at[i, 'persons_ids'] = [BRIDE_ID]
         df.at[i, 'image_class'] = CLASS['walking the aisle']
     context = run(df)
-    assert len(walked(context, BRIDE_AISLE)) == 0
+    assert not (set(walked(context, BRIDE_AISLE)['image_id']) & set(df.loc[late, 'image_id']))
 
 
 def test_processional_is_capped():
@@ -350,10 +369,16 @@ def test_processional_is_capped():
     assert len(walked(context, BRIDE_AISLE)) <= CONFIGS['aisle_max_photos']
 
 
-def test_a_single_frame_is_not_a_processional():
-    context = run(make_gallery(bride_walk=1, groom_walk=1))
-    assert len(walked(context, BRIDE_AISLE)) == 0
-    assert len(walked(context, GROOM_AISLE)) == 0
+def test_a_lone_frame_cannot_start_a_processional():
+    """A run needs `aisle_min_photos` to be considered at all -- though the
+    winning run may later absorb a nearby single frame."""
+    df = make_gallery(bride_walk=1, groom_walk=1)
+    lone = set(df.loc[df['image_subquery_content'].isin(
+        ['bride walking down aisle with father', 'groom waiting for bride at the aisle']),
+        'image_id'])
+    context = run(df)
+    picked = set(walked(context, BRIDE_AISLE)['image_id']) | set(walked(context, GROOM_AISLE)['image_id'])
+    assert not (picked & lone), "a one-frame run must not be selected on its own"
 
 
 def test_the_four_moments_never_share_a_photo():
@@ -383,20 +408,39 @@ def test_processionals_precede_the_ceremony_climax():
             assert frame.loc[picked.index, tl.POSITION].max() <= ceremony.anchor,                 f"{tag} should sit before the climax"
 
 
-def test_a_processional_with_no_visual_evidence_is_not_tagged():
-    """Indications only rank -- but a run with no resemblance at all must not
-    tag, or a gallery without a processional labels its prep portraits."""
-    context = run(make_gallery(walk_score=0.05, walk_subquery=False))
-    assert len(walked(context, BRIDE_AISLE)) == 0
-    assert len(walked(context, GROOM_AISLE)) == 0
+def test_proximity_decides_when_there_is_no_subquery_evidence():
+    """The processional sits next to the ceremony start; prep sits further back.
+    With no subquery and a flat concept score, adjacency is what picks."""
+    from src.pipeline.enrich import timeline as tl
+    df = make_gallery(walk_score=0.20, walk_subquery=False)
+    frame = tl.ordered(df)
+    ceremony = tl.ceremony_timeline(frame, CONFIGS['send_off_min_photos'])
+    context = run(df)
+    picked = walked(context, BRIDE_AISLE)
+    assert len(picked) > 0
+    distance = (frame.loc[picked.index, tl.POSITION] - ceremony.core_start).abs().min()
+    assert distance <= CONFIGS['aisle_lead_in'] / 2, (
+        f"picked a run {distance} from the ceremony start; prep should lose to adjacency")
+
+
+def test_subquery_evidence_outweighs_adjacency():
+    """A run carrying "bride walking down aisle with father" should win over a
+    nearer run that carries nothing -- this is the case that made the concept
+    term have to be raw rather than normalised."""
+    df = make_gallery(bride_walk=4, walk_subquery=True)
+    context = run(df)
+    picked = walked(context, BRIDE_AISLE)
+    hits = picked['image_subquery_content'].isin(
+        ['bride walking down aisle with father']).sum()
+    assert hits > 0, "the run with explicit aisle subqueries should be chosen"
 
 
 def test_thresholds_are_resolved_per_embedding_space():
     """v1 and v2 CLIP put a gallery's cosines on different scales, so a single
-    absolute floor cannot serve both. A v2-calibrated floor sits above a v1
-    gallery's maximum score, which silently disabled every detector on v1."""
-    for setting in (CONFIGS['send_off_photo_floor'], CONFIGS['send_off_burst_floor'],
-                    CONFIGS['aisle_score_floor']):
+    absolute floor cannot serve both: a v2-calibrated floor sits above a v1
+    gallery's maximum score. Only the send-off still uses absolute floors -- the
+    processional ranks instead, which is scale-free."""
+    for setting in (CONFIGS['send_off_photo_floor'], CONFIGS['send_off_burst_floor']):
         assert isinstance(setting, dict) and {1, 2} <= set(setting), setting
         # v1 is deliberately inert until calibrated: a guessed floor produced
         # the wrong answer on all four moments of the one v1 gallery available.

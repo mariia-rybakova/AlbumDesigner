@@ -299,6 +299,7 @@ def download_gallery_photos(
     photo_ids=None,
     size_folder: str = PHOTO_SIZE_FOLDER,
     max_photos: Optional[int] = None,
+    name_by_id: bool = False,
     log=print,
 ) -> Dict[str, int]:
     """Download a gallery's photos into ``dest_dir``.
@@ -310,6 +311,10 @@ def download_gallery_photos(
     ``photo_ids`` restricts the download to the request's own photos; pass None
     to take the whole gallery. Already-present files are skipped, so re-runs are
     cheap.
+
+    ``name_by_id`` saves as ``<photoId>.<ext>``, dropping the ``_v<n>`` revision
+    suffix from the local name. The blob is still fetched under its manifest
+    name -- only the local file is renamed.
     """
     from ptinfra.azure.pt_file import PTFile
     from ptinfra.utils.gallery import Gallery
@@ -334,14 +339,17 @@ def download_gallery_photos(
         counts["not_in_gallery"] = len(wanted - found)
 
     for photo in photos:
-        dest = os.path.join(dest_dir, photo.filename)
+        name = photo.filename
+        if name_by_id:
+            name = f"{photo.photoId}{os.path.splitext(name)[1]}"
+        dest = os.path.join(dest_dir, name)
         if os.path.exists(dest) and os.path.getsize(dest) > 0:
             counts["skipped"] += 1
             continue
         try:
             data = PTFile(f"{base_url}/{size_folder}/{photo.filename}").read_blob()
         except Exception as exc:  # noqa: BLE001 - a purged photo must not stop the run
-            log(f"  ! {photo.filename}: {type(exc).__name__}: {exc}")
+            log(f"  ! {name}: {type(exc).__name__}: {exc}")
             counts["missing"] += 1
             continue
         tmp = dest + ".part"

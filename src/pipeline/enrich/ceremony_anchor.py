@@ -199,12 +199,6 @@ class CeremonyAnchorSubStage(SubStage):
                 logger.info(f"No {who} processional: no solo-{who} frame before the ceremony")
             return []
 
-        # Indications, not requirements: rank by concept score, with a bonus for
-        # a matching subquery.
-        base = pd.Series(self._aisle_scores[who], index=ceremony.frame.index).loc[solo.index]
-        bonus = solo[Col.IMAGE_SUBQUERY_CONTENT].isin(AISLE_QUERIES[who])             * CONFIGS['aisle_subquery_bonus']
-        score = base + bonus
-
         runs = [r for r in tl.group_adjacent(solo, CONFIGS['aisle_max_gap'])
                 if len(r) >= CONFIGS['aisle_min_photos']]
         if not runs:
@@ -213,22 +207,51 @@ class CeremonyAnchorSubStage(SubStage):
                             f"{CONFIGS['aisle_min_photos']} solo-{who} frames")
             return []
 
-        best = max(runs, key=lambda r: score.loc[r].mean())
-        best = sorted(best, key=lambda i: -score.loc[i])[:CONFIGS['aisle_max_photos']]
+        concept = pd.Series(self._aisle_scores[who], index=ceremony.frame.index)
+        best = max(runs, key=lambda r: self._rank_run(ceremony, solo, concept, who, r))
+        best = self._extend_with_singletons(ceremony, solo, best)
 
-        mean = score.loc[best].mean()
-        if mean < tl.floor_for(CONFIGS['aisle_score_floor'], self._model_version):
-            if logger:
-                logger.info(f"No {who} processional: best run scores {mean:.3f}, "
-                            f"under {tl.floor_for(CONFIGS['aisle_score_floor'], self._model_version)}")
-            return []
+        # Cap to the frames nearest the ceremony start, so the tag stays one
+        # coherent moment rather than the highest-scoring scatter.
+        positions = ceremony.frame.loc[best, tl.POSITION]
+        best = list(positions.sub(ceremony.core_start).abs()
+                    .sort_values().index[:CONFIGS['aisle_max_photos']])
 
         context.photos.loc[best, Col.CLUSTER_CONTEXT] = tag
         if logger:
-            hits = int(solo.loc[best, Col.IMAGE_SUBQUERY_CONTENT].isin(AISLE_QUERIES[who]).sum())
-            logger.info(f"{who.capitalize()} processional: {len(best)} photos, "
-                        f"score mean={score.loc[best].mean():.3f}, {hits} with a matching subquery")
+            hits = int(solo.reindex(best)[Col.IMAGE_SUBQUERY_CONTENT]
+                       .isin(AISLE_QUERIES[who]).sum())
+            span = sorted(int(p) for p in ceremony.frame.loc[best, tl.POSITION])
+            logger.info(f"{who.capitalize()} processional: {len(best)} photos at "
+                        f"{span[0]}-{span[-1]}, concept={concept.loc[best].mean():.3f}, "
+                        f"{hits} with a matching subquery")
         return list(best)
+
+    @staticmethod
+    def _rank_run(ceremony, solo, concept, who, run) -> float:
+        """Rank a candidate run. See CONFIGS['aisle_rank_weights'].
+
+        The concept term is the raw mean, not normalised across runs: raw, it
+        contributes in proportion to how much the embedding space actually
+        separates the concept, which keeps this working in both CLIP spaces.
+        """
+        weights = CONFIGS['aisle_rank_weights']
+        distance = min(abs(int(p) - ceremony.core_start)
+                       for p in ceremony.frame.loc[run, tl.POSITION])
+        subquery_rate = solo.loc[run, Col.IMAGE_SUBQUERY_CONTENT].isin(AISLE_QUERIES[who]).mean()
+        return (weights['subquery'] * subquery_rate
+                + weights['proximity'] / (1 + distance / CONFIGS['aisle_proximity_half'])
+                + weights['concept'] * concept.loc[run].mean())
+
+    @staticmethod
+    def _extend_with_singletons(ceremony, solo, run) -> List:
+        """Pull in solo frames just off the ends of the winning run."""
+        positions = ceremony.frame.loc[run, tl.POSITION]
+        low, high = int(positions.min()), int(positions.max())
+        reach = CONFIGS['aisle_extend_gap']
+        nearby = solo[ceremony.frame.loc[solo.index, tl.POSITION]
+                      .between(low - reach, high + reach)]
+        return list(dict.fromkeys(list(run) + list(nearby.index)))
 
     # -- the send-off: anchor as lower bound ---------------------------------
 

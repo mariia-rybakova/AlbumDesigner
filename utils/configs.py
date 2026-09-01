@@ -123,43 +123,40 @@ CONFIGS = {'DEBUG': True,
         'kiss_eligible_labels': ('ceremony', 'kiss', 'bride and groom', 'other', 'None'),
 
         # -- enrich.ceremony_anchor: the processional -----------------------
-        # Entering the ceremony, so the anchor is read as an UPPER bound.
-        # Identity is mandatory (it is the point of the class); the subquery
-        # and concept signals only rank, because the query bank has no phrase
-        # at all for the groom walking in and the 'walking the aisle' label is
-        # sparse -- 1, 9, 5 and 24 photos on the validation galleries.
+        # Entering the ceremony, so the anchor is read as an UPPER bound -- and
+        # the bound is the ceremony START, not the climax: "before the ceremony"
+        # means before it begins. Bounding at the anchor instead pulled in
+        # mid-ceremony vows and officiant frames as "processional".
         'aisle_lead_in': 80,
-        # Upper bound is the START of the ceremony, not the climax anchor:
-        # "before the ceremony" means before it begins. A small overlap absorbs
-        # the fuzziness of the core boundary. Using the anchor instead pulled in
-        # mid-ceremony frames -- vows and officiant shots -- as "processional".
         'aisle_upper_overlap': 20,
-        # Indications are not mandatory, but "no evidence at all" should not
-        # tag. Real processionals score 0.44-0.60 on the validation galleries;
-        # the prep-portrait false positives scored 0.19-0.29.
-        # Keyed by image model version: the two CLIP spaces have incompatible
-        # cosine scales. v2 (768-d ViT-L-14) spreads a gallery over ~0.10-0.55;
-        # v1 (512-d ViT-B/32) compresses it into ~0.22-0.30. A single absolute
-        # floor calibrated on v2 sits above a v1 gallery's MAXIMUM, so every
-        # detector here was silently dead on v1 galleries. The v1 values are
-        # the v2 ones matched on within-gallery percentile.
-        #
-        # v1 is currently set INERT (1.0), not calibrated. Percentile-matching
-        # the v2 floors onto the one v1 gallery available (47981912) produced
-        # the wrong answer on all four moments -- a send-off that is not there,
-        # and no kiss or processional that are. The v1 space simply does not
-        # separate these concepts: its whole gallery spans 0.22-0.30, so the
-        # concept score carries almost no signal. Concept-gated detection is
-        # therefore off for v1 until there are enough v1 galleries to calibrate
-        # against, rather than on with a guessed number.
-        'aisle_score_floor': {2: 0.32, 1: 1.0},
         'aisle_max_gap': 4,
+        # After the winning run is chosen, absorb solo frames this close to it.
+        # The groom's "waiting at the altar" frame sits a few frames off the end
+        # of his walk in and would otherwise be a run of one.
+        'aisle_extend_gap': 10,
         'aisle_min_photos': 2,
         'aisle_max_photos': 6,
         'aisle_eligible_labels': ('walking the aisle', 'ceremony', 'bride', 'groom',
-                                  'bride and groom', 'bride party', 'groom party', 'other'),
+                                  'bride and groom', 'bride party', 'groom party',
+                                  'other', 'portrait'),
         'aisle_concepts': {'bride': 'bride_aisle', 'groom': 'groom_aisle'},
-        'aisle_subquery_bonus': 0.15,
+        # Identity is the mandatory signal. Candidate runs are then RANKED, not
+        # gated -- there is no concept floor. Weighted sum of:
+        #   subquery   fraction of the run carrying a processional subquery
+        #   proximity  1/(1+distance/half) from the ceremony start
+        #   concept    the run's mean CLIP concept score, used RAW
+        #
+        # Raw, deliberately. Normalising the concept term across runs turns a
+        # meaningless 0.055 spread in the v1 space into a full point, which
+        # picked the groom's prep shots over his walk in. Used raw it
+        # contributes in proportion to the signal it carries -- ~0.2 of
+        # separation in v2, almost none in v1 -- so it self-calibrates across
+        # embedding spaces. Ranking within one gallery is scale-free; only
+        # absolute thresholds break across spaces, which is why the floor is
+        # gone. Verified against ground truth on 47981912 (a v1 gallery):
+        # bride 4/4, groom 5/6.
+        'aisle_rank_weights': {'subquery': 1.0, 'proximity': 1.0, 'concept': 1.0},
+        'aisle_proximity_half': 10,
 
         # -- enrich.ceremony_anchor: the send-off ---------------------------
         'send_off_concept': 'send_off',
