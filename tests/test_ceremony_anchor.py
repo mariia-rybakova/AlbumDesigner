@@ -28,16 +28,21 @@ from utils.configs import CONFIGS  # noqa: E402
 MODEL_VERSION = 2
 
 
-def _bank(name):
-    bank = np.asarray(load_pre_queries_embeddings(name, MODEL_VERSION), dtype=np.float32)
+def _bank(name, model_version=MODEL_VERSION):
+    bank = np.asarray(load_pre_queries_embeddings(name, model_version), dtype=np.float32)
     return bank / np.linalg.norm(bank, axis=1, keepdims=True)
 
 
-#: The real concept banks, so "looks like X" means the same here as in production.
-CONCEPT = _bank(CONFIGS['send_off_concept'])
-BANKS = {'send_off': CONCEPT,
-         'bride': _bank(CONFIGS['aisle_concepts']['bride']),
-         'groom': _bank(CONFIGS['aisle_concepts']['groom'])}
+def _banks(model_version):
+    """The real concept banks for one space, so "looks like X" means the same
+    here as in production."""
+    return {'send_off': _bank(CONFIGS['send_off_concept'], model_version),
+            'bride': _bank(CONFIGS['aisle_concepts']['bride'], model_version),
+            'groom': _bank(CONFIGS['aisle_concepts']['groom'], model_version)}
+
+
+BANKS = _banks(MODEL_VERSION)
+CONCEPT = BANKS['send_off']
 DIM = CONCEPT.shape[1]
 
 #: image_class indices into utils.configs.label_list
@@ -55,7 +60,7 @@ def _embedding(rng, like: float, bank=None) -> np.ndarray:
     """
     bank = CONCEPT if bank is None else bank
     base = bank[rng.integers(len(bank))]
-    noise = rng.normal(size=DIM).astype(np.float32)
+    noise = rng.normal(size=bank.shape[1]).astype(np.float32)
     noise -= noise.dot(base) * base
     noise /= np.linalg.norm(noise)
     vector = like * base + np.sqrt(max(0.0, 1 - like ** 2)) * noise
@@ -65,12 +70,14 @@ def _embedding(rng, like: float, bank=None) -> np.ndarray:
 def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
                  burst_at='after', kiss_frames=4, kiss_offset=0,
                  bride_walk=5, groom_walk=4, walk_subquery=True, walk_score=0.55,
-                 seed=3) -> pd.DataFrame:
+                 model_version=MODEL_VERSION, seed=3) -> pd.DataFrame:
     """A synthetic wedding timeline with an optional planted send-off.
 
     Layout: prep -> ceremony (with a climax) -> [burst] -> portraits -> dancing.
     """
     rng = np.random.default_rng(seed)
+    banks = _banks(model_version)
+    dim = banks['send_off'].shape[1]
     rows = []
 
     def add(n, label, subquery, score, people=(), bank=None):
@@ -81,8 +88,8 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
                 'cluster_class': CLASS[label],
                 'cluster_context': label,
                 'image_subquery_content': subquery,
-                'embedding': _embedding(rng, score, bank),
-                'model_version': MODEL_VERSION,
+                'embedding': _embedding(rng, score, bank if bank is not None else banks['send_off']),
+                'model_version': model_version,
                 'general_time': len(rows) * 10.0,
                 'persons_ids': list(people),
                 'bride_id': BRIDE_ID,
@@ -94,10 +101,10 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
     # the processional, before the ceremony
     add(groom_walk, 'walking the aisle',
         'groom waiting for bride at the aisle' if walk_subquery else 'unknown_walking_the_aisle',
-        walk_score, [GROOM_ID], BANKS['groom'])
+        walk_score, [GROOM_ID], banks['groom'])
     add(bride_walk, 'walking the aisle',
         'bride walking down aisle with father' if walk_subquery else 'unknown_walking_the_aisle',
-        walk_score, [BRIDE_ID, GUEST_ID], BANKS['bride'])
+        walk_score, [BRIDE_ID, GUEST_ID], banks['bride'])
     add(25, 'ceremony', 'guests watching ceremony', 0.12, [BRIDE_ID, GROOM_ID])
     add(10, 'ceremony', 'bride and groom exchanging vows', 0.12, [BRIDE_ID, GROOM_ID])
     if burst_at == 'before':
@@ -337,10 +344,14 @@ def test_with_no_processional_it_falls_back_to_the_nearest_solo_run():
     photo. If that turns out to be too loose, the lever is a floor on
     `_rank_run`, not a change to the ranking.
     """
-    context = run(make_gallery(bride_walk=0, groom_walk=0))
-    picked = walked(context, BRIDE_AISLE)
-    assert len(picked) > 0, "documents the fallback; see the docstring"
-    # but it must still be a solo-bride run from before the ceremony
+    # v2 is gated, so the weak fallback run is rejected there ...
+    v2 = run(make_gallery(bride_walk=0, groom_walk=0))
+    assert len(walked(v2, BRIDE_AISLE)) == 0, "v2's floor should reject a prep run"
+
+    # ... but v1 is ungated and will take it, which is the accepted trade
+    v1 = run(make_gallery(bride_walk=0, groom_walk=0, model_version=1))
+    picked = walked(v1, BRIDE_AISLE)
+    assert len(picked) > 0, "documents the v1 fallback; see the docstring"
     assert all(BRIDE_ID in ids and GROOM_ID not in ids for ids in picked['persons_ids'])
 
 
@@ -412,7 +423,7 @@ def test_proximity_decides_when_there_is_no_subquery_evidence():
     """The processional sits next to the ceremony start; prep sits further back.
     With no subquery and a flat concept score, adjacency is what picks."""
     from src.pipeline.enrich import timeline as tl
-    df = make_gallery(walk_score=0.20, walk_subquery=False)
+    df = make_gallery(walk_score=0.50, walk_subquery=False)
     frame = tl.ordered(df)
     ceremony = tl.ceremony_timeline(frame, CONFIGS['send_off_min_photos'])
     context = run(df)
@@ -449,6 +460,43 @@ def test_thresholds_are_resolved_per_embedding_space():
     assert tl.floor_for(0.4, 1) == 0.4
     # an unknown version falls back to the highest configured one
     assert tl.floor_for({1: 0.1, 2: 0.5}, 99) == 0.5
+
+
+def test_concept_scores_stay_attached_to_the_right_photos():
+    """Regression: the concept scores are computed over the photo table in its
+    own row order, but the timeline re-sorts by general_time. Pairing a
+    positional array with the sorted frame's index attaches every score to the
+    wrong photo whenever the two orders differ -- silently, and only on
+    galleries whose stored order is not already chronological."""
+    from src.pipeline.enrich import timeline as tl
+
+    df = make_gallery()
+    # shuffle the stored order while leaving general_time as the truth
+    df = df.sample(frac=1.0, random_state=5).reset_index(drop=True)
+    context = run(df)
+    assert not context.failed, context.error
+
+    out = context.photos
+    recomputed = tl.concept_scores(out, CONFIGS['aisle_concepts']['bride'])
+    per_photo = dict(zip(out[Col.IMAGE_ID], recomputed))
+    # AISLE_SCORE is the max of the two concepts, so it must be >= the bride one
+    for photo_id, stored in zip(out[Col.IMAGE_ID], out[Col.AISLE_SCORE]):
+        assert stored >= per_photo[photo_id] - 1e-5, (
+            f"photo {photo_id}: stored aisle score {stored:.4f} is below its own "
+            f"bride-concept score {per_photo[photo_id]:.4f}")
+
+    # and the picked run must be a genuine solo-bride run before the ceremony
+    picked = walked(context, BRIDE_AISLE)
+    if len(picked):
+        assert all(BRIDE_ID in ids and GROOM_ID not in ids for ids in picked['persons_ids'])
+
+
+def test_the_aisle_floor_is_applied_per_space():
+    """v2 keeps its gate; v1 is ungated because no floor survives that space."""
+    from src.pipeline.enrich import timeline as tl
+    setting = CONFIGS['aisle_score_floor']
+    assert tl.floor_for(setting, 2) > 0, "v2 must stay gated"
+    assert tl.floor_for(setting, 1) == 0, "v1 must be ungated"
 
 
 def test_aisle_classes_are_known_content_classes_everywhere():

@@ -103,15 +103,22 @@ class CeremonyAnchorSubStage(SubStage):
         bride_score = tl.concept_scores(photos, aisle['bride'])
         groom_score = tl.concept_scores(photos, aisle['groom'])
         photos[Col.AISLE_SCORE] = np.maximum(bride_score, groom_score)
-        self._aisle_scores = {'bride': bride_score, 'groom': groom_score}
+        # Indexed by the photo table's own labels, NOT left as bare arrays.
+        # tl.ordered() re-sorts by general_time, so pairing a positional array
+        # with the sorted frame's index silently attaches each score to the
+        # wrong photo whenever the two orders differ -- which is exactly the
+        # case on artificial-time galleries.
+        self._aisle_scores = {'bride': pd.Series(bride_score, index=photos.index),
+                              'groom': pd.Series(groom_score, index=photos.index)}
         context.photos = photos
 
         self._model_version = tl.model_version_of(photos)
         if self._model_version != 2 and logger:
             logger.warning(
-                f"Image model version {self._model_version}: concept-gated detection is not "
-                f"calibrated for this embedding space, so the send-off and processional will "
-                f"not fire. See CONFIGS['send_off_photo_floor'].")
+                f"Image model version {self._model_version}: the send-off needs mandatory "
+                f"visual confirmation and this embedding space is not calibrated for it, so "
+                f"it will not fire. The processional is unaffected -- it ranks rather than "
+                f"gates. See CONFIGS['send_off_photo_floor'].")
         frame = tl.ordered(photos)
         ceremony = tl.ceremony_timeline(frame, CONFIGS['send_off_min_photos'])
         if ceremony is None:
@@ -207,15 +214,21 @@ class CeremonyAnchorSubStage(SubStage):
                             f"{CONFIGS['aisle_min_photos']} solo-{who} frames")
             return []
 
-        concept = pd.Series(self._aisle_scores[who], index=ceremony.frame.index)
+        concept = self._aisle_scores[who]
         best = max(runs, key=lambda r: self._rank_run(ceremony, solo, concept, who, r))
-        best = self._extend_with_singletons(ceremony, solo, best)
 
-        # Cap to the frames nearest the ceremony start, so the tag stays one
-        # coherent moment rather than the highest-scoring scatter.
-        positions = ceremony.frame.loc[best, tl.POSITION]
-        best = list(positions.sub(ceremony.core_start).abs()
-                    .sort_values().index[:CONFIGS['aisle_max_photos']])
+        # Judge the run the ranking actually chose, before it is padded out. A
+        # floor only where the embedding space supports one -- see the config.
+        floor = tl.floor_for(CONFIGS['aisle_score_floor'], self._model_version)
+        mean_concept = concept.loc[best].mean()
+        if floor > 0 and mean_concept < floor:
+            if logger:
+                logger.info(f"No {who} processional: best run scores "
+                            f"{mean_concept:.3f}, under {floor}")
+            return []
+
+        best = self._absorb_stragglers(ceremony, solo, runs, best)
+        best = best[:CONFIGS['aisle_max_photos']]
 
         context.photos.loc[best, Col.CLUSTER_CONTEXT] = tag
         if logger:
@@ -244,14 +257,27 @@ class CeremonyAnchorSubStage(SubStage):
                 + weights['concept'] * concept.loc[run].mean())
 
     @staticmethod
-    def _extend_with_singletons(ceremony, solo, run) -> List:
-        """Pull in solo frames just off the ends of the winning run."""
-        positions = ceremony.frame.loc[run, tl.POSITION]
-        low, high = int(positions.min()), int(positions.max())
+    def _absorb_stragglers(ceremony, solo, runs, run) -> List:
+        """Pull in isolated solo frames just off the ends of the winning run.
+
+        Only frames that belong to no qualifying run of their own: the groom's
+        "waiting at the altar" shot sits a few frames past the end of his walk
+        in and is a run of one, so it would otherwise be lost. Frames that are
+        part of another qualifying run are left alone — absorbing those diluted
+        the winning run badly enough to push it under its own floor.
+        """
+        claimed = {i for other in runs for i in other}
+        positions = ceremony.frame.loc[solo.index, tl.POSITION]
+        low = int(ceremony.frame.loc[run, tl.POSITION].min())
+        high = int(ceremony.frame.loc[run, tl.POSITION].max())
         reach = CONFIGS['aisle_extend_gap']
-        nearby = solo[ceremony.frame.loc[solo.index, tl.POSITION]
-                      .between(low - reach, high + reach)]
-        return list(dict.fromkeys(list(run) + list(nearby.index)))
+
+        stragglers = [i for i in solo.index
+                      if i not in claimed
+                      and low - reach <= int(positions.loc[i]) <= high + reach]
+        ordered = list(run) + stragglers
+        # keep position order so the tag reads as one moment
+        return sorted(ordered, key=lambda i: int(positions.loc[i]))
 
     # -- the send-off: anchor as lower bound ---------------------------------
 
