@@ -101,19 +101,47 @@ def ordered(photos: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+#: Positions this far apart still count as one block of ceremony coverage.
+CEREMONY_BLOCK_GAP = 30
+
+
+def densest_run(positions: Sequence[int], max_gap: int = CEREMONY_BLOCK_GAP):
+    """Start and end of the largest contiguous cluster of ``positions``."""
+    ordered_positions = sorted(positions)
+    runs, current = [], [ordered_positions[0]]
+    for position, previous in zip(ordered_positions[1:], ordered_positions[:-1]):
+        if position - previous <= max_gap:
+            current.append(position)
+        else:
+            runs.append(current)
+            current = [position]          # rebind: clearing would alias the appended run
+    runs.append(current)
+    longest = max(runs, key=len)
+    return longest[0], longest[-1]
+
+
 def ceremony_timeline(frame: pd.DataFrame, min_ceremony_photos: int = 5) -> Optional[CeremonyTimeline]:
     """Locate the ceremony and its climax. ``None`` when there is no ceremony.
 
-    The core is the 5th–95th percentile of ceremony positions rather than the
-    full extent: single stray ceremony-labelled frames turn up hours away (one
-    gallery's ceremony label spans 602 positions while its core spans 209), and
-    including them would stretch the window across the whole day.
+    The core start is the **later** of the 5th percentile and the start of the
+    largest contiguous block of ceremony frames. The two filters catch different
+    noise: the percentile trims sparse outliers by count, the block start trims
+    by contiguity. Either alone is not enough — on one validation gallery three
+    stray ceremony labels 80 positions early survived the percentile (7% of the
+    class) and dragged the core start back into the couple portrait session, so
+    the processional window searched the wrong part of the day entirely.
+
+    The end stays at the 95th percentile: single stray ceremony frames turn up
+    hours later (one gallery's ceremony label spans 602 positions while its core
+    spans 209), and including them would stretch the window across the whole day.
     """
     ceremony = frame[frame[LABEL] == "ceremony"]
     if len(ceremony) < min_ceremony_photos:
         return None
 
-    core = (int(np.percentile(ceremony[POSITION], 5)),
+    positions_of_ceremony = ceremony[POSITION].tolist()
+    block_start, _block_end = densest_run(positions_of_ceremony)
+    core = (max(int(np.percentile(ceremony[POSITION], 5)), block_start),
             int(np.percentile(ceremony[POSITION], 95)))
 
     climax = frame[
@@ -124,6 +152,22 @@ def ceremony_timeline(frame: pd.DataFrame, min_ceremony_photos: int = 5) -> Opti
     anchor = int(np.median(positions)) if positions else core[1]
 
     return CeremonyTimeline(frame=frame, core=core, anchor=anchor, climax_positions=positions)
+
+
+def model_version_of(photos: pd.DataFrame) -> int:
+    return int(photos[Col.MODEL_VERSION].iloc[0])
+
+
+def floor_for(setting, model_version: int) -> float:
+    """Resolve a threshold that may be keyed by image model version.
+
+    The v1 and v2 CLIP spaces put a gallery's cosines on different scales, so a
+    single number cannot serve both. Plain floats are still accepted so a
+    caller can pin one value deliberately.
+    """
+    if isinstance(setting, dict):
+        return float(setting.get(model_version, setting[max(setting)]))
+    return float(setting)
 
 
 def concept_scores(photos: pd.DataFrame, concept: str) -> np.ndarray:

@@ -137,7 +137,22 @@ CONFIGS = {'DEBUG': True,
         # Indications are not mandatory, but "no evidence at all" should not
         # tag. Real processionals score 0.44-0.60 on the validation galleries;
         # the prep-portrait false positives scored 0.19-0.29.
-        'aisle_score_floor': 0.32,
+        # Keyed by image model version: the two CLIP spaces have incompatible
+        # cosine scales. v2 (768-d ViT-L-14) spreads a gallery over ~0.10-0.55;
+        # v1 (512-d ViT-B/32) compresses it into ~0.22-0.30. A single absolute
+        # floor calibrated on v2 sits above a v1 gallery's MAXIMUM, so every
+        # detector here was silently dead on v1 galleries. The v1 values are
+        # the v2 ones matched on within-gallery percentile.
+        #
+        # v1 is currently set INERT (1.0), not calibrated. Percentile-matching
+        # the v2 floors onto the one v1 gallery available (47981912) produced
+        # the wrong answer on all four moments -- a send-off that is not there,
+        # and no kiss or processional that are. The v1 space simply does not
+        # separate these concepts: its whole gallery spans 0.22-0.30, so the
+        # concept score carries almost no signal. Concept-gated detection is
+        # therefore off for v1 until there are enough v1 galleries to calibrate
+        # against, rather than on with a guessed number.
+        'aisle_score_floor': {2: 0.32, 1: 1.0},
         'aisle_max_gap': 4,
         'aisle_min_photos': 2,
         'aisle_max_photos': 6,
@@ -149,8 +164,8 @@ CONFIGS = {'DEBUG': True,
         # -- enrich.ceremony_anchor: the send-off ---------------------------
         'send_off_concept': 'send_off',
         'send_off_eligible_labels': ('ceremony', 'walking the aisle', 'other', 'bride and groom'),
-        'send_off_photo_floor': 0.35,
-        'send_off_burst_floor': 0.38,
+        'send_off_photo_floor': {2: 0.35, 1: 1.0},
+        'send_off_burst_floor': {2: 0.38, 1: 1.0},
         'send_off_min_photos': 5,
         'send_off_max_gap': 3,
         'send_off_back_slack': 40,

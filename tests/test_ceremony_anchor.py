@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pipeline import AlbumContext, Col  # noqa: E402
 from src.pipeline.contracts import GalleryFacts  # noqa: E402
+from src.pipeline.enrich import timeline as tl  # noqa: E402
 from src.pipeline.enrich.ceremony_anchor import (  # noqa: E402
     BRIDE_AISLE, GROOM_AISLE, MAY_KISS_BRIDE, SEND_OFF, CeremonyAnchorSubStage)
 from src.selection.auto_selection import load_pre_queries_embeddings  # noqa: E402
@@ -132,7 +133,8 @@ def test_detects_a_planted_send_off():
     assert not context.failed, context.error
     picked = tagged(context)
     assert len(picked) >= CONFIGS['send_off_min_photos'], f"only tagged {len(picked)}"
-    assert picked[Col.SEND_OFF_SCORE].mean() >= CONFIGS['send_off_burst_floor']
+    assert picked[Col.SEND_OFF_SCORE].mean() >= tl.floor_for(
+        CONFIGS['send_off_burst_floor'], MODEL_VERSION)
 
 
 def test_always_provides_the_score_column():
@@ -387,6 +389,22 @@ def test_a_processional_with_no_visual_evidence_is_not_tagged():
     context = run(make_gallery(walk_score=0.05, walk_subquery=False))
     assert len(walked(context, BRIDE_AISLE)) == 0
     assert len(walked(context, GROOM_AISLE)) == 0
+
+
+def test_thresholds_are_resolved_per_embedding_space():
+    """v1 and v2 CLIP put a gallery's cosines on different scales, so a single
+    absolute floor cannot serve both. A v2-calibrated floor sits above a v1
+    gallery's maximum score, which silently disabled every detector on v1."""
+    for setting in (CONFIGS['send_off_photo_floor'], CONFIGS['send_off_burst_floor'],
+                    CONFIGS['aisle_score_floor']):
+        assert isinstance(setting, dict) and {1, 2} <= set(setting), setting
+        # v1 is deliberately inert until calibrated: a guessed floor produced
+        # the wrong answer on all four moments of the one v1 gallery available.
+        assert tl.floor_for(setting, 1) >= 1.0, "v1 must stay inert until calibrated" 
+    # a plain float still works, for pinning one value deliberately
+    assert tl.floor_for(0.4, 1) == 0.4
+    # an unknown version falls back to the highest configured one
+    assert tl.floor_for({1: 0.1, 2: 0.5}, 99) == 0.5
 
 
 def test_aisle_classes_are_known_content_classes_everywhere():

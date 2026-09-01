@@ -106,6 +106,12 @@ class CeremonyAnchorSubStage(SubStage):
         self._aisle_scores = {'bride': bride_score, 'groom': groom_score}
         context.photos = photos
 
+        self._model_version = tl.model_version_of(photos)
+        if self._model_version != 2 and logger:
+            logger.warning(
+                f"Image model version {self._model_version}: concept-gated detection is not "
+                f"calibrated for this embedding space, so the send-off and processional will "
+                f"not fire. See CONFIGS['send_off_photo_floor'].")
         frame = tl.ordered(photos)
         ceremony = tl.ceremony_timeline(frame, CONFIGS['send_off_min_photos'])
         if ceremony is None:
@@ -211,10 +217,10 @@ class CeremonyAnchorSubStage(SubStage):
         best = sorted(best, key=lambda i: -score.loc[i])[:CONFIGS['aisle_max_photos']]
 
         mean = score.loc[best].mean()
-        if mean < CONFIGS['aisle_score_floor']:
+        if mean < tl.floor_for(CONFIGS['aisle_score_floor'], self._model_version):
             if logger:
                 logger.info(f"No {who} processional: best run scores {mean:.3f}, "
-                            f"under {CONFIGS['aisle_score_floor']}")
+                            f"under {tl.floor_for(CONFIGS['aisle_score_floor'], self._model_version)}")
             return []
 
         context.photos.loc[best, Col.CLUSTER_CONTEXT] = tag
@@ -234,13 +240,13 @@ class CeremonyAnchorSubStage(SubStage):
 
         candidates = tl.eligible(ceremony.frame, CONFIGS['send_off_eligible_labels'], start, end)
         candidates = candidates.drop(index=[i for i in exclude if i in candidates.index])
+        photo_floor = tl.floor_for(CONFIGS['send_off_photo_floor'], self._model_version)
         candidates = candidates[
-            ceremony.frame.loc[candidates.index, Col.SEND_OFF_SCORE]
-            >= CONFIGS['send_off_photo_floor']]
+            ceremony.frame.loc[candidates.index, Col.SEND_OFF_SCORE] >= photo_floor]
 
         if candidates.empty:
             if logger:
-                logger.info(f"No send-off: nothing over {CONFIGS['send_off_photo_floor']} "
+                logger.info(f"No send-off: nothing over {photo_floor:.3f} "
                             f"in positions {start}-{end}")
             return
 
@@ -254,10 +260,10 @@ class CeremonyAnchorSubStage(SubStage):
 
         best = max(bursts, key=lambda b: ceremony.frame.loc[b, Col.SEND_OFF_SCORE].mean())
         mean = ceremony.frame.loc[best, Col.SEND_OFF_SCORE].mean()
-        if mean < CONFIGS['send_off_burst_floor']:
+        if mean < tl.floor_for(CONFIGS['send_off_burst_floor'], self._model_version):
             if logger:
                 logger.info(f"No send-off: best burst scores {mean:.3f}, "
-                            f"under {CONFIGS['send_off_burst_floor']}")
+                            f"under {tl.floor_for(CONFIGS['send_off_burst_floor'], self._model_version)}")
             return
 
         context.photos.loc[best, Col.CLUSTER_CONTEXT] = SEND_OFF
