@@ -292,29 +292,125 @@ def process_gallery(input_request):
     return final_album_result, message
 
 
-if __name__ == '__main__':
+def _build_arg_parser():
     import argparse
-    import json
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("input_dir",
-                        help="The path to the directory on your system where the photos are stored. Each set inside should be named with the projectId number.")
-    parser.add_argument("output_dir",
-                        help="The path to the directory where created album should be saved.")
-    args = parser.parse_args()
-    input_dir = args.input_dir
-    output_dir = args.output_dir
+    ap = argparse.ArgumentParser(
+        description="Run one album request locally and render the result to PDF.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+modes
+  saved request (default)
+    process_gallery.py <input_dir> <output_dir>
+    process_gallery.py <input_dir> <output_dir> --request 53496523
 
-    # PyCharm: Run -> Edit Configurations -> Script parameters
-    # C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\ C:\Users\user\Desktop\PicTime\AlbumDesigner\output
-    # add paths without argument names
+  reproduce production
+    process_gallery.py <input_dir> <output_dir> --from-datadog
+    process_gallery.py <input_dir> <output_dir> --from-datadog --project-id 53496523
+
+    Finds the newest request the service completed, saves it under
+    files/test_requests/<projectId>.json, downloads that gallery's photos into
+    <input_dir>/<projectId>/ and runs it. Needs DD_API_KEY and DD_APP_KEY for
+    the log lookup, and the Azure network (VPN) for the photos.
+""",
+    )
+    ap.add_argument("input_dir",
+                    help="Root for gallery photos. Each gallery lives in <input_dir>/<projectId>/.")
+    ap.add_argument("output_dir",
+                    help="Root for rendered albums. Written to <output_dir>/<projectId>/.")
+
+    source = ap.add_mutually_exclusive_group()
+    source.add_argument("--request", metavar="NAME",
+                        help="Saved request to run: a name under files/test_requests/ "
+                             f"or a path to a .json. Default: {request_name}")
+    source.add_argument("--from-datadog", action="store_true",
+                        help="Reproduce the newest request the production service processed "
+                             "successfully, from its logs.")
+
+    dd = ap.add_argument_group("--from-datadog options")
+    dd.add_argument("--project-id", type=int,
+                    help="Reproduce this project's newest successful run instead of the newest overall.")
+    dd.add_argument("--lookback-hours", type=int, default=48,
+                    help="How far back to search the logs. Default: 48.")
+    dd.add_argument("--no-download", action="store_true",
+                    help="Skip the photo download (the PDF will have gaps unless they are already local).")
+    dd.add_argument("--all-gallery-photos", action="store_true",
+                    help="Download the whole gallery, not just the photos the request named.")
+    dd.add_argument("--max-photos", type=int,
+                    help="Cap how many photos to download.")
+
+    ap.add_argument("--album-name", default=album_name,
+                    help=f"Base name for the rendered PDF. Default: {album_name}")
+    return ap
+
+
+def _resolve_request(args, log):
+    """Return (request dict, label used for the local folders)."""
+    from tools import local_request as lr
+
+    if not args.from_datadog:
+        name = args.request or request_name
+        request = lr.load_request(name)
+        log(f"request: {lr.request_path(name)}")
+        return request, str(request["projectId"])
+
+    log("searching Datadog for the newest successful album run...")
+    client = lr.DatadogLogs()
+    run = lr.find_latest_successful_request(
+        client, lookback_hours=args.lookback_hours, project_id=args.project_id
+    )
+    log(f"found: {run.summary()}")
+
+    saved = lr.save_request(run.request, str(run.project_id))
+    log(f"saved request: {saved}  (re-run it with --request {run.project_id})")
+    return run.request, str(run.project_id)
+
+
+def _ensure_photos(args, request, project_dir, log):
+    """Download the gallery's photos into <input_dir>/<projectId>/."""
+    from tools import local_request as lr
+
+    if args.no_download:
+        log("photo download skipped (--no-download)")
+        return
+
+    base_url = request.get("base_url")
+    if not base_url:
+        log("! request has no base_url; cannot download photos")
+        return
+
+    photo_ids = None if args.all_gallery_photos else (request.get("photos") or None)
+    log(f"downloading photos -> {project_dir}")
+    try:
+        counts = lr.download_gallery_photos(
+            base_url, project_dir, photo_ids=photo_ids,
+            max_photos=args.max_photos, log=log,
+        )
+    except Exception as ex:  # noqa: BLE001 - the run may still work off local files
+        log(f"! photo download failed ({type(ex).__name__}: {ex})")
+        log("  the album will still be built; the PDF will have gaps for missing photos")
+        return
+
+    log("  " + ", ".join(f"{k}={v}" for k, v in counts.items()))
+
+
+if __name__ == '__main__':
+    args = _build_arg_parser().parse_args()
+    log = print
 
     settings_filename = os.environ.get('HostingSettingsPath',
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
     intialize('AlbumDesigner', settings_filename)
 
-    with open(f'files/test_requests/{request_name}.json', 'r') as f:
-        _input_request = json.load(f)
+    _input_request, project_label = _resolve_request(args, log)
+
+    _images_path = os.path.join(args.input_dir, project_label)
+    _output_dir = os.path.join(args.output_dir, project_label)
+    os.makedirs(_images_path, exist_ok=True)
+    os.makedirs(_output_dir, exist_ok=True)
+
+    if args.from_datadog:
+        _ensure_photos(args, _input_request, _images_path, log)
 
     # Run request
     final_album, _message = process_gallery(_input_request)
@@ -322,7 +418,7 @@ if __name__ == '__main__':
         raise SystemExit(f"process_gallery failed: {final_album}")
 
     gallery_photos_info = _message.content['gallery_photos_info']
-    box_id2data = _message.designsInfo['anyPagebox_id2data']  # if 'designsInfo' in _message and 'anyPagebox_id2data' in _message['designsInfo'] else {}
+    box_id2data = _message.designsInfo['anyPagebox_id2data']
 
     is_artificial_time = _message.content.get('is_artificial_time', False)
     print('ARTIFICIAL TIME APPLIED:', is_artificial_time)
@@ -331,14 +427,8 @@ if __name__ == '__main__':
     print(final_album)
 
     # Debug with Plotting
-    id = str(_input_request["projectId"])
-    _images_path = os.path.join(input_dir, id)
-    _output_pdf_path = os.path.join(output_dir, id)
-    os.makedirs(_output_pdf_path, exist_ok=True)
-    _output_pdf_path = os.path.join(_output_pdf_path, album_name + '.pdf')
+    _output_pdf_path = os.path.join(_output_dir, args.album_name + '.pdf')
 
     visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info,
                            is_artificial_time)
-    print('album saved locally')
-
-
+    print('album saved locally:', _output_pdf_path)
