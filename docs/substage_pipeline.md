@@ -245,6 +245,19 @@ validation gallery has 2 distinct `image_time` values across 528 photos.
 | `bride walking the aisle` / `groom walking the aisle` | an **upper bound** — the processional is before the ceremony *starts*, so the bound is the ceremony core start, not the anchor | identity is mandatory; subquery and concept only rank |
 | `send off` | a **lower bound** — guests shower the couple as they *leave* | a CLIP concept bank, because nothing else sees it |
 
+A `walking the aisle` photo that sits **after the ceremony centre** is
+reclassified as `other` before any of this runs. Walking in happens before the
+ceremony begins, so the class cannot be right once it is under way — what the
+classifier is looking at there is the recessional, the couple walking back out.
+The cut is the anchor rather than the ceremony's end, which is the conservative
+line: it leaves alone anything between the ceremony starting and its climax,
+where a late arrival really might still be walking in. Only `cluster_context` is
+rewritten; `image_class` is the model's own output and enrich does not edit it,
+which is also what keeps the send-off detector working, since it reads the
+per-photo label. Measured across six galleries it fires on two, demoting 2 and 5
+photos, with the kept and demoted position ranges cleanly separated (148–167
+against 382–383, and 75–90 against 138–316).
+
 The processional deliberately does **not** key on the `walking the aisle` class.
 That label is sparse — 1, 9, 5 and 24 photos on the validation galleries — and
 the groom almost never gets it, because he is waiting at the altar rather than

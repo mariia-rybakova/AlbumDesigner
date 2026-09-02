@@ -70,7 +70,7 @@ def _embedding(rng, like: float, bank=None) -> np.ndarray:
 def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
                  burst_at='after', kiss_frames=4, kiss_offset=0,
                  bride_walk=5, groom_walk=4, walk_subquery=True, walk_score=0.55,
-                 model_version=MODEL_VERSION, seed=3) -> pd.DataFrame:
+                 recessional=0, model_version=MODEL_VERSION, seed=3) -> pd.DataFrame:
     """A synthetic wedding timeline with an optional planted send-off.
 
     Layout: prep -> ceremony (with a climax) -> [burst] -> portraits -> dancing.
@@ -114,6 +114,10 @@ def make_gallery(burst_size=12, burst_score=0.55, burst_label='bride and groom',
         add(-kiss_offset, 'ceremony', 'guests watching ceremony', 0.12, [BRIDE_ID, GROOM_ID])
     add(kiss_frames, 'kiss', 'wedding kiss at ceremony', 0.12, [BRIDE_ID, GROOM_ID])
     add(8, 'ceremony', 'ring exchange during ceremony', 0.12, [BRIDE_ID, GROOM_ID])
+    # The couple walking back out. The classifier calls this 'walking the aisle'
+    # too, which is the mislabel `_demote_late_processional` exists for.
+    add(recessional, 'walking the aisle', 'bride and groom walking back down the aisle',
+        0.20, [BRIDE_ID, GROOM_ID])
     if burst_at == 'after':
         add(burst_size, burst_label, 'bride and groom during the ceremony', burst_score,
             [BRIDE_ID, GROOM_ID])
@@ -698,6 +702,88 @@ def test_the_kiss_is_budgeted_as_a_percentage_not_as_a_yes():
     # spread rounds to a single photo -- but it is a share, not a token.
     assert result.spreads[MAY_KISS_BRIDE] > 0
     assert all(result.spreads[c] == 0 for c in result.ceremony_yes)
+
+
+# -- the processional cannot happen after the ceremony ----------------------
+#
+# Walking in happens before the ceremony begins. What the classifier labels
+# 'walking the aisle' afterwards is the recessional -- the couple walking back
+# out -- or the guests leaving, and neither belongs among the frames the album
+# builds a processional spread from.
+
+
+def _context_of(label):
+    from src.pipeline.enrich.ceremony_anchor import OTHER, WALKING_THE_AISLE
+    return {'other': OTHER, 'aisle': WALKING_THE_AISLE}[label]
+
+
+def test_a_walking_the_aisle_photo_after_the_ceremony_becomes_other():
+    from src.pipeline.enrich.ceremony_anchor import OTHER, WALKING_THE_AISLE
+
+    df = make_gallery(recessional=6)
+    late = set(df.loc[df['image_subquery_content'].str.contains('walking back'),
+                      'image_id'])
+    assert late, "fixture should plant a recessional"
+
+    context = run(df)
+    end = context.photos.set_index('image_id')['cluster_context']
+
+    assert all(end[i] != WALKING_THE_AISLE for i in late), (
+        "a recessional frame should not still read as the processional")
+    assert any(end[i] == OTHER for i in late)
+
+
+def test_the_processional_before_the_ceremony_is_left_alone():
+    """The frames that really are people walking in must survive -- either as
+    the class, or claimed by one of the processional tags."""
+    from src.pipeline.enrich.ceremony_anchor import OTHER
+
+    df = make_gallery(recessional=6)
+    early = set(df.loc[df['image_subquery_content'].str.contains('aisle with father|waiting for bride'),
+                       'image_id'])
+    assert early, "fixture should plant a processional"
+
+    context = run(df)
+    end = context.photos.set_index('image_id')['cluster_context']
+
+    assert all(end[i] != OTHER for i in early), (
+        "the real processional was demoted along with the recessional")
+
+
+def test_only_the_content_class_is_rewritten():
+    """`image_class` is what the content model said, and enrich does not edit
+    the model's own output -- `enrich.parents` rewrites the same column only."""
+    df = make_gallery(recessional=6)
+    before = df.set_index('image_id')['image_class'].to_dict()
+
+    context = run(df)
+    after = context.photos.set_index('image_id')['image_class'].to_dict()
+
+    assert after == before
+
+
+def test_nothing_is_demoted_without_a_ceremony_to_anchor_on():
+    from src.pipeline.enrich.ceremony_anchor import WALKING_THE_AISLE
+
+    df = make_gallery(recessional=6)
+    df = df[~df['cluster_context'].isin(['ceremony', 'kiss'])].reset_index(drop=True)
+    was = int((df['cluster_context'] == WALKING_THE_AISLE).sum())
+
+    context = run(df)
+
+    assert int((context.photos['cluster_context'] == WALKING_THE_AISLE).sum()) == was
+
+
+def test_a_gallery_with_no_recessional_is_untouched():
+    from src.pipeline.enrich.ceremony_anchor import OTHER
+
+    plain = make_gallery()
+    before = int((plain['cluster_context'] == OTHER).sum())
+
+    context = run(plain)
+
+    # Nothing new in 'other': every 'walking the aisle' frame here is early.
+    assert int((context.photos['cluster_context'] == OTHER).sum()) == before
 
 
 def test_every_yes_category_is_cheap_in_the_lookup_table():

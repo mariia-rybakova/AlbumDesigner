@@ -59,6 +59,10 @@ SEND_OFF = "send off"
 BRIDE_AISLE = "bride walking the aisle"
 GROOM_AISLE = "groom walking the aisle"
 
+#: The content model's own processional class, and where a mislabelled one goes.
+WALKING_THE_AISLE = "walking the aisle"
+OTHER = "other"
+
 #: Subqueries that identify a kiss frame.
 KISS_QUERIES = (
     "wedding kiss at ceremony",
@@ -134,10 +138,58 @@ class CeremonyAnchorSubStage(SubStage):
                 f"(core {ceremony.core_start}-{ceremony.core_end}, "
                 f"{len(ceremony.climax_positions)} climax frames)")
 
+        self._demote_late_processional(context, ceremony)
+
         claimed = list(self._tag_kiss(context, ceremony))
         claimed += self._tag_aisle(context, ceremony, exclude=claimed)
         self._tag_send_off(context, ceremony, exclude=claimed)
         return context
+
+    # -- the processional cannot happen after the ceremony -------------------
+
+    def _demote_late_processional(self, context: AlbumContext,
+                                 ceremony: tl.CeremonyTimeline) -> int:
+        """Reclass a `walking the aisle` photo that sits after the ceremony centre.
+
+        Walking in happens before the ceremony begins, so the class cannot be
+        right once the ceremony is under way. What the classifier is looking at
+        there is the recessional -- the couple walking back out -- or the guests
+        leaving; both belong in `other` rather than among the processional the
+        album builds a spread from.
+
+        The cut is the **anchor**, the median of the climax frames: the centre
+        of the ceremony rather than its end. That is the conservative line, and
+        it deliberately leaves alone anything between the ceremony starting and
+        its climax, where a late arrival really might still be walking in.
+
+        Only ``cluster_context`` is rewritten. ``image_class`` is what the
+        content model said, and enrich does not edit the model's own output --
+        `enrich.parents` rewrites the same column for the same reason. That also
+        keeps the send-off detector working: it reads the per-photo label, where
+        `walking the aisle` is one of its eligible classes, and it tags its own
+        picks afterwards regardless.
+        """
+        photos = context.photos
+        position = ceremony.frame[tl.POSITION]
+        after_centre = position.index[position > ceremony.anchor]
+
+        candidates = photos.index.intersection(after_centre)
+        if len(candidates) == 0:
+            return 0
+
+        late = photos.loc[candidates, Col.CLUSTER_CONTEXT] == WALKING_THE_AISLE
+        demoted = late.index[late]
+        if len(demoted) == 0:
+            return 0
+
+        photos.loc[demoted, Col.CLUSTER_CONTEXT] = OTHER
+        if context.logger:
+            span = sorted(int(position.loc[i]) for i in demoted)
+            context.logger.info(
+                f"Reclassified {len(demoted)} '{WALKING_THE_AISLE}' photos at positions "
+                f"{span[0]}-{span[-1]} as '{OTHER}': they sit after the ceremony centre "
+                f"({ceremony.anchor}), so they are the recessional, not the processional")
+        return len(demoted)
 
     # -- the kiss: anchor as centre -----------------------------------------
 
