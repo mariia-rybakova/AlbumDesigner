@@ -443,6 +443,38 @@ is read from the focus profile rather than fixed in code: give `send off` a
 percentage in `focus_csv.csv` and it becomes an ordinary category again. That is
 also why `may kiss bride` is *not* in the group — it already carries 2–3%.
 
+##### Two rounds of filling
+
+The fill loop hands one page to each category with a spare page's worth,
+walking `focus_csv.csv`, and goes round again until the album is full. **A
+`yes` category sits out the first round.** `yes` means one photo if the thing
+happened, and that is what it is worth while the album can still be built from
+the categories the profile actually weighted; only once a full walk of those
+has failed to fill the album is a `yes` category worth a page of its own.
+
+Without that it competed on the first walk like anything else, and on a gallery
+short of material the album filled with whatever sat high in the file. Measured
+on 53273032 after de-duplication took it to 511 photos:
+
+| | before | after |
+|---|---|---|
+| `settings` | 5 photos (a full page, granted on pass 1) | 1 |
+| `food` | 5 photos of the 6 it had | 1 |
+| pass 1 grants | 9, two of them to `yes` categories | 7, all weighted |
+
+The ceremony highlights are out of *both* rounds — `settle_ceremony_yes` zeroes
+their surplus, because a send-off burst is large enough to fill several pages on
+its own.
+
+**What this exposes rather than fixes:** the walk order is the row order of
+`focus_csv.csv`, which is not a priority. `other` (242 photos available,
+budgeted **0%**) and `None` (15 available, **0%**) sit at rows 3 and 4, ahead of
+`ceremony`, `bride and groom` and `speech`, and each took two pages of that
+shortfall. Holding the `yes` categories back sends *more* of the shortfall their
+way. Two categories the profile gives zero weight should not be near the front
+of the queue; fixing that means walking the table in a deliberate order, and is
+a separate change.
+
 Measured on the four validation galleries, all of which are 5–7 pages short, so
 all of which take the fill-up branch:
 

@@ -298,13 +298,33 @@ def _charge_to_ceremony(focus_table: dict, present: List[str], logger=None) -> O
 def redistribute(focus_table: dict, lut: Dict[str, tuple], shortfall: int) -> int:
     """Hand unfilled pages to the categories that have photos to spare.
 
-    Returns what is still unfilled. Unchanged from the original, including its
-    ``> 1`` thresholds: a single missing page is left alone.
+    One page to each category with a spare page's worth, walking the table, and
+    round again until the album is full. Returns what is still unfilled; the
+    original's ``> 1`` thresholds are kept, so a single missing page is left
+    alone.
+
+    **A `yes` category sits out the first round.** `yes` means one photo if the
+    thing happened -- that is what it is worth when the album can be built from
+    the categories the profile actually weighted. Only once a full walk of those
+    has failed to fill the album is a `yes` category worth a page of its own.
+
+    Without that, `yes` competed on the first walk like anything else, and on a
+    gallery short of material the album filled with whatever sat high in the
+    file: measured on 53273032, `settings` and `food` each took a full page on
+    the *first* pass, `food` reaching 5 photos out of the 6 it had. Both now
+    wait, and are reached only if the shortfall survives the first round.
+
+    The ceremony highlights are already out of both rounds -- `settle_ceremony_yes`
+    zeroes their surplus, because a send-off burst is large enough to fill
+    several pages on its own.
     """
     surplus = sum(config['over_spreads'] for config in focus_table.values())
+    first_round = True
 
     while surplus > 1 and shortfall > 1:
         for event, config in focus_table.items():
+            if first_round and isinstance(config['value'], str):
+                continue  # a 'yes' event is one photo until the second round
             if config['over_spreads'] > 1 and shortfall > 1:
                 config['over_spreads'] -= 1
                 config['over_photos'] -= lut[event][0]
@@ -314,6 +334,7 @@ def redistribute(focus_table: dict, lut: Dict[str, tuple], shortfall: int) -> in
                 shortfall -= 1
         if not any(config['over_spreads'] > 1 for config in focus_table.values()):
             break
+        first_round = False
 
     return shortfall
 

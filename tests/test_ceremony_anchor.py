@@ -700,6 +700,77 @@ def test_the_kiss_is_budgeted_as_a_percentage_not_as_a_yes():
     assert all(result.spreads[c] == 0 for c in result.ceremony_yes)
 
 
+# -- two rounds of filling -------------------------------------------------
+#
+# `yes` means one photo if the thing happened. That is what it is worth while
+# the album can still be built from the categories the profile weighted, so a
+# `yes` category sits out the first walk of the fill loop and is only reached
+# if the shortfall survives it. Before this, `settings` and `food` each took a
+# full page on the *first* pass of a real album, `food` reaching 5 photos of
+# the 6 it had.
+
+
+def _fill_table():
+    """Two categories with pages to spare: one weighted, one `yes`.
+
+    The `yes` one has far more spare capacity, so under the old rule it would
+    win a page immediately -- which is the behaviour being pinned out.
+    """
+    table = {
+        'weighted': {'value': 5.0, 'photos': 2.0, 'spreads': 1,
+                     'miss_spreads': 0, 'over_photos': 8, 'over_spreads': 4.0},
+        'yes_thing': {'value': 'yes', 'photos': 1.0, 'spreads': 0,
+                      'miss_spreads': 0, 'over_photos': 40, 'over_spreads': 20.0},
+    }
+    return table, {'weighted': (2, 1), 'yes_thing': (2, 1)}
+
+
+def test_a_yes_category_sits_out_the_first_round():
+    """One walk of the weighted categories fills the album, so the `yes` one is
+    never reached and stays at its single photo."""
+    from src.pipeline.select.allocation import redistribute
+
+    table, lut = _fill_table()
+    redistribute(table, lut, shortfall=2)
+
+    assert table['weighted']['spreads'] == 2, "the weighted category filled it"
+    assert table['yes_thing']['spreads'] == 0
+    assert table['yes_thing']['photos'] == 1.0
+
+
+def test_a_yes_category_is_reached_in_the_second_round():
+    """When the shortfall outlasts a full walk of the weighted categories, a
+    `yes` category is finally worth a page."""
+    from src.pipeline.select.allocation import redistribute
+
+    table, lut = _fill_table()
+    redistribute(table, lut, shortfall=5)
+
+    assert table['yes_thing']['spreads'] >= 1, "the second round should reach it"
+    assert table['weighted']['spreads'] > 1, "and the weighted one went first"
+
+
+def test_the_yes_category_never_outpaces_the_weighted_one():
+    """The invariant: a `yes` category cannot have taken more pages than a
+    weighted category that still had capacity to give."""
+    from src.pipeline.select.allocation import redistribute
+
+    table, lut = _fill_table()
+    redistribute(table, lut, shortfall=6)
+
+    assert table['yes_thing']['spreads'] <= table['weighted']['spreads']
+
+
+def test_a_yes_category_still_fills_when_nothing_else_can():
+    """End to end: the weighted categories have nothing spare, so the album
+    would go unfilled if `yes` were held back for good."""
+    result = _allocate_full({'ceremony': 4, 'settings': 200})
+
+    assert result.shortfall >= 1
+    assert result.images['settings'] > 1, (
+        "with nothing else able to fill, settings should be granted a page")
+
+
 # -- the port ---------------------------------------------------------------
 
 
