@@ -245,7 +245,13 @@ class WeddingPicker:
     def _top_up_with_grayscale(
         self, category: str, preferred: List, grayscale: pd.DataFrame, need: int
     ) -> List:
-        """Fill a colour shortfall from the greyscale pool."""
+        """Fill a colour shortfall from the greyscale pool.
+
+        Note that a frame and the black-and-white copy of itself are never
+        compared here -- the colour and greyscale pools are filled
+        independently. `enrich.duplicate_shots` is what stops the second copy
+        ever reaching selection.
+        """
         if len(preferred) >= need:
             return preferred[:need]
 

@@ -153,6 +153,7 @@ synthetic-blob tests do not cover.
 
 | Name | Infers | Provides |
 |------|--------|----------|
+| `enrich.duplicate_shots` | One copy of each shot uploaded more than once | — |
 | `enrich.gallery_type` | Wedding or not | — (`facts.is_wedding`) |
 | `enrich.content_class` | `cluster_class` int → category name | `cluster_context` |
 | `enrich.identities` | Which identity is the bride, which the groom | `bride_id`, `groom_id` |
@@ -167,6 +168,60 @@ synthetic-blob tests do not cover.
 `enrich.content_class`, `enrich.identities` and `enrich.key_pages` are
 wedding-only, matching the original: non-wedding galleries never get a
 `cluster_context` column.
+
+#### `enrich.duplicate_shots`
+
+A photographer often uploads a second copy of their best frames with a
+different treatment — black and white, or a blue or brown tone. Gallery
+53273032 is **1028 photos that are really 514 shots, each uploaded twice**, and
+one album spread showed the same dance frame in colour and in black and white.
+
+**It is a judgement about the gallery, not about a pair of photos.** Nothing in
+the photo table tells a re-export from the next frame of a burst:
+
+| | |
+|---|---|
+| CLIP cosine, same shot colour vs grey | 0.777 – 0.930 |
+| CLIP cosine, *different* shots, same treatment | 0.870 – 0.954 |
+| composition (centroid, diameter, `n_faces`) | not pixel-deterministic — a confirmed twin differs as much as a burst pair, and one same-second pair gave `n_faces` 37 vs 67 |
+
+An identical capture second plus aspect ratio does hold for all 512 pairs — a
+re-export preserves the EXIF — but on its own it is far too eager: a camera at
+three frames a second makes several genuinely different photos in one second,
+and pair-by-pair that rule wanted to drop **46, 32 and 11 real frames** from the
+other galleries.
+
+What marks a duplicated gallery is the regularity. Photos sitting in duplicate
+`(capture second, aspect ratio)` groups:
+
+| gallery | share | dropped |
+|---|---|---|
+| 53273032 | **~100%** | 517 |
+| 49994361 | 3.8% | 0 |
+| 49995684 | 3.1% | 0 |
+| 53496523 | 2.1% | 0 |
+| 47981912 | 0% | 0 |
+| 53147741 | <1% | 0 |
+
+Two orders of magnitude of daylight, so `min_gallery_share` is 0.5 and the rule
+fires only on a systematically duplicated gallery. The colour flag is never
+consulted, so a toned copy is caught as readily as a grey one; the copy kept is
+the best-ranked (`image_order`, where 0 is best). A gallery with unusable EXIF
+needs no special case — everything lands in one enormous group, and only groups
+small enough to be a re-upload set are counted (`max_copies_per_shot`).
+
+**Why it runs first, before anything counts the gallery.** Tried inside
+`select.pick` instead, the budget sizes the album against a supply twice as
+large as it really is, every category then runs out of distinct photos, and the
+album fell from 100 photos to 86. Removed up front, the counts are simply right:
+`select.budget` allocates against 511, and the layout cannot pad a group with a
+twin either. The album goes 100 → 85 photos, but 15 of those 100 were second
+copies, so the distinct content is unchanged.
+
+The limitation worth knowing: a photographer who re-uploads only a handful of
+favourites in black and white is **not** caught. That is the direction to err in
+— doing nothing leaves one redundant spread, while guessing wrong deletes
+photos the album should have had.
 
 #### `enrich.ceremony_anchor`
 
@@ -542,6 +597,11 @@ resolves, no pipeline has an ordering violation, unmet requirements and broken
 `provides` contracts fail loudly, the context round-trips through a message,
 and — the one that matters most over time — **no ingest substage may declare a
 derived column**, so the reading/inferring split cannot quietly erode.
+
+`test_dedupe.py` covers `enrich.duplicate_shots`, and most of it is about when
+the rule declines to act: a few same-second bursts, unusable timestamps, a
+missing capture time, and a differently framed frame in the same second all
+have to leave the gallery untouched.
 
 `test_preselect.py` covers the other side of that: what each constraint
 commits, that a hand pick settles its own `yes` category rather than doubling

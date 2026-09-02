@@ -5,6 +5,7 @@ These all used to be interleaved with the protobuf reads inside
 none of them is reading — each one *infers* something:
 
 ===========================  =========================================
+``enrich.duplicate_shots``   one copy of each shot uploaded more than once
 ``enrich.gallery_type``      wedding or not, from the classifier output
 ``enrich.content_class``     ``cluster_class`` int -> category name
 ``enrich.identities``        which identity is the bride, which the groom
@@ -25,11 +26,12 @@ Importing this package registers every substage it defines.
 from src.pipeline.enrich import (  # noqa: F401  (imported for registration)
     ceremony_anchor,
     classification,
+    dedupe,
     hygiene,
     identities,
     key_pages,
     temporal,
 )
 
-__all__ = ["ceremony_anchor", "classification", "hygiene", "identities",
+__all__ = ["ceremony_anchor", "classification", "dedupe", "hygiene", "identities",
            "key_pages", "temporal", "timeline"]

@@ -96,6 +96,7 @@ INGEST: Sequence[str] = (
 #: CLIP projection, identity resolution, temporal normalisation and the
 #: event/relationship detectors.
 ENRICH: Sequence[str] = (
+    "enrich.duplicate_shots",
     "enrich.gallery_type",
     "enrich.content_class",
     "enrich.identities",

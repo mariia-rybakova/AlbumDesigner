@@ -217,6 +217,29 @@ CONFIGS = {'DEBUG': True,
         # allowance instead. See src/pipeline/select/allocation.py.
         'ceremony_yes_min_classes': 2,
 
+        # Keeping the same shot out of the album twice, when a photographer
+        # has uploaded their whole set a second time in black and white or with
+        # a colour tone. The test never looks at the colour flag, so a toned
+        # copy is caught as readily as a grey one.
+        #
+        # It is a judgement about the gallery, not about a pair of photos:
+        # nothing in the photo table tells a re-export from the next frame of a
+        # burst (CLIP cosine and composition both overlap completely), but a
+        # duplicated gallery is unmistakable in bulk. Photos sitting in
+        # duplicate (capture second, aspect ratio) groups: ~100% on the
+        # duplicated gallery 53273032, and 3.8%, 3.1%, 2.1%, 0% on the four
+        # ordinary ones. See src/pipeline/enrich/dedupe.py.
+        'near_duplicates': {
+            'enabled': True,
+            # Below this share the groups are read as same-second bursts and
+            # nothing is dropped. Two orders of magnitude of daylight either
+            # side, so this is not a delicate number.
+            'min_gallery_share': 0.5,
+            # A group bigger than this cannot be a re-upload set; it is a
+            # gallery whose EXIF collapsed onto one value.
+            'max_copies_per_shot': 4,
+        },
+
         # select.preselect: which constraints are honoured before the ranked
         # picking runs, and how much of the album each one may claim. Each is
         # switchable on its own so a constraint that costs more than it is worth
