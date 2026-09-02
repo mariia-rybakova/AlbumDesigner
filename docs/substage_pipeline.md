@@ -276,9 +276,59 @@ one.**
 | Name | Does |
 |------|------|
 | `select.route` | Manual vs AI; resolves the pool, lookup table, tag bins and ratings |
-| `select.budget` | Focus profile → per-category photo and spread allowance |
+| `select.budget` | Focus profile → per-category photo and spread allowance; settles the ceremony's `yes` classes |
 | `select.pick` | The category loop; delegates each category to a strategy |
 | `select.publish` | Narrow the photo table, finalise the outcome |
+
+#### `select.budget` and the ceremony's `yes` classes
+
+The arithmetic is a step-for-step port of `calculate_optimal_selection`, now in
+`src/pipeline/select/allocation.py` as named steps rather than one pass. The
+original stays where it is, untouched, as the oracle: a test asserts the two
+agree exactly on galleries where the new rule cannot fire, so the rest of the
+budget tests measure the rule and not a drifting reimplementation.
+
+Three of the four classes `enrich.ceremony_anchor` produces carry `yes` in
+`focus_csv.csv` rather than a percentage. In the original arithmetic that means
+one photo if the moment happened, no page of its own — and a *surplus* the
+fill-up loop may draw on. That last part is the problem. A send-off is a burst,
+fifteen to twenty-one frames against a lookup-table base of two, so its surplus
+reads as seven to ten spare pages. On the validation galleries the loop happens
+to exhaust the shortfall before reaching it — `send off` is near the bottom of
+`focus_csv.csv` and the loop walks the file in order — but nothing was holding
+it there.
+
+So the group is settled before redistribution and then taken out of it:
+
+| | the album is short of pages | the album is full |
+|---|---|---|
+| **2 or more present** | they supply exactly **one** of the missing pages, one frame each; the shortfall drops by one and the loop fills the rest from elsewhere | no page; their photos come out of **ceremony's** own allowance, so the album does not quietly grow |
+| **fewer than 2** | no page — one special moment is a photo, not a spread | as above |
+
+`CONFIGS['ceremony_yes_min_classes']` is the threshold. Membership of the group
+is read from the focus profile rather than fixed in code: give `send off` a
+percentage in `focus_csv.csv` and it becomes an ordinary category again. That is
+also why `may kiss bride` is *not* in the group — it already carries 2–3%.
+
+Measured on the four validation galleries, all of which are 5–7 pages short, so
+all of which take the fill-up branch:
+
+| gallery | highlights present | photos before → after |
+|---|---|---|
+| 49994361 | bride aisle, groom aisle, send off | 113 → 109 |
+| 49995684 | bride aisle, groom aisle, send off | 115 → 111 |
+| 47981912 | bride aisle, groom aisle | 83 → 81 |
+| 53496523 | bride aisle, groom aisle | 109 → 107 |
+
+The album stays the same length — one page still unfilled in both — and the
+count drops because the page the group now occupies holds one frame of each
+moment where the category it displaced would have held four.
+
+Worth knowing: **the "charge it to the ceremony" branch fired on none of the
+four.** Real weddings are structurally short against this profile, because it
+budgets a percentage to categories a gallery often has none of (`couple`,
+`kiss`, `entertainment`, the three parent groupings). If that is not intended,
+it is a bigger question than this substage.
 
 ### Category strategies — the second level inside `select.pick`
 

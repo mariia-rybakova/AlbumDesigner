@@ -544,13 +544,15 @@ def test_aisle_classes_are_known_content_classes_everywhere():
 
 
 def test_aisle_classes_get_one_photo_on_a_well_stocked_gallery():
-    """'yes' events, like the send-off: present without taking spreads."""
-    images, spreads = _allocate({
-        'ceremony': 40, SEND_OFF: 21, BRIDE_AISLE: 8, GROOM_AISLE: 6,
-        'bride and groom': 80, 'dancing': 120, 'portrait': 40, 'bride': 30,
-        'groom': 30, 'first dance': 20, 'speech': 15, 'bride party': 20,
-        'groom party': 20, 'settings': 20, 'detail': 20, 'food': 20,
-    })
+    """'yes' events, like the send-off: present without taking spreads.
+
+    Only on an album with nothing missing. When there *are* pages to fill, two
+    or more of these together are worth one -- see
+    test_two_highlights_fill_exactly_one_missing_page.
+    """
+    images, spreads = _allocate(
+        _stocked(**{SEND_OFF: 21, BRIDE_AISLE: 8, GROOM_AISLE: 6}))
+
     for cls in (BRIDE_AISLE, GROOM_AISLE):
         assert images.get(cls) == 1, f"{cls} got {images.get(cls)} photos"
         assert spreads.get(cls) == 0
@@ -600,35 +602,174 @@ def test_send_off_does_not_draw_from_the_spread_pool():
     assert spreads.get(SEND_OFF) == 0
 
 
-def test_send_off_grows_only_as_filler_and_only_in_pairs():
-    """On a starved gallery the rebalance loop may top it up — but the lookup
-    table's mean of 2 keeps each step to a pair of photos."""
-    images, _spreads = _allocate({'ceremony': 40, SEND_OFF: 21, 'bride and groom': 60,
-                                  'dancing': 100})
-    grown = images.get(SEND_OFF)
-    assert grown > 1, "a starved gallery should be allowed to fill from send off"
-    assert (grown - 1) % 2 == 0, (
-        f"top-ups should come in pairs (lookup table mean 2), got {grown}")
+# -- what the ceremony "yes" classes cost the album ------------------------
+#
+# A starved gallery used to be allowed to fill from a send-off without limit.
+# A burst is fifteen frames against a lookup-table mean of two, so its surplus
+# read as seven spare pages and the fill loop would keep drawing on it.
+
+STARVED = {'ceremony': 40, 'bride and groom': 60, 'dancing': 100}
+
+
+def _stocked(**extra):
+    """Counts generous enough that nothing in the album is missing.
+
+    Every category the focus profile budgets a percentage to has to be present
+    and well supplied, not just the ones a gallery usually has: an *absent*
+    percentage category misses its whole allowance, so a hand-written list of
+    plausible categories still leaves the album nine pages short.
+    """
+    counts = {
+        event: 200
+        for event, config in _profile(_quiet()).items()
+        if isinstance(config.get('value'), (int, float)) and config['value'] > 0
+    }
+    counts.update(extra)
+    return counts
+
+
+def test_one_highlight_alone_is_never_worth_a_page():
+    """Below the threshold it stays a single photo however short the album is."""
+    result = _allocate_full({**STARVED, SEND_OFF: 21})
+
+    assert result.shortfall >= 1, "fixture should be short of pages"
+    assert result.ceremony_yes == [SEND_OFF]
+    assert not result.ceremony_page_granted
+    assert result.images[SEND_OFF] == 1
+    assert result.spreads[SEND_OFF] == 0
+
+
+def test_two_highlights_fill_exactly_one_missing_page():
+    result = _allocate_full({**STARVED, SEND_OFF: 21, BRIDE_AISLE: 8})
+
+    assert result.shortfall >= 1, "fixture should be short of pages"
+    assert result.ceremony_page_granted
+    assert sorted(result.ceremony_yes) == sorted([SEND_OFF, BRIDE_AISLE])
+    # One page between them, and a frame each at the very least.
+    assert sum(result.spreads[c] for c in result.ceremony_yes) == 1
+    assert all(result.images[c] >= 1 for c in result.ceremony_yes)
+
+
+def test_the_granted_page_is_the_only_one_they_get():
+    """The whole point: a 21-frame send-off has seven spare pages of surplus,
+    and the fill loop must not be able to reach any of them."""
+    result = _allocate_full({**STARVED, SEND_OFF: 21, BRIDE_AISLE: 8, GROOM_AISLE: 6})
+
+    photos = sum(result.images[c] for c in result.ceremony_yes)
+    one_page = max(round(result.lookup_table[c][0]) for c in result.ceremony_yes)
+
+    assert sum(result.spreads[c] for c in result.ceremony_yes) == 1
+    assert photos <= max(one_page, len(result.ceremony_yes)), (
+        f"{photos} photos is more than the one page they were granted")
+
+
+HIGHLIGHTS = (SEND_OFF, BRIDE_AISLE, GROOM_AISLE)
+
+
+def test_a_full_album_charges_them_to_the_ceremony():
+    """Nothing to fill, so they must not lengthen the album: the photos come
+    out of the ceremony own allowance instead."""
+    with_them = _allocate_full(_stocked(**{SEND_OFF: 21, BRIDE_AISLE: 8, GROOM_AISLE: 6}))
+    without = _allocate_full(_stocked())
+
+    assert with_them.shortfall == 0, "fixture should need no filling"
+    assert not with_them.ceremony_page_granted
+    assert with_them.charged_to_ceremony == 3, "one photo each"
+    assert with_them.images['ceremony'] == without.images['ceremony'] - 3
+    assert all(with_them.spreads[c] == 0 for c in with_them.ceremony_yes)
+
+
+def test_charging_the_ceremony_keeps_the_album_the_same_length():
+    with_them = _allocate_full(_stocked(**{SEND_OFF: 21, BRIDE_AISLE: 8, GROOM_AISLE: 6}))
+    without = _allocate_full(_stocked())
+
+    assert sum(with_them.images.values()) == sum(without.images.values())
+
+
+def test_the_kiss_is_budgeted_as_a_percentage_not_as_a_yes():
+    """may kiss bride carries a percentage in focus_csv.csv, so it is an
+    ordinary category: it stays out of the group and keeps its own page share
+    whether or not the album needs filling."""
+    result = _allocate_full(_stocked(**{SEND_OFF: 21, BRIDE_AISLE: 8}))
+
+    assert MAY_KISS_BRIDE not in result.ceremony_yes
+    # A page share of its own is the thing a 'yes' class does not get. It is a
+    # small one -- 3% of the album against a lookup-table base of one photo per
+    # spread rounds to a single photo -- but it is a share, not a token.
+    assert result.spreads[MAY_KISS_BRIDE] > 0
+    assert all(result.spreads[c] == 0 for c in result.ceremony_yes)
+
+
+# -- the port ---------------------------------------------------------------
+
+
+def test_matches_the_reference_when_no_highlight_is_present():
+    """The select.budget allocator is a port of calculate_optimal_selection.
+    Where the new rule cannot fire, the two must still agree exactly -- which
+    is what makes the rest of these tests measurements of the rule and not of
+    a drifting reimplementation."""
+    for counts in (STARVED, _stocked(), _stocked(**{MAY_KISS_BRIDE: 6})):
+        images, spreads = _allocate(dict(counts))
+        ref_images, ref_spreads, _lo, _hi = _allocate_reference(dict(counts))
+
+        assert images == ref_images, f"photos diverged on {sorted(counts)}"
+        assert spreads == ref_spreads, f"spreads diverged on {sorted(counts)}"
+
+
+def test_totals_match_the_reference_too():
+    result = _allocate_full(_stocked())
+    _i, _s, lo, hi = _allocate_reference(_stocked())
+
+    assert (result.min_total_spreads, result.max_total_spreads) == (lo, hi)
+
+
+def _quiet():
+    import logging
+    log = logging.getLogger("t")
+    log.addHandler(logging.NullHandler())
+    return log
+
+
+def _profile(log):
+    """A fresh focus profile. Both allocators mutate the mapping handed to them."""
+    from src.selection.ai_wedding_selection import load_event_mapping
+    mapping = load_event_mapping(CONFIGS['focus_csv_path'], log)
+    assert SEND_OFF in mapping['brideAndGroom'], "focus_csv.csv row missing"
+    return mapping['brideAndGroom']
 
 
 def _allocate(actual_counts):
-    """Run the budget allocator over a category->count mapping."""
-    import logging
-    from src.selection.ai_wedding_selection import calculate_optimal_selection, load_event_mapping
+    """Run the select.budget allocator over a category->count mapping."""
+    from src.pipeline.select.allocation import allocate
+    from utils.lookup_table_tools import wedding_lookup_table
+
+    log = _quiet()
+    result = allocate(actual_counts, _profile(log), wedding_lookup_table, 3,
+                      pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log)
+    return result.images, result.spreads
+
+
+def _allocate_full(actual_counts):
+    """As _allocate, but the whole Allocation so the reasoning is visible."""
+    from src.pipeline.select.allocation import allocate
+    from utils.lookup_table_tools import wedding_lookup_table
+
+    log = _quiet()
+    return allocate(actual_counts, _profile(log), wedding_lookup_table, 3,
+                    pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log)
+
+
+def _allocate_reference(actual_counts):
+    """The pre-rewrite calculate_optimal_selection, kept as the oracle."""
+    from src.selection.ai_wedding_selection import calculate_optimal_selection
     from utils.configs import relations
     from utils.lookup_table_tools import wedding_lookup_table
 
-    log = logging.getLogger("t")
-    log.addHandler(logging.NullHandler())
-    # reloaded per call: the allocator mutates the mapping it is handed
-    mapping = load_event_mapping(CONFIGS['focus_csv_path'], log)
-    assert SEND_OFF in mapping['brideAndGroom'], "focus_csv.csv row missing"
-
-    images, spreads, _lo, _hi = calculate_optimal_selection(
+    log = _quiet()
+    images, spreads, lo, hi = calculate_optimal_selection(
         actual_counts, relations['brideAndGroom'], wedding_lookup_table,
-        mapping['brideAndGroom'], 3,
-        pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log)
-    return images, spreads
+        _profile(log), 3, pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log)
+    return images, spreads, lo, hi
 
 
 if __name__ == "__main__":

@@ -210,6 +210,13 @@ CONFIGS = {'DEBUG': True,
         'send_off_back_slack': 40,
         'send_off_horizon': 250,
 
+        # How many of the ceremony's 'yes' classes -- the kiss, the two
+        # processionals, the send-off -- have to turn up before they are worth
+        # a page of the album between them. One special moment is a photo; two
+        # or more is a page. Below this they are charged to the ceremony's own
+        # allowance instead. See src/pipeline/select/allocation.py.
+        'ceremony_yes_min_classes': 2,
+
         'MAX_PERSON_COMBINATION': 10000,
         'use_rebalance_spreads': False,
 
