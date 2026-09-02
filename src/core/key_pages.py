@@ -51,51 +51,73 @@ def _pick_time_cluster(df, position="first"):
     return df["time_cluster"].min() if position == "first" else df["time_cluster"].max()
 
 
-#: Time axes to fall back through, best first, when there is no `time_cluster`.
+#: Time axes to draw the cover windows along, best first.
 #:
 #: `general_time` before `image_time`: the two are the same seconds whenever the
 #: EXIF is trustworthy, but when it is not, `general_time` has been rebuilt from
 #: scene order into a synthetic monotonic day while `image_time` still holds the
 #: unusable original. Two of the four validation galleries carry **2 distinct
-#: `image_time` values across 528 and 582 photos** — sorting those by
-#: `image_time` does not pick the first and last of the day, it picks an
-#: arbitrary ten.
-#:
-#: ProcessStage never reaches either: `generate_time_clusters` runs first and
-#: always sets `time_cluster`. This matters to callers that run before it.
+#: `image_time` values across 528 and 582 photos**, so sorting those by
+#: `image_time` does not order the day at all.
 _TIME_AXES = ("general_time", "image_time")
 
+#: How much of the candidates' own span each cover is drawn from -- the opening
+#: from the first quarter of it, the closing from the last.
+COVER_FRACTION = 0.25
 
-def _pick_cover_subset(df, position="first", window_size=10):
-    """
-    Returns a subset DataFrame for the cover selection:
-      - If 'time_cluster' exists: all rows at min/max cluster.
-      - Else along the best available time axis: first/last N rows.
-      - Else: first/last N rows by current order.
+
+def _pick_cover_subset(df, position="first", window_size=10, fraction=COVER_FRACTION):
+    """Candidates for one cover, from one end of the couple's own time span.
+
+    A quarter of the span, not the first or last N photos and not the first or
+    last `time_cluster`. Both of those failed the same way on a real album: the
+    couple frames a wedding actually yields are often bunched into one part of
+    the day, so `min(time_cluster) == max(time_cluster)` and the album opened
+    and closed on two shots of the same moment.
+
+    Quartering the candidates' *own* span always separates the two ends, and it
+    stays honest when the couple were only photographed for an hour -- the
+    opening still comes from the start of that hour and the closing from its
+    end. Quartering the whole gallery instead would leave both quarters empty on
+    exactly those galleries.
+
+    Nothing is trimmed by recency inside the quarter: which frame is *good* is
+    for the ranking below to say, and biasing back towards the extreme edge is
+    what this change exists to stop.
     """
     if df.empty:
         return df
 
-    if "time_cluster" in df.columns:
-        tc = df["time_cluster"].min() if position == "first" else df["time_cluster"].max()
-        return df[df["time_cluster"] == tc].copy()
+    axis = next((column for column in _TIME_AXES if column in df.columns), None)
+    if axis is None:
+        # No time at all: the caller's order is the only signal there is.
+        return (df.head(window_size) if position == "first" else df.tail(window_size)).copy()
 
-    for column in _TIME_AXES:
-        if column not in df.columns:
-            continue
-        # Ensure numeric (don’t convert to datetime). Rows with no time at all
-        # are dropped rather than sorted to one end, where `tail` would hand
-        # back a window of photos whose position in the day is unknown.
-        tmp = df.copy()
-        tmp["__t"] = pd.to_numeric(tmp[column], errors="coerce")
-        tmp = tmp.dropna(subset=["__t"]).sort_values("__t", ascending=True)
-        if tmp.empty:
-            continue
-        subset = tmp.head(window_size) if position == "first" else tmp.tail(window_size)
-        return subset.drop(columns="__t")
+    frame = df.copy()
+    frame["__t"] = pd.to_numeric(frame[axis], errors="coerce")
+    # Rows with no time are dropped rather than sorted to one end, where they
+    # would fill a quarter with photos of unknown place in the day.
+    frame = frame.dropna(subset=["__t"]).sort_values("__t", ascending=True)
+    if frame.empty:
+        return frame.drop(columns="__t")
 
-    # Fallback: by current order
-    return (df.head(window_size) if position == "first" else df.tail(window_size)).copy()
+    span = float(frame["__t"].iloc[-1] - frame["__t"].iloc[0])
+    if span <= 0:
+        # One timestamp across every candidate; order is all that is left.
+        edge_rows = frame.head(window_size) if position == "first" else frame.tail(window_size)
+        return edge_rows.drop(columns="__t")
+
+    if position == "first":
+        limit = frame["__t"].iloc[0] + span * fraction
+        quarter = frame[frame["__t"] <= limit]
+    else:
+        limit = frame["__t"].iloc[-1] - span * fraction
+        quarter = frame[frame["__t"] >= limit]
+
+    if quarter.empty:  # unreachable while fraction > 0, but cheap to be sure
+        quarter = frame.head(window_size) if position == "first" else frame.tail(window_size)
+
+    return quarter.drop(columns="__t")
 
 
 def _select_by_priority_from_subset(df_subset, queries_primary, queries_fallback):
@@ -118,9 +140,14 @@ def _select_by_priority_from_subset(df_subset, queries_primary, queries_fallback
         if sub.empty:
             return []
         sub["__q"] = pd.Categorical(sub["image_subquery_content"], categories=queries, ordered=True)
-        # Break ties within the same subquery by image_order (higher rating first)
+        # Break ties within the same subquery by image_order, best first.
+        # `image_order` is the content model's `selectionOrder`, a rank where
+        # **0 is best** -- `update_photos_ranks` sets a hand-picked photo to 0,
+        # and the selection stage sorts it ascending for the same reason. This
+        # sorted descending, so it was picking the worst-ranked frame of every
+        # tie it broke.
         if "image_order" in sub.columns:
-            sub = sub.sort_values(["__q", "image_order"], ascending=[True, False])
+            sub = sub.sort_values(["__q", "image_order"], ascending=[True, True])
         else:
             sub = sub.sort_values("__q")
         return sub["image_id"].tolist()
@@ -298,7 +325,9 @@ def _pick_most_dissimilar(reference_id, candidate_ids, df, dist_weight=0.4, rati
     if any(d is not None for d in distances):
         d_norm = _minmax_normalize([d if d is not None else 0.0 for d in distances])
         r_norm = _minmax_normalize([r if r is not None else 0.0 for r in ratings])
-        scores = [dist_weight * d + rating_weight * r for d, r in zip(d_norm, r_norm)]
+        # `1 - r` because a low `image_order` is a good photo; taking the argmax
+        # over the raw normalised rank preferred the worst candidate available.
+        scores = [dist_weight * d + rating_weight * (1.0 - r) for d, r in zip(d_norm, r_norm)]
         return candidates[int(np.argmax(scores))]
 
     # No embeddings: prefer differing subquery_content, then highest rating
@@ -308,7 +337,8 @@ def _pick_most_dissimilar(reference_id, candidate_ids, df, dist_weight=0.4, rati
         different = [c for c in candidates if _lookup_column(df, c, 'image_subquery_content') != ref_content]
         if different:
             pool = different
-    return max(pool, key=lambda c: (_lookup_column(df, c, 'image_order') or float('-inf')))
+    # Best rank, i.e. lowest; a missing rank must lose, so it sorts last.
+    return min(pool, key=lambda c: (_lookup_column(df, c, 'image_order') or float('inf')))
 
 
 def _select_cover_image_ids(pool_df, pool_bg, logger):

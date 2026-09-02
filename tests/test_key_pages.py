@@ -22,7 +22,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pipeline import ENRICH, AlbumContext, Col, KeyPages  # noqa: E402
 from src.pipeline.contracts import DesignSpec, GalleryFacts  # noqa: E402
-from src.core.key_pages import _pick_cover_subset  # noqa: E402
+from src.core.key_pages import (  # noqa: E402
+    COVER_FRACTION,
+    _pick_cover_subset,
+    _select_by_priority_from_subset,
+)
 from src.pipeline.enrich.key_pages import CLOSING, OPENING  # noqa: E402
 from src.pipeline.registry import get  # noqa: E402
 
@@ -134,7 +138,7 @@ def test_portrait_only_gallery_still_gets_covers():
     assert context.key_pages.opening and context.key_pages.closing
 
 
-# -- which axis splits the day ---------------------------------------------
+# -- where in the day each cover comes from --------------------------------
 #
 # `_pick_cover_subset` is shared with ProcessStage, so these guard both callers.
 
@@ -153,39 +157,120 @@ def axis_frame():
     })
 
 
-def test_time_cluster_still_wins_when_it_exists():
-    """ProcessStage always builds one, so its behaviour must not move."""
-    frame = axis_frame()
-    frame["time_cluster"] = [7, 7, 9]
+def spread_frame(n=12):
+    """Candidates evenly spread across an hour."""
+    return pd.DataFrame({
+        Col.IMAGE_ID: list(range(1, n + 1)),
+        Col.GENERAL_TIME: [i * 300 for i in range(n)],
+        Col.IMAGE_ORDER: [float(i) for i in range(n)],
+    })
 
-    assert list(_pick_cover_subset(frame, "first")[Col.IMAGE_ID]) == [1, 2]
+
+def test_the_two_covers_come_from_opposite_ends():
+    frame = spread_frame()
+
+    first = _pick_cover_subset(frame, "first")
+    last = _pick_cover_subset(frame, "last")
+
+    assert set(first[Col.IMAGE_ID]).isdisjoint(set(last[Col.IMAGE_ID]))
+    assert max(first[Col.GENERAL_TIME]) < min(last[Col.GENERAL_TIME])
+
+
+def test_each_cover_comes_from_a_quarter_of_the_span():
+    frame = spread_frame()
+    span = frame[Col.GENERAL_TIME].max() - frame[Col.GENERAL_TIME].min()
+
+    first = _pick_cover_subset(frame, "first")
+    last = _pick_cover_subset(frame, "last")
+
+    assert max(first[Col.GENERAL_TIME]) <= span * COVER_FRACTION
+    assert min(last[Col.GENERAL_TIME]) >= span * (1 - COVER_FRACTION)
+
+
+def test_a_quarter_is_more_than_one_photo_so_quality_can_decide():
+    """The whole point of a window rather than an edge: the ranking below gets
+    a choice, instead of being handed the single earliest frame."""
+    first = _pick_cover_subset(spread_frame(), "first")
+
+    assert len(first) > 1
+
+
+def test_one_time_cluster_no_longer_collapses_the_two_covers():
+    """The bug this replaced. `time_cluster` used to decide the windows, taking
+    all rows at its min for the opening and its max for the closing -- so a
+    gallery whose couple frames are bunched into a single cluster opened and
+    closed on two shots of the same moment. On the reviewed album all ten
+    landscape couple photos sat in cluster 1 of 2.
+    """
+    frame = spread_frame()
+    frame["time_cluster"] = 1
+
+    first = _pick_cover_subset(frame, "first")
+    last = _pick_cover_subset(frame, "last")
+
+    assert set(first[Col.IMAGE_ID]).isdisjoint(set(last[Col.IMAGE_ID]))
+    assert max(first[Col.GENERAL_TIME]) < min(last[Col.GENERAL_TIME])
+
+
+def test_general_time_beats_image_time():
+    """On an artificial-time gallery the EXIF order is meaningless, and picking
+    along it put one validation gallery's closing photo earlier in the day than
+    its opening one."""
+    frame = axis_frame()
+
+    assert list(_pick_cover_subset(frame, "first")[Col.IMAGE_ID]) == [1]
     assert list(_pick_cover_subset(frame, "last")[Col.IMAGE_ID]) == [3]
 
 
-def test_general_time_beats_image_time_without_a_cluster():
-    """Enrich runs before time clustering. On an artificial-time gallery the
-    EXIF order is meaningless, and picking along it put one validation
-    gallery's closing photo earlier in the day than its opening one."""
-    frame = axis_frame()
-
-    assert list(_pick_cover_subset(frame, "first", window_size=1)[Col.IMAGE_ID]) == [1]
-    assert list(_pick_cover_subset(frame, "last", window_size=1)[Col.IMAGE_ID]) == [3]
-
-
 def test_photos_with_no_time_are_dropped_not_sorted_to_one_end():
-    """Otherwise `tail` hands back a window whose place in the day is unknown."""
+    """Otherwise a quarter fills up with photos of unknown place in the day."""
     frame = pd.DataFrame({
         Col.IMAGE_ID: [1, 2, 3],
         Col.GENERAL_TIME: [0, 1800, None],
     })
 
-    assert list(_pick_cover_subset(frame, "last", window_size=1)[Col.IMAGE_ID]) == [2]
+    assert list(_pick_cover_subset(frame, "last")[Col.IMAGE_ID]) == [2]
+
+
+def test_one_timestamp_across_every_candidate_falls_back_to_order():
+    frame = pd.DataFrame({
+        Col.IMAGE_ID: [1, 2, 3],
+        Col.GENERAL_TIME: [900, 900, 900],
+    })
+
+    assert list(_pick_cover_subset(frame, "first", window_size=1)[Col.IMAGE_ID]) == [1]
+    assert list(_pick_cover_subset(frame, "last", window_size=1)[Col.IMAGE_ID]) == [3]
 
 
 def test_falls_back_to_image_time_when_there_is_no_general_time():
     frame = axis_frame().drop(columns=[Col.GENERAL_TIME])
 
-    assert list(_pick_cover_subset(frame, "first", window_size=1)[Col.IMAGE_ID]) == [3]
+    assert list(_pick_cover_subset(frame, "first")[Col.IMAGE_ID]) == [3]
+
+
+# -- which photo, inside the window ---------------------------------------
+
+
+def test_a_lower_image_order_is_the_better_photo():
+    """`image_order` is the content model's `selectionOrder`, a rank where 0 is
+    best -- `update_photos_ranks` sets a hand-picked photo to 0, and the
+    selection stage sorts it ascending. Both cover rules sorted it descending,
+    so they preferred the worst-ranked candidate of every tie they broke.
+    """
+    subset = pd.DataFrame({
+        Col.IMAGE_ID: [1, 2, 3],
+        Col.IMAGE_ORDER: [90.0, 2.0, 40.0],
+        Col.IMAGE_ORIENTATION: ['landscape'] * 3,
+        Col.IMAGE_SUBQUERY_CONTENT: ['bride and groom smiling at each other'] * 3,
+    })
+
+    ranked = _select_by_priority_from_subset(
+        subset,
+        ['bride and groom smiling at each other'],
+        ['bride and groom during the ceremony'],
+    )
+
+    assert ranked[0] == 2, f"best rank should lead, got {ranked}"
 
 
 # -- gating and failure ----------------------------------------------------

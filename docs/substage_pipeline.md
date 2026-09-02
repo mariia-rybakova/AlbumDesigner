@@ -236,27 +236,57 @@ so it sees the whole gallery instead of the few hundred frames selection kept.
 ProcessStage still runs its own copy and still decides the covers — nothing
 downstream reads `key_page` or `ctx.key_pages` yet.
 
-Two properties of the wider pool have to be dealt with before the second half:
+Each cover is drawn from **a quarter of the candidates' own time span** — the
+opening from the first quarter of it, the closing from the last — and the best
+photo in that quarter wins. Two earlier rules both failed the same way:
 
-- **`time_cluster` does not exist yet.** It is built in ProcessStage, so the
-  shared `_pick_cover_subset` helper cannot take the whole first and last time
-  cluster and falls back to a window of ten. That window is now taken along
-  `general_time` rather than `image_time`, which is the difference between
-  splitting the real day and splitting an arbitrary ten photos: two of the four
-  validation galleries have **2 distinct `image_time` values across 528 and 582
-  photos**, and on one of them the old axis put the closing photo at 48% of the
-  day and the opening at 64% — the wrong way round. It now reads 48% → 62%.
-  ProcessStage is unaffected, because `generate_time_clusters` always sets
-  `time_cluster` and that branch still wins. A window of ten is still not a
-  time cluster.
+- **`time_cluster` min/max** (what ProcessStage used). The couple frames a
+  wedding actually yields are often bunched into one part of the day, so
+  `min(time_cluster) == max(time_cluster)` and the album opened and closed on
+  two shots of the same moment. On the reviewed album all ten landscape couple
+  photos sat in **cluster 1 of 2**.
+- **The first and last ten photos** (what enrich used, having no
+  `time_cluster`). Closer, but still biased to the extreme edge, and on one
+  gallery it put the closing photo at 30% of the day against an opening at 23%.
+
+Quartering the candidates' *own* span always separates the two ends and stays
+honest when the couple were only photographed for an hour: the opening comes
+from the start of that hour and the closing from its end. Quartering the whole
+gallery instead would leave both quarters empty on exactly those galleries.
+Nothing is trimmed by recency inside the quarter — which frame is *good* is for
+the ranking to say. `COVER_FRACTION` is the knob.
+
+The window is taken along `general_time`, not `image_time`: the two are the same
+seconds when the EXIF is trustworthy, but when it is not, `general_time` has
+been rebuilt from scene order into a synthetic monotonic day while `image_time`
+still holds the unusable original — two validation galleries carry 2 distinct
+`image_time` values across 528 and 582 photos.
+
+Both callers now take the same path, so enrich and ProcessStage agree exactly:
+
+| gallery | time clusters | opening | closing |
+|---|---|---|---|
+| 53147741 | 2 | 48% | 81% |
+| 49994361 | 6 | 28% | 99% |
+| 49995684 | 6 | 23% | 75% |
+| 47981912 | 7 | 31% | 89% |
+| 53496523 | 6 | 47% | 64% |
+
+**The ranking direction was also inverted.** `image_order` is the content
+model's `selectionOrder`, a rank where **0 is best** — `update_photos_ranks`
+sets a hand-picked photo to 0, and the selection stage sorts it ascending for
+the same reason. Both cover rules sorted it *descending*
+(`_select_by_priority_from_subset`) and took an `argmax` over the normalised
+rank (`_pick_most_dissimilar`), so each was choosing the worst-ranked candidate
+of every tie it broke. Fixed in both places.
+
+The remaining property of the wider pool, still true:
+
 - **The pool is not quality-filtered.** Selection is what removes the weak
   frames. Over the full gallery a mediocre early couple shot competes on equal
   terms with a good one, separated only by `image_order` and only after the
-  subquery priority has already tied.
-
-Both argue for the consumer resolving a ranked list against the photos it
-actually has rather than this substage guessing the survivors, which is why
-`KeyPages` holds lists and not two ids.
+  subquery priority has already tied. That is why `KeyPages` holds ranked lists
+  rather than two ids — the consumer resolves them against the photos it has.
 
 One thing the wider pool exposed that is the rule's own, not the wiring's:
 `_pick_most_dissimilar` ranks the closing candidates by rating (0.6) and
