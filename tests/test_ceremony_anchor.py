@@ -700,6 +700,39 @@ def test_the_kiss_is_budgeted_as_a_percentage_not_as_a_yes():
     assert all(result.spreads[c] == 0 for c in result.ceremony_yes)
 
 
+def test_every_yes_category_is_cheap_in_the_lookup_table():
+    """A `yes` category is worth one photo, so a page of one should be small.
+
+    It sits out the first round of filling, but the second round grants it a
+    page at whatever size the lookup table says. On one real album `food` was
+    granted a page at a mean of 4 and took 5 of the 6 photos it had; on the
+    degenerate case where nothing else can fill, the same twelve pages cost 49
+    photos at the old sizes against 25 at (2, 1).
+
+    So this pins the pair for every category the profile budgets as a string --
+    add a `yes` row to focus_csv.csv without a lookup entry to match and this
+    is what catches it.
+    """
+    import csv
+    import re
+
+    from utils.lookup_table_tools import wedding_lookup_table
+
+    rows = list(csv.DictReader(open(CONFIGS['focus_csv_path'], encoding='utf-8')))
+    columns = [c for c in rows[0] if c.strip().lower() != 'sub event']
+
+    string_valued = [
+        re.sub(r"^['\"]+|['\"]+$", '', str(row['sub event'])).strip()
+        for row in rows
+        if any(str(row[c]).strip().lower() in ('yes', 'no') for c in columns)
+    ]
+    assert string_valued, "the profile should carry some yes/no categories"
+
+    wrong = {c: wedding_lookup_table.get(c) for c in string_valued
+             if wedding_lookup_table.get(c) != (2, 1)}
+    assert not wrong, f"yes categories not at (2, 1): {wrong}"
+
+
 # -- two rounds of filling -------------------------------------------------
 #
 # `yes` means one photo if the thing happened. That is what it is worth while

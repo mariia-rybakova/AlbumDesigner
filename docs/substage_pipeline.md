@@ -466,6 +466,16 @@ The ceremony highlights are out of *both* rounds — `settle_ceremony_yes` zeroe
 their surplus, because a send-off burst is large enough to fill several pages on
 its own.
 
+**And a page of a `yes` category is now a small page.** The second round still
+grants one at whatever size `wedding_lookup_table` says, and those sizes were
+written for spreads the profile actually weights — `food` and `settings` at 4
+photos a page, `pet` at 4, `rings` and `suit` at 3. All fourteen string-valued
+categories now carry **(2, 1)**, matching what `send off` and the two
+processionals already had. On the degenerate case where nothing weighted can
+fill, the same twelve granted pages cost **49 photos before and 25 after**. A
+structural test pins the pair for every `yes` row in the profile, so adding one
+without a matching lookup entry fails.
+
 **What this exposes rather than fixes:** the walk order is the row order of
 `focus_csv.csv`, which is not a priority. `other` (242 photos available,
 budgeted **0%**) and `None` (15 available, **0%**) sit at rows 3 and 4, ahead of
