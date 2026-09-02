@@ -62,6 +62,15 @@ class SelectionPlan:
     #: Density-scaled photos-per-spread table.
     lookup_table: Optional[Dict[str, tuple]] = None
 
+    #: Categories the focus profile budgets as `yes` rather than a percentage,
+    #: and that this gallery has. Resolved once by `select.budget` so nothing
+    #: downstream re-reads the profile or re-decides what `yes` means.
+    yes_categories: tuple = ()
+
+    #: {image_id: why} -- photos `select.preselect` committed before any
+    #: ranking. `select.pick` starts from these and does not re-pick them.
+    committed: Dict[Any, str] = field(default_factory=dict)
+
 
 @dataclass
 class CategoryRequest:

@@ -86,7 +86,10 @@ class WeddingPicker:
         )
         self.gate = CandidateGate(scorer, self.inputs.unscored, self.plan.images, self.logger)
 
-        self.chosen: List = []
+        # Whatever `select.preselect` committed is already in the album; the
+        # loop below starts from it and does not offer those photos again.
+        self.committed: Dict = dict(self.plan.committed)
+        self.chosen: List = list(self.committed)
         self.per_category: Dict[str, Dict[str, int]] = {}
 
         # Reproduces a quirk of the monolith this replaced: one branch could
@@ -106,6 +109,18 @@ class WeddingPicker:
         available = len(frame)
         self.per_category.setdefault(category, {})
         self.per_category[category]['actual'] = available
+
+        # `actual` stays the count the gallery has; the preselected photos come
+        # off the working frame so they are not weighed against themselves.
+        # Their allowance was already charged in `select.preselect`.
+        if self.committed:
+            settled = frame[Col.IMAGE_ID].isin(self.committed)
+            if settled.any():
+                entry = self.per_category[category]
+                entry['selected'] = entry.get('selected', 0) + int(settled.sum())
+                frame = frame[~settled]
+                if frame.empty:
+                    return
 
         need = self.plan.images[category]
 

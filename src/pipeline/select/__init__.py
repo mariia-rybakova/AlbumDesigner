@@ -4,6 +4,8 @@
 ``select.route``     manual vs AI; resolves the pool, lookup table and the
                      request-level inputs every category is judged against
 ``select.budget``    per-category photo and spread allowance
+``select.preselect`` the constraints: photos the album is committed to before
+                     any ranking runs
 ``select.pick``      the category loop; delegates to a category strategy
 ``select.publish``   narrow the photo table and finalise the outcome
 ===================  =====================================================
@@ -19,8 +21,9 @@ Importing this package registers every substage it defines.
 from src.pipeline.select import (  # noqa: F401  (imported for registration)
     budget,
     pick,
+    preselect,
     publish,
     route,
 )
 
-__all__ = ["budget", "pick", "publish", "route"]
+__all__ = ["budget", "pick", "preselect", "publish", "route"]

@@ -277,8 +277,56 @@ one.**
 |------|------|
 | `select.route` | Manual vs AI; resolves the pool, lookup table, tag bins and ratings |
 | `select.budget` | Focus profile → per-category photo and spread allowance; settles the ceremony's `yes` classes |
+| `select.preselect` | The constraints: photos the album is committed to before any ranking |
 | `select.pick` | The category loop; delegates each category to a strategy |
 | `select.publish` | Narrow the photo table, finalise the outcome |
+
+#### `select.preselect` — the constraints
+
+Some photos are in the album because something decided so before any ranking
+happened. Running them through the picker either adds nothing or risks losing
+them, so they are settled between `select.budget` and `select.pick`. Four kinds,
+honoured in this order — the user's own intent first, so a later rule finds its
+slot filled rather than competing for it:
+
+| constraint | what it commits | why the picker was the wrong place |
+|---|---|---|
+| `user_picks` | every `aiMetadata.photoIds` photo still in the pool | the picker honoured only the ones that survived scoring and the candidate cut first; a hand-picked photo could score below the floor and be dropped |
+| `identities` | the best photo of each `aiMetadata.personIds` identity | `personIds` only fed `person_score`, so a requested person could be ranked up everywhere and appear in nothing |
+| `key_pages` | the opening and closing photos | they were chosen over the whole gallery, and ProcessStage takes its covers from the *selected* pool — nothing guaranteed they survived |
+| `yes_categories` | each `yes` category's whole allowance | a `yes` category is promised one photo if the thing happened: no allowance to divide, nothing to weigh |
+
+Each is switchable under `CONFIGS['preselect']`, and
+`photos_per_identity` (default 1) sets how deep identity coverage goes —
+guaranteeing a named person appears, not saturating the album with them.
+
+**Only `yes` categories are charged.** There the commitment *is* the allowance,
+so it is zeroed and the picker skips the category. The other three are added to
+the budget. Charging them was tried first and made the album *shorter* rather
+than more certain: a committed photo is usually one the picker would have chosen
+anyway, so charging its category costs a second photo for nothing — on the
+equivalence fixture, charging identity coverage lost a `walking the aisle` frame
+both paths had already selected. Uncharged, a constraint costs a slot only when
+it actually adds a photo, which is the rule the monolith already applied to
+hand-picked photos.
+
+Where a choice remains, the ranking is the one the picker would have used: the
+request's own scoring, falling back to `image_order` ascending. Note the
+direction — `image_order` is the content model's `selectionOrder`, a rank where
+**0 is best**, which is why `update_photos_ranks` sets a hand-picked photo to 0.
+
+Measured against the monolith on the equivalence fixture's five scenarios:
+
+| constraints | effect |
+|---|---|
+| all off | **identical on all five** — the substage is a true no-op, so every departure below is the constraint and not drift |
+| `user_picks` only | 4–7 photos swapped, album length unchanged |
+| `identities` only | +0 to +1 photos — it adds one exactly when a requested identity had none |
+| `yes_categories` only | 1–4 photos swapped, +0 to +2 net where a `yes` category had been getting nothing |
+| all on | +0 to +3 net |
+
+The swaps are inherent to hoisting a decision earlier: a committed photo leaves
+the frame the strategy diversifies over, so the remaining slots fill differently.
 
 #### `select.budget` and the ceremony's `yes` classes
 
@@ -455,8 +503,8 @@ python -m pytest tests/ -v          # or run each file directly
 
 `test_selection_equivalence.py` runs the untouched monolith
 (`smart_wedding_selection`) and the decomposed substages over the same synthetic
-gallery and asserts the chosen photos, their order, and the spread budget are
-identical — across five request shapes (no hints, people + picked photos,
+gallery, **with `select.preselect` switched off**, and asserts the chosen photos,
+their order, and the spread budget are identical — across five request shapes (no hints, people + picked photos,
 ratings, artificial time, low density) and four gallery seeds.
 
 `test_pipeline_contracts.py` guards the structure: every named substage
@@ -464,6 +512,11 @@ resolves, no pipeline has an ordering violation, unmet requirements and broken
 `provides` contracts fail loudly, the context round-trips through a message,
 and — the one that matters most over time — **no ingest substage may declare a
 derived column**, so the reading/inferring split cannot quietly erode.
+
+`test_preselect.py` covers the other side of that: what each constraint
+commits, that a hand pick settles its own `yes` category rather than doubling
+it, that one frame of the couple covers both of them, and that with every
+switch off nothing is committed and no allowance moves.
 
 `test_ingest_readers.py` builds synthetic protobuf and PAI blobs with known
 content, serves them through a patched `PTFile`, and asserts each reader
@@ -477,8 +530,15 @@ end to end.
 
 ## 9. Deliberate behaviour differences
 
-The refactor is behaviour-preserving except in three places, all of which turn a
-crash or a divergence into the sane result:
+`select.preselect` is the one substage that is **not** behaviour-preserving, and
+deliberately so — see its section above for what each constraint changes and by
+how much. `tests/test_selection_equivalence.py` switches it off, because holding
+it to the monolith would be asserting the change had not been made; with it off
+the pipeline still reproduces the monolith exactly, which is what makes the
+measured departures attributable to the constraints rather than to drift.
+
+Everything else is behaviour-preserving except the places below, all of which
+turn a crash or a divergence into the sane result:
 
 1. **`portrait` no longer depends on a leaked variable.** In the monolith
    `bride_id`/`groom_id` were assigned inside the couple-timeline branch and

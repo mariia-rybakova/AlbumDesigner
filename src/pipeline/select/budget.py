@@ -65,6 +65,7 @@ class BudgetSubStage(SubStage):
             min_total_spreads=allocation.min_total_spreads,
             max_total_spreads=allocation.max_total_spreads,
             lookup_table=context.selection.lookup_table,
+            yes_categories=tuple(allocation.yes_categories),
         )
         return context
 

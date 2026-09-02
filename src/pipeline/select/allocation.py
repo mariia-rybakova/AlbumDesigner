@@ -91,6 +91,8 @@ class Allocation:
     ceremony_page_granted: bool = False
     #: Photos charged back to `ceremony` when they were not.
     charged_to_ceremony: int = 0
+    #: Every category budgeted as `yes` on this gallery, ceremony or otherwise.
+    yes_categories: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         if not self.ceremony_yes:
@@ -177,17 +179,27 @@ def budget_each(focus_table: dict, available: Dict[str, int], lut: Dict[str, tup
         config['over_spreads'] = config['over_photos'] / lut[event][0]
 
 
+def yes_categories(focus_table: dict, available: Dict[str, int]) -> List[str]:
+    """Categories the profile budgets as `yes`, and that the gallery has.
+
+    The single definition of "yes" in the selection stage. A `yes` category is
+    promised one photo if the thing happened and no page of its own, so there is
+    nothing for the ranked picker to weigh -- which is why `select.preselect`
+    resolves them outright.
+    """
+    return [
+        event for event, config in focus_table.items()
+        if isinstance(config, dict)
+        and isinstance(config.get('value'), str)
+        and config['value'].strip().lower() == 'yes'
+        and available.get(event, 0) > 0
+    ]
+
+
 def ceremony_yes_classes(focus_table: dict, available: Dict[str, int]) -> List[str]:
     """The ceremony moments that are budgeted as `yes` and actually turned up."""
-    present = []
-    for event in CEREMONY_EVENT_CLASSES:
-        config = focus_table.get(event)
-        if not isinstance(config, dict):
-            continue
-        value = config.get('value')
-        if isinstance(value, str) and value.strip().lower() == 'yes' and available.get(event, 0) > 0:
-            present.append(event)
-    return present
+    budgeted_as_yes = set(yes_categories(focus_table, available))
+    return [event for event in CEREMONY_EVENT_CLASSES if event in budgeted_as_yes]
 
 
 def settle_ceremony_yes(focus_table: dict, present: List[str], available: Dict[str, int],
@@ -342,6 +354,7 @@ def allocate(available: Dict[str, int], focus_table: dict, lookup_table: Dict[st
         shortfall=shortfall,
         unfilled=unfilled,
         ceremony_yes=present,
+        yes_categories=yes_categories(focus_table, available),
         ceremony_page_granted=bool(settled.pages),
         charged_to_ceremony=settled.photos_charged,
     )

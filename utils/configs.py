@@ -217,6 +217,21 @@ CONFIGS = {'DEBUG': True,
         # allowance instead. See src/pipeline/select/allocation.py.
         'ceremony_yes_min_classes': 2,
 
+        # select.preselect: which constraints are honoured before the ranked
+        # picking runs, and how much of the album each one may claim. Each is
+        # switchable on its own so a constraint that costs more than it is worth
+        # is one line to disable.
+        'preselect': {
+            'user_picks': True,
+            'identities': True,
+            'key_pages': True,
+            'yes_categories': True,
+            # Guarantee a named identity appears, rather than saturate the album
+            # with them: one photo is coverage, and coverage is what selecting a
+            # person asks for.
+            'photos_per_identity': 1,
+        },
+
         'MAX_PERSON_COMBINATION': 10000,
         'use_rebalance_spreads': False,
 

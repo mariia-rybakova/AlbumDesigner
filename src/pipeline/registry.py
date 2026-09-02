@@ -114,6 +114,7 @@ ENRICH: Sequence[str] = (
 SELECT: Sequence[str] = (
     "select.route",
     "select.budget",
+    "select.preselect",
     "select.pick",
     "select.publish",
 )

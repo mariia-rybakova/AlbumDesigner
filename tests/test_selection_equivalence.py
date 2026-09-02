@@ -5,6 +5,15 @@
 doubles as the reference implementation: for the same synthetic gallery both
 paths must choose the same photos, in the same order, with the same budget.
 
+**`select.preselect` is switched off for these comparisons.** It is a deliberate
+behaviour change -- it commits hand-picked photos, identity coverage, the covers
+and the `yes` categories before any ranking, which the monolith did not -- so
+holding it to the monolith would be asserting the change had not been made.
+Switching it off and still matching is the stronger statement available here: it
+says the decomposition reproduces the monolith exactly, and that every departure
+comes from the constraints rather than from drift in the machinery underneath.
+What the constraints themselves do is `tests/test_preselect.py`.
+
 Run from the repo root (the focus profile is read from a relative path)::
 
     python -m pytest tests/test_selection_equivalence.py -v
@@ -16,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from contextlib import contextmanager
 
 import numpy as np
 import pandas as pd
@@ -25,6 +35,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.pipeline import AlbumContext, build_select  # noqa: E402
 from src.pipeline.contracts import AiHints, GalleryFacts  # noqa: E402
 from src.selection.ai_wedding_selection import smart_wedding_selection  # noqa: E402
+from utils.configs import CONFIGS  # noqa: E402
+
+#: Every preselect constraint off, so the pipeline runs the monolith's rules.
+NO_CONSTRAINTS = {'user_picks': False, 'identities': False, 'key_pages': False,
+                  'yes_categories': False}
+
+
+@contextmanager
+def without_preselect():
+    original = CONFIGS['preselect']
+    CONFIGS['preselect'] = {**original, **NO_CONSTRAINTS}
+    try:
+        yield
+    finally:
+        CONFIGS['preselect'] = original
 
 BRIDE_ID = 101
 GROOM_ID = 202
@@ -185,7 +210,8 @@ def run_pipeline(df, *, ten_photos, person_ids, focus, density, artificial, rati
         facts=GalleryFacts(is_wedding=True, is_artificial_time=artificial, model_version=2),
     )
 
-    context = build_select(logger=logger).run(context)
+    with without_preselect():
+        context = build_select(logger=logger).run(context)
     assert not context.failed, context.error
 
     outcome = context.selection
