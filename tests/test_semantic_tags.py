@@ -90,6 +90,28 @@ def test_a_missing_embedding_column_is_the_same_failure():
     assert context.failed
 
 
+def test_a_dimension_mismatch_names_the_dimensions():
+    """The failure that actually happened in production.
+
+    `process_row` skips any query bank whose width does not match the embedding
+    (`continue  # skip dim mismatch`). When *every* bank is skipped it returns no
+    tag, the row is dropped, and `generate_query` only creates its two columns
+    `if results:` -- so a whole-gallery mismatch empties the photo table and
+    leaves the columns absent. That surfaced as this substage breaking its own
+    contract, which said nothing about the cause. The model version is read from
+    Mongo, and a timeout there leaves it wrong.
+    """
+    photos = gallery([np.ones(512) / np.sqrt(512)] * 3)   # v1 width...
+    photos[Col.MODEL_VERSION] = 2                          # ...labelled v2
+
+    context = run(photos)
+
+    assert context.failed
+    assert "512-d" in context.error, "the embedding width should be in the message"
+    assert "model version 2" in context.error
+    assert "provide" not in context.error, "name the cause, not the broken contract"
+
+
 # -- the counter -----------------------------------------------------------
 
 

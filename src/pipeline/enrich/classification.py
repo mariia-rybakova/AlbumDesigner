@@ -76,6 +76,8 @@ class SemanticTagsSubStage(SubStage):
         # about the cause. It should not happen in practice; when it does, the
         # embeddings were never fetched (the project is not in the vector
         # database, or the service was unreachable -- locally, a dropped VPN).
+        model_version = (context.photos[Col.MODEL_VERSION].iloc[0]
+                         if not context.photos.empty else None)
         usable = _usable_embeddings(context.photos)
         if usable == 0:
             return context.fail(
@@ -90,7 +92,28 @@ class SemanticTagsSubStage(SubStage):
                 f"{len(context.photos) - usable} of {len(context.photos)} photos have no "
                 f"embedding and will be dropped by the tagging")
 
+        before = len(context.photos)
+        width = _embedding_width(context.photos)
         context.photos = add_semantic_tags(context.photos, context.logger)
+
+        # The postcondition, not a guess at the causes. `process_row` skips any
+        # query bank whose dimension does not match the embedding
+        # (`continue  # skip dim mismatch`), and when *every* bank is skipped it
+        # returns no tag, the row is dropped, and `generate_query` only creates
+        # its two columns `if results:`. So a whole-gallery mismatch empties the
+        # photo table and leaves the columns absent -- which surfaced as this
+        # substage breaking its own contract, saying nothing about the cause.
+        missing = [c for c in (Col.IMAGE_QUERY_CONTENT, Col.IMAGE_SUBQUERY_CONTENT)
+                   if c not in context.photos.columns]
+        if missing:
+            return context.fail(
+                f"Tagging matched nothing on any of {before} photos, so {missing} were "
+                f"never produced. The embeddings are {width}-d and the query bank for "
+                f"image model version {model_version} is a different width, so every "
+                f"comparison was skipped. Either the wrong bank was chosen -- the model "
+                f"version is read from Mongo, and a timeout there leaves it wrong -- or "
+                f"the embeddings are not from the space it expects."
+            )
         return context
 
 
@@ -108,3 +131,19 @@ def _usable_embeddings(photos: pd.DataFrame) -> int:
             return False
 
     return int(photos[Col.EMBEDDING].apply(usable).sum())
+
+
+def _embedding_width(photos: pd.DataFrame) -> str:
+    """The dimension of the first usable embedding, for the error message."""
+    if photos is None or photos.empty or Col.EMBEDDING not in photos.columns:
+        return "?"
+    for value in photos[Col.EMBEDDING]:
+        if value is None:
+            continue
+        try:
+            size = np.asarray(value, dtype=float).ravel().size
+        except (TypeError, ValueError):
+            continue
+        if size:
+            return str(size)
+    return "?"
