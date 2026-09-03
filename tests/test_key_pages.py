@@ -176,21 +176,48 @@ def test_the_two_covers_come_from_opposite_ends():
     assert max(first[Col.GENERAL_TIME]) < min(last[Col.GENERAL_TIME])
 
 
-def test_each_cover_comes_from_a_quarter_of_the_span():
-    frame = spread_frame()
-    span = frame[Col.GENERAL_TIME].max() - frame[Col.GENERAL_TIME].min()
+def test_each_cover_comes_from_a_quarter_of_the_candidates():
+    """A quarter **by count**, in time order."""
+    frame = spread_frame(n=12)
 
     first = _pick_cover_subset(frame, "first")
     last = _pick_cover_subset(frame, "last")
 
-    assert max(first[Col.GENERAL_TIME]) <= span * COVER_FRACTION
-    assert min(last[Col.GENERAL_TIME]) >= span * (1 - COVER_FRACTION)
+    assert len(first) == 3 and len(last) == 3
+    assert list(first[Col.IMAGE_ID]) == [1, 2, 3]
+    assert list(last[Col.IMAGE_ID]) == [10, 11, 12]
+
+
+def test_a_gap_in_the_gallery_does_not_widen_the_window():
+    """Counting rather than measuring elapsed time. Gallery 52894932 holds two
+    shoots five days apart -- one 114.7-hour gap between consecutive photos --
+    and a quarter of its *time span* contained 88% of the photos, so the
+    opening cover came from 79% of the way through the day.
+    """
+    frame = pd.DataFrame({
+        Col.IMAGE_ID: list(range(1, 13)),
+        # eleven photos minutes apart, then one five days later
+        Col.GENERAL_TIME: [i * 300 for i in range(11)] + [11 * 300 + 5 * 86400],
+        Col.IMAGE_ORDER: [float(i) for i in range(12)],
+    })
+
+    first = _pick_cover_subset(frame, "first")
+
+    assert len(first) == 3, "the window is three of twelve however long the gap is"
+    assert list(first[Col.IMAGE_ID]) == [1, 2, 3]
+
+
+def test_a_single_candidate_still_yields_one():
+    frame = spread_frame(n=2)
+
+    assert len(_pick_cover_subset(frame, "first")) == 1
+    assert len(_pick_cover_subset(frame, "last")) == 1
 
 
 def test_a_quarter_is_more_than_one_photo_so_quality_can_decide():
     """The whole point of a window rather than an edge: the ranking below gets
     a choice, instead of being handed the single earliest frame."""
-    first = _pick_cover_subset(spread_frame(), "first")
+    first = _pick_cover_subset(spread_frame(n=12), "first")
 
     assert len(first) > 1
 
@@ -232,14 +259,16 @@ def test_photos_with_no_time_are_dropped_not_sorted_to_one_end():
     assert list(_pick_cover_subset(frame, "last")[Col.IMAGE_ID]) == [2]
 
 
-def test_one_timestamp_across_every_candidate_falls_back_to_order():
+def test_one_timestamp_across_every_candidate_keeps_the_given_order():
+    """Counting needs no special case for ties: a stable sort leaves the
+    caller's order alone, so the two ends still come from opposite ends."""
     frame = pd.DataFrame({
-        Col.IMAGE_ID: [1, 2, 3],
-        Col.GENERAL_TIME: [900, 900, 900],
+        Col.IMAGE_ID: [1, 2, 3, 4],
+        Col.GENERAL_TIME: [900, 900, 900, 900],
     })
 
-    assert list(_pick_cover_subset(frame, "first", window_size=1)[Col.IMAGE_ID]) == [1]
-    assert list(_pick_cover_subset(frame, "last", window_size=1)[Col.IMAGE_ID]) == [3]
+    assert list(_pick_cover_subset(frame, "first")[Col.IMAGE_ID]) == [1]
+    assert list(_pick_cover_subset(frame, "last")[Col.IMAGE_ID]) == [4]
 
 
 def test_falls_back_to_image_time_when_there_is_no_general_time():

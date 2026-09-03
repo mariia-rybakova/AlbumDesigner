@@ -304,9 +304,10 @@ so it sees the whole gallery instead of the few hundred frames selection kept.
 ProcessStage still runs its own copy and still decides the covers — nothing
 downstream reads `key_page` or `ctx.key_pages` yet.
 
-Each cover is drawn from **a quarter of the candidates' own time span** — the
-opening from the first quarter of it, the closing from the last — and the best
-photo in that quarter wins. Two earlier rules both failed the same way:
+Each cover is drawn from **a quarter of the candidates by count**, taken in
+time order — the opening from the earliest quarter of them, the closing from the
+latest — and the best photo in that quarter wins. Three rules have been tried
+and the first two both failed on real albums:
 
 - **`time_cluster` min/max** (what ProcessStage used). The couple frames a
   wedding actually yields are often bunched into one part of the day, so
@@ -316,13 +317,19 @@ photo in that quarter wins. Two earlier rules both failed the same way:
 - **The first and last ten photos** (what enrich used, having no
   `time_cluster`). Closer, but still biased to the extreme edge, and on one
   gallery it put the closing photo at 30% of the day against an opening at 23%.
+- **A quarter of the elapsed time.** Breaks whenever the gallery is not one
+  continuous session. Gallery 52894932 holds two shoots **five days apart** — a
+  single **114.7-hour gap** between consecutive photos — so a quarter of its
+  time span contained **88% of the photos**, the window was effectively the
+  whole gallery, and the opening cover came from **79% of the way through the
+  day** while good frames sat in the first fifth.
 
-Quartering the candidates' *own* span always separates the two ends and stays
-honest when the couple were only photographed for an hour: the opening comes
-from the start of that hour and the closing from its end. Quartering the whole
-gallery instead would leave both quarters empty on exactly those galleries.
-Nothing is trimmed by recency inside the quarter — which frame is *good* is for
-the ranking to say. `COVER_FRACTION` is the knob.
+Counting is immune to all three. It is also the rule the rest of the pipeline
+already follows: `enrich/timeline.py` works in **positions** rather than
+wall-clock minutes for exactly this reason — ordering by time is trustworthy,
+measuring distances along it is not. Nothing is trimmed by anything but time
+order inside the quarter; which frame is *good* is for the ranking to say.
+`COVER_FRACTION` is the knob.
 
 The window is taken along `general_time`, not `image_time`: the two are the same
 seconds when the EXIF is trustworthy, but when it is not, `general_time` has
@@ -332,13 +339,14 @@ still holds the unusable original — two validation galleries carry 2 distinct
 
 Both callers now take the same path, so enrich and ProcessStage agree exactly:
 
-| gallery | time clusters | opening | closing |
-|---|---|---|---|
-| 53147741 | 2 | 48% | 81% |
-| 49994361 | 6 | 28% | 99% |
-| 49995684 | 6 | 23% | 75% |
-| 47981912 | 7 | 31% | 89% |
-| 53496523 | 6 | 47% | 64% |
+| gallery | opening | closing |
+|---|---|---|
+| 52894932 | 18% *(was 79%)* | 90% |
+| 53147741 | 48% | 81% |
+| 49994361 | 28% | 99% |
+| 49995684 | 23% | 71% |
+| 47981912 | 24% | 95% |
+| 53496523 | 47% | 64% |
 
 **The ranking direction was also inverted.** `image_order` is the content
 model's `selectionOrder`, a rank where **0 is best** — `update_photos_ranks`

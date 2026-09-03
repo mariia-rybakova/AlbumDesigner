@@ -61,29 +61,36 @@ def _pick_time_cluster(df, position="first"):
 #: `image_time` does not order the day at all.
 _TIME_AXES = ("general_time", "image_time")
 
-#: How much of the candidates' own span each cover is drawn from -- the opening
-#: from the first quarter of it, the closing from the last.
+#: What share of the candidates each cover is drawn from, in time order -- the
+#: opening from the earliest quarter of them, the closing from the latest.
 COVER_FRACTION = 0.25
 
 
 def _pick_cover_subset(df, position="first", window_size=10, fraction=COVER_FRACTION):
-    """Candidates for one cover, from one end of the couple's own time span.
+    """Candidates for one cover: the earliest or latest `fraction` of them.
 
-    A quarter of the span, not the first or last N photos and not the first or
-    last `time_cluster`. Both of those failed the same way on a real album: the
-    couple frames a wedding actually yields are often bunched into one part of
-    the day, so `min(time_cluster) == max(time_cluster)` and the album opened
-    and closed on two shots of the same moment.
+    A quarter of the candidates **by count**, taken in time order -- not a
+    quarter of the elapsed time, and not the first or last `time_cluster`.
 
-    Quartering the candidates' *own* span always separates the two ends, and it
-    stays honest when the couple were only photographed for an hour -- the
-    opening still comes from the start of that hour and the closing from its
-    end. Quartering the whole gallery instead would leave both quarters empty on
-    exactly those galleries.
+    All three have now been tried and the first two both failed on real albums:
 
-    Nothing is trimmed by recency inside the quarter: which frame is *good* is
-    for the ranking below to say, and biasing back towards the extreme edge is
-    what this change exists to stop.
+    - `time_cluster` min/max put both covers in one cluster, because a wedding's
+      couple frames are often bunched into one part of the day. On one album all
+      ten landscape couple photos sat in cluster 1 of 2.
+    - A quarter of the elapsed *time* breaks whenever the gallery is not one
+      continuous session. Gallery 52894932 holds two shoots **five days apart**
+      -- a single 114.7-hour gap between consecutive photos -- so the first
+      quarter of its time span contained **88% of the photos**, the window was
+      effectively the whole gallery, and the opening cover came from 79% of the
+      way through the day.
+
+    Counting is immune to both. It is also the rule the rest of the pipeline
+    already follows: `src/pipeline/enrich/timeline.py` works in *positions*
+    rather than wall-clock minutes, for exactly this reason -- ordering by time
+    is trustworthy, measuring distances along it is not.
+
+    Nothing is trimmed by anything but time order here: which frame in the
+    quarter is *good* is for the ranking below to decide.
     """
     if df.empty:
         return df
@@ -97,26 +104,12 @@ def _pick_cover_subset(df, position="first", window_size=10, fraction=COVER_FRAC
     frame["__t"] = pd.to_numeric(frame[axis], errors="coerce")
     # Rows with no time are dropped rather than sorted to one end, where they
     # would fill a quarter with photos of unknown place in the day.
-    frame = frame.dropna(subset=["__t"]).sort_values("__t", ascending=True)
+    frame = frame.dropna(subset=["__t"]).sort_values("__t", ascending=True, kind="stable")
     if frame.empty:
         return frame.drop(columns="__t")
 
-    span = float(frame["__t"].iloc[-1] - frame["__t"].iloc[0])
-    if span <= 0:
-        # One timestamp across every candidate; order is all that is left.
-        edge_rows = frame.head(window_size) if position == "first" else frame.tail(window_size)
-        return edge_rows.drop(columns="__t")
-
-    if position == "first":
-        limit = frame["__t"].iloc[0] + span * fraction
-        quarter = frame[frame["__t"] <= limit]
-    else:
-        limit = frame["__t"].iloc[-1] - span * fraction
-        quarter = frame[frame["__t"] >= limit]
-
-    if quarter.empty:  # unreachable while fraction > 0, but cheap to be sure
-        quarter = frame.head(window_size) if position == "first" else frame.tail(window_size)
-
+    take = max(1, int(round(len(frame) * fraction)))
+    quarter = frame.head(take) if position == "first" else frame.tail(take)
     return quarter.drop(columns="__t")
 
 
