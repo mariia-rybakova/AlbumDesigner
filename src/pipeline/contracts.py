@@ -191,6 +191,10 @@ class GalleryFacts:
     """Derived, gallery-wide facts. Produced by the enrich substages."""
 
     is_wedding: Optional[bool] = None
+    #: True when the content model called the couple `two brides` / `two grooms`.
+    #: Set by `enrich.same_sex_couple`, which also splits the solo-portrait class
+    #: so both partners get their own allowance.
+    same_sex_couple: bool = False
     is_artificial_time: bool = False
     model_version: Optional[int] = None
     bride_id: Optional[int] = None

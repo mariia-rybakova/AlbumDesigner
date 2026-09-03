@@ -100,6 +100,7 @@ ENRICH: Sequence[str] = (
     "enrich.gallery_type",
     "enrich.content_class",
     "enrich.identities",
+    "enrich.same_sex_couple",
     "enrich.semantic_tags",
     "enrich.require_cluster_data",
     "enrich.people_cluster",

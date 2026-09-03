@@ -157,6 +157,7 @@ synthetic-blob tests do not cover.
 | `enrich.gallery_type` | Wedding or not | — (`facts.is_wedding`) |
 | `enrich.content_class` | `cluster_class` int → category name | `cluster_context` |
 | `enrich.identities` | Which identity is the bride, which the groom | `bride_id`, `groom_id` |
+| `enrich.same_sex_couple` | Gives each partner of a same-sex couple their own solo class | — (`facts.same_sex_couple`) |
 | `enrich.semantic_tags` | CLIP projection against the query bank | `image_query_content`, `image_subquery_content` |
 | `enrich.require_cluster_data` | (hygiene gate) drop rows without cluster data | — |
 | `enrich.people_cluster` | People-composition key | `people_cluster` |
@@ -168,6 +169,52 @@ synthetic-blob tests do not cover.
 `enrich.content_class`, `enrich.identities` and `enrich.key_pages` are
 wedding-only, matching the original: non-wedding galleries never get a
 `cluster_context` column.
+
+#### `enrich.same_sex_couple`
+
+`map_cluster_label` folds the content model's `two brides` / `two grooms` into
+`bride and groom`. That is right for the couple shots and wrong for the solo
+ones: the model puts **both** partners' portraits into a single class and
+leaves the other empty.
+
+On gallery 52894932 the `bride` class held 68 photos that split exactly
+**32 / 32** between the two brides, and `groom` held **none**. That loses a
+partner outright, because `CoupleTimelineStrategy` filters the `bride` category
+to `persons_ids == [bride_id]` and `groom` to `persons_ids == [groom_id]` — so
+the 32 portraits of the second bride sat in a class whose filter rejects them,
+while the category that would have taken them had nothing to pick from. Her 12%
+of the album bought nothing at all.
+
+The substage moves the second partner's exact solo frames into the empty
+counterpart class. Everything downstream then works untouched and already
+correctly — two 12% shares in `focus_csv.csv`, the identity filter in the
+strategy, the lookup table, the per-class thresholds — and nothing else needs
+to know the couple is same-sex, which is the point of doing it here.
+
+Measured on that gallery:
+
+| | before | after |
+|---|---|---|
+| `bride` / `groom` classes | 68 / **0** | 36 / **32** |
+| photos picked for those two categories | 18 / **0** | 15 / **12** |
+| solo shots of the first bride in the album | 9 | **16** |
+| album length | 95 | **104** |
+
+Detection is the model's own output — `cluster_class` for `two brides` or
+`two grooms`, which is 99 photos here and **zero across the other six
+validation galleries**, so there are no false positives to guard against. It
+never guesses: an empty counterpart class is the whole signature, so a gallery
+where the model filled both is left alone, and a partner whose identity could
+not be resolved is recorded but not moved.
+
+**What it does not fix.** A quarter to a third of *every* album's budget weight
+is allocated to categories the gallery has none of — 23–33% on the six
+opposite-sex galleries, and 51% here. That is a separate, general problem in
+`budget_each`, where `total_value` sums the whole profile rather than the
+present categories. It cannot be fixed by simply dropping the absent share,
+though: on a same-sex gallery `groom` is exactly such a category, and
+redistributing its 12% elsewhere is what would leave the second partner
+unrepresented.
 
 #### `enrich.duplicate_shots`
 
