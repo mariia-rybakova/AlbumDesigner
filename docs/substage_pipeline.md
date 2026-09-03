@@ -200,6 +200,17 @@ Measured on that gallery:
 | solo shots of the first bride in the album | 9 | **16** |
 | album length | 95 | **104** |
 
+`resolve_bride_groom` was hardened for the same case. It names the first
+partner from the populated solo context, then looked to `main_persons` for the
+second — and that list is the model's most-frequent identities and can be
+**empty**, as it is on this gallery. When it is, the second partner came out
+`NaN`, which is not a loud failure either: the category filter
+`persons_ids == [nan]` simply matches nothing, so a partner vanishes silently.
+It now falls back to the next most common identity of the context that named
+the first, which is by construction the other partner. `main_persons` is still
+preferred when it has an answer, and a gallery with only one identity is left
+unresolved rather than having a guest promoted into the couple.
+
 Detection is the model's own output — `cluster_class` for `two brides` or
 `two grooms`, which is 99 photos here and **zero across the other six
 validation galleries**, so there are no false positives to guard against. It

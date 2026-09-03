@@ -412,6 +412,28 @@ def add_content_class(gallery_info_df):
     return gallery_info_df.apply(process_content, axis=1)
 
 
+def _other_partner(solo_counts, named_id):
+    """The second partner, read off the solo context that named the first.
+
+    A same-sex couple puts both partners into one solo context and leaves the
+    other empty, so the usual path never names the second one: on gallery
+    52894932 the `bride` context held identities 5 and 1 exactly **32 times
+    each** while the `groom` context was empty. Whoever else that one context is
+    full of is the other partner.
+
+    This runs only when `main_persons` did not answer, which is the case it
+    exists for -- that list is the model's most-frequent identities and can be
+    empty, and when it is, the second partner used to come out as NaN. A NaN
+    partner is not a loud failure either: the category filter
+    ``persons_ids == [nan]`` simply matches nothing, so one partner would
+    quietly vanish from the album.
+    """
+    for identity, _count in solo_counts.most_common():
+        if identity != named_id:
+            return identity
+    return np.nan
+
+
 def resolve_bride_groom(gallery_info_df, logger):
     """Resolve the couple identity ids and stamp them on every row.
 
@@ -449,11 +471,15 @@ def resolve_bride_groom(gallery_info_df, logger):
             if person_id != groom_id:
                 bride_id = person_id
                 break
+        if np.isnan(bride_id):
+            bride_id = _other_partner(groom_set, groom_id)
     elif np.isnan(groom_id) and not np.isnan(bride_id):
         for person_id in main_row:
             if person_id != bride_id:
                 groom_id = person_id
                 break
+        if np.isnan(groom_id):
+            groom_id = _other_partner(bride_set, bride_id)
     elif np.isnan(bride_id) and np.isnan(groom_id):
         if len(main_row) >= 2:
             bride_id = main_row[0]
