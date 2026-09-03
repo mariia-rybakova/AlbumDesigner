@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from src.pipeline.contracts import AlbumContext, Col, photo
@@ -92,9 +93,9 @@ class WeddingPicker:
         self.chosen: List = list(self.committed)
         #: Who the committed photos already put in the album. Empty when
         #: nothing was committed, so the picker behaves exactly as before.
-        self.covered_people: set = _people_in(
-            context.photos[context.photos[Col.IMAGE_ID].isin(self.committed)]
-        )
+        settled_rows = context.photos[context.photos[Col.IMAGE_ID].isin(self.committed)]
+        self.covered_people: set = _people_in(settled_rows)
+        self.covered_embeddings: List = _unit_embeddings(settled_rows)
         self.per_category: Dict[str, Dict[str, int]] = {}
 
         # Reproduces a quirk of the monolith this replaced: one branch could
@@ -185,6 +186,7 @@ class WeddingPicker:
             order_index=order_index,
             user_selected=self.user_selected,
             covered_people=self.covered_people,
+            covered_embeddings=self.covered_embeddings,
             is_artificial_time=self.context.facts.is_artificial_time,
             logger=self.logger,
         )
@@ -280,6 +282,7 @@ class WeddingPicker:
                 cluster_name=category,
                 logger=self.logger,
                 target_group_size=10,
+                already_selected=self.covered_embeddings,
             )
 
         return list(preferred) + list(filler)
@@ -300,3 +303,18 @@ def _people_in(frame: pd.DataFrame) -> set:
         if isinstance(ids, (list, tuple, set)):
             people.update(ids)
     return people
+
+
+def _unit_embeddings(frame: pd.DataFrame) -> List:
+    """L2-normalised embeddings of a frame, skipping rows without one."""
+    if frame is None or frame.empty or Col.EMBEDDING not in frame.columns:
+        return []
+    vectors = []
+    for value in frame[Col.EMBEDDING]:
+        if value is None:
+            continue
+        vector = np.asarray(value, dtype=float).ravel()
+        norm = float(np.linalg.norm(vector))
+        if vector.size and norm:
+            vectors.append(vector / norm)
+    return vectors

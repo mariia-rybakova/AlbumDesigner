@@ -55,5 +55,6 @@ class BridePrepStrategy(CategoryStrategy):
             cluster_name=request.category,
             logger=request.logger,
             target_group_size=10,
+            already_selected=request.covered_embeddings,
         )
         return CategoryPicks(preferred=preferred)

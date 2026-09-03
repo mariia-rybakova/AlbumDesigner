@@ -84,6 +84,7 @@ class CoupleTimelineStrategy(CategoryStrategy):
             cluster_name=category,
             logger=request.logger,
             target_group_size=10,
+            already_selected=request.covered_embeddings,
         )
 
         if preferred is None:

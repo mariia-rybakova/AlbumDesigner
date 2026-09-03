@@ -512,13 +512,33 @@ fixture it lost a `walking the aisle` frame both paths had already selected.
 rows from each category's frame before it scores anything, so a hand pick can
 never be selected twice, and its slot is already paid for.
 
-**And it knows who is already in.** `CategoryRequest.covered_people` carries the
+**And it knows what is already in — partly.** Coverage is both people and
+timeline, and the two are at different depths.
+
+*People, and near-copies: done.* `CategoryRequest.covered_people` carries the
 identities in the committed photos, and `PersonCoverageStrategy` seeds its union
 with them — that strategy exists to maximise how many distinct guests appear
 somewhere, and a guest in a hand-picked photo is already there. Without the
 seed the greedy pass starts from nothing and spends slots re-covering them. It
 is empty when nothing was committed, which is what keeps the picker's old
 behaviour intact for the equivalence tests.
+
+`CategoryRequest.covered_embeddings` does the same for similarity.
+`select_remove_similar` rejects a candidate whose cosine to anything picked *in
+that call* is ≥ 0.90, and its matrix started empty — so the picker could freely
+choose a near-copy of a hand pick, which it cannot see, because committed rows
+are dropped before the category is scored. Seeded, on 53459898: **8 selected
+photos sat within 0.90 of a hand pick, now 0**, at the same album length.
+
+*Timeline allocation: postponed.* `select_remove_similar` spreads `need` across
+scene/time groups with `ensure_one=True`, so every group gets at least one
+photo. Committed photos are removed before the grouping, so a moment holding one
+hand pick and three other frames still receives `ensure_one` ≥ 1 more — that
+moment ends up with two photos while an uncovered moment gets one. Fixing it
+means carrying the committed rows *through* the grouping, marking them, counting
+them toward the allocation but excluding them as candidates, which reaches into
+`refactoring.py`'s selection loop and `allocate_prefer_larger_artificial`. That
+is the deep change; the two shallow halves above are in.
 
 Where a choice remains, the ranking is the one the picker would have used: the
 request's own scoring, falling back to `image_order` ascending. Note the

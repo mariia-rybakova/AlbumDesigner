@@ -107,6 +107,12 @@ class CategoryRequest:
     #: this so it does not spend slots re-covering guests who are already in.
     covered_people: set = field(default_factory=set)
 
+    #: Unit embeddings of those same committed photos. `select_remove_similar`
+    #: seeds its diversity check with them, so the picker cannot choose a
+    #: near-copy of a photo the user hand-picked -- it cannot otherwise see
+    #: them, since committed rows are dropped before the category is scored.
+    covered_embeddings: List[Any] = field(default_factory=list)
+
     is_artificial_time: bool = False
     logger: Any = None
 
