@@ -47,7 +47,7 @@ model's ``selectionOrder``, a rank where **0 is best**, which is why
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -133,10 +133,19 @@ class Preselector:
     def _commit_user_picks(self) -> None:
         """Every hand-picked photo still in the pool, unconditionally.
 
-        Not charged to any category's allowance -- see :meth:`_commit`.
+        **Charged to its own category.** A photo the user picked out of the
+        dancing spends one of dancing's slots, not one of some other category's
+        and not nothing at all. Added on top -- which is what the monolith did
+        and what this did at first -- the album grows by however many photos
+        were picked, so the requested density stops meaning anything: on one
+        gallery a density-4 album budgeted 139 photos and then carried 36 more.
+
+        The charge is per photo and by class, so a category the user did not
+        touch keeps its full allowance.
         """
         for image_id in self.user_selected[Col.IMAGE_ID].tolist():
-            self._commit(image_id, "user")
+            if self._commit(image_id, "user"):
+                self._charge(image_id)
 
     def _commit_identity_coverage(self) -> None:
         """Each named identity gets its photos, whatever the ranking says."""
@@ -184,21 +193,30 @@ class Preselector:
 
     # -- shared -------------------------------------------------------------
 
+    def _charge(self, image_id: Any) -> None:
+        """Take one photo out of the allowance of the class it belongs to."""
+        category = self._category_of(image_id)
+        if category is not None and category in self.plan.images:
+            self.plan.images[category] = max(0, self.plan.images[category] - 1)
+
+    def _category_of(self, image_id: Any) -> Optional[str]:
+        row = self.pool.loc[self.pool[Col.IMAGE_ID] == image_id, Col.CLUSTER_CONTEXT]
+        return None if row.empty else row.iloc[0]
+
     def _commit(self, image_id: Any, reason: str) -> bool:
         """Record a photo. Returns False if it was already committed.
 
-        No category's allowance is decremented here. A `yes` category is settled
-        wholesale by :meth:`_commit_yes_categories`, which zeroes it; the other
-        three constraints are *added* to the budget rather than taken out of it.
+        No allowance is decremented here; the caller decides. A hand pick is
+        charged to its own class (:meth:`_charge`) because it is a photo the
+        album is spending a slot on. A `yes` category is settled wholesale by
+        :meth:`_commit_yes_categories`, which zeroes it.
 
-        Charging them was the first thing tried and it made the album shorter
-        rather than more certain, because a committed photo is usually one the
-        picker would have chosen anyway -- charging its category then costs a
-        second photo for nothing. Measured on the equivalence fixture, charging
-        identity coverage lost a `walking the aisle` frame that *both* paths had
-        already selected. Left uncharged, a constraint costs the album a slot
-        only when it actually adds a photo, which is also the rule the original
-        applied to hand-picked photos.
+        Identity coverage and the covers are **not** charged. Those are
+        guarantees rather than choices, and charging them made the album shorter
+        rather than more certain: a committed photo is usually one the picker
+        would have chosen anyway, so charging its category cost a second photo
+        for nothing -- on the equivalence fixture it lost a `walking the aisle`
+        frame that *both* paths had already selected.
         """
         if image_id in self.committed:
             return False

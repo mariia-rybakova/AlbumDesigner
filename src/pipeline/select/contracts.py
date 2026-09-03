@@ -101,6 +101,12 @@ class CategoryRequest:
     #: Photos the user hand-picked, for the categories that prefer them.
     user_selected: pd.DataFrame = field(default_factory=pd.DataFrame)
 
+    #: Identities the album already holds, from whatever `select.preselect`
+    #: committed -- hand picks, identity coverage, the covers. Empty when
+    #: nothing was committed. `PersonCoverageStrategy` seeds its union with
+    #: this so it does not spend slots re-covering guests who are already in.
+    covered_people: set = field(default_factory=set)
+
     is_artificial_time: bool = False
     logger: Any = None
 

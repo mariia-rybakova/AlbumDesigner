@@ -489,15 +489,36 @@ Each is switchable under `CONFIGS['preselect']`, and
 `photos_per_identity` (default 1) sets how deep identity coverage goes —
 guaranteeing a named person appears, not saturating the album with them.
 
-**Only `yes` categories are charged.** There the commitment *is* the allowance,
-so it is zeroed and the picker skips the category. The other three are added to
-the budget. Charging them was tried first and made the album *shorter* rather
-than more certain: a committed photo is usually one the picker would have chosen
-anyway, so charging its category costs a second photo for nothing — on the
-equivalence fixture, charging identity coverage lost a `walking the aisle` frame
-both paths had already selected. Uncharged, a constraint costs a slot only when
-it actually adds a photo, which is the rule the monolith already applied to
-hand-picked photos.
+**Hand picks and `yes` categories are charged; the other two are not.**
+
+A hand pick is charged to **its own class**. It is a photo the album is
+spending a slot on, so a couple shot the user picked spends one of the couple
+category's slots — not one of some other category's, and not nothing at all.
+Added on top (what the monolith did, and what this did at first) the album grows
+by however many photos were picked and the requested density stops meaning
+anything: on gallery 53459898 a density-4 album budgeted 139 photos and then
+carried 36 more. A class the user did not touch keeps its full allowance.
+
+A `yes` category is charged wholesale — there the commitment *is* the allowance,
+so it is zeroed and the picker skips the category.
+
+**Identity coverage and the covers are not charged.** Those are guarantees
+rather than choices, and charging them made the album shorter rather than more
+certain: a committed photo is usually one the picker would have chosen anyway,
+so charging its category cost a second photo for nothing — on the equivalence
+fixture it lost a `walking the aisle` frame both paths had already selected.
+
+**The picker cannot reach a committed photo.** `select.pick` drops committed
+rows from each category's frame before it scores anything, so a hand pick can
+never be selected twice, and its slot is already paid for.
+
+**And it knows who is already in.** `CategoryRequest.covered_people` carries the
+identities in the committed photos, and `PersonCoverageStrategy` seeds its union
+with them — that strategy exists to maximise how many distinct guests appear
+somewhere, and a guest in a hand-picked photo is already there. Without the
+seed the greedy pass starts from nothing and spends slots re-covering them. It
+is empty when nothing was committed, which is what keeps the picker's old
+behaviour intact for the equivalence tests.
 
 Where a choice remains, the ranking is the one the picker would have used: the
 request's own scoring, falling back to `image_order` ascending. Note the

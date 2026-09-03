@@ -136,7 +136,8 @@ def person_clustering_selection( # Renamed for clarity, or keep your name
 
     return list(set(result))  # Ensure unique images in the final list
 
-def person_max_union_selection(images_for_category, df, needed_count,image_cluster_dict, logger):
+def person_max_union_selection(images_for_category, df, needed_count, image_cluster_dict,
+                               logger, already_covered=None):
     try:
         persons_ids_per_image = []
         images_with_persons_data = []
@@ -150,7 +151,10 @@ def person_max_union_selection(images_for_category, df, needed_count,image_clust
 
         selected_indices = []
         selected_sets = []
-        current_union = set()
+        # Seeded with whoever the album already holds -- the people in the
+        # user's own picks. Without it the greedy pass starts from nothing and
+        # spends its slots re-covering guests who are already in.
+        current_union = set(already_covered or ())
 
         remaining = [(item[0], set(item[1])) for item in
                      images_with_persons_data]  # List of tuples (image_id, set_of_person_ids)

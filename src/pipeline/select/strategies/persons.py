@@ -50,6 +50,13 @@ class PersonCoverageStrategy(CategoryStrategy):
             needed_count=request.need,
             image_cluster_dict=request.order_index,
             logger=request.logger,
+            # The people the album already holds, from whatever was committed.
+            # This strategy exists to maximise the number of distinct guests who
+            # appear somewhere, and a guest in a committed photo is already
+            # there -- without this the greedy pass starts from nothing and
+            # spends slots re-covering them. Empty when nothing was committed,
+            # which is what keeps the picker's old behaviour intact.
+            already_covered=request.covered_people,
         )
         return CategoryPicks(preferred=preferred)
 
@@ -82,3 +89,4 @@ class PersonCoverageStrategy(CategoryStrategy):
             extra = everything[with_couple(everything)]
 
         return pd.concat([formal, extra], ignore_index=True)
+

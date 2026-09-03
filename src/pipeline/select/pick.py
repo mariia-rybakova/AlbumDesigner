@@ -90,6 +90,11 @@ class WeddingPicker:
         # loop below starts from it and does not offer those photos again.
         self.committed: Dict = dict(self.plan.committed)
         self.chosen: List = list(self.committed)
+        #: Who the committed photos already put in the album. Empty when
+        #: nothing was committed, so the picker behaves exactly as before.
+        self.covered_people: set = _people_in(
+            context.photos[context.photos[Col.IMAGE_ID].isin(self.committed)]
+        )
         self.per_category: Dict[str, Dict[str, int]] = {}
 
         # Reproduces a quirk of the monolith this replaced: one branch could
@@ -179,6 +184,7 @@ class WeddingPicker:
             scored=not used_image_order,
             order_index=order_index,
             user_selected=self.user_selected,
+            covered_people=self.covered_people,
             is_artificial_time=self.context.facts.is_artificial_time,
             logger=self.logger,
         )
@@ -283,3 +289,14 @@ class WeddingPicker:
         self.chosen.extend(picks)
         entry = self.per_category[category]
         entry['selected'] = entry.get('selected', 0) + len(picks)
+
+
+def _people_in(frame: pd.DataFrame) -> set:
+    """Every identity appearing anywhere in a frame."""
+    if frame is None or frame.empty or Col.PERSONS_IDS not in frame.columns:
+        return set()
+    people: set = set()
+    for ids in frame[Col.PERSONS_IDS]:
+        if isinstance(ids, (list, tuple, set)):
+            people.update(ids)
+    return people

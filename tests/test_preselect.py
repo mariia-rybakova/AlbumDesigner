@@ -121,13 +121,21 @@ def test_a_hand_picked_photo_is_committed_whatever_it_scores():
     assert reasons(context, 'user') == {1004, 1013}
 
 
-def test_hand_picks_are_not_charged_to_their_category():
-    """Asking for a photo should not cost you another one -- the rule the
-    monolith already applied, adding the user's picks on top of the budget."""
+def test_a_hand_pick_is_charged_to_its_own_category():
+    """A photo the user picked out of the couple shots spends one of *their*
+    slots -- not one of some other category's, and not nothing at all.
+
+    Added on top, the album grows by however many photos were picked and the
+    requested density stops meaning anything: on one real gallery a density-4
+    album budgeted 139 photos and then carried 36 more.
+    """
     with only(user_picks=True):
         context = run(user_picks=[1004])
 
-    assert context.selection_plan.images['bride and groom'] == 3
+    plan = context.selection_plan
+    assert plan.images['bride and groom'] == 2, "its own class pays"
+    assert plan.images['rings'] == 1, "a class the user did not touch is untouched"
+    assert plan.images['invite'] == 1
 
 
 def test_a_pick_outside_the_pool_is_ignored():
