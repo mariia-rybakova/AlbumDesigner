@@ -523,6 +523,15 @@ seed the greedy pass starts from nothing and spends slots re-covering them. It
 is empty when nothing was committed, which is what keeps the picker's old
 behaviour intact for the equivalence tests.
 
+**A `yes` category with a strategy is left to it.** The premise for settling a
+`yes` category here is that the ranked picker adds nothing — one photo of the
+rings is one photo of the rings. That is false wherever a category has a
+strategy of its own. `getting hair-makeup` carries `yes` *and* is handled by
+`BridePrepStrategy`, whose whole job is to keep the bride; settling it here
+zeroed the allowance so **the strategy never ran**, and on gallery 53459898 the
+photo that reached the album contained `persons=[6]`, someone unrelated to the
+couple, chosen on rank alone. Those categories now pass through to the picker.
+
 `CategoryRequest.covered_embeddings` does the same for similarity.
 `select_remove_similar` rejects a candidate whose cosine to anything picked *in
 that call* is ≥ 0.90, and its matrix started empty — so the picker could freely
@@ -703,7 +712,7 @@ greyscale top-up. What differs per category is a `CategoryStrategy`.
 
 | Strategy | Categories |
 |----------|-----------|
-| `BridePrepStrategy` | `bride getting dressed`, `getting hair-makeup` |
+| `BridePrepStrategy` | `bride getting dressed`, `getting hair-makeup` — subject is `bride_id`, subquery text only as fallback |
 | `CoupleTimelineStrategy` | `bride`, `groom`, `bride and groom`, `bride party`, `groom party`, `full party`, `walking the aisle`, `first dance`, `cake cutting`, `ceremony`, `dancing` |
 | `PersonCoverageStrategy` | `portrait`, `very large group`, `speech` |
 | `ParentsPortraitStrategy` | `parents portrait` |

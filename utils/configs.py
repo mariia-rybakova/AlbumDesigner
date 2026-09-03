@@ -217,6 +217,19 @@ CONFIGS = {'DEBUG': True,
         # allowance instead. See src/pipeline/select/allocation.py.
         'ceremony_yes_min_classes': 2,
 
+        # The getting-ready categories pick their subject by bride_id, the
+        # identity enrich.identities already resolved, falling back to a
+        # 'bride' subquery match only when she is attached to no frame at all.
+        # Before this the substring match was the *primary* rule, which admits
+        # bridesmaid / bridal suite / bride's mother -- and on a gallery where
+        # seven of ten 'getting hair-makeup' frames carry no subquery text, the
+        # photo that reached the album contained neither the bride nor anyone
+        # related to her.
+        #
+        # Set False to pick the way the pre-refactor monolith did; the
+        # equivalence tests use that to stay meaningful.
+        'bride_prep_by_identity': True,
+
         # Spread the profile's percentages over the categories the gallery
         # actually has, rather than over the whole profile. The weights sum to
         # 107% and a quarter to a third of that is routinely spent on

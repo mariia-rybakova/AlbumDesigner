@@ -5,8 +5,8 @@
 doubles as the reference implementation: for the same synthetic gallery both
 paths must choose the same photos, in the same order, with the same budget.
 
-**`select.preselect` is switched off for these comparisons, and so is the new
-budget normalisation.** It is a deliberate
+**Every deliberate departure is switched off for these comparisons** -- see
+`as_the_monolith`. It is a deliberate
 behaviour change -- it commits hand-picked photos, identity coverage, the covers
 and the `yes` categories before any ranking, which the monolith did not -- so
 holding it to the monolith would be asserting the change had not been made.
@@ -44,23 +44,30 @@ NO_CONSTRAINTS = {'user_picks': False, 'identities': False, 'key_pages': False,
 
 
 @contextmanager
-def without_preselect():
-    """Also restores the monolith's budget normalisation.
+def as_the_monolith():
+    """Turn off every deliberate departure, so the comparison means something.
 
-    `select.budget` now spreads the profile's percentages over the categories
-    the gallery has, rather than over the whole profile. That is a deliberate
-    change and a large one, so holding it to the monolith would be asserting it
-    had not been made -- see `budget_normalise_present_only`.
+    Three so far, each a change the monolith did not make, so holding it to
+    them would be asserting they had not been made:
+
+    * `select.preselect`'s constraints
+    * `budget_normalise_present_only` -- the profile's percentages spread over
+      the categories the gallery has rather than over the whole profile
+    * `bride_prep_by_identity` -- the getting-ready subject chosen by `bride_id`
+      rather than by a substring match on the subquery text
     """
     original = CONFIGS['preselect']
     normalisation = CONFIGS.get('budget_normalise_present_only', True)
+    prep = CONFIGS.get('bride_prep_by_identity', True)
     CONFIGS['preselect'] = {**original, **NO_CONSTRAINTS}
     CONFIGS['budget_normalise_present_only'] = False
+    CONFIGS['bride_prep_by_identity'] = False
     try:
         yield
     finally:
         CONFIGS['preselect'] = original
         CONFIGS['budget_normalise_present_only'] = normalisation
+        CONFIGS['bride_prep_by_identity'] = prep
 
 BRIDE_ID = 101
 GROOM_ID = 202
@@ -221,7 +228,7 @@ def run_pipeline(df, *, ten_photos, person_ids, focus, density, artificial, rati
         facts=GalleryFacts(is_wedding=True, is_artificial_time=artificial, model_version=2),
     )
 
-    with without_preselect():
+    with as_the_monolith():
         context = build_select(logger=logger).run(context)
     assert not context.failed, context.error
 

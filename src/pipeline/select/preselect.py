@@ -54,6 +54,7 @@ import pandas as pd
 from src.pipeline.contracts import AlbumContext, Col, ctx, photo
 from src.pipeline.registry import register
 from src.pipeline.select.scoring import Scorer
+from src.pipeline.select.strategies import default_registry
 from src.pipeline.substage import SubStage
 from utils.configs import CONFIGS
 
@@ -178,8 +179,27 @@ class Preselector:
         on top would give it two photos where it is allowed one. So only the gap
         is filled, and the allowance is then zeroed either way: the category is
         settled, and `select.pick` has nothing left to decide for it.
+
+        **Except where it does.** The whole premise for resolving a `yes`
+        category here is that the ranked picker adds nothing: one photo of the
+        rings is one photo of the rings. That is false wherever a category has a
+        strategy of its own. `getting hair-makeup` carries `yes` *and* is handled
+        by `BridePrepStrategy`, whose entire job is to keep the bride and keep
+        the same bride -- and taking it here zeroed the allowance so that
+        strategy never ran. On gallery 53459898 the photo that reached the album
+        contained `persons=[6]`, someone unrelated to the couple, chosen on rank
+        alone. Those categories are left to the picker.
         """
+        handled = set(default_registry().categories())
+
         for category in self.plan.yes_categories:
+            if category in handled:
+                if self.logger:
+                    self.logger.debug(
+                        f"Leaving '{category}' to its own strategy rather than "
+                        f"resolving it here")
+                continue
+
             need = self.plan.images.get(category, 0)
             if need <= 0:
                 continue
