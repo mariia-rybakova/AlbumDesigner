@@ -234,8 +234,31 @@ different treatment — black and white, or a blue or brown tone. Gallery
 53273032 is **1028 photos that are really 514 shots, each uploaded twice**, and
 one album spread showed the same dance frame in colour and in black and white.
 
-**It is a judgement about the gallery, not about a pair of photos.** Nothing in
-the photo table tells a re-export from the next frame of a burst:
+**Two routes in**, because two different things produce a second copy.
+
+*The colour flag, per group.* A burst does not change treatment between frames
+taken in the same second, so a same-second, same-aspect group holding **both a
+colour and a greyscale frame** is a re-export. This needs no gallery-level
+judgement and fires on any gallery:
+
+| gallery | mixed-flag groups | photos dropped |
+|---|---|---|
+| 53273032 | 505 of 505 | 517 *(wholesale, see below)* |
+| 52894932 | 61 (51 at adjacent photo ids) | **71** |
+| 49994361 | 35 | **39** |
+| 49995684 | 20 | **24** |
+| 53147741 | **0** | 0 |
+| 47981912 | **0** | 0 |
+| 53496523 | **0** | 0 |
+
+Zero on the three galleries with no re-uploads, so there is no false-positive
+risk to trade against. This route was missing at first, and the gallery-level
+rule below declined on 52894932 at 28.7% — under its threshold — so that
+album's colour/greyscale pairs went straight in.
+
+*The bulk signal, for the gallery.* When the colour flag does **not** differ —
+which is the case for a blue- or brown-toned copy — nothing in the photo table
+tells a re-export from the next frame of a burst:
 
 | | |
 |---|---|
@@ -276,10 +299,12 @@ album fell from 100 photos to 86. Removed up front, the counts are simply right:
 twin either. The album goes 100 → 85 photos, but 15 of those 100 were second
 copies, so the distinct content is unchanged.
 
-The limitation worth knowing: a photographer who re-uploads only a handful of
-favourites in black and white is **not** caught. That is the direction to err in
-— doing nothing leaves one redundant spread, while guessing wrong deletes
-photos the album should have had.
+The limitation worth knowing: a photographer who re-exports only a handful of
+favourites with a colour **tone** rather than to grey is **not** caught. That
+pair shares a capture second, an aspect ratio *and* a colour flag, so neither
+route sees it; only a wholesale toned re-upload is caught, by the bulk signal.
+That is the direction to err in — doing nothing leaves one redundant spread,
+while guessing wrong deletes photos the album should have had.
 
 #### `enrich.ceremony_anchor`
 
