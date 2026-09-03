@@ -32,7 +32,20 @@ eager: a camera at three frames a second produces several genuinely different
 photos in one second at the same aspect ratio, and on the other validation
 galleries that rule wanted to drop 46, 32 and 11 real frames.
 
-### So the judgement is about the gallery, not the pair
+### One pair-level signal does work: the colour flag
+
+A burst does not change treatment between frames taken in the same second. So a
+same-second, same-aspect group holding **both a colour and a greyscale frame**
+is a re-export, and that needs no gallery-level judgement at all. Measured
+across seven galleries: 505 of 505 such groups on the wholesale-duplicated one,
+61 on a second (51 at adjacent photo ids), 35 and 20 on two more, and **zero**
+on the three with no re-uploads.
+
+What the flag cannot catch is a *toned* copy -- blue or brown rather than grey
+-- because that is still classified as colour and its flag matches the
+original's. For those, only the bulk signal below works.
+
+### And a second judgement about the gallery
 
 What actually marks 53273032 is the *regularity*: 512 groups of exactly two,
 covering essentially the whole gallery. That is a photographer uploading their
@@ -76,10 +89,29 @@ _AR_PRECISION = 4
 
 
 def shot_groups(photos: pd.DataFrame, logger=None) -> Dict[Tuple, List[Any]]:
-    """``{shot key: [image_id, ...]}`` -- but only for a duplicated gallery.
+    """``{shot key: [image_id, ...]}`` for shots that are in twice.
 
-    Empty unless the gallery looks systematically uploaded twice. See the module
-    docstring: the same-second test cannot be trusted pair by pair, only in bulk.
+    Two routes in, because two different things produce a second copy:
+
+    **A differing colour flag inside one same-second group.** A burst does not
+    change treatment between frames taken in the same second, so a group at one
+    capture second and one aspect ratio holding both a colour and a greyscale
+    frame is a re-export. This needs no gallery-level judgement and fires on any
+    gallery. Measured: 505 of 505 groups on the wholesale-duplicated gallery,
+    61 on another (51 of them at adjacent photo ids), 35 and 20 on two more --
+    and **zero** on the three galleries with no re-uploads.
+
+    **A gallery duplicated wholesale.** When most of the gallery sits in such
+    groups the photographer uploaded their whole set again, and then the colour
+    flag is not needed -- which is what catches a *toned* copy, since a blue- or
+    brown-toned export is still classified as colour and its flag matches the
+    original's.
+
+    The gap between the two: a photographer who re-exports only a handful of
+    favourites with a colour tone rather than to grey. That pair shares a
+    second, an aspect ratio and a colour flag, and nothing in the photo table
+    separates it from a burst -- CLIP cosine and composition both overlap
+    completely, see the module docstring. It is left alone.
     """
     settings = CONFIGS.get('near_duplicates') or {}
     if not settings.get('enabled', True):
@@ -92,7 +124,7 @@ def shot_groups(photos: pd.DataFrame, logger=None) -> Dict[Tuple, List[Any]]:
     max_copies = int(settings.get('max_copies_per_shot', 4))
     min_share = float(settings.get('min_gallery_share', 0.5))
 
-    grouped = {}
+    grouped: Dict[Tuple, List[Any]] = {}
     for image_id, time, aspect in zip(
         photos[Col.IMAGE_ID], photos[Col.IMAGE_TIME], photos[Col.IMAGE_AS]
     ):
@@ -100,34 +132,58 @@ def shot_groups(photos: pd.DataFrame, logger=None) -> Dict[Tuple, List[Any]]:
         if key is not None:
             grouped.setdefault(key, []).append(image_id)
 
-    # Only groups small enough to be a re-upload set count. A gallery with
-    # unusable EXIF puts nearly everything on one timestamp; that group says
-    # nothing about which shot is which.
-    duplicated = {
+    # Only groups small enough to be a re-upload set. A gallery with unusable
+    # EXIF puts nearly everything on one timestamp; that group says nothing
+    # about which shot is which.
+    candidates = {
         key: members for key, members in grouped.items()
         if 1 < len(members) <= max_copies
     }
-    if not duplicated:
+    if not candidates:
         return {}
 
-    covered = sum(len(members) for members in duplicated.values())
+    covered = sum(len(members) for members in candidates.values())
     share = covered / len(photos)
-    if share < min_share:
+
+    if share >= min_share:
         if logger:
+            logger.info(
+                "Duplicate shots: {}/{} photos ({:.1%}) sit in {} same-second groups -- "
+                "this gallery was uploaded more than once".format(
+                    covered, len(photos), share, len(candidates))
+            )
+        return candidates
+
+    recoloured = {
+        key: members for key, members in candidates.items()
+        if _mixed_treatment(photos, members)
+    }
+    if logger:
+        if recoloured:
+            logger.info(
+                "Duplicate shots: {} of {} same-second groups hold both a colour and a "
+                "greyscale copy of one shot; the other {} are bursts and are left "
+                "alone".format(len(recoloured), len(candidates),
+                               len(candidates) - len(recoloured))
+            )
+        else:
             logger.debug(
                 "Duplicate shots: {}/{} photos ({:.1%}) share a capture second, below "
-                "{:.0%} -- treating these as bursts, not as a duplicated gallery".format(
+                "{:.0%}, and none mixes colour with greyscale -- all bursts".format(
                     covered, len(photos), share, min_share)
             )
-        return {}
+    return recoloured
 
-    if logger:
-        logger.info(
-            "Duplicate shots: {}/{} photos ({:.1%}) sit in {} same-second groups -- "
-            "this gallery was uploaded more than once".format(
-                covered, len(photos), share, len(duplicated))
-        )
-    return duplicated
+
+def _mixed_treatment(photos: pd.DataFrame, members: List[Any]) -> bool:
+    """Whether one same-second group holds both a colour and a greyscale frame.
+
+    `image_color` is the segmentation's `colorEnum`: 0 is greyscale, 1 colour.
+    """
+    if Col.IMAGE_COLOR not in photos.columns:
+        return False
+    flags = photos.loc[photos[Col.IMAGE_ID].isin(members), Col.IMAGE_COLOR]
+    return flags.apply(lambda v: 0 if v == 0 else 1).nunique() > 1
 
 
 def _shot_key(time, aspect) -> Optional[Tuple]:
