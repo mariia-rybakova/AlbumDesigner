@@ -612,7 +612,12 @@ def test_send_off_does_not_draw_from_the_spread_pool():
 # A burst is fifteen frames against a lookup-table mean of two, so its surplus
 # read as seven spare pages and the fill loop would keep drawing on it.
 
-STARVED = {'ceremony': 40, 'bride and groom': 60, 'dancing': 100}
+#: A gallery that genuinely cannot fill an album: three categories present, all
+#: holding far fewer photos than their share of the profile asks for. It has to
+#: be short *this* way now -- since `budget_normalise_present_only`, a gallery
+#: merely missing most categories is not short at all, because the few it has
+#: are normalised up to cover the whole album.
+STARVED = {'ceremony': 8, 'bride and groom': 10, 'dancing': 12}
 
 
 def _stocked(**extra):
@@ -890,20 +895,92 @@ def test_a_yes_category_still_fills_when_nothing_else_can():
         "with nothing else able to fill, settings should be granted a page")
 
 
+# -- what the album is normalised against ----------------------------------
+
+
+def test_an_absent_category_is_not_a_shortfall():
+    """A wedding with no cake cutting is not an album three pages short.
+
+    The profile weights sum to 107% and a quarter to a third of that routinely
+    goes to categories a given wedding has none of. Counted in, the present
+    categories asked for only ~70% of the album and the rest came back as
+    shortfall for the fill loop to patch with whatever sat high in the file --
+    `other` and `None` among them, at 0%.
+    """
+    plenty = _allocate_full({'ceremony': 200, 'bride and groom': 200, 'dancing': 200})
+
+    assert plenty.shortfall == 0, (
+        "three well-stocked categories should fill the album between them")
+    assert plenty.images.get('other', 0) == 0
+    assert plenty.images.get('None', 0) == 0
+
+
+def test_the_present_categories_are_normalised_up_to_the_whole_album():
+    """Their shares are taken over what the gallery has, so together they ask
+    for the whole album rather than their slice of the full profile.
+
+    Measured on the first pass, before the fill loop runs -- afterwards the two
+    look alike, because with the old normalisation the loop spends the whole
+    shortfall growing these same categories back up. The difference is *where*
+    the album's length comes from: the profile's weights, or a scramble down
+    `focus_csv.csv`.
+    """
+    from src.pipeline.select import allocation as al
+    from utils.lookup_table_tools import wedding_lookup_table
+
+    counts = {'ceremony': 200, 'bride and groom': 200, 'dancing': 200}
+    lut = al.density_scaled(wedding_lookup_table, 3)
+
+    shares = {}
+    for present_only in (False, True):
+        original = CONFIGS['budget_normalise_present_only']
+        CONFIGS['budget_normalise_present_only'] = present_only
+        try:
+            table = _profile(_quiet())
+            al.budget_each(table, counts, lut, target=19)
+            shares[present_only] = sum(table[c]['spreads'] for c in counts)
+        finally:
+            CONFIGS['budget_normalise_present_only'] = original
+
+    assert shares[True] > shares[False], (
+        f"the three present categories should claim more of the album: "
+        f"{shares[False]:.1f} -> {shares[True]:.1f} spreads")
+    assert shares[True] >= 19 * 0.9, (
+        f"and very nearly all of it, got {shares[True]:.1f} of 19 spreads")
+
+
+def test_a_genuine_shortfall_still_counts():
+    """Only *absent* categories stop contributing. A category that is there and
+    cannot supply its share is still a real gap."""
+    result = _allocate_full(dict(STARVED))
+
+    assert result.shortfall >= 1
+
+
 # -- the port ---------------------------------------------------------------
 
 
 def test_matches_the_reference_when_no_highlight_is_present():
     """The select.budget allocator is a port of calculate_optimal_selection.
-    Where the new rule cannot fire, the two must still agree exactly -- which
-    is what makes the rest of these tests measurements of the rule and not of
-    a drifting reimplementation."""
-    for counts in (STARVED, _stocked(), _stocked(**{MAY_KISS_BRIDE: 6})):
-        images, spreads = _allocate(dict(counts))
-        ref_images, ref_spreads, _lo, _hi = _allocate_reference(dict(counts))
+    Where the new rules cannot fire, the two must still agree exactly -- which
+    is what makes the rest of these tests measurements of the rules and not of
+    a drifting reimplementation.
 
-        assert images == ref_images, f"photos diverged on {sorted(counts)}"
-        assert spreads == ref_spreads, f"spreads diverged on {sorted(counts)}"
+    The two deliberate departures are switched off here: the ceremony rule
+    cannot fire on these fixtures anyway, and the budget normalisation is
+    turned back to the monolith's.
+    """
+    original = CONFIGS.get('budget_normalise_present_only', True)
+    CONFIGS['budget_normalise_present_only'] = False
+    try:
+        for counts in (STARVED, _stocked(), _stocked(**{MAY_KISS_BRIDE: 6})):
+            images, spreads = _allocate(dict(counts))
+            ref_images, ref_spreads, _lo, _hi = _allocate_reference(dict(counts))
+
+            assert images == ref_images, f"photos diverged on {sorted(counts)}"
+            assert spreads == ref_spreads, f"spreads diverged on {sorted(counts)}"
+    finally:
+        CONFIGS['budget_normalise_present_only'] = original
 
 
 def test_totals_match_the_reference_too():

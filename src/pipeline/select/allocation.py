@@ -148,11 +148,37 @@ def budget_each(focus_table: dict, available: Dict[str, int], lut: Dict[str, tup
     A `yes` (or `no`) category asks for a single photo and no page at all, so it
     never contributes to the shortfall.
     """
+    # Normalised over the categories the gallery *has*, not the whole profile.
+    #
+    # The profile weights sum to 107%, and a quarter to a third of that is
+    # routinely spent on categories a given wedding has none of -- measured
+    # across the validation galleries: 23%, 25%, 26%, 27%, 31%, 33%. Counting
+    # those in meant the present categories asked for only ~70% of the album
+    # between them, and the missing third came straight back as `miss_spreads`,
+    # i.e. shortfall. That is why every gallery was "5-7 pages short" and why
+    # the fill loop then had to reach down the file for `other` and `None`,
+    # which carry 0% and were never meant to fill anything.
+    #
+    # This cannot be done before `enrich.same_sex_couple`. On a same-sex
+    # gallery `groom` is exactly such an absent category, and redistributing
+    # its 12% is what would leave the second partner unrepresented -- the split
+    # has to give her a populated class first.
+    present_only = bool(CONFIGS.get('budget_normalise_present_only', True))
     total_value = sum(
         config['value']
-        for config in focus_table.values()
+        for event, config in focus_table.items()
         if isinstance(config, dict) and isinstance(config.get('value'), (int, float))
+        and (available.get(event, 0) > 0 or not present_only)
     )
+    if total_value <= 0:
+        # Nothing the profile weights is in this gallery at all. Fall back to
+        # the whole profile rather than divide by zero; every percentage
+        # category will come up short and the `yes` ones will carry the album.
+        total_value = sum(
+            config['value']
+            for config in focus_table.values()
+            if isinstance(config, dict) and isinstance(config.get('value'), (int, float))
+        ) or 1.0
 
     for event, config in focus_table.items():
         if not (isinstance(config, dict) and 'value' in config):
@@ -171,6 +197,15 @@ def budget_each(focus_table: dict, available: Dict[str, int], lut: Dict[str, tup
             config['photos'] = config['spreads'] * lut[event][0]
             config['miss'] = max(0, config['photos'] - have)
             config['miss_spreads'] = round(config['miss'] / lut[event][0])
+            if present_only and have == 0:
+                # An event this wedding simply did not have is not a shortfall.
+                # Normalising over the present categories is only half the job:
+                # an absent one still claims a share of the target and misses
+                # all of it, and with a smaller denominator it claims a *bigger*
+                # one -- measured, that pushed the shortfall up rather than down
+                # (10 -> 13 pages on one gallery) and left `other` and `None`
+                # absorbing exactly as much as before.
+                config['miss_spreads'] = 0
             if config['miss'] > 0:
                 config['photos'] = config['photos'] - config['miss']
                 config['spreads'] = round(config['photos'] / lut[event][0])

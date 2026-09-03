@@ -217,6 +217,20 @@ CONFIGS = {'DEBUG': True,
         # allowance instead. See src/pipeline/select/allocation.py.
         'ceremony_yes_min_classes': 2,
 
+        # Spread the profile's percentages over the categories the gallery
+        # actually has, rather than over the whole profile. The weights sum to
+        # 107% and a quarter to a third of that is routinely spent on
+        # categories a wedding has none of -- 23%, 25%, 26%, 27%, 31%, 33% on
+        # the validation galleries, and 51% on a same-sex one before its solo
+        # class was split. Counted in, the present categories asked for only
+        # ~70% of the album and the rest came back as shortfall, which the fill
+        # loop then absorbed using whatever sat high in focus_csv.csv --
+        # including 'other' and 'None' at 0%.
+        #
+        # Set False to allocate the way the pre-refactor monolith did; the
+        # equivalence tests use that to stay meaningful.
+        'budget_normalise_present_only': True,
+
         # Keeping the same shot out of the album twice, when a photographer
         # has uploaded their whole set a second time in black and white or with
         # a colour tone. The test never looks at the colour flag, so a toned

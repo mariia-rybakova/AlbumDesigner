@@ -555,6 +555,51 @@ fill, the same twelve granted pages cost **49 photos before and 25 after**. A
 structural test pins the pair for every `yes` row in the profile, so adding one
 without a matching lookup entry fails.
 
+##### Normalised over the categories the gallery has
+
+The profile's weights sum to 107%, and **a quarter to a third of that is
+routinely spent on categories a given wedding has none of** — 23%, 25%, 26%,
+27%, 31% and 33% across the validation galleries. Counted in, the present
+categories asked for only about 70% of the album between them, and the missing
+third came straight back as `miss_spreads` — shortfall — which the fill loop
+then patched using whatever sat high in `focus_csv.csv`.
+
+Two halves are needed, and the first alone makes things worse:
+
+1. **Normalise over the present categories.** Their shares are taken over what
+   the gallery has, so together they claim the whole album.
+2. **An absent category is not a shortfall.** A wedding with no cake cutting is
+   not an album three pages short. Without this, an absent category still claims
+   a share of the target and misses all of it — and with a smaller denominator
+   it claims a *bigger* one. Measured with only the first half in place, the
+   shortfall went **up** (10 → 13 pages on one gallery) and `other`/`None`
+   absorbed exactly as much as before.
+
+With both:
+
+| gallery | shortfall | pages left unfilled | photos in `other` + `None` |
+|---|---|---|---|
+| 52894932 | 10 → **0** | 1 → **0** | 4 → **0** |
+| 53273032 | 12 → **7** | 1 → 1 | 8 → **4** |
+| 53147741 | 6 → **3** | 1 → 1 | 4 → **0** |
+| 49994361 | 7 → **2** | 1 → 1 | 4 → **0** |
+| 49995684 | 7 → **0** | 1 → **0** | 4 → **0** |
+| 47981912 | 5 → **0** | 1 → **0** | 4 → **0** |
+| 53496523 | 6 → **0** | 1 → **0** | 4 → **0** |
+
+Six of seven galleries now give **nothing** to the two 0%-weight categories,
+and four fill the album completely. Album lengths move modestly — 104 → 101,
+81 → 84, 128 → 137 on the three with saved requests — because the weighted
+categories are now doing the filling that the scramble down the file used to do.
+
+**Ordering matters:** this cannot come before `enrich.same_sex_couple`. On a
+same-sex gallery `groom` is exactly such an absent category, and redistributing
+its 12% is what would leave the second partner unrepresented — the split has to
+give her a populated class first.
+
+`budget_normalise_present_only` turns it off, which is what the equivalence
+tests use to stay meaningful.
+
 **What this exposes rather than fixes:** the walk order is the row order of
 `focus_csv.csv`, which is not a priority. `other` (242 photos available,
 budgeted **0%**) and `None` (15 available, **0%**) sit at rows 3 and 4, ahead of
