@@ -282,6 +282,40 @@ CONFIGS = {'DEBUG': True,
             'photos_per_identity': 1,
         },
 
+        # -- select.pick: the CP-SAT alternative ----------------------------
+        # One global constrained solve instead of the per-category loop, after
+        # "Algorithms for Constrained Sequence Selection". See
+        # src/pipeline/select/cpsat.py for what each term means and which of
+        # them the paper does not cover.
+        #
+        # The weights are the whole argument: `cohesion_weight` pulls picks into
+        # runs that read as one moment, the window weights push them across the
+        # day, and `shortage_weight` has to dominate both or the solver buys
+        # coverage by leaving a class empty. Untuned starting points -- they are
+        # scaled against a rank term of at most 1000 per photo.
+        'pick_cpsat': {
+            'enabled': False,
+            'time_limit_seconds': 30,
+            'workers': 8,
+            'rank_weight': 1,
+            'cohesion_weight': 60,
+            'cohesion_max_gap': 10,
+            'window_weight': 150,
+            'class_window_weight': 300,
+            'windows': 6,
+            'shortage_weight': 4000,
+            # Below this many slots a class is spaced rather than windowed:
+            # proportional targets round to nothing useful for 2 or 3 photos.
+            'sparse_quota': 3,
+            'gap_fraction': 0.5,
+            # Colour is preferred the way the loop's two pools prefer it, but
+            # as a penalty -- one model has one pool.
+            'grayscale_penalty': 200,
+            # Cohesion rewards neighbours, and the second copy of a shot is a
+            # neighbour; above this cosine two frames of a class are exclusive.
+            'duplicate_similarity': 0.97,
+        },
+
         'MAX_PERSON_COMBINATION': 10000,
         'use_rebalance_spreads': False,
 

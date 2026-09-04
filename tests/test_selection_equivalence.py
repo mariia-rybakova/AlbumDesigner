@@ -55,19 +55,25 @@ def as_the_monolith():
       the categories the gallery has rather than over the whole profile
     * `bride_prep_by_identity` -- the getting-ready subject chosen by `bride_id`
       rather than by a substring match on the subquery text
+    * `pick_cpsat` -- the whole per-category loop replaced by one constrained
+      solve. Off by default, but pinned here too: it is a different algorithm,
+      not a change to this one, so the comparison has to run the loop.
     """
     original = CONFIGS['preselect']
     normalisation = CONFIGS.get('budget_normalise_present_only', True)
     prep = CONFIGS.get('bride_prep_by_identity', True)
+    cpsat = CONFIGS.get('pick_cpsat', {})
     CONFIGS['preselect'] = {**original, **NO_CONSTRAINTS}
     CONFIGS['budget_normalise_present_only'] = False
     CONFIGS['bride_prep_by_identity'] = False
+    CONFIGS['pick_cpsat'] = {**cpsat, 'enabled': False}
     try:
         yield
     finally:
         CONFIGS['preselect'] = original
         CONFIGS['budget_normalise_present_only'] = normalisation
         CONFIGS['bride_prep_by_identity'] = prep
+        CONFIGS['pick_cpsat'] = cpsat
 
 BRIDE_ID = 101
 GROOM_ID = 202

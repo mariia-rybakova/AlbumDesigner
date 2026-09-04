@@ -15,7 +15,7 @@ import pandas as pd
 
 from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
-from src.pipeline.select import narrowing
+from src.pipeline.select import cpsat, narrowing
 from src.pipeline.select.contracts import CategoryRequest
 from src.pipeline.select.scoring import CandidateGate, Scorer
 from src.pipeline.select.strategies import StrategyRegistry, default_registry
@@ -50,8 +50,7 @@ class PickSubStage(SubStage):
 
     def execute(self, context: AlbumContext) -> AlbumContext:
         if context.facts.is_wedding:
-            picker = WeddingPicker(context, self.strategies)
-            chosen, per_category = picker.run()
+            chosen, per_category = self._pick_wedding(context)
             context.selection.per_category = per_category
         else:
             chosen, error = smart_non_wedding_selection(context.photos, logger=context.logger)
@@ -62,6 +61,27 @@ class PickSubStage(SubStage):
         # De-duplicate while keeping the order categories contributed in.
         context.selection.photo_ids = list(dict.fromkeys(chosen or []))
         return context
+
+    def _pick_wedding(self, context: AlbumContext) -> Tuple[List, Dict[str, Dict[str, int]]]:
+        """The per-category loop, or the one-shot solve when it is switched on.
+
+        `cpsat` states the same problem as a single constrained optimisation
+        rather than a sequence of independent category decisions. It is off by
+        default, and anything at all going wrong in there -- ortools absent, no
+        solution inside the time limit, a modelling mistake -- falls back to the
+        loop, so the album is never the casualty of an experiment.
+        """
+        if cpsat.is_enabled():
+            try:
+                result = cpsat.CpSatPicker(context).run()
+                if result is not None:
+                    return result
+                context.logger.warning("cp-sat returned nothing; falling back to the loop")
+            except Exception as exc:  # noqa: BLE001 - an experiment must not lose the album
+                context.logger.error(f"cp-sat failed ({type(exc).__name__}: {exc}); "
+                                     f"falling back to the loop")
+
+        return WeddingPicker(context, self.strategies).run()
 
 
 class WeddingPicker:

@@ -704,6 +704,27 @@ budgets a percentage to categories a gallery often has none of (`couple`,
 `kiss`, `entertainment`, the three parent groupings). If that is not intended,
 it is a bigger question than this substage.
 
+#### `select.pick` — the CP-SAT alternative (off, unrefined)
+
+`src/pipeline/select/cpsat.py` states the whole of `select.pick` as one
+constrained optimisation instead of a per-category loop: one boolean per photo,
+class quotas with a penalised slack, per-class density windows over the day,
+minimum spacing for sparse classes, rewards for runs of neighbours, and the
+existing `total_score` as the rank term. Preselected photos are fixed to 1 and
+left in the frame, so they anchor the windows and the runs rather than being
+subtracted from them. It follows *Algorithms for Constrained Sequence
+Selection*; the three places it departs from the paper — the `general_time`
+axis, greyscale as a penalty, near-duplicate exclusivity — are commented in the
+module.
+
+**It is off** (`CONFIGS['pick_cpsat']['enabled']`), pinned off in
+`as_the_monolith()`, and any failure inside it falls back to the loop, so the
+default path is the loop exactly as before. It solves fast (0.04s on 571
+photos) and the constraints hold, but the albums are not yet better than the
+loop's: the weights are untuned, and on a request with 50 hand-picked photos
+most of the coverage is settled by `select.preselect` before the solve runs.
+Refinement pending.
+
 ### Category strategies — the second level inside `select.pick`
 
 The driver owns what is common to every category: scoring, threshold gating,

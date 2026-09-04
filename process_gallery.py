@@ -347,6 +347,9 @@ cheap. Pass --no-download to work purely off what is already local.
 
     ap.add_argument("--album-name", default=album_name,
                     help=f"Base name for the rendered PDF. Default: {album_name}")
+    ap.add_argument("--cp-sat", action="store_true",
+                    help="Pick with the one-shot CP-SAT model instead of the per-category loop "
+                         "(CONFIGS['pick_cpsat']); see src/pipeline/select/cpsat.py.")
     return ap
 
 
@@ -403,6 +406,10 @@ def _ensure_photos(args, request, project_dir, log):
 if __name__ == '__main__':
     args = _build_arg_parser().parse_args()
     log = print
+
+    if args.cp_sat:
+        CONFIGS['pick_cpsat'] = {**CONFIGS.get('pick_cpsat', {}), 'enabled': True}
+        log("select.pick: CP-SAT model enabled")
 
     settings_filename = os.environ.get('HostingSettingsPath',
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
