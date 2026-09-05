@@ -151,6 +151,52 @@ CONCEPTS = {
         "groom at the altar watching the bride approach",
         "groom and officiant waiting at the front of the ceremony",
     ],
+
+    # -- parent identification -------------------------------------------
+    #
+    # `enrich.parents` ranks identities, and the face model's age estimate is
+    # the weakest of its indicators: estimators regress toward the mean, so a
+    # 60-year-old reads as ~50 and the *gap* to the couple collapses even
+    # though the ordering survives. These concepts give age a second,
+    # independent opinion, scored only on photos where the candidate is one of
+    # at most three identities so the image-level cosine is actually about them.
+    #
+    # The hard case is not parent-vs-guest, it is parent-vs-wedding-party:
+    # both appear in the prep scenes, both are at the ceremony, both are in the
+    # posed portraits. So `wedding_party_member` is carried as an explicit
+    # negative rather than left to the absence of a positive.
+    "parents_of_couple": [
+        "the mother of the bride at her daughter's wedding",
+        "the father of the bride in a formal suit",
+        "the groom's parents at the wedding",
+        "an older married couple, the parents of the newlyweds",
+        "a middle-aged mother helping her daughter into her wedding dress",
+        "the bride with her mother and father",
+        "grey-haired parents standing proudly with their child",
+        "an older woman in an elegant formal gown at a wedding",
+        "an older man in a dark suit and tie at a wedding",
+    ],
+    # The parent dances. Rare but nearly unambiguous when present: a two-person
+    # dance frame that is not the couple's first dance.
+    "parent_dance": [
+        "father dancing with his daughter the bride at the reception",
+        "the father-daughter dance at a wedding",
+        "mother and son dancing together at a wedding reception",
+        "the mother-son dance at a wedding",
+        "the bride dancing with her father while guests watch",
+        "the groom dancing with his mother",
+    ],
+    # Negative. The bridal party shares almost every structural indicator with
+    # the parents, and is far more numerous, so it is the dominant confusion.
+    "wedding_party_member": [
+        "bridesmaids in matching dresses",
+        "a bridesmaid holding a bouquet next to the bride",
+        "groomsmen in matching suits",
+        "a groomsman standing with the groom",
+        "young bridesmaids posing with the bride before the ceremony",
+        "the bridal party celebrating together",
+        "the maid of honour with the bride",
+    ],
 }
 
 

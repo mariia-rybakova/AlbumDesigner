@@ -199,6 +199,11 @@ class GalleryFacts:
     model_version: Optional[int] = None
     bride_id: Optional[int] = None
     groom_id: Optional[int] = None
+    #: Identities `enrich.parents` named, empty when that side was
+    #: inconclusive. Empty is the normal outcome on a gallery whose candidates
+    #: cannot be separated -- not an error.
+    bride_parents: tuple = ()
+    groom_parents: tuple = ()
 
 
 @dataclass

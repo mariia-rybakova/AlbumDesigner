@@ -7,7 +7,9 @@ import pandas as pd
 from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
+from src.pipeline.enrich import parents
 from src.request_processing import identify_parents
+from utils.configs import CONFIGS
 from utils.read_protos_files import add_people_cluster, resolve_bride_groom
 
 
@@ -50,23 +52,76 @@ class PeopleClusterSubStage(SubStage):
 
 @register
 class ParentsSubStage(SubStage):
-    """Re-label portraits that show the couple with a set of parents.
+    """Name the couple's parents, then label the portraits they appear in.
 
-    Cross-references the social circles with per-identity age and gender, then
-    rewrites ``cluster_context`` to ``parents portrait`` and records which of
-    the three parent groupings it is in ``parent_category``.
+    The work is in `src.pipeline.enrich.parents`; this is the wiring. The
+    outcome is three-valued -- bride's parents, groom's parents, or
+    inconclusive -- and an unresolved side simply leaves the photo table
+    untouched, because a stranger on the family spread is worse than a missing
+    category. `CONFIGS['parents']['by_identity'] = False` restores the old
+    photo-classifying rule.
+
+    Optional: the couple, the ages or the concept bins can all be missing on a
+    real gallery, and none of those is a reason to fail the request.
     """
 
     name = "enrich.parents"
+    requires = frozenset({photo(Col.CLUSTER_CONTEXT), photo(Col.PERSONS_IDS),
+                          photo(Col.BRIDE_ID), photo(Col.GROOM_ID),
+                          photo(Col.IMAGE_CLASS), photo(Col.GENERAL_TIME),
+                          photo(Col.EMBEDDING)})
+    provides = frozenset({photo(Col.PARENT_CATEGORY)})
+    optional = True
+
+    def applies_to(self, context: AlbumContext) -> bool:
+        return bool(context.facts.is_wedding)
 
     def execute(self, context: AlbumContext) -> AlbumContext:
-        context.photos = identify_parents(
-            context.social_circles,
-            context.person_details,
+        if not CONFIGS["parents"]["by_identity"]:
+            context.photos = identify_parents(
+                context.social_circles,
+                context.person_details,
+                context.photos,
+                logger=context.logger,
+            )
+            return context
+
+        candidates = parents.measure(
             context.photos,
-            logger=context.logger,
+            context.person_details,
+            context.social_circles,
+            context.facts.bride_id,
+            context.facts.groom_id,
         )
+        if not candidates:
+            _log(context, "enrich.parents: no candidate identities to rank")
+            context.photos, _ = parents.label(
+                context.photos, parents.Resolution(),
+                context.facts.bride_id, context.facts.groom_id)
+            return context
+
+        resolution = parents.resolve(candidates)
+        context.facts.bride_parents = resolution.bride_parents
+        context.facts.groom_parents = resolution.groom_parents
+
+        context.photos, labelled = parents.label(
+            context.photos, resolution,
+            context.facts.bride_id, context.facts.groom_id)
+
+        for identity, why in resolution.reasons.items():
+            _log(context, f"enrich.parents: identity {identity} -- {why}")
+        for side, why in resolution.inconclusive.items():
+            _log(context, f"enrich.parents: {side}'s parents unresolved -- {why}")
+        _log(context, f"enrich.parents: {len(candidates)} candidates, "
+                      f"bride={list(resolution.bride_parents)} "
+                      f"groom={list(resolution.groom_parents)}, "
+                      f"{labelled} portraits relabelled")
         return context
+
+
+def _log(context: AlbumContext, message: str) -> None:
+    if context.logger:
+        context.logger.info(message)
 
 
 #: The content model's own classes for a same-sex couple. Looked up by name so

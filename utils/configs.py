@@ -230,6 +230,101 @@ CONFIGS = {'DEBUG': True,
         # equivalence tests use that to stay meaningful.
         'bride_prep_by_identity': True,
 
+        # -- enrich.parents ------------------------------------------------
+        #
+        # Resolve the parents as *identities*, with an explicit inconclusive
+        # outcome, instead of classifying photos by head count + gender + an
+        # age offset. Set 'by_identity' False for the old rule -- kept because
+        # the equivalence tests need a way back to the pre-refactor behaviour,
+        # not because it is worth running (its age window accepts +3..+27 years
+        # and so selects the sibling band, and its social-circle test collapses
+        # to "either candidate appears in any circle at all").
+        #
+        # Every threshold here is set to fail toward silence. A parent we do
+        # not name costs a category that would have been budgeted anyway; a
+        # stranger we do name goes on the family spread.
+        'parents': {
+            'by_identity': True,
+
+            # Noise floor. Below this an identity has no measurable pattern.
+            'min_appearances': 5,
+            # At most this many identities per side -- two parents, or three to
+            # allow a step-parent, never a whole extended family.
+            'max_per_side': 2,
+
+            # Side assignment. `min_side_share` of a candidate's
+            # one-partner-only frames must fall on one side; below that we
+            # cannot say whose parent they are, which is itself a false mark.
+            'min_side_frames': 4,
+            'min_side_share': 0.7,
+
+            # A parent sits in the older part of the gallery's own identities.
+            # This is a rank, never an offset in years: face-age estimators
+            # regress toward the mean, so the gap compresses while the
+            # ordering survives. Hard requirement -- nothing overrides it.
+            # 0.70 rather than 0.65 because that is where the real
+            # separation sits: on 53459898 a 50-year-old at rank 0.66 with no
+            # evidence beyond being photographed with the bride was clearing a
+            # score floor tuned to exclude her, while the groom's mother at
+            # rank 0.84 was not. Encode the requirement here, not in the score.
+            'min_age_rank': 0.70,
+
+            # The score a candidate must clear, and the separation the last
+            # accepted candidate must have over the first rejected one. If two
+            # candidates are within `min_margin` we cannot tell which is the
+            # parent, so the side goes unresolved rather than guessing.
+            'min_score': 0.50,
+            'min_margin': 0.10,
+
+            # Saturation points: this many occurrences score a full 1.0.
+            'prep_full': 4,
+            'aisle_full': 3,
+            # The party penalty is relative to the most party-heavy candidate
+            # in the same gallery, because absolute counts do not travel: the
+            # groom's father on 53459898 has 10 `groom party` frames against
+            # the groomsmen's 45-53, and in a suit he is not visually separable
+            # from them. Below this many frames the gallery has no party
+            # coverage to compare against and the penalty is dropped.
+            'min_party_reference': 8,
+            # Frames alone with one partner. Family reach double figures; a
+            # guest stays near zero.
+            'own_side_full': 10,
+
+            # Query augmentation of age. Scored only on photos where the
+            # candidate is one of at most `max_ids_for_attribution` identities,
+            # so the image-level cosine is about them; then shrunk by
+            # sample/(sample+query_prior), because the raw delta ranks a
+            # candidate with three attributable photos above one with thirty.
+            'max_ids_for_attribution': 3,
+            'query_prior': 10,
+            'query_full': 0.12,
+
+            # The officiant is old, at the ceremony, on neither side, and
+            # confined to a narrow band of the day.
+            'officiant_span': 0.15,
+            'officiant_ceremony': 10,
+
+            # Circles this size or smaller read as a household rather than a
+            # guest list; a circle shared with another *old* candidate is how
+            # the two parents of one side corroborate each other.
+            'max_circle_size': 4,
+
+            'weights': {
+                'age_rank': 0.40,
+                'own_side': 0.20,
+                'prep': 0.20,
+                'aisle': 0.15,
+                'duo_dance': 0.25,
+                'circle': 0.15,
+                'query': 0.15,
+                # Negative terms. The party count is the only indicator nearly
+                # exclusive to the confusion class, so it is allowed to sink a
+                # candidate on its own.
+                'party': 0.60,
+                'officiant': 0.50,
+            },
+        },
+
         # Spread the profile's percentages over the categories the gallery
         # actually has, rather than over the whole profile. The weights sum to
         # 107% and a quarter to a third of that is routinely spent on
