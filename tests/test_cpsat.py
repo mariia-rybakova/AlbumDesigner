@@ -206,6 +206,101 @@ def test_a_class_with_slack_still_pays_for_its_pages():
         in_class(photos, free, 'portrait'))
 
 
+# -- who a class is about ---------------------------------------------------
+
+
+def test_the_bride_class_prefers_the_bride_alone():
+    """`persons_ids == [bride_id]`, as `CoupleTimelineStrategy` filters. The
+    better-ranked frame here is a group shot, and it should still lose."""
+    photos = gallery([
+        ('portrait', [BRIDE, 30, 31], 'the bride with friends'),   # rank 0, best
+        ('portrait', [BRIDE], 'the bride alone'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride'
+    photos[Col.IMAGE_CLASS] = 1
+
+    chosen = pick(photos, {'bride': 1})
+
+    assert 1001 in chosen and 1000 not in chosen
+
+
+def test_the_couple_class_wants_the_two_of_them_and_nobody_else():
+    photos = gallery([
+        ('portrait', [BRIDE, GROOM, 30], 'the couple with a guest'),
+        ('portrait', [BRIDE, GROOM], 'the couple alone'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride and groom'
+    photos[Col.IMAGE_CLASS] = 2
+
+    chosen = pick(photos, {'bride and groom': 1})
+
+    assert 1001 in chosen and 1000 not in chosen
+
+
+def test_the_getting_ready_class_wants_the_bride_in_it():
+    """The failure that prompted the rule: a hair-and-makeup spread of someone
+    unrelated to the couple, chosen on rank alone."""
+    photos = gallery([
+        ('portrait', [30], 'someone getting their hair done'),
+        ('portrait', [BRIDE], 'the bride getting her hair done'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'getting hair-makeup'
+    photos[Col.IMAGE_CLASS] = 14
+
+    chosen = pick(photos, {'getting hair-makeup': 1})
+
+    assert 1001 in chosen
+
+
+def test_a_class_with_no_match_still_fills():
+    """The reason this is a score and not a filter. A hard rule empties the
+    class on a gallery where face detection missed the couple, which is why the
+    loop needs `_recover_over_filtering` behind its filters; a preference falls
+    back to rank on its own."""
+    photos = gallery([
+        ('portrait', [30], 'a guest'),
+        ('portrait', [31], 'another guest'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride'
+    photos[Col.IMAGE_CLASS] = 1
+
+    chosen = pick(photos, {'bride': 2})
+
+    assert len(chosen) == 2, "no bride in the class, so rank decides"
+
+
+def test_the_couple_is_read_from_the_photo_table():
+    """`resolve_bride_groom` stamps both on every row, and a SELECT-only driver
+    never puts them on `facts`. Reading `facts` first made the whole rule a
+    silent no-op -- the measured numbers did not move at all."""
+    photos = gallery([
+        ('portrait', [30], 'a guest'),
+        ('portrait', [BRIDE], 'the bride alone'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride'
+    photos[Col.IMAGE_CLASS] = 1
+    # `pick` builds GalleryFacts without a couple, exactly as the harness does.
+
+    chosen = pick(photos, {'bride': 1})
+
+    assert 1001 in chosen
+
+
+def test_the_preference_can_be_switched_off():
+    photos = gallery([
+        ('portrait', [30], 'a guest'),
+        ('portrait', [BRIDE], 'the bride alone'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride'
+    photos[Col.IMAGE_CLASS] = 1
+
+    off = pick(photos, {'bride': 1},
+               identity_preference={'enabled': False, 'weight': 1200,
+                                    'per_class': {}})
+
+    assert 1000 in off, "rank alone, so the best-ranked frame wins"
+
+
 # -- the quota is a ceiling -------------------------------------------------
 
 

@@ -410,6 +410,25 @@ CONFIGS = {'DEBUG': True,
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
 
+            # Who a class is about, as a score. `bride` means the bride on
+            # her own, `bride and groom` means the two of them and nobody
+            # else, `getting hair-makeup` means the bride. The loop says this
+            # with hard filters; the model said it nowhere, and it showed --
+            # a hair-and-makeup spread of someone else, `groom` frames with no
+            # groom in them.
+            #
+            # Above SCORE_SCALE (1000) on purpose: a matching photo then beats
+            # any non-matching one on rank, so the rule decides every class
+            # that has matches, while a class with none falls back to rank on
+            # its own. That is the loop's `_recover_over_filtering` without the
+            # special case -- a hard filter is what makes the recovery
+            # necessary in the first place.
+            'identity_preference': {
+                'enabled': True,
+                'weight': 1200,
+                'per_class': {},
+            },
+
             # `_take_all_distinct`, as a constraint. When a class's supply
             # is at or below its allowance the loop takes everything minus
             # frames of the same people doing the same thing, and no weighting

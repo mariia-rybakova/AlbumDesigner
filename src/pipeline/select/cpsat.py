@@ -159,8 +159,10 @@ class CpSatPicker:
         # make the reported score harder to read -- `_admission_costs` leaves
         # them at zero.
         costs = self._admission_costs(frame)
+        bonus = self._identity_bonus(frame)
         ranks = [
-            x[index] * (int(round(score * SCORE_SCALE)) - int(costs.at[index]))
+            x[index] * (int(round(score * SCORE_SCALE))
+                        - int(costs.at[index]) + int(bonus.at[index]))
             for index, score in frame['_score'].items()
         ]
         grey = [
@@ -369,6 +371,52 @@ class CpSatPicker:
 
     def _ceiling_on(self) -> bool:
         return bool(self.cfg.get('quota_ceiling', {}).get('enabled', False))
+
+    def _identity_bonus(self, frame: pd.DataFrame) -> pd.Series:
+        """Who a class is *about*, as a score rather than a filter.
+
+        `bride` means the bride on her own, `bride and groom` means the two of
+        them and nobody else, `getting hair-makeup` means the bride. The loop
+        says this with hard filters in `CoupleTimelineStrategy` and
+        `BridePrepStrategy`; the model said it nowhere, and it shows in the
+        album -- a hair-and-makeup spread of someone else, `groom` frames with
+        no groom in them.
+
+        A **preference, not a predicate**, and deliberately. The loop's filters
+        are hard, which is why they need `_recover_over_filtering` behind them:
+        on a gallery where face detection missed the couple, a hard rule empties
+        whole classes. A bonus above `SCORE_SCALE` means a matching photo beats
+        any non-matching one on rank, so it decides every class that has
+        matches, and a class with none simply falls back to rank -- the same
+        recovery, without the special case.
+        """
+        config = self.cfg.get('identity_preference', {})
+        bonus = pd.Series(0, index=frame.index, dtype=int)
+        if not config.get('enabled', False):
+            return bonus
+
+        # From the frame, as `CategoryRequest.bride_id` does. `resolve_bride_groom`
+        # stamps both on every row, and they are there whether or not the caller
+        # also put them on `facts` -- which a SELECT-only driver does not.
+        bride = _identity_from(frame, Col.BRIDE_ID, self.context.facts.bride_id)
+        groom = _identity_from(frame, Col.GROOM_ID, self.context.facts.groom_id)
+        if bride is None and groom is None:
+            return bonus
+        default = int(config.get('weight', 0))
+        per_class = config.get('per_class') or {}
+
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            rule = IDENTITY_RULES.get(category)
+            if rule is None:
+                continue
+            weight = int(per_class.get(category, default))
+            if weight <= 0:
+                continue
+            wanted = group[Col.PERSONS_IDS].apply(
+                lambda people: rule(_people_of(people), bride, groom))
+            bonus.loc[group.index[wanted]] = weight
+
+        return bonus
 
     def _admission_costs(self, frame: pd.DataFrame) -> pd.Series:
         """What a photo must be worth, per class, before it earns a page.
@@ -904,3 +952,69 @@ def _by_appearance(threshold: float):
                 buckets[bucket] = [index]
         return buckets
     return buckets_of
+
+
+# -- who a class is about ----------------------------------------------------
+#
+# The identity rules `CoupleTimelineStrategy` and `BridePrepStrategy` apply as
+# hard filters. Here they are preferences, scored in `_identity_bonus`.
+
+
+def _people_of(value) -> set:
+    return set(value) if isinstance(value, (list, tuple, set)) else set()
+
+
+def _solo(who):
+    """Only that person in frame -- `persons_ids == [id]` in the loop."""
+    def rule(people, bride, groom):
+        target = bride if who == 'bride' else groom
+        return target is not None and people == {target}
+    return rule
+
+
+def _couple_alone(people, bride, groom) -> bool:
+    """Both of them and nobody else.
+
+    The loop reaches the same place from the other side, pairing "has both"
+    with `n_faces == 2 or number_bodies == 2`; stating it as the identity set
+    says it once and does not depend on the face count being right.
+    """
+    if bride is None or groom is None:
+        return False
+    return people == {bride, groom}
+
+
+def _includes(who):
+    def rule(people, bride, groom):
+        target = bride if who == 'bride' else groom
+        return target is not None and target in people
+    return rule
+
+
+def _includes_either(people, bride, groom) -> bool:
+    return bool(people & {i for i in (bride, groom) if i is not None})
+
+
+#: Class -> what a photo of that class should hold. Absent means the class is
+#: not about a particular person and rank decides on its own.
+IDENTITY_RULES = {
+    'bride': _solo('bride'),
+    'groom': _solo('groom'),
+    'bride and groom': _couple_alone,
+    'bride party': _includes('bride'),
+    'groom party': _includes('groom'),
+    'bride getting dressed': _includes('bride'),
+    'getting hair-makeup': _includes('bride'),
+    'walking the aisle': _includes_either,
+    'bride walking the aisle': _includes('bride'),
+    'groom walking the aisle': _includes('groom'),
+}
+
+
+def _identity_from(frame: pd.DataFrame, column: str, fallback):
+    """The couple id stamped on the photo table, or whatever the caller knew."""
+    if column in frame.columns and len(frame):
+        value = frame[column].iloc[0]
+        if value is not None and not pd.isna(value):
+            return int(value)
+    return fallback

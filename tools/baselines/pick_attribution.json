@@ -201,8 +201,8 @@
      "bound_by": "strategy",
      "committed": 0,
      "cpsat_bound_by": "solver",
-     "cpsat_chose": 3,
-     "cpsat_selected": 3,
+     "cpsat_chose": 4,
+     "cpsat_selected": 4,
      "loop_chose": 3,
      "loop_selected": 3,
      "need": 4,
@@ -355,7 +355,7 @@
     }
    },
    "committed": 65,
-   "cpsat_total": 139,
+   "cpsat_total": 140,
    "loop_total": 139,
    "photos": 571
   },
