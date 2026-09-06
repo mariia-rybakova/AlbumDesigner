@@ -182,12 +182,24 @@ def find_latest_successful_request(
     lookback_hours: int = 48,
     project_id: Optional[int] = None,
     max_candidates: int = 25,
+    require_ai: bool = True,
 ) -> SuccessfulRun:
     """Newest request that produced an album, with its full payload.
 
     Walks successful runs newest-first and returns the first whose request log
     is intact — a big gallery's payload is often truncated, and skipping it is
     better than failing.
+
+    ``require_ai`` skips the **manual** requests, and it defaults to True
+    because they are not a test of selection at all. A null
+    ``aiMetadata.photoIds`` means the user assembled the album by hand, which
+    `AiHints.from_request` reads as ``present=False``; `select.route` then marks
+    the message manual and the budget, preselect, pick and publish substages
+    all skip. The whole request photo list goes to layouting unchanged. That is
+    deliberate, and it looks exactly like a catastrophic selection bug from the
+    outside: 52755795 came back as a 42-page album of 346 photos, identically
+    under both pickers, with nothing in the log to say why. Pass False only to
+    exercise the manual path on purpose.
     """
     frm = f"now-{lookback_hours}h"
 
@@ -224,12 +236,29 @@ def find_latest_successful_request(
         except (TruncatedLogError, DatadogError) as exc:
             problems.append(f"  project {found_id}: {exc}")
             continue
+
+        if require_ai and not _is_ai_request(run.request):
+            problems.append(
+                f"  project {found_id}: manual request (aiMetadata.photoIds is "
+                f"null), so selection does not run")
+            continue
         return run
 
     raise DatadogError(
         "Found successful runs but could not recover any request payload:\n"
         + "\n".join(problems[:5])
     )
+
+
+def _is_ai_request(request: Optional[Dict[str, Any]]) -> bool:
+    """Did the user ask for a selection, or assemble the album themselves?
+
+    The one field that decides it. Everything else in `aiMetadata` can be
+    empty — 52755795 carries `density: 3` with `focus`, `personIds` and
+    `subjects` all `[]` — and the block being present says nothing.
+    """
+    metadata = (request or {}).get('aiMetadata')
+    return bool(metadata) and metadata.get('photoIds') is not None
 
 
 def _attach_request(client: DatadogLogs, run: SuccessfulRun, window_minutes: int = 90) -> None:

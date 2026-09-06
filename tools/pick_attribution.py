@@ -91,19 +91,19 @@ def quiet() -> logging.Logger:
 
 
 def hints_from_request(name: str):
-    """Real `aiMetadata`, so `select.preselect` commits what it commits in
-    production -- with no hints almost nothing is committed and the table
-    describes a request nobody makes."""
+    """Real `aiMetadata`, read the way the pipeline reads it.
+
+    Through `AiHints.from_request`, not by hand. Hand-parsing it here forced
+    `present=True` and coerced a null `photoIds` to `[]`, which silently turned
+    a *manual* request into an AI one: on 52755795 the tool reported a healthy
+    58-photo selection where the pipeline routes the request to the manual path
+    and lays out the whole gallery. An instrument that quietly disagrees with
+    the thing it measures is worse than none.
+    """
     from src.pipeline.contracts import AiHints
     from tools import local_request
 
-    meta = (local_request.load_request(name) or {}).get('aiMetadata') or {}
-    return AiHints(photo_ids=list(meta.get('photoIds') or []),
-                   person_ids=list(meta.get('personIds') or []),
-                   focus=list(meta.get('focus') or []),
-                   subjects=[''],
-                   density=meta.get('density', 3),
-                   present=True)
+    return AiHints.from_request(local_request.load_request(name) or {})
 
 
 def select(photos: pd.DataFrame, hints, cpsat: bool) -> Optional[Dict]:

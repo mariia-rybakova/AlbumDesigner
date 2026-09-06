@@ -203,6 +203,18 @@ python process_gallery.py <input_dir> <output_dir> --from-datadog --project-id 5
 python process_gallery.py <input_dir> <output_dir> --request 53496523   # replay, no Datadog
 ```
 
+**A request is only worth replaying if `aiMetadata.photoIds` is not null.** A
+null one means the user assembled the album by hand: `AiHints.from_request`
+reads it as `present=False`, `select.route` marks the message manual, and the
+budget, preselect, pick and publish substages all skip. The whole request photo
+list goes to layouting unchanged. That is deliberate -- but from the outside it
+is indistinguishable from a catastrophic selection bug, and the log says
+nothing: 52755795 produced a 42-page album of 346 photos, identically under
+both pickers, with no "Photos selected" or "Spreads dict sum" line anywhere
+because selection never ran. It finished in 18 seconds.
+`find_latest_successful_request` skips these by default (`require_ai=True`); the
+newest *successful* run is often one of them.
+
 It needs `DD_API_KEY` + `DD_APP_KEY` (`DD_SITE` defaults to `us3.datadoghq.com`)
 for the log lookup and the Azure network for the photos. The MCP tools need
 neither — when working interactively, prefer fetching the payload over MCP and

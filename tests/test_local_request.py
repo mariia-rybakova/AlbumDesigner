@@ -41,6 +41,16 @@ REQUEST_LOG = (
 )
 
 
+#: The same request with a real `photoIds`. `find_latest_successful_request`
+#: skips the manual ones by default: a null `photoIds` means the user assembled
+#: the album by hand, so `select.route` marks the message manual and every
+#: substage after it skips -- the whole gallery reaches layouting and nothing in
+#: the log says why. Replaying one of those measures nothing about selection.
+AI_REQUEST_LOG = REQUEST_LOG.replace(
+    "'aiMetadata': {'photoIds': None,",
+    "'aiMetadata': {'photoIds': [12391672742],")
+
+
 def _entry(message, when="2026-09-01T09:20:04Z"):
     return {"attributes": {"message": message, "timestamp": when, "service": "ai"}}
 
@@ -108,16 +118,43 @@ def test_success_marker_regex():
 
 
 def test_finds_the_newest_successful_run():
-    client = FakeClient(success=[_entry(SUCCESS_LOG)], requests=[_entry(REQUEST_LOG)])
+    client = FakeClient(success=[_entry(SUCCESS_LOG)], requests=[_entry(AI_REQUEST_LOG)])
     run = lr.find_latest_successful_request(client)
 
     assert run.project_id == PROJECT_ID
     assert run.condition_id == CONDITION_ID
     assert run.base_url.startswith("ptstorage_17://")
     assert run.photo_ids == [12391672742, 12391672750, 12391672760]
-    assert "manual selection" in run.summary()
+    assert "ai selection" in run.summary()
     # both markers must be scoped to the shared service tag
     assert all(f"service:{lr.SERVICE}" in q for q in client.queries)
+
+
+def test_a_manual_run_is_skipped_by_default():
+    """A null `aiMetadata.photoIds` means the user assembled the album, so
+    `select.route` marks the message manual and every substage after it skips.
+    The whole request photo list reaches layouting and nothing in the log says
+    why -- 52755795 came back as a 42-page album of 346 photos under both
+    pickers. Replaying one measures nothing about selection."""
+    client = FakeClient(success=[_entry(SUCCESS_LOG)],
+                        requests=[_entry(REQUEST_LOG)])
+
+    try:
+        lr.find_latest_successful_request(client)
+    except lr.DatadogError as exc:
+        assert "manual request" in str(exc)
+    else:
+        raise AssertionError("a manual request should not have been returned")
+
+
+def test_a_manual_run_can_be_asked_for_on_purpose():
+    client = FakeClient(success=[_entry(SUCCESS_LOG)],
+                        requests=[_entry(REQUEST_LOG)])
+
+    run = lr.find_latest_successful_request(client, require_ai=False)
+
+    assert run.project_id == PROJECT_ID
+    assert "manual selection" in run.summary()
 
 
 def test_skips_a_run_whose_payload_is_truncated():
@@ -135,7 +172,7 @@ def test_skips_a_run_whose_payload_is_truncated():
                     _entry(f"Message was reported to the queue: {other_id}/{other_condition}."),
                     _entry(SUCCESS_LOG),
                 ]
-            return [_entry(truncated)] if str(other_id) in query else [_entry(REQUEST_LOG)]
+            return [_entry(truncated)] if str(other_id) in query else [_entry(AI_REQUEST_LOG)]
 
     run = lr.find_latest_successful_request(Routed())
     assert run.project_id == PROJECT_ID, "should fall through to the intact run"
@@ -147,7 +184,7 @@ def test_prefers_the_request_matching_the_condition_id():
     stale = stale.replace("12391672742, 12391672750, 12391672760", "999")
 
     client = FakeClient(success=[_entry(SUCCESS_LOG)],
-                        requests=[_entry(stale), _entry(REQUEST_LOG)])
+                        requests=[_entry(stale), _entry(AI_REQUEST_LOG)])
     run = lr.find_latest_successful_request(client)
     assert run.photo_ids == [12391672742, 12391672750, 12391672760]
 
