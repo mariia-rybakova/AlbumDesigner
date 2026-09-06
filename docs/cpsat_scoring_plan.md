@@ -67,7 +67,7 @@ Two fixes landed (see the module docstring):
 
 Deliberately *not* done, because both would have hard-coded the loop's ad-hoc
 structure into the model rather than generalising it: temporal-orphan
-narrowing, and the `accessories`/`wedding dress` special case. Both are §4
+narrowing, and the `accessories`/`wedding dress` special case. Both are §3-§4
 below.
 
 ---
@@ -154,10 +154,11 @@ deltas the fit would minimise.
 
 Each is independently verifiable, and each keeps the fallback to the loop.
 
-**Phase 0 — instrument.** `scratchpad/why_empty.py` already attributes a
-class's pick count to the mechanism that bound it. Extend it to every class on
-every validation gallery and record the baseline table. This is what every
-later phase is scored against.
+**Phase 0 — instrument. Done; see §7.** The attribution lives in
+`WeddingPicker._note` and `CpSatPicker._pool`, not in a script: an instrument
+that re-implemented the decision tree would drift from the tree.
+`tools/pick_attribution.py` runs both pickers and tabulates, and
+`tools/baselines/pick_attribution.json` is the recorded result.
 
 **Phase 1 — the `time` dimension.** Replace `_add_windows` and `_add_spacing`
 with bucket-coverage on time. Fewest moving parts, and it directly tests
@@ -214,7 +215,49 @@ at all).
 
 ---
 
-## 7. Reference
+## 7. The Phase 0 baseline
+
+Recorded 2026-09-06 over 53459898 and 53147741 with their real requests'
+`aiMetadata` — 60 classes, 42 and 64 photos committed. Refresh with:
+
+```
+python tools/pick_attribution.py --request 53459898_ai --request 53147741_ai --out
+```
+
+**Always with real hints.** An earlier pass of this with no hints put
+`cake cutting` and `may kiss bride` at zero from temporal narrowing; with the
+real request both are settled by their strategy instead, because the hints
+change the budget *and* what `select.preselect` commits. A baseline taken
+without hints describes a request nobody makes.
+
+| mechanism | classes | short of need | over | \|cp-sat − loop\| |
+|---|---|---|---|---|
+| `strategy` | 27 | **7** | 0 | 9 |
+| `no_allowance` | 19 | 0 | 0 | 0 |
+| `take_all_distinct` | 6 | **4** | 0 | 2 |
+| `all_committed` | 3 | 0 | 0 | 0 |
+| `greyscale_only` | 1 | 0 | 0 | 1 |
+| `temporal_narrowing` | 1 | **1** | 0 | 1 |
+
+**The loop is 12 photos short of its budgeted allowance and never once over.**
+That is the thesis of §1 in one line: the quota is a ceiling, and three
+different saturation mechanisms leave it unmet. cp-sat differs from the loop by
+13 photos in total (137 → 142 and 135 → 136 per gallery), which is the same
+order as the shortfall — consistent with the difference being *the model
+filling what the loop declines to*, not the model choosing differently in bulk.
+
+The two numbers to watch as later phases land: **short → should stay near 12**
+as the model learns to saturate, and **|cp-sat − loop| → should fall toward 0**.
+
+`bound_by` is diagnostic only; nothing downstream reads `per_category`. Three
+tests in `tests/test_pick_attribution.py` keep it honest — every category names
+a mechanism, every mechanism is one `tools/pick_attribution.py` knows, and every
+`return` in `_run_category` is preceded by a `_note`. The last one is
+mutation-checked: deleting a single `_note` fails it.
+
+---
+
+## 8. Reference
 
 Code: `src/pipeline/select/cpsat.py`; the loop it is measured against is
 `WeddingPicker` in `src/pipeline/select/pick.py` with

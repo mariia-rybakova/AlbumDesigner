@@ -225,8 +225,13 @@ class SelectionOutcome:
     max_total_spreads: Optional[int] = None
     manual: bool = False
     lookup_table: Optional[Dict[str, tuple]] = None
-    #: {category: {'actual': int, 'selected': int}} — selection diagnostics.
-    per_category: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    #: Per-category selection diagnostics. Nothing downstream reads this; it
+    #: exists to explain a selection after the fact. Counts (`actual`,
+    #: `selected`, `need`) plus, from the picker, `bound_by` — which of its
+    #: decision points settled the category — and `strategy` when one ran.
+    #: `tools/pick_attribution.py` tabulates it; see
+    #: `docs/cpsat_scoring_plan.md` §5 for why.
+    per_category: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass

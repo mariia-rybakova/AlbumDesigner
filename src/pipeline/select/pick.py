@@ -143,28 +143,38 @@ class WeddingPicker:
             settled = frame[Col.IMAGE_ID].isin(self.committed)
             if settled.any():
                 entry = self.per_category[category]
+                # Tracked apart from `selected` because their allowance was
+                # charged in `select.preselect`: measuring what the picker
+                # itself chose against `need` means subtracting these first.
+                entry['committed'] = int(settled.sum())
                 entry['selected'] = entry.get('selected', 0) + int(settled.sum())
                 frame = frame[~settled]
                 if frame.empty:
+                    self._note(category, 'all_committed')
                     return
 
         need = self.plan.images[category]
+        self.per_category[category]['need'] = need
 
         # A category with one slot and almost nothing in it is not worth
         # scoring.
         if available <= 2 and need == 1:
             self._take(category, frame[Col.IMAGE_ID].values.tolist()[:need])
+            self._note(category, 'tiny_shortcut')
             return
 
         if need == 0:
+            self._note(category, 'no_allowance')
             return
 
         scored, candidate_ids, used_image_order = self.gate.candidates(frame, category)
         if scored is None or len(candidate_ids) == 0:
+            self._note(category, 'gate_declined')
             return
 
         if category in USER_PREFERENCE_CATEGORIES:
             self._pick_user_preference(category, candidate_ids, need)
+            self._note(category, 'user_preference')
             return
 
         user_ids, remaining_ids = self._split_out_user_picks(candidate_ids)
@@ -181,6 +191,7 @@ class WeddingPicker:
         valid = narrowing.drop_temporal_orphans(scored, need, self.logger)
         if valid.empty:
             self.logger.info(f"There are no images to select for {category}")
+            self._note(category, 'temporal_narrowing')
             return
 
         pool = narrowing.add_time_clusters(valid, self.logger)
@@ -188,12 +199,14 @@ class WeddingPicker:
 
         if len(color) == 0 and len(grayscale) > 0:
             self._take_grayscale_only(category, grayscale)
+            self._note(category, 'greyscale_only')
             return
 
         order_index = narrowing.order_index(valid, scored=not used_image_order)
 
         if len(pool) <= need:
             self._take_all_distinct(category, valid, need)
+            self._note(category, 'take_all_distinct')
             return
 
         request = CategoryRequest(
@@ -211,13 +224,16 @@ class WeddingPicker:
             logger=self.logger,
         )
 
-        picks = self.strategies.for_category(category).pick(request)
+        strategy = self.strategies.for_category(category)
+        self.per_category[category]['strategy'] = type(strategy).__name__
+        picks = strategy.pick(request)
 
         if picks.forced:
             self.chosen.extend(picks.forced)
         if picks.remaining_need is not None:
             need = picks.remaining_need
         if picks.skip:
+            self._note(category, 'strategy_skip')
             return
 
         preferred = picks.preferred if picks.preferred is not None else self._carry_over
@@ -225,9 +241,17 @@ class WeddingPicker:
             raise UnboundLocalError(
                 f"no ranked list for {category!r} and no earlier category left one behind"
             )
+        if picks.preferred is None:
+            # The monolith's carry-over accident, reproduced in ..pick. Marked
+            # so a weight fit against the loop can exclude the class: this is
+            # behaviour worth matching only until someone deletes it.
+            self._note(category, 'carry_over')
         self._carry_over = preferred
 
         self._take(category, self._top_up_with_grayscale(category, preferred, grayscale, need))
+        # Not `_note`: it records the first mechanism to settle a category, and
+        # a carry-over above already claimed this one.
+        self.per_category[category].setdefault('bound_by', 'strategy')
 
     # -- shared steps -------------------------------------------------------
 
@@ -312,6 +336,22 @@ class WeddingPicker:
         self.chosen.extend(picks)
         entry = self.per_category[category]
         entry['selected'] = entry.get('selected', 0) + len(picks)
+
+    def _note(self, category: str, mechanism: str) -> None:
+        """Record which decision point settled this category.
+
+        Diagnostic only -- nothing reads `per_category`. It exists because the
+        loop's pick count is bound by one of a dozen different things and the
+        difference between them is invisible from the outside: a class can come
+        back short because the gate declined it, because temporal narrowing
+        emptied it, because `_take_all_distinct` deduplicated it, or because a
+        strategy saturated. `docs/cpsat_scoring_plan.md` is an argument about
+        exactly that distinction, and Phase 0 of it is this line.
+
+        First writer wins, so the mechanism named is the one that settled the
+        category rather than whatever ran last.
+        """
+        self.per_category.setdefault(category, {}).setdefault('bound_by', mechanism)
 
 
 def _people_in(frame: pd.DataFrame) -> set:

@@ -226,9 +226,19 @@ class CpSatPicker:
             # Committed photos are fixed, not re-decided, so they stay whatever
             # the gate thinks of them.
             frame.loc[group.index[group['_committed']], '_eligible'] = True
+            settled = int(group['_committed'].sum())
+            if settled:
+                self.per_category[category]['committed'] = settled
+
+            need = int(self.plan.images.get(category, 0))
+            self.per_category[category]['need'] = need
 
             free = group[~group['_committed']]
-            if free.empty or int(self.plan.images.get(category, 0)) <= 0:
+            if free.empty:
+                self.per_category[category]['bound_by'] = 'all_committed'
+                continue
+            if need <= 0:
+                self.per_category[category]['bound_by'] = 'no_allowance'
                 continue
 
             # Scored over the free rows alone. `get_scores` min-max normalises
@@ -237,7 +247,10 @@ class CpSatPicker:
             # loop does -- which scores the class only after dropping them.
             frame.loc[free.index, '_score'] = self._scores_for(scorer, free)
 
-            frame.loc[self._shortlist(gate, free, category), '_eligible'] = True
+            shortlist = self._shortlist(gate, free, category)
+            frame.loc[shortlist, '_eligible'] = True
+            self.per_category[category]['bound_by'] = (
+                'solver' if len(shortlist) else 'gate_declined')
 
         return frame[frame['_eligible']].copy()
 
