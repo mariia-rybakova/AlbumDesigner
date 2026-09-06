@@ -426,6 +426,21 @@ CONFIGS = {'DEBUG': True,
             'identity_preference': {
                 'enabled': True,
                 'weight': 1200,
+                # A wrong identity is not a missing one. An empty
+                # `persons_ids` is a detection that did not happen and stays
+                # neutral; a frame naming someone who is not who the class is
+                # about is positively wrong and is charged. Scoring both alike
+                # made them equally admissible filler, and on 53459898 a
+                # `groom` frame carrying identity 9 reached the album.
+                'contradiction_penalty': 1200,
+                # And excluded outright in the classes that are definitionally
+                # about one person. The penalty alone was outvoted: a
+                # contradicted photo still collects the time-coverage rewards
+                # for its class and window, +300 and +150, which beat a 1200
+                # charge once the rank is in. It only looked sufficient on the
+                # validation galleries because those classes had
+                # unknown-identity frames to fall back on.
+                'exclude_contradictions': True,
                 'per_class': {},
             },
 

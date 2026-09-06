@@ -150,6 +150,10 @@ class CpSatPicker:
             self._add_windows(model, frame, x, penalties)
             self._add_spacing(model, frame, x)
         self._add_exclusions(model, frame, x)
+        # A committed photo is fixed at 1, so it is never blocked -- the user's
+        # own pick is not second-guessed on identity.
+        for index in self.contradictions(frame):
+            model.Add(x[index] == 0)
         self._add_distinct_shots(model, frame, x)
         self._add_repeat_penalty(model, frame, x, penalties)
         self._add_cohesion(model, frame, x, rewards)
@@ -382,6 +386,13 @@ class CpSatPicker:
         album -- a hair-and-makeup spread of someone else, `groom` frames with
         no groom in them.
 
+        **Three-valued, because a wrong identity is not a missing one.** A
+        frame whose `persons_ids` is empty is a detection that did not happen;
+        a `groom` frame carrying identity 9 is positively the wrong person.
+        Scoring both as "not a match" made them equally admissible filler, and
+        one of each reached the album. So a match earns the bonus, an empty
+        frame stays neutral, and a frame naming someone else is penalised.
+
         A **preference, not a predicate**, and deliberately. The loop's filters
         are hard, which is why they need `_recover_over_filtering` behind them:
         on a gallery where face detection missed the couple, a hard rule empties
@@ -405,18 +416,67 @@ class CpSatPicker:
         default = int(config.get('weight', 0))
         per_class = config.get('per_class') or {}
 
+        penalty = int(config.get('contradiction_penalty', 0))
+
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
-            rule = IDENTITY_RULES.get(category)
-            if rule is None:
+            entry = IDENTITY_RULES.get(category)
+            if entry is None:
                 continue
             weight = int(per_class.get(category, default))
-            if weight <= 0:
-                continue
-            wanted = group[Col.PERSONS_IDS].apply(
-                lambda people: rule(_people_of(people), bride, groom))
-            bonus.loc[group.index[wanted]] = weight
+            rule, subjects, exclusive = entry
+            wanted = {i for i in (bride if 'bride' in subjects else None,
+                                  groom if 'groom' in subjects else None)
+                      if i is not None}
+
+            for index, value in group[Col.PERSONS_IDS].items():
+                people = _people_of(value)
+                if rule(people, bride, groom):
+                    bonus.at[index] = weight
+                elif exclusive and people and not (people & wanted):
+                    bonus.at[index] = -penalty
 
         return bonus
+
+    def contradictions(self, frame: pd.DataFrame) -> List:
+        """Rows an *exclusive* class cannot use: the identity is clear and it
+        is not who the class is about.
+
+        A predicate rather than a preference, unlike the rest of
+        `_identity_bonus`, and it has to be. As a penalty it was outvoted: a
+        contradicted photo still collects the time-coverage rewards for its
+        class and window, +300 and +150, which together beat a 1200 charge once
+        the rank is in. It only *looked* sufficient on the validation galleries
+        because those classes had unknown-identity frames to fall back on.
+
+        Only for the classes that are definitionally about one person, which is
+        what `exclusive` marks. Others -- the party classes, the processional --
+        legitimately hold other people, and excluding them there emptied
+        `walking the aisle` outright.
+        """
+        blocked: List = []
+        if not self.cfg.get('identity_preference', {}).get(
+                'exclude_contradictions', False):
+            return blocked
+
+        bride = _identity_from(frame, Col.BRIDE_ID, self.context.facts.bride_id)
+        groom = _identity_from(frame, Col.GROOM_ID, self.context.facts.groom_id)
+        if bride is None and groom is None:
+            return blocked
+
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            entry = IDENTITY_RULES.get(category)
+            if entry is None or not entry[2]:
+                continue
+            _rule, subjects, _exclusive = entry
+            wanted = {i for i in (bride if 'bride' in subjects else None,
+                                  groom if 'groom' in subjects else None)
+                      if i is not None}
+            free = group[~group['_committed']]
+            for index, value in free[Col.PERSONS_IDS].items():
+                people = _people_of(value)
+                if people and not (people & wanted):
+                    blocked.append(index)
+        return blocked
 
     def _admission_costs(self, frame: pd.DataFrame) -> pd.Series:
         """What a photo must be worth, per class, before it earns a page.
@@ -995,19 +1055,30 @@ def _includes_either(people, bride, groom) -> bool:
     return bool(people & {i for i in (bride, groom) if i is not None})
 
 
-#: Class -> what a photo of that class should hold. Absent means the class is
-#: not about a particular person and rank decides on its own.
+#: Class -> ``(rule, subjects)``. The rule is what a photo of that class should
+#: hold; `subjects` names who it is about, which is what makes a *wrong*
+#: identity distinguishable from a *missing* one. Absent from the table means
+#: the class is not about a particular person and rank decides on its own.
 IDENTITY_RULES = {
-    'bride': _solo('bride'),
-    'groom': _solo('groom'),
-    'bride and groom': _couple_alone,
-    'bride party': _includes('bride'),
-    'groom party': _includes('groom'),
-    'bride getting dressed': _includes('bride'),
-    'getting hair-makeup': _includes('bride'),
-    'walking the aisle': _includes_either,
-    'bride walking the aisle': _includes('bride'),
-    'groom walking the aisle': _includes('groom'),
+    # Exclusive: the class is *only* about its subject, so another face in
+    # frame with the subject absent is the wrong photo.
+    'bride': (_solo('bride'), ('bride',), True),
+    'groom': (_solo('groom'), ('groom',), True),
+    'bride and groom': (_couple_alone, ('bride', 'groom'), True),
+    'bride getting dressed': (_includes('bride'), ('bride',), True),
+    'getting hair-makeup': (_includes('bride'), ('bride',), True),
+    'bride walking the aisle': (_includes('bride'), ('bride',), True),
+    'groom walking the aisle': (_includes('groom'), ('groom',), True),
+
+    # Not exclusive: other people belong in these. Parents and flower girls
+    # walk the aisle, and the party classes are about a group -- so a frame
+    # naming someone other than the couple is not a wrong photo, it is just
+    # not the *preferred* one. Penalising it emptied `walking the aisle`
+    # outright on 53459898, where the couple is detected in none of its
+    # frames, losing a scripted moment of the wedding to a detection gap.
+    'bride party': (_includes('bride'), ('bride',), False),
+    'groom party': (_includes('groom'), ('groom',), False),
+    'walking the aisle': (_includes_either, ('bride', 'groom'), False),
 }
 
 

@@ -252,11 +252,28 @@ def test_the_getting_ready_class_wants_the_bride_in_it():
     assert 1001 in chosen
 
 
-def test_a_class_with_no_match_still_fills():
+def test_an_undetected_subject_still_fills_the_class():
     """The reason this is a score and not a filter. A hard rule empties the
     class on a gallery where face detection missed the couple, which is why the
-    loop needs `_recover_over_filtering` behind its filters; a preference falls
-    back to rank on its own."""
+    loop needs `_recover_over_filtering` behind its filters. An empty
+    `persons_ids` is a detection that did not happen, so it stays neutral and
+    rank decides."""
+    photos = gallery([
+        ('portrait', [], 'someone, unidentified'),
+        ('portrait', [], 'someone else, unidentified'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride'
+    photos[Col.IMAGE_CLASS] = 1
+
+    chosen = pick(photos, {'bride': 2})
+
+    assert len(chosen) == 2, "nobody was detected, so nothing contradicts"
+
+
+def test_an_exclusive_class_of_wrong_people_is_left_empty():
+    """`bride` is *only* about the bride, so a frame naming someone else is the
+    wrong photo rather than an unconfirmed one. Better an unfilled page than a
+    stranger on the bride's spread -- the same judgement as `enrich.parents`."""
     photos = gallery([
         ('portrait', [30], 'a guest'),
         ('portrait', [31], 'another guest'),
@@ -264,9 +281,41 @@ def test_a_class_with_no_match_still_fills():
     photos[Col.CLUSTER_CONTEXT] = 'bride'
     photos[Col.IMAGE_CLASS] = 1
 
-    chosen = pick(photos, {'bride': 2})
+    assert not pick(photos, {'bride': 2})
 
-    assert len(chosen) == 2, "no bride in the class, so rank decides"
+
+def test_a_group_class_is_not_exclusive():
+    """Parents and flower girls walk the aisle, and the party classes are about
+    a group, so another face there is not a wrong photo. Penalising it emptied
+    `walking the aisle` outright on 53459898 -- where the couple is detected in
+    none of its frames -- losing a scripted moment to a detection gap.
+    """
+    photos = gallery([
+        ('portrait', [30], 'the flower girl walking in'),
+        ('portrait', [31], 'the parents walking in'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'walking the aisle'
+    photos[Col.IMAGE_CLASS] = 28
+
+    chosen = pick(photos, {'walking the aisle': 2})
+
+    assert len(chosen) == 2, "others belong in the processional"
+
+
+def test_a_wrong_identity_loses_to_an_unknown_one():
+    """The three-valued part. Both fail the rule, and they are not equal: the
+    better-ranked frame here names the wrong person, and should still lose to
+    the one that names nobody."""
+    photos = gallery([
+        ('portrait', [30], 'definitely a guest'),     # rank 0, best
+        ('portrait', [], 'unidentified'),
+    ])
+    photos[Col.CLUSTER_CONTEXT] = 'bride'
+    photos[Col.IMAGE_CLASS] = 1
+
+    chosen = pick(photos, {'bride': 1})
+
+    assert 1001 in chosen and 1000 not in chosen
 
 
 def test_the_couple_is_read_from_the_photo_table():

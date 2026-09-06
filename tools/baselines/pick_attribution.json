@@ -58,8 +58,8 @@
      "bound_by": "greyscale_only",
      "committed": 4,
      "cpsat_bound_by": "solver",
-     "cpsat_chose": 1,
-     "cpsat_selected": 5,
+     "cpsat_chose": 0,
+     "cpsat_selected": 4,
      "loop_chose": 1,
      "loop_selected": 5,
      "need": 1,
@@ -355,7 +355,7 @@
     }
    },
    "committed": 65,
-   "cpsat_total": 140,
+   "cpsat_total": 139,
    "loop_total": 139,
    "photos": 571
   },

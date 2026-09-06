@@ -378,6 +378,51 @@ Still imperfect: restraint is 3 of 5, so two classes get filled that should not
 have been. Both are scarcity cases with small pools, where the ceiling permits
 taking what little is there. Phase 3 is the next lever.
 
+### Who each class is about
+
+The model had no identity rules at all, and it showed in the album: a
+hair-and-makeup spread of someone unrelated to the couple, `groom` frames with
+no groom in them. `CoupleTimelineStrategy` and `BridePrepStrategy` carry these
+as hard filters; nothing in the model said anything.
+
+**Three-valued, because a wrong identity is not a missing one.** An empty
+`persons_ids` is a detection that did not happen; a `groom` frame naming
+identity 9 is positively the wrong person. Scoring both as "not a match" made
+them equally admissible filler and one of each reached the album.
+
+* **match** -- the class's rule is satisfied: bonus above `SCORE_SCALE`, so a
+  matching photo beats any non-matching one on rank.
+* **unknown** -- no identities at all: neutral, and rank decides. This is the
+  loop's `_recover_over_filtering` without the special case; a hard rule here
+  would empty a class on a gallery where detection missed the couple.
+* **contradicted** -- identities present, none of them the subject: excluded,
+  in the classes where that means something.
+
+**Only where the class is definitionally about one person.** `bride`, `groom`,
+`bride and groom` and the getting-ready classes are. The party classes and the
+processional are not -- parents and flower girls walk the aisle -- and
+penalising a non-couple face there emptied `walking the aisle` outright on
+53459898, losing a scripted moment to a detection gap.
+
+**And an exclusion rather than a charge**, which a penalty could not do. A
+contradicted photo still collects the time-coverage rewards for its class and
+window, +300 and +150, which together beat a 1200 charge once the rank is in;
+in a two-photo class it was taken anyway. The penalty only *looked* sufficient
+on the validation galleries because those classes had unknown-identity frames
+to fall back on.
+
+Wrong-identity picks in an exclusive class, by the solver: **5 to 0** on
+53459898, and 0 on 53147741. What remains on 53147741 is eight photos the
+*user* hand-picked, which are fixed at 1 and deliberately not second-guessed.
+The scoreboard keeps 6/6 headroom and 4/4 restraint.
+
+> **One reading of the scoreboard to be careful with.** `photos dropped` shows
+> 1, and it is the rule working rather than a regression:
+> `53147741/bride getting dressed` has a pool of five, four of them the user's
+> picks, and the loop's fifth is a frame of person 4 rather than the bride. The
+> metric cannot tell a deliberate decline from a loss, so a non-zero value
+> there needs the class named before it is read as a fault.
+
 ### The distinct-shot rule: the first thing that worked
 
 `_add_distinct_shots` -- at most one photo per `(persons_ids, subquery)` in a
