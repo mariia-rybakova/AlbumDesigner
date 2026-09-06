@@ -59,6 +59,30 @@ MECHANISMS = (
 )
 
 
+#: Mechanisms whose restraint is a *quality* judgement rather than a diversity
+#: one. A photo with no neighbour within twenty minutes is an outlier, and the
+#: loop is right to drop it, so a class emptied this way is not headroom.
+QUALITY_MECHANISMS = ('temporal_narrowing', 'greyscale_only')
+
+
+def classify_shortfall(row: Dict) -> str:
+    """Why a class came back short -- which decides whether the loop is a
+    target or merely a starting point.
+
+    `orphan`     the loop applied a quality filter; matching it is correct.
+    `scarcity`   there were never enough photos; matching it is correct.
+    `similarity` photos were there and a diversity pass declined them. That is
+                 budgeted pages left unfilled, and it is where a model that
+                 trades coverage off globally can *beat* the loop rather than
+                 imitate it.
+    """
+    if row.get('bound_by') in QUALITY_MECHANISMS:
+        return 'orphan'
+    if (row['pool'] - row['committed']) <= row['need']:
+        return 'scarcity'
+    return 'similarity'
+
+
 def quiet() -> logging.Logger:
     logger = logging.getLogger('pick-attribution')
     logger.addHandler(logging.NullHandler())
@@ -108,6 +132,7 @@ def select(photos: pd.DataFrame, hints, cpsat: bool) -> Optional[Dict]:
     return {
         'committed': len(context.selection_plan.committed),
         'total': len(context.selection.photo_ids),
+        'photo_ids': list(context.selection.photo_ids),
         'per_category': context.selection.per_category,
     }
 
@@ -203,12 +228,16 @@ def report(gallery: str, photos: pd.DataFrame, hints) -> Optional[Dict]:
             'cpsat_bound_by': sat.get('bound_by'),
             'strategy': entry.get('strategy'),
         }
+        row['shortfall_kind'] = None
+        if row['need'] and row['loop_chose'] < row['need']:
+            row['shortfall_kind'] = classify_shortfall(row)
+
         rows[str(category)] = row
         gap = ''
         if row['need']:
             delta = row['loop_chose'] - row['need']
             if delta < 0:
-                gap = f"  short by {-delta}"
+                gap = f"  short by {-delta} ({row['shortfall_kind']})"
             elif delta > 0:
                 gap = f"  over by {delta}"
         print(f"  {str(category)[:26]:<26} {row['pool']:>5} {committed:>4} "
@@ -256,6 +285,31 @@ def summarise(galleries: Dict[str, Dict]) -> None:
           f"{sum(shortfall.values())} photos short and "
           f"{sum(surplus.values())} over")
     print(f"  cp-sat differs from it by {sum(divergence.values())} photos in total")
+
+    kinds: Dict[str, int] = {}
+    where: Dict[str, list] = {}
+    for gallery, result in galleries.items():
+        for category, row in result['categories'].items():
+            kind = row.get('shortfall_kind')
+            if not kind:
+                continue
+            gap = row['need'] - row['loop_chose']
+            kinds[kind] = kinds.get(kind, 0) + gap
+            where.setdefault(kind, []).append(f"{gallery}/{category} -{gap}")
+
+    if kinds:
+        print("\n=== is the shortfall the loop being right, or being timid? ===")
+        print(f"  orphan     {kinds.get('orphan', 0):>3} photos  "
+              f"-- a quality filter dropped them; matching this is correct")
+        print(f"  scarcity   {kinds.get('scarcity', 0):>3} photos  "
+              f"-- the pool was never big enough; matching this is correct")
+        print(f"  similarity {kinds.get('similarity', 0):>3} photos  "
+              f"-- photos were there and a diversity pass declined them. "
+              f"Budgeted")
+        print(f"{'':24}pages left unfilled, so this is headroom, not a target.")
+        for kind in ('similarity', 'scarcity', 'orphan'):
+            for entry in where.get(kind, []):
+                print(f"    {kind:<11} {entry}")
 
 
 def main() -> int:

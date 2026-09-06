@@ -409,6 +409,43 @@ CONFIGS = {'DEBUG': True,
             # Cohesion rewards neighbours, and the second copy of a shot is a
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
+
+            # -- coverage: Phase 1 of docs/cpsat_scoring_plan.md ------------
+            #
+            # Reward reaching a part of the day instead of penalising drift
+            # from a proportional target. Collected once per window, so the
+            # second pick in a window earns nothing and the day gets covered
+            # without the model being pushed to keep spreading after it is --
+            # which is what made it out-spread the loop. Replaces the
+            # `window_weight` / `class_window_weight` deviation penalties and
+            # `sparse_quota` / `gap_fraction` spacing below; set 'enabled'
+            # False to run those instead and measure the difference.
+            #
+            # `per_class` is the beginning of the w[class][dimension] table the
+            # plan is built around. Phase 1 fills in only what the loop already
+            # says plainly: the two categories where the user's own pick decides
+            # and nothing should be spread, and the single-moment events. Phase
+            # 5 fits the rest rather than guessing it.
+            'coverage': {
+                'enabled': True,
+                'time': {
+                    'windows': 6,
+                    # Against a rank term capped at 1000 per photo.
+                    'weight': 300,
+                    'global_weight': 150,
+                    'per_class': {
+                        'accessories': 0,
+                        'wedding dress': 0,
+                        'cake cutting': 0,
+                        'first dance': 0,
+                        'kiss': 0,
+                        'may kiss bride': 0,
+                        'send off': 0,
+                        'invite': 0,
+                        'rings': 0,
+                    },
+                },
+            },
         },
 
         'MAX_PERSON_COMBINATION': 10000,

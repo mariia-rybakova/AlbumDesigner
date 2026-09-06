@@ -230,6 +230,12 @@ class WeddingPicker:
 
         if picks.forced:
             self.chosen.extend(picks.forced)
+            # These reach the album -- `walking the aisle`'s two scripted beats
+            # are forced picks -- so they are the category's photos and belong
+            # in its tally. Counting them only in `self.chosen` made the class
+            # read as short of an allowance it had in fact spent.
+            entry = self.per_category[category]
+            entry['selected'] = entry.get('selected', 0) + len(picks.forced)
         if picks.remaining_need is not None:
             need = picks.remaining_need
         if picks.skip:

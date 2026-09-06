@@ -20,7 +20,7 @@ them:
 | hypothesis | measurement | verdict |
 |---|---|---|
 | No identity filters, so `bride` admits non-solo frames | picks failing the loop's own filter: 2 vs 2, 8 vs 8 | not a live difference on these galleries |
-| Cohesion clusters picks where `select_remove_similar` spreads them | median gap between same-class picks **14 (cp-sat) vs 7 (loop)** | **backwards** — the window terms (300/150) dominate cohesion (60), so it spreads *more* |
+| Cohesion clusters picks where `select_remove_similar` spreads them | median gap between same-class picks 14 (cp-sat) vs 7 (loop) — but *without request hints*; with the real request it is 4 vs 5 and 3 vs 2 | not a difference. The first reading was an artefact: with nothing committed there are no anchors, and the window terms had free rein |
 | No candidate gate, so it picks photos the loop never sees | **98/98 and 91/91** picks already inside the loop's shortlist | not a difference at all |
 
 **The real one: the loop's quota is a ceiling it routinely leaves unmet, and
@@ -160,10 +160,12 @@ that re-implemented the decision tree would drift from the tree.
 `tools/pick_attribution.py` runs both pickers and tabulates, and
 `tools/baselines/pick_attribution.json` is the recorded result.
 
-**Phase 1 — the `time` dimension.** Replace `_add_windows` and `_add_spacing`
-with bucket-coverage on time. Fewest moving parts, and it directly tests
-whether "coverage as reward" behaves like "deviation as penalty". Expected: the
-median same-class gap moves from 14 back toward the loop's 7.
+**Phase 1 — the `time` dimension. Done; see §7.** `_add_time_coverage`
+replaces `_add_windows` and `_add_spacing`, behind
+`CONFIGS['pick_cpsat']['coverage']['enabled']` so the two can be measured
+against each other. Two mechanisms become one, sparse classes stop needing a
+separate branch, and `coverage_weight()` is the first row of the
+`w[class][dimension]` table.
 
 **Phase 2 — `people` and `content`.** Retire the comparison against
 `person_max_union_selection` and `select_non_similar_images`. This is where the
@@ -248,6 +250,39 @@ filling what the loop declines to*, not the model choosing differently in bulk.
 
 The two numbers to watch as later phases land: **short → should stay near 12**
 as the model learns to saturate, and **|cp-sat − loop| → should fall toward 0**.
+
+### The shortfall is not all virtue
+
+Splitting the 11 photos by *why* the loop stopped, which decides whether it is
+a target or a floor:
+
+| kind | photos | reading |
+|---|---|---|
+| `orphan` | 1 | a quality filter dropped a temporally isolated photo. The loop is right; match it. |
+| `scarcity` | 4 | the pool was never big enough. Match it. |
+| **`similarity`** | **6** | photos were there and a diversity pass declined them — `53459898/groom` alone accounts for 4. **Budgeted pages left unfilled: headroom, not a target.** |
+
+So parity is the floor, not the goal. Five of the eleven are the loop being
+right; the other six are pages the album was budgeted and did not get, and a
+model that trades coverage off globally should be able to fill them with
+something better than a near-duplicate. `tools/pick_attribution.py` prints this
+split, keyed on the *mechanism* rather than the pool size — an orphan-emptied
+class has plenty of photos and is still not headroom.
+
+### Phase 1 result
+
+Coverage-as-reward against the deviation penalty, same galleries, real hints:
+
+| | median same-class gap (loop 5 / 2) | photos | shared with the loop |
+|---|---|---|---|
+| deviation penalty | 4 / 3 | 142 / 136 | 77/137, 119/135 |
+| **coverage reward** | **3 / 2** | 143 / 139 | 81/137, 117/135 |
+
+Total divergence from the loop **12 → 10 photos**. Modest, and honestly
+reported: with real hints the two were already close, because 42 and 64
+committed photos anchor the day before either mechanism runs. The structural
+win is the larger one — two mechanisms collapse into one, sparse classes lose
+their special branch, and the weight table now has a call site.
 
 `bound_by` is diagnostic only; nothing downstream reads `per_category`. Three
 tests in `tests/test_pick_attribution.py` keep it honest — every category names

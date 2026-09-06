@@ -12,6 +12,7 @@
      "loop_selected": 17,
      "need": 0,
      "pool": 124,
+     "shortfall_kind": null,
      "strategy": null
     },
     "accessories": {
@@ -24,18 +25,20 @@
      "loop_selected": 1,
      "need": null,
      "pool": 1,
+     "shortfall_kind": null,
      "strategy": null
     },
     "bride": {
      "bound_by": "take_all_distinct",
      "committed": 1,
      "cpsat_bound_by": "solver",
-     "cpsat_chose": 1,
-     "cpsat_selected": 2,
+     "cpsat_chose": 2,
+     "cpsat_selected": 3,
      "loop_chose": 1,
      "loop_selected": 2,
      "need": 3,
      "pool": 4,
+     "shortfall_kind": "scarcity",
      "strategy": null
     },
     "bride and groom": {
@@ -48,18 +51,20 @@
      "loop_selected": 12,
      "need": 12,
      "pool": 25,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "bride getting dressed": {
      "bound_by": "greyscale_only",
      "committed": 4,
      "cpsat_bound_by": "solver",
-     "cpsat_chose": 0,
-     "cpsat_selected": 4,
+     "cpsat_chose": 1,
+     "cpsat_selected": 5,
      "loop_chose": 1,
      "loop_selected": 5,
      "need": 1,
      "pool": 5,
+     "shortfall_kind": null,
      "strategy": null
     },
     "bride party": {
@@ -72,6 +77,7 @@
      "loop_selected": 16,
      "need": 0,
      "pool": 20,
+     "shortfall_kind": null,
      "strategy": null
     },
     "cake cutting": {
@@ -84,6 +90,7 @@
      "loop_selected": 1,
      "need": 1,
      "pool": 5,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "ceremony": {
@@ -96,6 +103,7 @@
      "loop_selected": 7,
      "need": 7,
      "pool": 40,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "couple": {
@@ -108,6 +116,7 @@
      "loop_selected": 6,
      "need": 6,
      "pool": 36,
+     "shortfall_kind": null,
      "strategy": "ContentClusterStrategy"
     },
     "dancing": {
@@ -120,6 +129,7 @@
      "loop_selected": 17,
      "need": 17,
      "pool": 31,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "entertainment": {
@@ -132,6 +142,7 @@
      "loop_selected": 2,
      "need": 2,
      "pool": 5,
+     "shortfall_kind": null,
      "strategy": "ContentClusterStrategy"
     },
     "first dance": {
@@ -144,6 +155,7 @@
      "loop_selected": 4,
      "need": 4,
      "pool": 16,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "food": {
@@ -156,6 +168,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 4,
+     "shortfall_kind": null,
      "strategy": null
     },
     "full party": {
@@ -168,6 +181,7 @@
      "loop_selected": 3,
      "need": 3,
      "pool": 3,
+     "shortfall_kind": null,
      "strategy": null
     },
     "getting hair-makeup": {
@@ -180,6 +194,7 @@
      "loop_selected": 11,
      "need": null,
      "pool": 11,
+     "shortfall_kind": null,
      "strategy": null
     },
     "groom party": {
@@ -192,6 +207,7 @@
      "loop_selected": 3,
      "need": 4,
      "pool": 5,
+     "shortfall_kind": "similarity",
      "strategy": "CoupleTimelineStrategy"
     },
     "groom walking the aisle": {
@@ -204,6 +220,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 3,
+     "shortfall_kind": null,
      "strategy": null
     },
     "kiss": {
@@ -216,6 +233,7 @@
      "loop_selected": 2,
      "need": 3,
      "pool": 3,
+     "shortfall_kind": "scarcity",
      "strategy": null
     },
     "may kiss bride": {
@@ -228,6 +246,7 @@
      "loop_selected": 0,
      "need": 1,
      "pool": 3,
+     "shortfall_kind": "orphan",
      "strategy": null
     },
     "other": {
@@ -240,6 +259,7 @@
      "loop_selected": 2,
      "need": 0,
      "pool": 128,
+     "shortfall_kind": null,
      "strategy": null
     },
     "parents portrait": {
@@ -252,18 +272,20 @@
      "loop_selected": 3,
      "need": 2,
      "pool": 6,
+     "shortfall_kind": null,
      "strategy": "ParentsPortraitStrategy"
     },
     "portrait": {
      "bound_by": "strategy",
      "committed": 5,
      "cpsat_bound_by": "solver",
-     "cpsat_chose": 3,
-     "cpsat_selected": 8,
+     "cpsat_chose": 4,
+     "cpsat_selected": 9,
      "loop_chose": 4,
      "loop_selected": 9,
      "need": 4,
      "pool": 33,
+     "shortfall_kind": null,
      "strategy": "PersonCoverageStrategy"
     },
     "send off": {
@@ -276,6 +298,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 5,
+     "shortfall_kind": null,
      "strategy": null
     },
     "settings": {
@@ -288,6 +311,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 10,
+     "shortfall_kind": null,
      "strategy": null
     },
     "speech": {
@@ -300,6 +324,7 @@
      "loop_selected": 3,
      "need": 3,
      "pool": 30,
+     "shortfall_kind": null,
      "strategy": "PersonCoverageStrategy"
     },
     "walking the aisle": {
@@ -308,10 +333,11 @@
      "cpsat_bound_by": "solver",
      "cpsat_chose": 3,
      "cpsat_selected": 3,
-     "loop_chose": 2,
-     "loop_selected": 2,
+     "loop_chose": 3,
+     "loop_selected": 3,
      "need": 3,
      "pool": 13,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "wedding dress": {
@@ -324,11 +350,12 @@
      "loop_selected": 2,
      "need": null,
      "pool": 2,
+     "shortfall_kind": null,
      "strategy": null
     }
    },
    "committed": 64,
-   "cpsat_total": 136,
+   "cpsat_total": 139,
    "loop_total": 135,
    "photos": 571
   },
@@ -344,6 +371,7 @@
      "loop_selected": 5,
      "need": 0,
      "pool": 207,
+     "shortfall_kind": null,
      "strategy": null
     },
     "accessories": {
@@ -356,6 +384,7 @@
      "loop_selected": 2,
      "need": 0,
      "pool": 12,
+     "shortfall_kind": null,
      "strategy": null
     },
     "bride": {
@@ -368,6 +397,7 @@
      "loop_selected": 16,
      "need": 13,
      "pool": 65,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "bride and groom": {
@@ -380,6 +410,7 @@
      "loop_selected": 16,
      "need": 14,
      "pool": 100,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "bride getting dressed": {
@@ -392,6 +423,7 @@
      "loop_selected": 9,
      "need": 6,
      "pool": 29,
+     "shortfall_kind": null,
      "strategy": "BridePrepStrategy"
     },
     "bride party": {
@@ -404,6 +436,7 @@
      "loop_selected": 6,
      "need": 4,
      "pool": 73,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "bride walking the aisle": {
@@ -416,6 +449,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 6,
+     "shortfall_kind": null,
      "strategy": null
     },
     "cake cutting": {
@@ -428,6 +462,7 @@
      "loop_selected": 2,
      "need": 2,
      "pool": 3,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "ceremony": {
@@ -440,6 +475,7 @@
      "loop_selected": 7,
      "need": 6,
      "pool": 51,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "dancing": {
@@ -452,6 +488,7 @@
      "loop_selected": 16,
      "need": 16,
      "pool": 73,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "entertainment": {
@@ -464,6 +501,7 @@
      "loop_selected": 2,
      "need": 3,
      "pool": 3,
+     "shortfall_kind": "scarcity",
      "strategy": null
     },
     "first dance": {
@@ -476,6 +514,7 @@
      "loop_selected": 5,
      "need": 5,
      "pool": 18,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "food": {
@@ -488,6 +527,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 4,
+     "shortfall_kind": null,
      "strategy": null
     },
     "full party": {
@@ -500,6 +540,7 @@
      "loop_selected": 5,
      "need": 4,
      "pool": 5,
+     "shortfall_kind": null,
      "strategy": null
     },
     "getting hair-makeup": {
@@ -512,6 +553,7 @@
      "loop_selected": 1,
      "need": 1,
      "pool": 10,
+     "shortfall_kind": null,
      "strategy": "BridePrepStrategy"
     },
     "groom": {
@@ -524,6 +566,7 @@
      "loop_selected": 12,
      "need": 9,
      "pool": 25,
+     "shortfall_kind": "similarity",
      "strategy": "CoupleTimelineStrategy"
     },
     "groom party": {
@@ -536,6 +579,7 @@
      "loop_selected": 6,
      "need": 3,
      "pool": 58,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "groom walking the aisle": {
@@ -548,6 +592,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 3,
+     "shortfall_kind": null,
      "strategy": null
     },
     "inside vehicle": {
@@ -560,6 +605,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 6,
+     "shortfall_kind": null,
      "strategy": null
     },
     "kiss": {
@@ -572,6 +618,7 @@
      "loop_selected": 3,
      "need": 2,
      "pool": 3,
+     "shortfall_kind": null,
      "strategy": null
     },
     "may kiss bride": {
@@ -584,6 +631,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 6,
+     "shortfall_kind": null,
      "strategy": null
     },
     "other": {
@@ -596,18 +644,20 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 187,
+     "shortfall_kind": null,
      "strategy": null
     },
     "parents portrait": {
      "bound_by": "strategy",
      "committed": 1,
      "cpsat_bound_by": "solver",
-     "cpsat_chose": 1,
-     "cpsat_selected": 2,
+     "cpsat_chose": 2,
+     "cpsat_selected": 3,
      "loop_chose": 2,
      "loop_selected": 3,
      "need": 2,
      "pool": 9,
+     "shortfall_kind": null,
      "strategy": "ParentsPortraitStrategy"
     },
     "portrait": {
@@ -620,6 +670,7 @@
      "loop_selected": 3,
      "need": 3,
      "pool": 40,
+     "shortfall_kind": null,
      "strategy": "PersonCoverageStrategy"
     },
     "rings": {
@@ -632,6 +683,7 @@
      "loop_selected": 2,
      "need": 0,
      "pool": 5,
+     "shortfall_kind": null,
      "strategy": null
     },
     "send off": {
@@ -644,6 +696,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 7,
+     "shortfall_kind": null,
      "strategy": null
     },
     "settings": {
@@ -656,6 +709,7 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 33,
+     "shortfall_kind": null,
      "strategy": null
     },
     "speech": {
@@ -668,6 +722,7 @@
      "loop_selected": 3,
      "need": 4,
      "pool": 16,
+     "shortfall_kind": "similarity",
      "strategy": "PersonCoverageStrategy"
     },
     "walking the aisle": {
@@ -680,6 +735,7 @@
      "loop_selected": 4,
      "need": 4,
      "pool": 8,
+     "shortfall_kind": null,
      "strategy": "CoupleTimelineStrategy"
     },
     "wedding dress": {
@@ -692,11 +748,12 @@
      "loop_selected": 1,
      "need": 0,
      "pool": 4,
+     "shortfall_kind": null,
      "strategy": null
     }
    },
    "committed": 42,
-   "cpsat_total": 142,
+   "cpsat_total": 143,
    "loop_total": 137,
    "photos": 1069
   }

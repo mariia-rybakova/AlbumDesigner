@@ -142,8 +142,11 @@ class CpSatPicker:
         rewards: List = []
 
         self._add_quotas(model, frame, x, penalties)
-        self._add_windows(model, frame, x, penalties)
-        self._add_spacing(model, frame, x)
+        if self._coverage_on():
+            self._add_time_coverage(model, frame, x, rewards)
+        else:
+            self._add_windows(model, frame, x, penalties)
+            self._add_spacing(model, frame, x)
         self._add_exclusions(model, frame, x)
         self._add_cohesion(model, frame, x, rewards)
 
@@ -323,6 +326,71 @@ class CpSatPicker:
             shortage = model.NewIntVar(0, need, f"shortage_{_slug(category)}")
             model.Add(sum(x[index] for index in free) + shortage == need)
             penalties.append(shortage * weight)
+
+    # -- coverage (Phase 1 of docs/cpsat_scoring_plan.md) -------------------
+
+    def _coverage_on(self) -> bool:
+        return bool(self.cfg.get('coverage', {}).get('enabled', False))
+
+    def coverage_weight(self, category, dimension: str) -> int:
+        """``w[class][dimension]``, falling back to the dimension's default.
+
+        The per-class table is the artefact the plan is really about; Phase 1
+        ships the lookup with only a `time` row and a couple of overrides, and
+        Phase 5 fits the rest. Keeping the shape now means later phases add
+        rows rather than rework the call sites.
+        """
+        settings_for = self.cfg.get('coverage', {}).get(dimension, {})
+        per_class = settings_for.get('per_class') or {}
+        if category in per_class:
+            return int(per_class[category])
+        return int(settings_for.get('weight', 0))
+
+    def _add_time_coverage(self, model, frame, x, rewards) -> None:
+        """Reward *reaching* a part of the day, rather than penalising drift.
+
+        This replaces `_add_windows` and `_add_spacing`, and the difference is
+        the point of the phase. A deviation penalty measures every window
+        against a proportional target, so it pushes picks into windows the
+        class barely occupies and keeps pushing after the day is covered --
+        which is why the model out-spread the loop (median same-class gap 14
+        against 7). A coverage reward is collected once per window: the first
+        pick there earns it, the second earns nothing, and once the day is
+        covered the remaining slots are free to sit wherever the ranks are
+        best. Diminishing returns rather than a quota to hit.
+
+        Sparse classes need no separate branch any more. A class with two slots
+        can reach at most two windows, so it takes the two best -- which is
+        what `_add_spacing`'s forbidden-pair constraint was approximating, and
+        a class that should not be spread at all just takes a weight of zero.
+        """
+        count = int(self.cfg.get('coverage', {}).get('time', {}).get('windows', 6))
+        if count < 2:
+            return
+
+        edges = np.linspace(0, self.positions or len(frame), count + 1).astype(int)
+        frame['_window'] = np.searchsorted(edges[1:-1], frame[tl.POSITION], side='right')
+
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            weight = self.coverage_weight(category, 'time')
+            if weight <= 0:
+                continue
+            for window, members in group.groupby('_window'):
+                covered = model.NewBoolVar(f"cov_{_slug(category)}_{window}")
+                # Collectable only if something in that window is picked. The
+                # reward is positive, so the solver raises it whenever it can.
+                model.Add(covered <= sum(x[index] for index in members.index))
+                rewards.append(covered * weight)
+
+        # The album as a whole: the same dimension with `class = ALL`, one more
+        # row of the same table rather than a separate mechanism.
+        overall = int(self.cfg.get('coverage', {}).get('time', {})
+                      .get('global_weight', 0))
+        if overall > 0:
+            for window, members in frame.groupby('_window'):
+                covered = model.NewBoolVar(f"cov_all_{window}")
+                model.Add(covered <= sum(x[index] for index in members.index))
+                rewards.append(covered * overall)
 
     def _add_windows(self, model, frame, x, penalties) -> None:
         """Coverage of the day, per class and overall.
