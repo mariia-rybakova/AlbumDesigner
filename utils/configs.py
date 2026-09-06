@@ -445,6 +445,49 @@ CONFIGS = {'DEBUG': True,
                         'rings': 0,
                     },
                 },
+
+                # People and content are implemented and measurable, and ship
+                # at zero, because measurement says they should. Scaled from
+                # 0 to 1x their intended weights, neither improved agreement
+                # with the loop over time alone: 81 -> 78-80 of 137 on
+                # 53459898, 117 -> 112-119 of 135 on 53147741.
+                #
+                # The reason is structural rather than a bad number, and it is
+                # why Phase 4 has to come first. Coverage rewards *breadth*,
+                # but it cannot make the model stop: while every extra photo
+                # earns a flat positive rank, more photos is always better, so
+                # the solve fills whatever the quota allows. The loop stops
+                # because its diversity passes return fewer items than asked.
+                # Reproducing that needs the quota as a ceiling *and* a
+                # marginal-value rank -- an admission cost per photo, or rank
+                # measured net of what is already picked. Until then these two
+                # dimensions can only reshuffle a fixed count, and reshuffling
+                # away from rank order is what cost the agreement.
+                #
+                # Intended weights, for the Phase 5 fit to start from rather
+                # than invent: people 120 per class and 250 global -- global
+                # higher because `person_max_union_selection` exists to get
+                # distinct guests into the album *somewhere*, and covering a
+                # guest twice buys nothing -- with 300 for the three classes
+                # the loop hands to `PersonCoverageStrategy` (`portrait`,
+                # `very large group`, `speech`). Content 200 per class and 0
+                # global: the same kind of shot in two different classes is not
+                # a repetition.
+                'people': {
+                    'weight': 0,
+                    'global_weight': 0,
+                    # 89 identities across 27 classes on 53459898; a bucket
+                    # holding one photo rewards what the rank term already says.
+                    'max_buckets': 40,
+                    'per_class': {},
+                },
+                'content': {
+                    'column': 'image_subquery_content',
+                    'weight': 0,
+                    'global_weight': 0,
+                    'max_buckets': 60,
+                    'per_class': {},
+                },
             },
         },
 

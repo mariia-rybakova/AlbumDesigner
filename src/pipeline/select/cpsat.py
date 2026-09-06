@@ -113,6 +113,8 @@ class CpSatPicker:
 
         self.committed: Dict = dict(self.plan.committed)
         self.per_category: Dict[str, Dict[str, int]] = {}
+        #: (variables, constraints) of the model actually built, for the log.
+        self.model_size: Tuple[int, int] = (0, 0)
         #: Length of the whole day in positions, set by `_pool`. Distinct from
         #: `len(frame)` once the gate has removed rows.
         self.positions: int = 0
@@ -143,7 +145,7 @@ class CpSatPicker:
 
         self._add_quotas(model, frame, x, penalties)
         if self._coverage_on():
-            self._add_time_coverage(model, frame, x, rewards)
+            self._add_coverage(model, frame, x, rewards)
         else:
             self._add_windows(model, frame, x, penalties)
             self._add_spacing(model, frame, x)
@@ -165,6 +167,12 @@ class CpSatPicker:
             - sum(penalties)
             - sum(grey)
         )
+
+        # Recorded before the solve so the log says what was actually built.
+        # The coverage dimensions each add a boolean per (class, bucket), and
+        # "how big did that get" is the question a queue worker cares about.
+        proto = model.Proto()
+        self.model_size = (len(proto.variables), len(proto.constraints))
 
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = float(self.cfg.get('time_limit_seconds', 30))
@@ -346,51 +354,83 @@ class CpSatPicker:
             return int(per_class[category])
         return int(settings_for.get('weight', 0))
 
-    def _add_time_coverage(self, model, frame, x, rewards) -> None:
-        """Reward *reaching* a part of the day, rather than penalising drift.
+    def _add_coverage(self, model, frame, x, rewards) -> None:
+        """Every coverage dimension, through one mechanism.
 
-        This replaces `_add_windows` and `_add_spacing`, and the difference is
-        the point of the phase. A deviation penalty measures every window
-        against a proportional target, so it pushes picks into windows the
-        class barely occupies and keeps pushing after the day is covered --
-        which is why the model out-spread the loop (median same-class gap 14
-        against 7). A coverage reward is collected once per window: the first
-        pick there earns it, the second earns nothing, and once the day is
-        covered the remaining slots are free to sit wherever the ranks are
-        best. Diminishing returns rather than a quota to hit.
+        The dimensions differ only in what "the same thing" means -- a part of
+        the day, a person, a kind of shot -- so they share the machinery and
+        differ by a bucketing function and a weight. That is the whole claim of
+        `docs/cpsat_scoring_plan.md`: the loop says "do not spend two slots on
+        the same thing" four times in four incompatible ways, and it only needs
+        saying once.
 
-        Sparse classes need no separate branch any more. A class with two slots
-        can reach at most two windows, so it takes the two best -- which is
-        what `_add_spacing`'s forbidden-pair constraint was approximating, and
-        a class that should not be spread at all just takes a weight of zero.
+        Rewarding coverage is not the same as penalising drift from it, which
+        is what `_add_windows` did. A deviation penalty measures every window
+        against a proportional target, so it pushes picks into windows a class
+        barely occupies and keeps pushing after the day is covered. A coverage
+        reward is collected once: the first pick in a bucket earns it, the
+        second earns nothing, and once the day is covered the remaining slots
+        are free to sit where the ranks are best.
+
+        Sparse classes need no separate branch either. A class with two slots
+        reaches at most two buckets and takes the best two, which is what
+        `_add_spacing`'s forbidden pairs were approximating, and a class that
+        should not be spread at all takes a weight of zero.
         """
-        count = int(self.cfg.get('coverage', {}).get('time', {}).get('windows', 6))
-        if count < 2:
-            return
+        self._prepare_windows(frame)
+        self._cover(model, frame, x, rewards, 'time', _by_window)
+        self._cover(model, frame, x, rewards, 'people', _by_identity)
+        self._cover(model, frame, x, rewards, 'content',
+                    _by_column(self.cfg.get('coverage', {})
+                               .get('content', {}).get('column',
+                                                        Col.IMAGE_SUBQUERY_CONTENT)))
 
-        edges = np.linspace(0, self.positions or len(frame), count + 1).astype(int)
-        frame['_window'] = np.searchsorted(edges[1:-1], frame[tl.POSITION], side='right')
+    def _cover(self, model, frame, x, rewards, dimension: str, buckets_of) -> None:
+        """One dimension: a boolean per (class, bucket), rewarded once.
+
+        ``buckets_of(rows)`` returns ``{bucket: [index, ...]}``. A bucket a
+        photo shares with nothing earns its reward on the first pick and
+        nothing after, which is the diminishing return the loop's diversity
+        passes produce by hand.
+
+        The same dimension with ``class = ALL`` is the album-wide statement --
+        one more application, not a separate mechanism. For `people` that
+        global row is the truer one: `PersonCoverageStrategy` exists to
+        maximise the guests who appear *somewhere in the album*, and only
+        applies it per category because that is the loop it sits in.
+        """
+        settings_for = self.cfg.get('coverage', {}).get(dimension, {})
+        cap = int(settings_for.get('max_buckets', 0))
 
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
-            weight = self.coverage_weight(category, 'time')
+            weight = self.coverage_weight(category, dimension)
             if weight <= 0:
                 continue
-            for window, members in group.groupby('_window'):
-                covered = model.NewBoolVar(f"cov_{_slug(category)}_{window}")
-                # Collectable only if something in that window is picked. The
-                # reward is positive, so the solver raises it whenever it can.
-                model.Add(covered <= sum(x[index] for index in members.index))
+            for bucket, members in _largest(buckets_of(group), cap):
+                covered = model.NewBoolVar(
+                    f"cov_{dimension}_{_slug(category)}_{_slug(bucket)}")
+                # Collectable only if something in the bucket is picked. The
+                # reward is positive, so the solver raises it where it can.
+                model.Add(covered <= sum(x[index] for index in members))
                 rewards.append(covered * weight)
 
-        # The album as a whole: the same dimension with `class = ALL`, one more
-        # row of the same table rather than a separate mechanism.
-        overall = int(self.cfg.get('coverage', {}).get('time', {})
-                      .get('global_weight', 0))
+        overall = int(settings_for.get('global_weight', 0))
         if overall > 0:
-            for window, members in frame.groupby('_window'):
-                covered = model.NewBoolVar(f"cov_all_{window}")
-                model.Add(covered <= sum(x[index] for index in members.index))
+            for bucket, members in _largest(buckets_of(frame), cap):
+                covered = model.NewBoolVar(f"cov_{dimension}_all_{_slug(bucket)}")
+                model.Add(covered <= sum(x[index] for index in members))
                 rewards.append(covered * overall)
+
+    def _prepare_windows(self, frame) -> None:
+        """Cut the day into windows. Edges come from the whole gallery, not
+        from what survived the gate, or dropping one class's photos would
+        redraw the timeline every other class is spread over."""
+        count = int(self.cfg.get('coverage', {}).get('time', {}).get('windows', 6))
+        if count < 2:
+            frame['_window'] = 0
+            return
+        edges = np.linspace(0, self.positions or len(frame), count + 1).astype(int)
+        frame['_window'] = np.searchsorted(edges[1:-1], frame[tl.POSITION], side='right')
 
     def _add_windows(self, model, frame, x, penalties) -> None:
         """Coverage of the day, per class and overall.
@@ -566,7 +606,8 @@ class CpSatPicker:
             f"cp-sat: {solver.StatusName(status)} in {solver.WallTime():.2f}s, "
             f"objective {solver.ObjectiveValue():.0f}, "
             f"{len(chosen)} of {len(frame)} photos "
-            f"({len(self.committed)} committed)",
+            f"({len(self.committed)} committed), "
+            f"model {self.model_size[0]} vars / {self.model_size[1]} constraints",
             f"  {'class':<28} {'need':>4} {'got':>4} {'pool':>5}",
         ]
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
@@ -595,3 +636,60 @@ def _unit(value) -> Optional[np.ndarray]:
     if not vector.size or not norm:
         return None
     return vector / norm
+
+
+# -- bucketing ---------------------------------------------------------------
+#
+# `{bucket: [index, ...]}` for a set of rows. One per coverage dimension, and
+# the only thing that differs between them.
+
+
+def _by_window(rows: pd.DataFrame) -> Dict[Any, List]:
+    """Parts of the day, from the column `_prepare_windows` stamped."""
+    return {window: list(members.index)
+            for window, members in rows.groupby('_window')}
+
+
+def _by_identity(rows: pd.DataFrame) -> Dict[Any, List]:
+    """People. Multi-valued -- a photo covers everyone in it, which is why the
+    bucketing is a mapping rather than a column."""
+    if Col.PERSONS_IDS not in rows.columns:
+        return {}
+    buckets: Dict[Any, List] = {}
+    for index, people in rows[Col.PERSONS_IDS].items():
+        for person in (people or []):
+            buckets.setdefault(person, []).append(index)
+    return buckets
+
+
+def _by_column(column: str):
+    """Kinds of shot, by a categorical column.
+
+    `image_subquery_content` by default rather than `cluster_label`, which is
+    what `ContentClusterStrategy` round-robins over: on 53459898 the labels run
+    to 447 distinct values over 1069 photos, about two photos each, so covering
+    them is barely different from rewarding every photo. The subqueries are 116,
+    around nine photos each, which is the granularity "do not take two of the
+    same kind of shot" actually needs.
+    """
+    def buckets_of(rows: pd.DataFrame) -> Dict[Any, List]:
+        if column not in rows.columns:
+            return {}
+        values = rows[column]
+        return {value: list(members.index)
+                for value, members in rows.groupby(values.fillna('__none__'))}
+    return buckets_of
+
+
+def _largest(buckets: Dict[Any, List], cap: int):
+    """The `cap` most populated buckets, or all of them when `cap` is 0.
+
+    Bounds the model: people alone is 89 identities across 27 classes on
+    53459898, and a bucket holding one photo rewards what the rank term already
+    says.
+    """
+    items = [(bucket, members) for bucket, members in buckets.items() if members]
+    if cap and len(items) > cap:
+        items.sort(key=lambda pair: -len(pair[1]))
+        items = items[:cap]
+    return items

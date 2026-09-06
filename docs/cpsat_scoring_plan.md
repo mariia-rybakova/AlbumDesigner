@@ -167,19 +167,38 @@ against each other. Two mechanisms become one, sparse classes stop needing a
 separate branch, and `coverage_weight()` is the first row of the
 `w[class][dimension]` table.
 
-**Phase 2 — `people` and `content`.** Retire the comparison against
-`person_max_union_selection` and `select_non_similar_images`. This is where the
-under-delivery in §1's table should start reproducing itself: `speech` should
-fall to 2 of 3 on its own, because the third photo covers no new identity.
+**Phase 2 — `people` and `content`. Implemented, shipped at zero weight; see
+§7.** Both dimensions exist and are measurable, and neither improves agreement
+with the loop at any weight tried. The reason is structural and it reorders the
+remaining phases: **coverage cannot make the model stop.** While every extra
+photo earns a flat positive rank, more photos is always better, so the solve
+fills whatever the quota allows; the loop stops because its diversity passes
+return fewer items than asked for. `speech` cannot fall to 2 of 3 on its own
+until the quota is a ceiling *and* rank is a marginal value rather than a flat
+per-photo bonus. So Phase 4 is the prerequisite for Phase 2 paying off, not the
+other way round.
 
 **Phase 3 — `visual`.** Embedding buckets from the existing clustering rather
 than the current pairwise `_add_exclusions`, which is O(n²) within a class and
 only reaches `cohesion_max_gap` positions.
 
-**Phase 4 — the quota becomes a ceiling.** `sum(class) ≤ need`. Keep the
-penalised shortage only for classes with a genuine floor (the `yes` events).
-This is the change that stops the model over-filling, and it is safe only once
-Phases 1–3 give it a reason to stop.
+**Phase 4 — the quota becomes a ceiling, and rank becomes marginal.**
+`sum(class) ≤ need`, keeping the penalised shortage only for classes with a
+genuine floor (the `yes` events). **A ceiling alone changes nothing** — Phase 2
+established that, the hard way. With `Σ rank·x` as a flat positive term the
+model still fills to the ceiling, because every admitted photo pays. One of two
+things has to go with it:
+
+* an **admission cost** per photo, so a pick has to clear a bar rather than
+  merely be positive; or
+* **rank net of redundancy** — a photo's value discounted by how much of it the
+  already-picked set covers, which is coverage applied to the quality term
+  instead of beside it.
+
+The second is the truer statement of the plan and subsumes the first. It is
+also the point at which the six photos of similarity headroom in §7 become
+reachable, because the model can then decline a near-duplicate *and* spend the
+slot on something else instead of being forced to take one or the other.
 
 **Phase 5 — fit the weight table**, then tune deliberately from the fitted
 baseline.
@@ -283,6 +302,34 @@ reported: with real hints the two were already close, because 42 and 64
 committed photos anchor the day before either mechanism runs. The structural
 win is the larger one — two mechanisms collapse into one, sparse classes lose
 their special branch, and the weight table now has a call site.
+
+### Phase 2 result, and what it cost
+
+Agreement with the loop, spread, and price. Medians of repeated runs, real
+hints. `people+content` scaled from 0 to their intended weights:
+
+| people+content weight | agree 53459898 | agree 53147741 | same-class gap | model (vars/constraints) |
+|---|---|---|---|---|
+| deviation penalties *(pre-Phase 1)* | 77/137 | 119/135 | 4 / 3 | 1115 / **2356** |
+| **×0 — time only, shipped** | **81/137** | 117/135 | 3 / 2 | 1138 / **1148** |
+| ×0.1 | 80/137 | **119/135** | 3 / 2 | — |
+| ×0.25 | 78/137 | 118/135 | 3 / 2 | — |
+| ×0.5 | 80/137 | 116/135 | 8 / 2 | — |
+| ×1.0 | 79/137 | 112/135 | 10 / 2 | 1482 / 1492 |
+
+**No weight beats zero.** So people and content ship at zero: implemented,
+measurable, and inert until Phase 4 gives them something to do. The intended
+weights are recorded in `utils/configs.py` for the Phase 5 fit to start from
+rather than invent.
+
+Cost is the good news. Phase 1 **halved the constraints** (2356 → 1148) by
+replacing two deviation constraints per class-window plus the spacing pairs
+with one boolean per bucket. Adding people and content puts variables up ~30%
+and still lands under the deviation baseline on the larger gallery. Pick-stage
+wall time runs **1.2–1.5× the loop** throughout — 0.85s against 0.70s, 0.9s
+against 0.61s — and does not move measurably between the three configurations
+at this size. Watch it again at Phase 3: embedding buckets are the first
+dimension whose bucketing is not a groupby.
 
 `bound_by` is diagnostic only; nothing downstream reads `per_category`. Three
 tests in `tests/test_pick_attribution.py` keep it honest — every category names

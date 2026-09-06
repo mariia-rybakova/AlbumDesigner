@@ -129,11 +129,19 @@ def select(photos: pd.DataFrame, hints, cpsat: bool) -> Optional[Dict]:
     if context.failed:
         print(f"    SELECT failed: {context.error}")
         return None
+
+    # The substage records its own duration, so this is the pick alone rather
+    # than the budget and preselect either picker shares. Watched because the
+    # coverage dimensions add variables, and a model that solves beautifully in
+    # four minutes is no use in a queue worker.
+    picked = next((record for record in context.diagnostics
+                   if record.name == 'select.pick'), None)
     return {
         'committed': len(context.selection_plan.committed),
         'total': len(context.selection.photo_ids),
         'photo_ids': list(context.selection.photo_ids),
         'per_category': context.selection.per_category,
+        'seconds': round(picked.seconds, 2) if picked else None,
     }
 
 
@@ -204,6 +212,8 @@ def report(gallery: str, photos: pd.DataFrame, hints) -> Optional[Dict]:
     print(f"\n=== {gallery}: {len(photos)} photos, "
           f"{loop['committed']} committed, "
           f"loop {loop['total']} / cp-sat {solved['total'] if solved else 'n/a'} ===")
+    print(f"  select.pick took {loop['seconds']}s for the loop, "
+          f"{solved['seconds'] if solved else 'n/a'}s for cp-sat")
     # `chose` is what the picker itself decided: `selected` counts the
     # committed photos too, and their allowance was already spent in
     # `select.preselect`, so comparing `selected` against `need` overstates
