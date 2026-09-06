@@ -410,6 +410,45 @@ CONFIGS = {'DEBUG': True,
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
 
+            # -- the quota: Phase 4 of docs/cpsat_scoring_plan.md -----------
+            #
+            # The allowance is a ceiling, not a target. Measured over 60
+            # classes, the loop comes in 11 photos short of its budget and
+            # never once over, because its diversity passes return fewer items
+            # than they were asked for; `sum + shortage == need` cannot express
+            # that, since the shortage weight sits above every other term.
+            #
+            # `admission_cost` is the other half, and neither works alone. In
+            # objective units against a rank of score*1000, so 400 means a
+            # photo needs a score above 0.4 to earn a page on quality alone --
+            # below that it is taken only if the coverage it brings makes up
+            # the difference. That is what turns the coverage dimensions from a
+            # reshuffle of a fixed count into a reason to stop, and it is why
+            # people and content ship at zero weight until this is on.
+            #
+            # A floor is kept only where one is real: a `yes` class is promised
+            # a photo when the thing happened, so coming back empty is a
+            # failure rather than restraint.
+            'quota_ceiling': {
+                'enabled': True,
+                # A quantile of the class's own score distribution, because
+                # `get_scores` min-max normalises within a class: every class
+                # has a photo at 1.0 and one at 0.0, so a flat cost means
+                # something different in each. Sweeping a flat one over
+                # 53459898 left the count at 143 for every value from 0 to 300
+                # and then dropped it to 120 at 400 -- a cliff, not a gradient.
+                # 0.2 is where the two halves of the scoreboard balance. At
+                # 0 the model fills all 6 photos of similarity headroom but
+                # overruns 4 of the 5 classes the loop was right to stop on;
+                # at 0.2 it takes 5 of the 6 and correctly leaves 3 of the 5.
+                # Chosen on two galleries, so it is an input to the Phase 5
+                # fit rather than a tuned value.
+                'admission_quantile': 0.2,
+                # A floor under the quantile, in raw objective units. Zero
+                # unless a gallery needs an absolute bar as well.
+                'admission_cost': 0,
+            },
+
             # -- coverage: Phase 1 of docs/cpsat_scoring_plan.md ------------
             #
             # Reward reaching a part of the day instead of penalising drift

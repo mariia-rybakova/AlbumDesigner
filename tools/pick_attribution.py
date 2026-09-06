@@ -321,6 +321,38 @@ def summarise(galleries: Dict[str, Dict]) -> None:
             for entry in where.get(kind, []):
                 print(f"    {kind:<11} {entry}")
 
+    scoreboard(galleries)
+
+
+def scoreboard(galleries: Dict[str, Dict]) -> None:
+    """Did cp-sat fill the pages the loop left on the table, and leave alone
+    the ones it was right to skip?
+
+    Matching the loop's *count* is not the goal and never was. Where the loop
+    stopped for scarcity or on a quality filter it was right, and the model
+    should stop too. Where it stopped because a diversity pass declined photos
+    that were there, those are budgeted pages the album did not get, and
+    filling them is the win. So the two halves are scored separately.
+    """
+    filled = {'similarity': [0, 0], 'scarcity': [0, 0], 'orphan': [0, 0]}
+    for result in galleries.values():
+        for row in result['categories'].values():
+            kind = row.get('shortfall_kind')
+            if not kind:
+                continue
+            gap = row['need'] - row['loop_chose']
+            recovered = min(gap, max(0, row['cpsat_chose'] - row['loop_chose']))
+            filled[kind][0] += recovered
+            filled[kind][1] += gap
+
+    print("\n=== did cp-sat fill what the loop left, and stop where it should? ===")
+    good, bad = filled['similarity'], filled['scarcity'][1] + filled['orphan'][1]
+    over = filled['scarcity'][0] + filled['orphan'][0]
+    print(f"  headroom taken   {good[0]}/{good[1]} of the similarity shortfall "
+          f"-- higher is better")
+    print(f"  restraint kept   {bad - over}/{bad} of the scarcity and orphan "
+          f"shortfall left alone -- higher is better")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(

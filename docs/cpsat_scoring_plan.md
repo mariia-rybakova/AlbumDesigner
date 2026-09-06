@@ -195,10 +195,14 @@ things has to go with it:
   already-picked set covers, which is coverage applied to the quality term
   instead of beside it.
 
-The second is the truer statement of the plan and subsumes the first. It is
-also the point at which the six photos of similarity headroom in §7 become
-reachable, because the model can then decline a near-duplicate *and* spend the
-slot on something else instead of being forced to take one or the other.
+**The first is done; see §7.** The admission cost is a **quantile of the
+class**, not a constant: `get_scores` min-max normalises within each class, so
+a flat cost means something different in every one, and sweeping one produced a
+cliff rather than a gradient -- 143 photos at every value from 0 to 300, then
+120 at 400. Against the class's own distribution it reads the same everywhere:
+better than a fifth of your class, or bring something new.
+
+The second remains the truer statement, and is still open.
 
 **Phase 5 — fit the weight table**, then tune deliberately from the fitted
 baseline.
@@ -267,8 +271,17 @@ different saturation mechanisms leave it unmet. cp-sat differs from the loop by
 order as the shortfall — consistent with the difference being *the model
 filling what the loop declines to*, not the model choosing differently in bulk.
 
-The two numbers to watch as later phases land: **short → should stay near 12**
-as the model learns to saturate, and **|cp-sat − loop| → should fall toward 0**.
+**Do not watch agreement with the loop.** That was the wrong scoreboard, and
+Phase 4 is where it showed: every setting that pulled the model's count toward
+the loop's *reduced* the photos the two shared. Which is correct --
+disagreeing on a class the loop under-filled out of timidity is the entire
+point. Score the two halves separately instead, which
+`tools/pick_attribution.py` now does:
+
+* **headroom taken** -- of the similarity shortfall, how much the model
+  filled. Higher is better.
+* **restraint kept** -- of the scarcity and orphan shortfall, how much it
+  left alone. Higher is better.
 
 ### The shortfall is not all virtue
 
@@ -330,6 +343,36 @@ wall time runs **1.2–1.5× the loop** throughout — 0.85s against 0.70s, 0.9s
 against 0.61s — and does not move measurably between the three configurations
 at this size. Watch it again at Phase 3: embedding buckets are the first
 dimension whose bucketing is not a groupby.
+
+### Phase 4 result
+
+The quota is a ceiling (`sum(class) <= need`), with a penalised floor kept only
+for the `yes` classes, where coming back empty is a failure rather than
+restraint. The admission cost is a per-class quantile.
+
+Scored on the two halves that matter, over 60 classes:
+
+| admission quantile | headroom taken | restraint kept | cp-sat photos (loop 137 / 135) |
+|---|---|---|---|
+| 0.0 *(ceiling only)* | **6/6** | 1/5 | 143 / 139 |
+| **0.2 — shipped** | 5/6 | **3/5** | 142 / **135** |
+| 0.5 | 5/6 | 3/5 | 142 / 133 |
+
+A ceiling on its own fills every page the loop left on the table — and also
+overruns four of the five classes it was right to stop on, because with a flat
+positive rank every admitted photo still pays. The cost is what buys the
+restraint back, at one photo of headroom.
+
+Two things this cost me, recorded because they were both my own mistakes.
+A **flat** admission cost does not work: normalisation is per class, so it
+cliffs instead of grading. And I spent a sweep optimising **agreement with the
+loop** before noticing it is the wrong objective — every setting that improved
+the count made agreement worse, which is exactly what should happen when the
+model correctly declines to imitate a class the loop under-filled.
+
+Still imperfect: restraint is 3 of 5, so two classes get filled that should not
+have been. Both are scarcity cases with small pools, where the ceiling permits
+taking what little is there. Phase 3 is the next lever.
 
 `bound_by` is diagnostic only; nothing downstream reads `per_category`. Three
 tests in `tests/test_pick_attribution.py` keep it honest — every category names

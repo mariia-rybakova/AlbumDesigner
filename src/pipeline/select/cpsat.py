@@ -152,8 +152,13 @@ class CpSatPicker:
         self._add_exclusions(model, frame, x)
         self._add_cohesion(model, frame, x, rewards)
 
+        # Rank net of what a page costs. Committed photos are fixed at 1, so
+        # charging them would only shift the objective by a constant and would
+        # make the reported score harder to read -- `_admission_costs` leaves
+        # them at zero.
+        costs = self._admission_costs(frame)
         ranks = [
-            x[index] * int(round(score * SCORE_SCALE))
+            x[index] * (int(round(score * SCORE_SCALE)) - int(costs.at[index]))
             for index, score in frame['_score'].items()
         ]
         grey = [
@@ -306,14 +311,29 @@ class CpSatPicker:
     # -- constraints --------------------------------------------------------
 
     def _add_quotas(self, model, frame, x, penalties) -> None:
-        """`sum(class) + shortage == Q_c`, shortage penalised.
+        """`sum(class) <= Q_c` — a ceiling, with a penalised floor where one is real.
 
-        Equality, not `>=`: the allowance from `select.budget` is what the
-        lookup table sizes spreads against, so overshooting it is not a free
-        win. Committed photos are excluded from the sum because
-        `select.preselect` already charged them to their class.
+        The allowance from `select.budget` is what the lookup table sizes
+        spreads against, so overshooting it is not a free win; but the loop
+        does not treat it as a target either. Measured over 60 classes, the
+        loop comes in **11 photos short of its allowance and never once over**,
+        because its diversity passes return fewer items than they were asked
+        for. An equality with a penalised slack cannot express that: the
+        shortage weight sits far above every other term, so the model always
+        fills.
+
+        A floor is kept only where one is real. A `yes` class is promised a
+        photo when the thing happened at all, and coming back empty is a
+        failure rather than restraint; everywhere else, stopping early is the
+        behaviour being reproduced.
+
+        A ceiling on its own changes nothing -- Phase 2 established that the
+        hard way. While every admitted photo earns a flat positive rank, more
+        photos is always better and the solve fills to the ceiling regardless.
+        The admission cost in `run()` is the other half.
         """
         weight = int(self.cfg.get('shortage_weight', 4000))
+        floors = set(getattr(self.plan, 'yes_categories', ()) or ())
 
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             need = int(self.plan.images.get(category, 0))
@@ -331,9 +351,61 @@ class CpSatPicker:
                 # rather than merely expensive.
                 continue
 
-            shortage = model.NewIntVar(0, need, f"shortage_{_slug(category)}")
-            model.Add(sum(x[index] for index in free) + shortage == need)
-            penalties.append(shortage * weight)
+            picked = sum(x[index] for index in free)
+
+            if not self._ceiling_on():
+                shortage = model.NewIntVar(0, need, f"shortage_{_slug(category)}")
+                model.Add(picked + shortage == need)
+                penalties.append(shortage * weight)
+                continue
+
+            model.Add(picked <= need)
+            if category in floors:
+                shortage = model.NewIntVar(0, need, f"shortage_{_slug(category)}")
+                model.Add(picked + shortage >= need)
+                penalties.append(shortage * weight)
+
+    def _ceiling_on(self) -> bool:
+        return bool(self.cfg.get('quota_ceiling', {}).get('enabled', False))
+
+    def _admission_costs(self, frame: pd.DataFrame) -> pd.Series:
+        """What a photo must be worth, per class, before it earns a page.
+
+        A pick has to either be good or bring something new; below the bar it
+        is taken only when its coverage makes up the difference. That is what
+        turns the coverage dimensions from a reshuffle of a fixed count into a
+        reason to stop, and a ceiling without it does nothing at all.
+
+        **The bar is a quantile of the class, not a constant.** `get_scores`
+        min-max normalises within each class, so every class has a photo at 1.0
+        and one at 0.0 and a score of 0.4 means something different in each. A
+        single global cost is therefore incomparable across classes, and
+        measurably so: sweeping one over 53459898 left the count at 143 for
+        every value from 0 to 300 and then dropped it to 120 at 400 -- a cliff
+        where whole classes fall under the bar together, rather than a
+        gradient. Against the class's own distribution, a quantile of 0.5 means
+        the same thing everywhere: better than half your class, or bring
+        something new.
+        """
+        costs = pd.Series(0, index=frame.index, dtype=int)
+        if not self._ceiling_on():
+            return costs
+
+        settings_for = self.cfg.get('quota_ceiling', {})
+        quantile = float(settings_for.get('admission_quantile', 0.0))
+        flat = int(settings_for.get('admission_cost', 0))
+
+        for _category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            free = group.index[~group['_committed']]
+            if not len(free):
+                continue
+            bar = flat
+            if quantile > 0:
+                scores = frame.loc[free, '_score']
+                bar = max(bar, int(round(float(scores.quantile(quantile))
+                                         * SCORE_SCALE)))
+            costs.loc[free] = bar
+        return costs
 
     # -- coverage (Phase 1 of docs/cpsat_scoring_plan.md) -------------------
 
