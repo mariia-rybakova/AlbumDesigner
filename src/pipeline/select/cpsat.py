@@ -150,6 +150,7 @@ class CpSatPicker:
             self._add_windows(model, frame, x, penalties)
             self._add_spacing(model, frame, x)
         self._add_exclusions(model, frame, x)
+        self._add_distinct_shots(model, frame, x)
         self._add_repeat_penalty(model, frame, x, penalties)
         self._add_cohesion(model, frame, x, rewards)
 
@@ -396,10 +397,21 @@ class CpSatPicker:
         quantile = float(settings_for.get('admission_quantile', 0.0))
         flat = int(settings_for.get('admission_cost', 0))
 
-        for _category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             free = group.index[~group['_committed']]
             if not len(free):
                 continue
+
+            # A class with no slack is not ranked at all. The loop reaches
+            # `_take_all_distinct` down the supply <= demand branch and takes
+            # everything bar the repeated shots, without consulting a score --
+            # so charging a page bar here drops photos it would have kept. It
+            # cost `entertainment` and `kiss` one distinct shot each before
+            # this: two keys apiece, the loop keeping both, the model one.
+            need = int(self.plan.images.get(category, 0))
+            if 0 < need and len(free) <= need:
+                continue
+
             bar = flat
             if quantile > 0:
                 scores = frame.loc[free, '_score']
@@ -584,6 +596,50 @@ class CpSatPicker:
                     if frame.at[first, '_committed'] and frame.at[second, '_committed']:
                         continue
                     model.Add(x[first] + x[second] <= 1)
+
+    def _add_distinct_shots(self, model, frame, x) -> None:
+        """One photo per `(persons_ids, subquery)` in a class with no slack.
+
+        `_take_all_distinct` in the loop: when a class's supply is at or below
+        its allowance there is nothing to rank, so it takes everything, minus
+        frames showing the same people doing the same thing. That is a *hard*
+        rule and no weighting reproduced it -- four attempts are recorded in
+        `docs/cpsat_scoring_plan.md` §7. In a three-photo pool every photo is
+        its own bucket in every coverage dimension, so coverage rewards taking
+        all three; only an exclusion can say two of them are the same shot.
+
+        **The condition is the whole safety of it.** Applied to every class
+        this would be catastrophic: every frame in `dancing` holds the same
+        couple and carries the same subquery, so a blanket rule would cap the
+        class at one photo. The loop only reaches it down the supply <= demand
+        branch, and so does this.
+
+        Committed photos are left out, exactly as in the loop -- it deduplicates
+        a frame `select.preselect` has already emptied of them. Two committed
+        photos sharing a key would also make the constraint infeasible, since
+        neither can be given up.
+        """
+        if not self.cfg.get('distinct_shots', {}).get('enabled', False):
+            return
+        if Col.IMAGE_SUBQUERY_CONTENT not in frame.columns:
+            return
+
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            free = group[~group['_committed']]
+            need = int(self.plan.images.get(category, 0))
+            if need <= 0 or len(free) > need:
+                continue
+
+            keys: Dict[Any, List] = {}
+            for index, row in free.iterrows():
+                people = row[Col.PERSONS_IDS]
+                key = (tuple(people) if isinstance(people, (list, tuple)) else (),
+                       row[Col.IMAGE_SUBQUERY_CONTENT])
+                keys.setdefault(key, []).append(index)
+
+            for members in keys.values():
+                if len(members) > 1:
+                    model.Add(sum(x[index] for index in members) <= 1)
 
     def _add_repeat_penalty(self, model, frame, x, penalties) -> None:
         """Charge for each extra photo of the same person within a class.

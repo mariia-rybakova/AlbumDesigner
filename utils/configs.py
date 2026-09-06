@@ -410,6 +410,20 @@ CONFIGS = {'DEBUG': True,
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
 
+            # `_take_all_distinct`, as a constraint. When a class's supply
+            # is at or below its allowance the loop takes everything minus
+            # frames of the same people doing the same thing, and no weighting
+            # reproduced that: in a three-photo pool every photo is its own
+            # bucket in every coverage dimension, so coverage rewards taking
+            # all three. Only an exclusion can say two of them are one shot.
+            #
+            # The supply <= demand condition is what makes it safe. Applied to
+            # every class it would cap `dancing` at one photo -- every frame
+            # there holds the same couple and carries the same subquery.
+            'distinct_shots': {
+                'enabled': True,
+            },
+
             # A charge for each extra photo of the same person inside a
             # class -- the counterpart to the `people` coverage dimension, and
             # a different shape. Coverage stops rewarding a second photo of

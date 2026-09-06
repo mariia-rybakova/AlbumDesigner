@@ -378,6 +378,38 @@ Still imperfect: restraint is 3 of 5, so two classes get filled that should not
 have been. Both are scarcity cases with small pools, where the ceiling permits
 taking what little is there. Phase 3 is the next lever.
 
+### The distinct-shot rule: the first thing that worked
+
+`_add_distinct_shots` -- at most one photo per `(persons_ids, subquery)` in a
+class whose free pool is at or below its allowance. `_take_all_distinct` as a
+constraint, condition included.
+
+| | headroom | restraint | dropped | right |
+|---|---|---|---|---|
+| before | 5/6 | 3/4 | 0 | 8 |
+| **after** | 5/6 | **4/4** | **0** | **9** |
+
+The first mechanism of five to improve the objective, and it is a hard rule
+rather than a weight -- which is the point §7 below argues. It touches exactly
+two classes across the two galleries, both tiny pools, and leaves `dancing`
+alone; without its condition that class would be capped at one photo, since
+every frame there holds the same couple and carries the same subquery.
+
+**It exposed a hole in the scoreboard on the way.** With the rule in, both
+affected classes dropped to *one* photo where the loop keeps two -- and the
+scoreboard called that a win, because `restraint` only counts taking **more**
+than the loop. Both classes have two distinct keys, so a genuinely distinct
+shot was being thrown away. The cause was the admission cost: the loop reaches
+`_take_all_distinct` down the supply <= demand branch and takes everything bar
+the repeats *without consulting a score*, so a page bar has no business
+applying there. Waiving it restores both. The scoreboard now carries a third
+line -- **photos dropped that the loop kept** -- so that class of error cannot
+hide again. It reads 0.
+
+`tests/test_cpsat.py` pins the rule, its condition, the committed-photo
+infeasibility it would otherwise cause, and the cost waiver. The module had no
+tests at all before this.
+
 ### The `yes` route, and a person-repeat penalty
 
 Two follow-ups, one of which removed a failure outright.

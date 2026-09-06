@@ -345,15 +345,27 @@ def scoreboard(galleries: Dict[str, Dict], quiet_output: bool = False):
             filled[kind][0] += recovered
             filled[kind][1] += gap
 
+    # Taking *fewer* than the loop is a third kind of error, and neither of
+    # the two lines below catches it: `restraint` only counts taking more.
+    # It hid the distinct-shot rule dropping a photo the loop kept.
+    dropped = 0
+    for result in galleries.values():
+        for row in result['categories'].values():
+            dropped += max(0, row['loop_chose'] - row['cpsat_chose'])
+
     good, bad = filled['similarity'], filled['scarcity'][1] + filled['orphan'][1]
     over = filled['scarcity'][0] + filled['orphan'][0]
-    score = {'headroom': (good[0], good[1]), 'restraint': (bad - over, bad)}
+    score = {'headroom': (good[0], good[1]), 'restraint': (bad - over, bad),
+             'dropped': dropped}
     if not quiet_output:
         print("\n=== did cp-sat fill what the loop left, and stop where it should? ===")
         print(f"  headroom taken   {good[0]}/{good[1]} of the similarity "
               f"shortfall -- higher is better")
         print(f"  restraint kept   {bad - over}/{bad} of the scarcity and "
               f"orphan shortfall left alone -- higher is better")
+        print(f"  photos dropped   {dropped} that the loop kept "
+              f"-- lower is better")
+    return score
     return score
 
 
