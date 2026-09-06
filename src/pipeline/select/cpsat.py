@@ -40,10 +40,30 @@ and hands back to `WeddingPicker`, so turning it on cannot cost an album.
 here is a load-time dependency; it is already installed as a dependency of
 `k_means_constrained`, which is why `requirements.txt` needs no change.
 
+Two things were brought into line with the loop after measuring where the two
+diverge (`docs/cpsat_scoring_plan.md` §1):
+
+* **Scores are normalised over the free rows only.** `get_scores` min-max
+  normalises within the frame it is handed, and the loop scores a class only
+  after dropping what `select.preselect` committed. Scoring the whole class
+  ranked it against a different population: on 53459898, with 42 photos
+  committed, this shifted `total_score` in all 20 affected classes and flipped
+  the ranking order in 10 of them.
+* **`CandidateGate` decides what is even a variable.** A class it declines
+  stays empty, as it does in the loop, and only its shortlist gets a variable.
+
 **Status: unrefined.** The model solves and the constraints hold, but the
 albums it produces are not yet better than the loop's -- the weights are
 untuned starting points and coverage is dominated by whatever
 `select.preselect` committed.
+
+The remaining divergence is not a missing constraint but a different idea of
+what a quota is. The loop treats it as a ceiling its diversity passes routinely
+leave unmet -- `_take_all_distinct` deduplicates on people and subquery, the
+person-coverage pass stops when a slot adds no new guest, temporal narrowing
+can empty a class outright -- while the equality-plus-shortage below treats it
+as a target and fills it. That is why the model selects more, and it is what
+the coverage-aware scoring in `docs/cpsat_scoring_plan.md` is meant to replace.
 
 Measured on project 53147741 (571 photos, 27 classes, artificial time):
 OPTIMAL in 0.04s, every quota met except two classes where the near-duplicate
@@ -61,7 +81,7 @@ import pandas as pd
 
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.enrich import timeline as tl
-from src.pipeline.select.scoring import Scorer
+from src.pipeline.select.scoring import CandidateGate, Scorer
 from utils.configs import CONFIGS
 
 #: Objective coefficients must be integers, so every score is scaled by this.
@@ -93,6 +113,9 @@ class CpSatPicker:
 
         self.committed: Dict = dict(self.plan.committed)
         self.per_category: Dict[str, Dict[str, int]] = {}
+        #: Length of the whole day in positions, set by `_pool`. Distinct from
+        #: `len(frame)` once the gate has removed rows.
+        self.positions: int = 0
 
     # -- entry point --------------------------------------------------------
 
@@ -161,6 +184,11 @@ class CpSatPicker:
         Scoring is deliberately the *existing* per-category scoring: whatever
         else changes, "which of these two ceremony photos is better" should not,
         or a comparison against the current picker measures two things at once.
+
+        Only the photos the loop would have put in front of a strategy survive:
+        committed ones, plus each class's shortlist from `CandidateGate`.
+        Everything else is dropped here rather than constrained to zero, so no
+        variable is created for it and it counts towards no window.
         """
         photos = self.context.photos
         if photos is None or photos.empty:
@@ -177,18 +205,65 @@ class CpSatPicker:
             return pd.DataFrame()
 
         frame = tl.ordered(photos)
+        #: Positions in the whole day. Window edges are cut from this rather
+        #: than from whatever survives the gate, or dropping a class's photos
+        #: would silently redraw the timeline the other classes are spread over.
+        self.positions = len(frame)
         frame['_committed'] = frame[Col.IMAGE_ID].isin(self.committed)
 
         user_selected = photos[photos[Col.IMAGE_ID].isin(self.inputs.user_selected_ids)]
         scorer = Scorer(user_selected, self.inputs.person_ids, self.inputs.tags_features,
                         self.inputs.ratings, self.logger)
+        gate = CandidateGate(scorer, self.inputs.unscored, self.plan.images, self.logger)
 
         frame['_score'] = 0.0
-        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
-            self.per_category.setdefault(category, {})['actual'] = len(group)
-            frame.loc[group.index, '_score'] = self._scores_for(scorer, group)
+        frame['_eligible'] = False
 
-        return frame
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            # `actual` is what the gallery holds, before any of this narrowing.
+            self.per_category.setdefault(category, {})['actual'] = len(group)
+
+            # Committed photos are fixed, not re-decided, so they stay whatever
+            # the gate thinks of them.
+            frame.loc[group.index[group['_committed']], '_eligible'] = True
+
+            free = group[~group['_committed']]
+            if free.empty or int(self.plan.images.get(category, 0)) <= 0:
+                continue
+
+            # Scored over the free rows alone. `get_scores` min-max normalises
+            # within the frame it is handed, so including the committed photos
+            # would rank this class against a different population than the
+            # loop does -- which scores the class only after dropping them.
+            frame.loc[free.index, '_score'] = self._scores_for(scorer, free)
+
+            frame.loc[self._shortlist(gate, free, category), '_eligible'] = True
+
+        return frame[frame['_eligible']].copy()
+
+    def _shortlist(self, gate: CandidateGate, free: pd.DataFrame, category: str):
+        """The rows of ``free`` the loop would have shown this class's strategy.
+
+        `CandidateGate` is what stands between a category's photos and its
+        strategy: it drops a class whose photos do not score at all, and
+        otherwise caps the field at ``allocation * 3`` by score. Without it the
+        model fills quotas the loop leaves empty -- `cake cutting` and `may
+        kiss bride` both went 0 -> 1 on the validation galleries -- and is free
+        to pick photos no strategy would ever have been offered.
+        """
+        try:
+            scored, candidate_ids, _used = gate.candidates(free.copy(), category)
+        except Exception as exc:  # noqa: BLE001 - the gate is not worth an album
+            self.logger.warning(f"cp-sat: candidate gate failed for {category!r} "
+                                f"({type(exc).__name__}: {exc}); keeping the whole class")
+            return free.index
+
+        if scored is None or not candidate_ids:
+            self.logger.info(f"cp-sat: {category!r} has no candidates worth scoring, "
+                             f"so it stays empty -- as it would in the loop")
+            return free.index[[False] * len(free)]
+
+        return free.index[free[Col.IMAGE_ID].isin(set(candidate_ids))]
 
     def _scores_for(self, scorer: Scorer, group: pd.DataFrame) -> pd.Series:
         """A 0..1 desirability per photo, by the same rules the loop uses."""
@@ -225,6 +300,13 @@ class CpSatPicker:
                     model.Add(x[index] == 0)
                 continue
 
+            if len(free) == 0:
+                # The gate emptied this class, so the shortage would be a
+                # constant `need` in the objective and the quota would say
+                # nothing. Leaving it out is what makes the class stay empty
+                # rather than merely expensive.
+                continue
+
             shortage = model.NewIntVar(0, need, f"shortage_{_slug(category)}")
             model.Add(sum(x[index] for index in free) + shortage == need)
             penalties.append(shortage * weight)
@@ -241,7 +323,7 @@ class CpSatPicker:
         if count < 2:
             return
 
-        edges = np.linspace(0, len(frame), count + 1).astype(int)
+        edges = np.linspace(0, self.positions or len(frame), count + 1).astype(int)
         frame['_window'] = np.searchsorted(edges[1:-1], frame[tl.POSITION], side='right')
 
         class_weight = int(self.cfg.get('class_window_weight', 300))
