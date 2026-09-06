@@ -539,11 +539,27 @@ PARENTS_PORTRAIT = "parents portrait"
 
 
 def label(photos: pd.DataFrame, resolution: Resolution, bride_id, groom_id):
-    """Re-label the portraits that hold a named parent.
+    """Re-label the portraits that are *of* the parents and the couple.
 
-    Exact, now that the parents have names: no head counting, no gender rule,
-    no age rule. A portrait qualifies if it holds at least one named parent and
-    at least one partner.
+    Exact, now that the parents have names: no age rule, no gender rule. A
+    portrait qualifies if it holds at least one partner, at least one named
+    parent, **and nobody else**.
+
+    That last clause is the whole point of the spread. Requiring only "a
+    partner and a parent" admits any photo those two happen to appear in --
+    which in practice means the big posed group shots, where the bride and her
+    mother stand among twenty guests. Those are `very large group` photos that
+    the content model happened to file under `portrait`, and putting one on the
+    family spread is not what the spread is for.
+
+    Two tests, because `persons_ids` only lists people the identity model
+    actually recognised:
+
+    * every *identified* face belongs to the couple or the named parents, give
+      or take `max_extra_people`; and
+    * the frame does not hold materially more faces than that -- a crowd where
+      only three people were recognised still reads as a crowd, and
+      `persons_ids` alone cannot see it.
     """
     photos = photos.copy()
     if Col.PARENT_CATEGORY not in photos.columns:
@@ -553,26 +569,55 @@ def label(photos: pd.DataFrame, resolution: Resolution, bride_id, groom_id):
     if not resolution.resolved():
         return photos, 0
 
+    config = settings()
+    slack = int(config.get('max_extra_people', 0))
+    face_slack = int(config.get('max_unidentified_faces', 1))
+
     bride_set = set(resolution.bride_parents)
     groom_set = set(resolution.groom_parents)
+    family = bride_set | groom_set | {i for i in (bride_id, groom_id)
+                                      if i is not None and not pd.isna(i)}
     portraits = photos[Col.CLUSTER_CONTEXT] == "portrait"
 
-    def classify(people) -> Optional[str]:
-        group = set(people or [])
+    def classify(row) -> Optional[str]:
+        group = set(row[Col.PERSONS_IDS] or [])
         has_bride, has_groom = bride_id in group, groom_id in group
         if not (has_bride or has_groom):
             return None
         if not (group & (bride_set | groom_set)):
             return None
+
+        # Nobody but the family, and not a crowd of strangers around them.
+        if len(group - family) > slack:
+            return None
+        if _crowd_size(row) > len(group) + face_slack:
+            return None
+
         if has_bride and has_groom:
             return BOTH_PARENTS
         if has_bride:
             return BRIDE_PARENTS if group & bride_set else None
         return GROOM_PARENTS if group & groom_set else None
 
-    category = photos.loc[portraits, Col.PERSONS_IDS].apply(classify)
+    category = photos.loc[portraits].apply(classify, axis=1)         if int(portraits.sum()) else pd.Series(dtype="object")
     hit = category.notna()
     index = category[hit].index
     photos.loc[index, Col.PARENT_CATEGORY] = category[hit].astype("object")
     photos.loc[index, Col.CLUSTER_CONTEXT] = PARENTS_PORTRAIT
     return photos, int(hit.sum())
+
+
+def _crowd_size(row) -> int:
+    """How many people are in frame, identified or not.
+
+    `n_faces` and `number_bodies` disagree often enough that neither alone is
+    trustworthy -- a turned head has a body and no face -- so take the larger.
+    A row carrying neither returns 0, which lets the identity test decide on
+    its own rather than rejecting the photo on missing data.
+    """
+    counts = []
+    for column in (Col.N_FACES, Col.NUMBER_BODIES):
+        value = row.get(column) if hasattr(row, 'get') else None
+        if value is not None and not pd.isna(value):
+            counts.append(int(value))
+    return max(counts) if counts else 0

@@ -387,6 +387,66 @@ def test_the_portraits_are_labelled_from_the_named_identities():
     assert int(relabelled.sum()) == count
 
 
+def test_a_group_shot_is_not_a_parents_portrait():
+    """The spread is of the parents *with the couple*, not of any photo they
+    both happen to be in.
+
+    On 52989013 the family spread carried `12323223645`: eleven people, eleven
+    faces, the bride and groom among nine others. The content model filed it
+    under `portrait`; requiring only "a partner and a parent" let it through.
+    """
+    frame = gallery([("portrait", [BRIDE, GROOM, MOTHER] + list(CROWD[:8]))])
+    frame[Col.N_FACES] = 11
+    frame[Col.NUMBER_BODIES] = 11
+    outcome = parents.Resolution(bride_parents=(MOTHER,))
+
+    _, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert count == 0, "eight strangers in frame is a group shot"
+
+
+def test_a_crowd_is_rejected_even_when_nobody_in_it_was_recognised():
+    """`persons_ids` lists only who the identity model found. A crowd in which
+    three people were recognised still reads as a crowd, and the identity set
+    alone cannot see it -- which is why the face and body counts are checked
+    too."""
+    frame = gallery([("portrait", [BRIDE, MOTHER])])
+    frame[Col.N_FACES] = 20
+    frame[Col.NUMBER_BODIES] = 18
+    outcome = parents.Resolution(bride_parents=(MOTHER,))
+
+    _, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert count == 0, "two identified faces of twenty is not a portrait of two"
+
+
+def test_one_unrecognised_face_does_not_disqualify_it():
+    """A turned head or a child the model missed should not cost a genuine
+    family portrait its place."""
+    frame = gallery([("portrait", [BRIDE, MOTHER, FATHER])])
+    frame[Col.N_FACES] = 4
+    frame[Col.NUMBER_BODIES] = 4
+    outcome = parents.Resolution(bride_parents=(MOTHER, FATHER))
+
+    _, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert count == 1
+
+
+def test_the_couple_and_their_parents_alone_still_qualify():
+    """What the spread is for: 52989013's other two, the groom with three
+    family members and four faces in frame."""
+    frame = gallery([("portrait", [GROOM, GROOM_MOTHER, GROOM_FATHER])])
+    frame[Col.N_FACES] = 3
+    frame[Col.NUMBER_BODIES] = 3
+    outcome = parents.Resolution(groom_parents=(GROOM_MOTHER, GROOM_FATHER))
+
+    labelled, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert count == 1
+    assert labelled[Col.PARENT_CATEGORY].iloc[0] == parents.GROOM_PARENTS
+
+
 def test_one_parent_is_enough():
     """The old rule needed *exactly* two others, so a widowed, divorced or
     separately-photographed parent was never labelled at all."""

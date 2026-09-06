@@ -246,6 +246,22 @@ CONFIGS = {'DEBUG': True,
         'parents': {
             'by_identity': True,
 
+            # A parents portrait is of the parents *with the couple* and
+            # nobody else. Requiring only "a partner and a parent" admits the
+            # big posed group shots -- the bride and her mother among twenty
+            # guests -- which the content model files under `portrait` and
+            # which are not what the family spread is for.
+            #
+            # `max_extra_people` counts identified faces beyond the couple and
+            # the named parents. `max_unidentified_faces` is the slack against
+            # the frame's own face and body counts, because `persons_ids` lists
+            # only who was recognised: a crowd in which three people were
+            # identified still reads as a crowd, and the identity set alone
+            # cannot see it. One, so a single unrecognised face -- a turned
+            # head, a child -- does not disqualify a genuine family portrait.
+            'max_extra_people': 0,
+            'max_unidentified_faces': 1,
+
             # Noise floor. Below this an identity has no measurable pattern.
             'min_appearances': 5,
             # At most this many identities per side -- two parents, or three to
