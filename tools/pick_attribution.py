@@ -324,7 +324,7 @@ def summarise(galleries: Dict[str, Dict]) -> None:
     scoreboard(galleries)
 
 
-def scoreboard(galleries: Dict[str, Dict]) -> None:
+def scoreboard(galleries: Dict[str, Dict], quiet_output: bool = False):
     """Did cp-sat fill the pages the loop left on the table, and leave alone
     the ones it was right to skip?
 
@@ -345,13 +345,16 @@ def scoreboard(galleries: Dict[str, Dict]) -> None:
             filled[kind][0] += recovered
             filled[kind][1] += gap
 
-    print("\n=== did cp-sat fill what the loop left, and stop where it should? ===")
     good, bad = filled['similarity'], filled['scarcity'][1] + filled['orphan'][1]
     over = filled['scarcity'][0] + filled['orphan'][0]
-    print(f"  headroom taken   {good[0]}/{good[1]} of the similarity shortfall "
-          f"-- higher is better")
-    print(f"  restraint kept   {bad - over}/{bad} of the scarcity and orphan "
-          f"shortfall left alone -- higher is better")
+    score = {'headroom': (good[0], good[1]), 'restraint': (bad - over, bad)}
+    if not quiet_output:
+        print("\n=== did cp-sat fill what the loop left, and stop where it should? ===")
+        print(f"  headroom taken   {good[0]}/{good[1]} of the similarity "
+              f"shortfall -- higher is better")
+        print(f"  restraint kept   {bad - over}/{bad} of the scarcity and "
+              f"orphan shortfall left alone -- higher is better")
+    return score
 
 
 def main() -> int:

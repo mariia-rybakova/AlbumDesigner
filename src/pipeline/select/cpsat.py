@@ -456,6 +456,10 @@ class CpSatPicker:
                     _by_column(self.cfg.get('coverage', {})
                                .get('content', {}).get('column',
                                                         Col.IMAGE_SUBQUERY_CONTENT)))
+        self._cover(model, frame, x, rewards, 'visual',
+                    _by_appearance(float(self.cfg.get('coverage', {})
+                                         .get('visual', {})
+                                         .get('threshold', 0.9))))
 
     def _cover(self, model, frame, x, rewards, dimension: str, buckets_of) -> None:
         """One dimension: a boolean per (class, bucket), rewarded once.
@@ -765,3 +769,41 @@ def _largest(buckets: Dict[Any, List], cap: int):
         items.sort(key=lambda pair: -len(pair[1]))
         items = items[:cap]
     return items
+
+
+def _by_appearance(threshold: float):
+    """Photos that look like each other, greedily grouped by cosine.
+
+    The visual dimension, and the one place where the bucketing is not a
+    groupby -- there is no column that says "these two frames are the same
+    shot". `cluster_label` is the nearest thing and it is far too fine: 447
+    values over 1069 photos, about two each, so covering it would be barely
+    different from rewarding every photo.
+
+    Single-pass and greedy against the first centroid a photo matches, which
+    makes it deterministic given the frame's order (position, from
+    `tl.ordered`) and O(n x buckets) rather than the O(n^2) of the pairwise
+    exclusions it is meant to generalise. A photo with no usable embedding
+    becomes its own bucket: nothing can be said about what it resembles, and
+    silently pooling those together would make them exclude each other.
+    """
+    def buckets_of(rows: pd.DataFrame) -> Dict[Any, List]:
+        if rows.empty or Col.EMBEDDING not in rows.columns:
+            return {}
+        buckets: Dict[Any, List] = {}
+        centroids: List = []
+        for index, value in rows[Col.EMBEDDING].items():
+            vector = _unit(value)
+            if vector is None:
+                buckets[f"solo_{index}"] = [index]
+                continue
+            for bucket, centroid in centroids:
+                if float(vector @ centroid) >= threshold:
+                    buckets[bucket].append(index)
+                    break
+            else:
+                bucket = len(centroids)
+                centroids.append((bucket, vector))
+                buckets[bucket] = [index]
+        return buckets
+    return buckets_of

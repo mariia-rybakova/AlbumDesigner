@@ -527,6 +527,34 @@ CONFIGS = {'DEBUG': True,
                     'max_buckets': 60,
                     'per_class': {},
                 },
+
+                # How a photo looks -- what `select_remove_similar` spreads
+                # across and what `_add_exclusions` forbids pairwise. Per class
+                # only: two frames in different classes that happen to resemble
+                # each other are not a repetition.
+                #
+                # 0.9 rather than the 0.97 the pairwise exclusion uses. That
+                # threshold is deliberately tight because it is a *hard*
+                # constraint and a false positive deletes a photo outright;
+                # coverage is soft, so it can afford to call a wider group "the
+                # same shot" and let the ranks argue about it.
+                # Ships at zero, like people and content, and for the same
+                # measured reason -- see the grid in the plan's §7. At 250 it
+                # buys the sixth photo of headroom and gives back a restraint,
+                # scoring the same 8 of 11; zero is the safer of the two
+                # corners, because breaking restraint puts a photo the loop
+                # rejected into the album while missing headroom only leaves a
+                # budgeted page unfilled.
+                'visual': {
+                    'threshold': 0.9,
+                    'weight': 0,
+                    'global_weight': 0,
+                    'max_buckets': 80,
+                    'per_class': {
+                        'accessories': 0,
+                        'wedding dress': 0,
+                    },
+                },
             },
         },
 

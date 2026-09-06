@@ -178,9 +178,13 @@ until the quota is a ceiling *and* rank is a marginal value rather than a flat
 per-photo bonus. So Phase 4 is the prerequisite for Phase 2 paying off, not the
 other way round.
 
-**Phase 3 — `visual`.** Embedding buckets from the existing clustering rather
-than the current pairwise `_add_exclusions`, which is O(n²) within a class and
-only reaches `cohesion_max_gap` positions.
+**Phase 3 — `visual`. Done, and it settles the question the plan was built
+on; see §7.** `_by_appearance` groups a class greedily by cosine, O(n x buckets)
+rather than the pairwise exclusions' O(n^2). It works, it is a real knob -- and
+like people and content it does not improve the objective. Across twenty
+configurations of visual weight, people+content weight and admission quantile,
+the score is **8 of 11 in every single cell**. Coverage weighting is not the
+lever.
 
 **Phase 4 — the quota becomes a ceiling, and rank becomes marginal.**
 `sum(class) ≤ need`, keeping the penalised shortage only for classes with a
@@ -373,6 +377,54 @@ model correctly declines to imitate a class the loop under-filled.
 Still imperfect: restraint is 3 of 5, so two classes get filled that should not
 have been. Both are scarcity cases with small pools, where the ceiling permits
 taking what little is there. Phase 3 is the next lever.
+
+### Phase 3 result, and what it means for the plan
+
+Visual coverage against the two knobs that could interact with it, scored on
+headroom and restraint:
+
+| visual | people+content | headroom | restraint | right |
+|---|---|---|---|---|
+| 0 | ×0 … ×1.0 | 5/6 | 3/5 | **8** |
+| 250 | ×0 … ×1.0 | 6/6 | 2/5 | **8** |
+
+Twenty cells including the admission-quantile sweep, and **every one scores 8
+of 11.** Visual weight trades one headroom photo for one restraint; nothing
+else moves at all. People and content do not move it either -- and that is now
+tested the right way, on this scoreboard and with the ceiling in place, which
+the Phase 2 write-off was not.
+
+**Why, and it is not a tuning problem.** The three remaining errors are all
+restraint failures, and all three sit in tiny pools:
+
+| class | pool | need | loop | cp-sat | the loop's mechanism |
+|---|---|---|---|---|---|
+| `53459898/entertainment` | 3 | 3 | 2 | 3 | `take_all_distinct` |
+| `53147741/bride` | 4 | 3 | 1 | 2 | `take_all_distinct` |
+| `53147741/may kiss bride` | 3 | 1 | 0 | 1 | `temporal_narrowing` |
+
+In a three-photo pool every photo is its own bucket in every dimension, so
+coverage rewards taking all of them. Coverage is a statement about *breadth*,
+and in a tiny pool everything is broad. No weight can express "there are three
+photos here and two of them are the same shot".
+
+**So the plan's central thesis is not supported.** Per-class coverage weights
+do not subsume the strategies. What the remaining errors need is what §3
+already identified as the thing coverage cannot express -- **hard eligibility
+rules**, and specifically two:
+
+* **At most one photo per `(persons_ids, subquery)` in a class, when that
+  class's free pool is at or below its need.** This is `_take_all_distinct`
+  exactly, conditional included. It must stay conditional: applied
+  universally it would cap `dancing` at one photo, since every frame there
+  shares people and subquery.
+* **Temporal-orphan eligibility** — `drop_temporal_orphans` per class, which
+  is what `may kiss bride` turns on.
+
+Both are small, both are hard constraints rather than weights, and between them
+they address all three failures. That is the recommended next step, and it
+supersedes Phase 5: fitting a weight table is unlikely to pay when twenty
+points of the weight space score identically.
 
 `bound_by` is diagnostic only; nothing downstream reads `per_category`. Three
 tests in `tests/test_pick_attribution.py` keep it honest — every category names
