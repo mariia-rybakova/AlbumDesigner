@@ -52,7 +52,7 @@ wedding_lookup_table = {
     'inside vehicle':(2, 1),
     'rings': (2, 1),
     'suit': (2, 1),
-    'may kiss bride': (1, 0.9),
+    'may kiss bride': (2, 1),
     'bride and groom with parents': (3, 0.9),
     'groom with his parents': (2, 0.9),
     'bride with her parents': (2, 0.9),

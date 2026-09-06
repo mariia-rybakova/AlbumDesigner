@@ -695,17 +695,23 @@ def test_charging_the_ceremony_keeps_the_album_the_same_length():
     assert sum(with_them.images.values()) == sum(without.images.values())
 
 
-def test_the_kiss_is_budgeted_as_a_percentage_not_as_a_yes():
-    """may kiss bride carries a percentage in focus_csv.csv, so it is an
-    ordinary category: it stays out of the group and keeps its own page share
-    whether or not the album needs filling."""
-    result = _allocate_full(_stocked(**{SEND_OFF: 21, BRIDE_AISLE: 8}))
+def test_the_kiss_is_budgeted_as_a_yes():
+    """may kiss bride carries `yes` in focus_csv.csv, so it joins the ceremony
+    group: one photo if the moment happened, and no page share of its own.
 
-    assert MAY_KISS_BRIDE not in result.ceremony_yes
-    # A page share of its own is the thing a 'yes' class does not get. It is a
-    # small one -- 3% of the album against a lookup-table base of one photo per
-    # spread rounds to a single photo -- but it is a share, not a token.
-    assert result.spreads[MAY_KISS_BRIDE] > 0
+    It was a percentage until it was measured going missing. A percentage class
+    goes to `select.pick`, where temporal narrowing emptied it -- three frames
+    of one instant have no neighbours twenty minutes either side, so all three
+    were dropped as isolated and the moment left the album. A `yes` class is
+    settled in `select.preselect` and never reaches that filter.
+    """
+    result = _allocate_full(
+        _stocked(**{SEND_OFF: 21, BRIDE_AISLE: 8, MAY_KISS_BRIDE: 6}))
+
+    assert MAY_KISS_BRIDE in result.ceremony_yes
+    # No page share of its own is exactly what makes it a token rather than a
+    # category: the group between them is worth one page, not one each.
+    assert result.spreads[MAY_KISS_BRIDE] == 0
     assert all(result.spreads[c] == 0 for c in result.ceremony_yes)
 
 
@@ -966,14 +972,24 @@ def test_matches_the_reference_when_no_highlight_is_present():
     is what makes the rest of these tests measurements of the rules and not of
     a drifting reimplementation.
 
-    The two deliberate departures are switched off here: the ceremony rule
-    cannot fire on these fixtures anyway, and the budget normalisation is
-    turned back to the monolith's.
+    Both deliberate departures are switched off here. The ceremony rule used
+    to be unable to fire on these fixtures, so it was left alone; once `may
+    kiss bride` became a `yes` class the group gained a second member and the
+    rule started firing, which is a departure from the monolith and not the
+    drift this test exists to catch. So it is now disabled explicitly, by
+    putting the minimum out of reach.
     """
     original = CONFIGS.get('budget_normalise_present_only', True)
+    original_min = CONFIGS.get('ceremony_yes_min_classes', 2)
     CONFIGS['budget_normalise_present_only'] = False
+    CONFIGS['ceremony_yes_min_classes'] = 99
     try:
-        for counts in (STARVED, _stocked(), _stocked(**{MAY_KISS_BRIDE: 6})):
+        # `may kiss bride` used to be stocked here as an extra ordinary
+        # category. It is a `yes` class now, so stocking it puts a third
+        # member in the ceremony group and fires the settlement this
+        # test exists to have switched off. `kiss` is still a
+        # percentage, and keeps the coverage that fixture was for.
+        for counts in (STARVED, _stocked(), _stocked(**{'kiss': 6})):
             images, spreads = _allocate(dict(counts))
             ref_images, ref_spreads, _lo, _hi = _allocate_reference(dict(counts))
 
@@ -981,6 +997,7 @@ def test_matches_the_reference_when_no_highlight_is_present():
             assert spreads == ref_spreads, f"spreads diverged on {sorted(counts)}"
     finally:
         CONFIGS['budget_normalise_present_only'] = original
+        CONFIGS['ceremony_yes_min_classes'] = original_min
 
 
 def test_totals_match_the_reference_too():

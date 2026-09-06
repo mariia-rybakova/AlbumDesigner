@@ -410,6 +410,33 @@ CONFIGS = {'DEBUG': True,
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
 
+            # A charge for each extra photo of the same person inside a
+            # class -- the counterpart to the `people` coverage dimension, and
+            # a different shape. Coverage stops rewarding a second photo of
+            # someone; this keeps charging for it, which is what actually
+            # pushes a class to spread across faces.
+            #
+            # Per class, never global: the bride is in most of the gallery, and
+            # charging for that would price the album's subject out of her own
+            # album. Zero by default for the same reason at class level --
+            # every photo in `bride` holds the bride and every photo in `bride
+            # and groom` holds both, by construction. It is worth something
+            # only where a repeated face is a wasted slot.
+            'people_repeat': {
+                'enabled': True,
+                'weight': 0,
+                'free_repeats': 1,
+                'max_people': 40,
+                # Measured and it does not pay, like the coverage dimensions
+                # before it: 8 of 10 right at zero and at a tenth of these
+                # values, 7 at a quarter and above, where it starts costing
+                # headroom. So it ships inert, with the intended values kept
+                # here for whoever revisits it.
+                #     'portrait': 250, 'very large group': 250, 'speech': 250,
+                #     'full party': 150, 'dancing': 150
+                'per_class': {},
+            },
+
             # -- the quota: Phase 4 of docs/cpsat_scoring_plan.md -----------
             #
             # The allowance is a ceiling, not a target. Measured over 60

@@ -378,6 +378,57 @@ Still imperfect: restraint is 3 of 5, so two classes get filled that should not
 have been. Both are scarcity cases with small pools, where the ceiling permits
 taking what little is there. Phase 3 is the next lever.
 
+### The `yes` route, and a person-repeat penalty
+
+Two follow-ups, one of which removed a failure outright.
+
+**`may kiss bride` is now a `yes` class.** Every `yes` class was already
+settled in `select.preselect` and never reached the picker -- the one exception
+being `getting hair-makeup`, deliberately, because `BridePrepStrategy` has a
+job there that preselect's rank-only pick cannot do. `may kiss bride` was not a
+`yes` class at all: it carried `3% / 2% / 2%` in `focus_csv.csv`, so it went to
+`select.pick`, where temporal narrowing emptied it. Three frames of one instant
+have no neighbour twenty minutes either side, so all three were dropped as
+isolated and the moment left the album.
+
+Marking it `yes` fixes that at the source rather than in the picker, and the
+orphan failure disappears: the shortfall denominator drops from 5 to 4 because
+the class is no longer a shortfall case at all. Three consequences follow from
+rules already in the codebase, and all three were live: its lookup-table entry
+becomes `(2, 1)` like every other `yes` class, it joins the ceremony group and
+loses its own page share, and the budget equivalence test's premise -- "the
+ceremony rule cannot fire on these fixtures" -- stops being true, because the
+group gains a second member.
+
+**A per-class person-repeat penalty**, charging for each extra photo of the
+same person within a class. Not the same shape as the `people` coverage
+dimension: coverage stops *rewarding* a second photo of someone, while a
+penalty keeps *charging*, which is what actually pushes a class to spread
+across faces. Per class and never global -- the bride is in most of the
+gallery, and charging for that would price the album's subject out of her own
+album.
+
+| repeat weight | headroom | restraint | right | photos |
+|---|---|---|---|---|
+| ×0 *(shipped)* | 5/6 | 3/4 | **8** | 283 |
+| ×0.1 | 5/6 | 3/4 | **8** | 279 |
+| ×0.25 | 4/6 | 3/4 | 7 | 273 |
+| ×1.0 | 4/6 | 3/4 | 7 | 265 |
+
+It does not pay either, and above a tenth of its intended weight it costs
+headroom. Implemented, measurable, shipped inert -- the fourth mechanism in a
+row to land there, which is itself the finding.
+
+**Two failures remain**, and only one has a known fix:
+
+| class | pool | need | loop | cp-sat | |
+|---|---|---|---|---|---|
+| `53459898/entertainment` | 3 | 3 | 2 | 3 | restraint: `take_all_distinct` deduped, the model did not |
+| `53147741/groom party` | 5 | 4 | 3 | 3 | headroom: the model matched the loop instead of beating it |
+
+The first is the conditional `(persons_ids, subquery)` rule from §7. The second
+is a small pool where nothing yet distinguishes the fourth photo from the third.
+
 ### Phase 3 result, and what it means for the plan
 
 Visual coverage against the two knobs that could interact with it, scored on

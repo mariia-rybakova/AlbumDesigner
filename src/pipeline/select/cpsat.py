@@ -150,6 +150,7 @@ class CpSatPicker:
             self._add_windows(model, frame, x, penalties)
             self._add_spacing(model, frame, x)
         self._add_exclusions(model, frame, x)
+        self._add_repeat_penalty(model, frame, x, penalties)
         self._add_cohesion(model, frame, x, rewards)
 
         # Rank net of what a page costs. Committed photos are fixed at 1, so
@@ -583,6 +584,46 @@ class CpSatPicker:
                     if frame.at[first, '_committed'] and frame.at[second, '_committed']:
                         continue
                     model.Add(x[first] + x[second] <= 1)
+
+    def _add_repeat_penalty(self, model, frame, x, penalties) -> None:
+        """Charge for each extra photo of the same person within a class.
+
+        The counterpart to the `people` coverage dimension, and not the same
+        shape. Coverage caps its reward at one per bucket, so once a person is
+        in the album a second photo of them is merely worth nothing; a penalty
+        keeps charging, so it actively pushes a class to spread across people.
+        That is what `person_max_union_selection` does for the group classes,
+        and coverage could not reproduce it.
+
+        **Per class, and per class only.** A global version is meaningless: the
+        bride is in most of the gallery, and charging for that would price the
+        album's subject out of her own album. Even per class it is wrong for
+        most classes -- every photo in `bride` contains the bride, and every
+        photo in `bride and groom` contains both, by construction -- which is
+        why the weight is a per-class table defaulting to zero rather than one
+        number. It is worth something only where a repeated face means a
+        wasted slot: the group and crowd classes.
+        """
+        config = self.cfg.get('people_repeat', {})
+        if not config.get('enabled', False):
+            return
+
+        allowed = int(config.get('free_repeats', 1))
+        cap = int(config.get('max_people', 0))
+
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            weight = int((config.get('per_class') or {}).get(category,
+                                                             config.get('weight', 0)))
+            if weight <= 0:
+                continue
+            for person, members in _largest(_by_identity(group), cap):
+                if len(members) <= allowed:
+                    continue
+                repeats = model.NewIntVar(0, len(members),
+                                          f"rep_{_slug(category)}_{_slug(person)}")
+                # Penalised, so the solver drives it to max(0, picked - allowed).
+                model.Add(repeats >= sum(x[index] for index in members) - allowed)
+                penalties.append(repeats * weight)
 
     def _add_exclusions(self, model, frame, x) -> None:
         """Near-identical frames of the same class cannot both be picked.
