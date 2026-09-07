@@ -4,6 +4,19 @@ from typing import Dict, Tuple, Optional, Set
 from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
 
 
+# Photos per spread, as (mean, std). Two things read this: `select.budget`
+# spends it as the size of a page when the fill loop grants one, and the layout
+# reads it as how many photos a spread of that content should hold.
+#
+# Every category the focus profile budgets as `yes` rather than a percentage
+# carries **(2, 1)**. A `yes` category is worth one photo if the thing happened,
+# so it sits out the first round of filling; this keeps it cheap in the second
+# round too, where it would otherwise be granted a page at its old size. On one
+# real album `food` was granted a page at a mean of 4 and took 5 of the 6 photos
+# it had. The list is: getting hair-makeup, invite, rings, suit, wedding dress,
+# inside vehicle, pet, vehicle, settings, food, accessories, send off, and the
+# two processionals. Give one of them a percentage in focus_csv.csv and this
+# should go back to a size that suits a real spread of them.
 wedding_lookup_table = {
     'bride and groom': (4, 0.5),
     'bride': (4, 0.5),
@@ -24,26 +37,29 @@ wedding_lookup_table = {
     'dancing': (24, 1),
     'entertainment': (2, 0.5),
     'kiss': (4, 0.5),
-    'pet': (4, 0.5),
-    'accessories': (2, 0.5),
-    'settings': (4, 0.5),
+    'pet': (2, 1),
+    'accessories': (2, 1),
+    'settings': (2, 1),
     'speech': (6, 1),
     'detail': (6, 1.5),
-    'getting hair-makeup': (2, 1.5),
-    'food': (4, 0.5),
+    'getting hair-makeup': (2, 1),
+    'food': (2, 1),
     'other': (2, 0.5),
-    'invite': (2, 0.5),
+    'invite': (2, 1),
     'None':(2,0.5),
-    'wedding dress': (2,0.5),
-    'vehicle':(2,0.5),
-    'inside vehicle':(2,0.5),
-    'rings': (3, 0.5),
-    'suit': (3, 0.5),
-    'may kiss bride': (1, 0.9),
+    'wedding dress': (2, 1),
+    'vehicle':(2, 1),
+    'inside vehicle':(2, 1),
+    'rings': (2, 1),
+    'suit': (2, 1),
+    'may kiss bride': (2, 1),
     'bride and groom with parents': (3, 0.9),
     'groom with his parents': (2, 0.9),
     'bride with her parents': (2, 0.9),
-    'parents portrait': (3, 0.9)
+    'parents portrait': (3, 0.9),
+    'send off': (2, 1),
+    'bride walking the aisle': (2, 1),
+    'groom walking the aisle': (2, 1)
     }
 
 non_wedding_lookup_table = {

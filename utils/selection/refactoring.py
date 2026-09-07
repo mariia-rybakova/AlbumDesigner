@@ -321,7 +321,16 @@ def select_remove_similar(
     cluster_name,
     logger,
     target_group_size: int = 10,  # kept for compatibility; no longer used for k-medoids
+    already_selected=None,
 ) -> list[str]:
+    """``already_selected``: unit embeddings of photos the album already holds.
+
+    The diversity check below rejects a candidate too close to anything picked
+    *in this call*. Seeding it with what is already committed -- the user's own
+    hand picks, chiefly -- is what stops the picker choosing a near-copy of a
+    photo the user themselves chose, which it otherwise cannot see: committed
+    photos are dropped from the frame before the category is scored.
+    """
     try:
         #print(f"remove similar images for {cluster_name}")
         small_threshold = 7
@@ -393,6 +402,9 @@ def select_remove_similar(
         id_to_unit = dict(zip(df["image_id"], df["embedding"]))
 
         selected_mat = None  # np.ndarray of shape (k, d)
+        if already_selected is not None and len(already_selected):
+            selected_mat = np.vstack([np.asarray(v, dtype=float).reshape(1, -1)
+                                      for v in already_selected])
         cos_thresh = 0.90
 
         def is_diverse(iid: str) -> bool:

@@ -8,16 +8,13 @@ from pycparser.c_ast import Continue
 
 from utils.configs import CONFIGS
 from utils.layouts_tools import generate_layouts_df, get_layouts_data, order_boxes_indices
-from utils.read_protos_files import get_info_protobufs
-from utils.time_processing import process_gallery_time
 from ptinfra.azure.pt_file import PTFile
 from ptinfra.utils.gallery import Gallery
 import json
-from bson.objectid import ObjectId
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
-from experiments.plotting import plot_selected_rows_to_pdf
 from src.core.models import GroupProcessingResult
+from src.smart_cropping import face_aware_crop
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -205,133 +202,11 @@ def add_scenes_info(gallery_info_df, project_base_url, logger):
 
 
 
-def is_ceremony_gallery_sat(df: pd.DataFrame, logger=None):
-    """
-    SAT = gallery eligible to run the kiss-detection logic.
-
-    Rules:
-      1) Ceremony start/end must be valid and in logical order (end >= start).
-      2) Ceremony start and end occur on the same calendar day.
-      3) All ceremony images occur on the same calendar day (not just min/max).
-
-    Returns:
-      (eligible: bool, reason: str)
-    """
-    if df.empty:
-        return False, "Empty dataframe"
-
-    # normalize/parse
-    tmp = df.copy()
-    if "image_time_date" not in tmp.columns or "cluster_context" not in tmp.columns:
-        return False, "Missing required columns"
-
-    tmp["ts"] = pd.to_datetime(tmp["image_time_date"], errors="coerce")
-    ceremony_df = tmp[tmp["cluster_context"] == "ceremony"]
-
-    if ceremony_df.empty:
-        return False, "No ceremony images"
-
-    ceremony_start = ceremony_df["ts"].min()
-    ceremony_end = ceremony_df["ts"].max()
-
-    if pd.isna(ceremony_start) or pd.isna(ceremony_end):
-        return False, "Ceremony timestamps contain NaT"
-
-    if ceremony_end < ceremony_start:
-        return False, "Ceremony end precedes start"
-
-    # same-day check for start/end
-    if  pd.Series([ceremony_start, ceremony_end]).dt.date.nunique() != 1:
-        return False, "Ceremony spans multiple days (min/max day mismatch)"
-
-    # all ceremony images on same day
-    if ceremony_df["ts"].nunique() == 1:
-        return False, "Not all ceremony images share the same day"
-
-    if logger:
-        logger.info(
-            "Ceremony SAT: start=%s end=%s count=%d",
-            ceremony_start, ceremony_end, len(ceremony_df)
-        )
-    return True, "OK"
-
-def identify_kiss_ceremony(df, logger=None):
-    eligible, reason = is_ceremony_gallery_sat(df, logger=logger)
-    if not eligible:
-        if logger:
-            logger.warning("Gallery not SAT: %s", reason)
-
-        return df
-
-    # allowed values
-    cluster_context_allowed = [None, "kiss", "ceremony"]
-    query_allowed = ["kiss", "ceremony"]
-    subquery_allowed = [
-        "bride and groom kissing romantically",
-        "wedding kiss at ceremony",
-        "officiant leading wedding ceremony",
-    ]
-
-    # --- normalize strings ---
-    df = df.copy()
-    df["ts"] = pd.to_datetime(df["image_time_date"], errors="coerce")
-    df["cluster_context_norm"] = df["cluster_context"].astype(str).str.lower().replace("none", None)
-    df["query_norm"] = df["image_query_content"].astype(str).str.lower().str.strip()
-    df["subquery_norm"] = df["image_subquery_content"].astype(str).str.lower().str.strip()
-
-    # --- filter dataframe using list membership like your mask style ---
-    df_filtered = df[
-        df["cluster_context"].apply(lambda x: x in cluster_context_allowed)
-        & df["image_query_content"].apply(lambda x: x in query_allowed)
-        & df["image_subquery_content"].apply(lambda x: x in subquery_allowed)
-        ]
-
-    # --- 1️⃣ get the ceremony group and ceremony time window ---
-    ceremony_df = df[df["cluster_context"] == "ceremony"]
-    ceremony_start = ceremony_df["ts"].min()
-    ceremony_end = ceremony_df["ts"].max()
-
-    if pd.isna(ceremony_start) or pd.isna(ceremony_end):
-        selected_rows = df.iloc[0:0]  # empty
-    else:
-        # --- 2️⃣ find the image(s) where subquery == "officiant leading wedding ceremony" ---
-        officiant_df = df[df["image_subquery_content"] == "officiant leading wedding ceremony"]
-        officiant_df = officiant_df[officiant_df["ts"].between(ceremony_start, ceremony_end)]
-
-        if officiant_df.empty:
-            selected_rows = df.iloc[0:0]
-        else:
-            # --- 3️⃣ find images containing "kiss" (from your allowed lists) ---
-            kiss_mask = (
-                    df_filtered["image_subquery_content"].str.lower().str.contains("kiss", na=False)
-                    | df_filtered["image_query_content"].str.lower().str.contains("kiss", na=False)
-            )
-
-            kiss_df = df_filtered[kiss_mask]
-
-            last_officiant_ts = officiant_df["ts"].max()
-
-            if pd.isna(last_officiant_ts):
-                kiss_near_officiant_df = kiss_df.iloc[0:0]  # no anchors -> empty
-            else:
-                start = last_officiant_ts - pd.Timedelta(minutes=6)
-                end = last_officiant_ts + pd.Timedelta(minutes=6)
-
-                # If you also want to keep it inside the ceremony window, add the second condition
-                kiss_near_officiant_df = kiss_df[
-                    kiss_df["ts"].between(start, end, inclusive="both")
-                    & kiss_df["ts"].between(ceremony_start, ceremony_end, inclusive="both")
-                    ]
-
-            # --- 5️⃣ mark and save ---
-            df.loc[kiss_near_officiant_df.index, "cluster_context"] = "may kiss bride"
-            selected_rows = kiss_near_officiant_df
-
-    # plot_selected_rows_to_pdf(selected_rows)
-    # print("plotting done")
-
-    return df
-
+# `is_ceremony_gallery_sat` / `identify_kiss_ceremony` lived here. They are
+# superseded by src/pipeline/enrich/ceremony_anchor.py, which anchors on the
+# median ceremony climax in sequence positions instead of the last officiant
+# frame in wall-clock minutes -- the old pair could not run at all on a
+# gallery with unusable EXIF timestamps.
 
 
 def fetch_vectors_from_qdrant(client: QdrantClient, collection_name: str, project_id: int, logger=None) -> dict:
@@ -531,121 +406,47 @@ def identify_parents(social_circle_df,persons_details_df, gallery_info_df, logge
 
 
 def read_messages(messages, project_status_collection, qdrant_client, logger):
+    """Read and enrich each incoming message.
+
+    A thin driver over the ingest + enrich substages. The work that used to be
+    inlined here now lives in `src/pipeline/ingest` (reading) and
+    `src/pipeline/enrich` (everything derived from what was read); see
+    `src.pipeline.registry.INGEST` / `ENRICH` for the order.
+
+    Signature and return contract are unchanged: `(messages, error)`, where a
+    non-None error aborts the whole batch.
+    """
+    # Imported here rather than at module scope: the ingest substages import
+    # helpers from this module, so a top-level import would be circular.
+    from src.pipeline import AlbumContext, Services, build_read
+
+    pipeline = build_read(logger=logger)
+    services = Services(
+        project_status_collection=project_status_collection,
+        qdrant_client=qdrant_client,
+    )
+
     enriched_messages = []
 
     for _msg in messages:
         reading_message_time = datetime.now()
+        logger.info('Received message: {}/{}'.format(_msg.content, _msg))
 
-        json_content = _msg.content
-        if not (type(json_content) is dict or type(json_content) is list):
-            logger.warning('Incorrect message format: {}.'.format(json_content))
-        logger.info('Received message: {}/{}'.format(json_content, _msg))
+        context = pipeline.run(
+            AlbumContext.from_message(_msg, logger=logger, services=services)
+        )
 
-        if 'photos' not in json_content or 'base_url' not in json_content:
-            return None, 'There are missing fields in input request: {}. Skipping.'.format(json_content)
+        if context.failed:
+            return None, context.error
 
-        try:
-            message = read_layouts_data(_msg, json_content, logger=logger)
+        if context.photos is None or context.photos.empty:
+            return None, 'Failed to enrich image data for message: {}. Skipping.'.format(_msg.content)
 
-            if message is None or isinstance(message, tuple):
-                err = message[1] if isinstance(message, tuple) and len(message) > 1 else 'unknown error'
-                raise ValueError('read_layouts_data failed: {}'.format(err))
+        enriched_messages.append(context.sync_to_message())
 
-            message = read_rating_data(message, json_content, logger=logger)
-
-            _msg = message
-            json_content = _msg.content
-
-            proto_start = datetime.now()
-            project_url = json_content['base_url']
-            project_id = json_content['projectId']
-            # Fetch the document from the collection
-            try:
-                logger.info(f"Fetch the document from the collection {project_status_collection}")
-                if isinstance(project_id, int):
-                    doc = project_status_collection.find_one({"_id": project_id},
-                                                                  {"isInVectorDatabase": 1, "imageModelVersion": 1})
-                else:
-                    doc = project_status_collection.find_one({"_id": ObjectId(project_id)},
-                                                                  {"isInVectorDatabase": 1, "imageModelVersion": 1})
-
-                if doc is None:
-                    logger.info(f"doc not found for project_id {project_id}")
-                    is_in_vector_db = None
-                    image_model_version = None
-                else:
-                    logger.info(f"doc found for project_id {project_id}: {doc}")
-                    is_in_vector_db = doc.get("isInVectorDatabase")
-                    image_model_version = doc.get("imageModelVersion")
-            except Exception as ex:
-                logger.warning(f"Failed to read one message: {ex}")
-                is_in_vector_db = None
-                image_model_version = None
-
-            # Retrieve the isInVectorDB field
-
-            if is_in_vector_db is not None and is_in_vector_db == True:
-                logger.info(
-                    f'Project {project_id} has isInVectorDB = True, loading Clip embeddings from qdrant')
-                collection_name = CONFIGS["QDRANT_COLLECTION"][image_model_version]
-                try:
-                    clip_dict = fetch_vectors_from_qdrant(qdrant_client, collection_name, project_id,
-                                                          logger=logger)
-                    clip_version = image_model_version
-                    _msg.clip_version = clip_version
-                    clip_df = pd.DataFrame([
-                        {"image_id": photo_id, "embedding": np.array(data)}
-                        for photo_id, data in clip_dict.items()
-                    ])
-                    clip_df['model_version'] = image_model_version
-                except Exception as ex:
-                    _msg.error = True
-                    raise Exception('Qdrant fetch error: {}'.format(ex))
-            else:
-                clip_df = None
-
-
-            gallery_info_df, is_wedding,social_circle_df,persons_details_df, pt_error = get_info_protobufs(project_base_url=project_url, logger=logger,clip_df=clip_df)
-            if pt_error is not None:
-                return None, pt_error
-            logger.info(f"Reading Files protos for  {len(gallery_info_df)} images is: {datetime.now() - proto_start} secs.")
-
-            # merge user ratings (0 for photos without a rating)
-            rating_df = getattr(message, 'rating_df', None)
-            if rating_df is not None and not gallery_info_df.empty:
-                gallery_info_df = gallery_info_df.merge(rating_df, on='image_id', how='left')
-                gallery_info_df['user_rating'] = gallery_info_df['user_rating'].fillna(0)
-                if logger:
-                    matched = int(gallery_info_df['user_rating'].gt(0).sum())
-                    logger.info(f"Merged user_rating into gallery_info_df: {matched}/{len(gallery_info_df)} photos have a rating.")
-
-            # add scenes info to gallery_info_df
-            gallery_info_df = add_scenes_info(gallery_info_df, project_url, logger)
-
-            # add time data
-            gallery_info_df,is_artificial_time = process_gallery_time(_msg, gallery_info_df, logger)
-
-            # detect Ceremony kiss photos
-            gallery_info_df = identify_kiss_ceremony(gallery_info_df, logger=logger)
-
-            # parents detection
-            gallery_info_df = identify_parents(social_circle_df,persons_details_df,gallery_info_df, logger=logger)
-
-            if not gallery_info_df.empty:
-                _msg.content['gallery_photos_info'] = gallery_info_df
-                _msg.content['is_wedding'] = is_wedding
-                _msg.content['is_artificial_time'] = is_artificial_time
-                enriched_messages.append(_msg)
-            else:
-                return None, 'Failed to enrich image data for message: {}. Skipping.'.format(json_content)
-
-            logger.info(
-                f"Reading Time Stage for one Gallery  {len(gallery_info_df)} images is: {datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
-
-        except Exception as ex:
-            tb = traceback.extract_tb(ex.__traceback__)
-            filename, lineno, func, text = tb[-1]
-            return None, f'Error reading messages at reading stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+        logger.info(
+            f"Reading Time Stage for one Gallery  {len(context.photos)} images is: "
+            f"{datetime.now() - reading_message_time} secs. message id: {_msg.source.id}")
 
     return enriched_messages, None
 
@@ -661,8 +462,32 @@ def convert_int64_to_int(obj):
         return obj
 
 
+def box_target_ar(box_info, album_ar=2):
+    """The box's width/height in image terms, which is what a crop is fitted to."""
+    return box_info['width'] / box_info['height'] * album_ar
+
+
+def cover_box(image_info, box_info, album_ar=2, logger=None):
+    """`customize_box` for the covers, but positioned to keep the faces.
+
+    Covers only, on purpose. `customize_box` centres its window blind for
+    every placement in the album, and widening this to all of them would move
+    the crops on every spread; the covers are where it shows, because they are
+    the one photo the album opens on and the box is 1.96:1 -- a portrait keeps
+    34% of its height there, so a centred band lands below the faces and takes
+    chins. Every other placement keeps the existing behaviour.
+    """
+    if box_info['orientation'] == 'square':
+        return customize_box(image_info, box_info, album_ar)
+
+    crop = face_aware_crop(image_info, box_target_ar(box_info, album_ar), logger)
+    if crop is None:
+        return customize_box(image_info, box_info, album_ar)
+    return crop
+
+
 def customize_box(image_info, box_info, album_ar=2):
-    target_ar = box_info['width'] / box_info['height'] * album_ar
+    target_ar = box_target_ar(box_info, album_ar)
     if box_info['orientation'] == 'square':
         crop_x = image_info['cropped_x']
         crop_y = image_info['cropped_y']
@@ -764,7 +589,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)],album_ar)
+            x, y, w, h = cover_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
                                             "compositionPackageId": message.content['compositionPackageId'],
@@ -890,7 +715,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)],album_ar)
+            x, y, w, h = cover_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                                  "compositionId": counter_comp_id,
                                                  "compositionPackageId": message.content['compositionPackageId'],

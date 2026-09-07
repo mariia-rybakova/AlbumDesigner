@@ -16,14 +16,13 @@ from qdrant_client import QdrantClient
 
 from src.request_processing import read_messages
 
-from src.selection.auto_selection import ai_selection
+from src.pipeline import AlbumContext, build_select
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
-from utils.lookup_table_tools import wedding_lookup_table
 from utils.configs import CONFIGS
 
 from ptinfra.pt_queue import Message
@@ -223,100 +222,38 @@ class Source:
 
 
 def get_selection(message, logger):
+    """Run the selection substages over one message.
+
+    This used to be a near-copy of `SelectionStage.get_selection`, and the two
+    had already drifted apart. Both now drive the same pipeline, so a local run
+    exercises exactly what the service does.
+    """
     start = datetime.now()
-    # Iterate over message and start the selection process
+
     try:
-        ai_metadata = message.content.get('aiMetadata', None)
-        # condition for  manual selection
-        if ai_metadata is None or ai_metadata['photoIds'] is None:
-            logger.info(f"aiMetadata not found for message {message}. Continue with chosen photos.")
-            photos = message.content.get('photos', [])
-            df = pd.DataFrame(photos, columns=['image_id'])
-            message.content['gallery_photos_info'] = df.merge(message.content['gallery_photos_info'], how='inner', on='image_id')
-            # handle LUT for manual selection
-            is_wedding = message.content.get('is_wedding', False)
-            if is_wedding:
-                modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-                modified_lut['Other'] = (24, 4)  # Set 'Other' event to have max spreads
-                modified_lut['None'] = (24, 4)
-                message.content['modified_lut'] = modified_lut
-            message.content['manual_selection'] = True
-            return message
-
-        available_photos = message.content.get('photos', [])
-        df = message.content.get('gallery_photos_info', pd.DataFrame())
-        if df.empty:
-            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-            raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
-        if len(available_photos) != 0:
-            df = df[df['image_id'].isin(available_photos)]
-            message.content['gallery_photos_info'] = df
-
-        message.content['gallery_all_photos_info'] = df.copy()
-
-        ten_photos = ai_metadata.get('photoIds', [])
-        people_ids = ai_metadata.get('personIds', [])
-        focus = ai_metadata.get('focus', ['everyoneElse'])
-        tags = ai_metadata.get('subjects', ['Wedding dress', 'ceremony', 'bride', 'dancing', 'bride getting ready',
-                                            'groom getting ready', 'table setting', 'flowers', 'decorations', 'family',
-                                            'baby', 'kids', 'mother', 'father', 'Romance', 'affection', 'Intimacy',
-                                            'Happiness', 'Holding hands', 'smiling', 'Hugging', 'Kissing', 'ring',
-                                            'veil', 'soft light', 'portrait'])
-        density = ai_metadata.get('density', 3)
-        rating = message.content.get('rating', [])
-
-        is_wedding = message.content.get('is_wedding', False)
-
-        if df.empty:
-            logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-            message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-            return message
-
-        if is_wedding:
-            modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-
-            density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
-            for event, pair in modified_lut.items():
-                modified_lut[event] = (min(24, max(1, pair[0] * density_factor)), pair[1])  # Ensure base spreads are at least 1 and not above 24
-        else:
-            modified_lut = None
-
-        message.content['modified_lut'] = modified_lut
-        is_artificial_time = message.content['is_artificial_time']
-
-        ai_photos_selected, spreads_dict, min_total_spreads, max_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
-                                                  logger)
-
-        if errors:
-            logger.error(f"Error for Selection images for this message {message}")
-            message.error = f"Error for Selection images for this message {message}"
-            return message
-
-        filtered_df = df[df['image_id'].isin(ai_photos_selected)]
-        message.content['gallery_photos_info'] = filtered_df
-        message.content['photos'] = ai_photos_selected
-        message.content['spreads_dict'] = spreads_dict
-        message.content['min_total_spreads'] = min_total_spreads
-        message.content['max_total_spreads'] = max_total_spreads
-        logger.info('Photos selected: {}'.format(sorted(ai_photos_selected)))
-        logger.info('Spreads dict sum: {}'.format(sum([item for key, item in spreads_dict.items()])))
-
-        if message.pagesInfo.get("firstPage"):
-            if message.content.get('is_wedding', True):
-                all_bride_groom = df[
-                    (df["cluster_context"] == "bride and groom")]
-                message.content['bride and groom'] = all_bride_groom
-        else:
-            message.content['bride and groom'] = None
-
-        return message
-
+        context = build_select(logger=logger).run(
+            AlbumContext.for_message(message, logger=logger)
+        )
     except Exception as e:
         tb = traceback.extract_tb(e.__traceback__)
         filename, lineno, func, text = tb[-1]
         logger.error(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
         raise Exception(f"Error selection stage: {e}. Exception in function: {func}, line {lineno}, file {filename}.")
+
+    if context.failed:
+        logger.error(f"Error for Selection images for this message {message}")
+        message.error = f"Error for Selection images for this message {message}"
+        return message
+
+    message = context.sync_to_message()
+
+    selection = context.selection
+    if not selection.manual:
+        logger.info('Photos selected: {}'.format(sorted(selection.photo_ids)))
+        logger.info('Spreads dict sum: {}'.format(sum(selection.spreads.values())))
+    logger.info('Selection took {}'.format(datetime.now() - start))
+
+    return message
 
 
 def process_gallery(input_request):
@@ -355,29 +292,146 @@ def process_gallery(input_request):
     return final_album_result, message
 
 
-if __name__ == '__main__':
+def _build_arg_parser():
     import argparse
-    import json
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("input_dir",
-                        help="The path to the directory on your system where the photos are stored. Each set inside should be named with the projectId number.")
-    parser.add_argument("output_dir",
-                        help="The path to the directory where created album should be saved.")
-    args = parser.parse_args()
-    input_dir = args.input_dir
-    output_dir = args.output_dir
+    ap = argparse.ArgumentParser(
+        description="Run one album request locally and render the result to PDF.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+modes
+  saved request (default)
+    process_gallery.py <input_dir> <output_dir>
+    process_gallery.py <input_dir> <output_dir> --request 53496523
 
-    # PyCharm: Run -> Edit Configurations -> Script parameters
-    # C:\Users\user\Desktop\PicTime\AlbumDesigner\dataset\ C:\Users\user\Desktop\PicTime\AlbumDesigner\output
-    # add paths without argument names
+  reproduce production
+    process_gallery.py <input_dir> <output_dir> --from-datadog
+    process_gallery.py <input_dir> <output_dir> --from-datadog --project-id 53496523
+
+    Finds the newest request the service completed and saves it under
+    files/test_requests/<projectId>.json, so it can be replayed later with
+    --request <projectId>. Needs DD_API_KEY and DD_APP_KEY.
+
+Both modes download the gallery's photos into <input_dir>/<projectId>/ (the
+Azure network, i.e. VPN, is needed for that) and render the album to
+<output_dir>/<projectId>/. Photos already on disk are skipped, so re-runs are
+cheap. Pass --no-download to work purely off what is already local.
+""",
+    )
+    ap.add_argument("input_dir",
+                    help="Root for gallery photos. Each gallery lives in <input_dir>/<projectId>/.")
+    ap.add_argument("output_dir",
+                    help="Root for rendered albums. Written to <output_dir>/<projectId>/.")
+
+    source = ap.add_mutually_exclusive_group()
+    source.add_argument("--request", metavar="NAME",
+                        help="Saved request to run: a name under files/test_requests/ "
+                             f"or a path to a .json. Default: {request_name}")
+    source.add_argument("--from-datadog", action="store_true",
+                        help="Reproduce the newest request the production service processed "
+                             "successfully, from its logs.")
+
+    dd = ap.add_argument_group("--from-datadog options")
+    dd.add_argument("--project-id", type=int,
+                    help="Reproduce this project's newest successful run instead of the newest overall.")
+    dd.add_argument("--lookback-hours", type=int, default=48,
+                    help="How far back to search the logs. Default: 48.")
+
+    ph = ap.add_argument_group("photos (both modes)")
+    ph.add_argument("--no-download", action="store_true",
+                    help="Skip the photo download (the PDF will have gaps unless they are already local).")
+    ph.add_argument("--all-gallery-photos", action="store_true",
+                    help="Download the whole gallery, not just the photos the request named.")
+    ph.add_argument("--max-photos", type=int,
+                    help="Cap how many photos to download.")
+
+    ap.add_argument("--album-name", default=album_name,
+                    help=f"Base name for the rendered PDF. Default: {album_name}")
+    picker = ap.add_mutually_exclusive_group()
+    picker.add_argument("--cp-sat", action="store_true",
+                        help="Pick with the one-shot CP-SAT model. This is the default now, so "
+                             "the flag only makes it explicit.")
+    picker.add_argument("--loop", action="store_true",
+                        help="Pick with the per-category loop instead (WeddingPicker and its "
+                             "strategies) -- the old default, for a side-by-side comparison.")
+    return ap
+
+
+def _resolve_request(args, log):
+    """Return (request dict, label used for the local folders)."""
+    from tools import local_request as lr
+
+    if not args.from_datadog:
+        name = args.request or request_name
+        request = lr.load_request(name)
+        log(f"request: {lr.request_path(name)}")
+        return request, str(request["projectId"])
+
+    log("searching Datadog for the newest successful album run...")
+    client = lr.DatadogLogs()
+    run = lr.find_latest_successful_request(
+        client, lookback_hours=args.lookback_hours, project_id=args.project_id
+    )
+    log(f"found: {run.summary()}")
+
+    saved = lr.save_request(run.request, str(run.project_id))
+    log(f"saved request: {saved}  (re-run it with --request {run.project_id})")
+    return run.request, str(run.project_id)
+
+
+def _ensure_photos(args, request, project_dir, log):
+    """Download the gallery's photos into <input_dir>/<projectId>/."""
+    from tools import local_request as lr
+
+    if args.no_download:
+        log("photo download skipped (--no-download)")
+        return
+
+    base_url = request.get("base_url")
+    if not base_url:
+        log("! request has no base_url; cannot download photos")
+        return
+
+    photo_ids = None if args.all_gallery_photos else (request.get("photos") or None)
+    log(f"downloading photos -> {project_dir}")
+    try:
+        counts = lr.download_gallery_photos(
+            base_url, project_dir, photo_ids=photo_ids,
+            max_photos=args.max_photos, log=log,
+        )
+    except Exception as ex:  # noqa: BLE001 - the run may still work off local files
+        log(f"! photo download failed ({type(ex).__name__}: {ex})")
+        log("  the album will still be built; the PDF will have gaps for missing photos")
+        return
+
+    log("  " + ", ".join(f"{k}={v}" for k, v in counts.items()))
+
+
+if __name__ == '__main__':
+    args = _build_arg_parser().parse_args()
+    log = print
+
+    if args.loop:
+        CONFIGS['pick_cpsat'] = {**CONFIGS.get('pick_cpsat', {}), 'enabled': False}
+        log("select.pick: per-category loop (CP-SAT disabled for this run)")
+    elif args.cp_sat:
+        CONFIGS['pick_cpsat'] = {**CONFIGS.get('pick_cpsat', {}), 'enabled': True}
+        log("select.pick: CP-SAT model (the default)")
 
     settings_filename = os.environ.get('HostingSettingsPath',
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')
     intialize('AlbumDesigner', settings_filename)
 
-    with open(f'files/test_requests/{request_name}.json', 'r') as f:
-        _input_request = json.load(f)
+    _input_request, project_label = _resolve_request(args, log)
+
+    _images_path = os.path.join(args.input_dir, project_label)
+    _output_dir = os.path.join(args.output_dir, project_label)
+    os.makedirs(_images_path, exist_ok=True)
+    os.makedirs(_output_dir, exist_ok=True)
+
+    # Replaying a saved request needs the photos just as much as reproducing a
+    # fresh one; the request carries base_url either way.
+    _ensure_photos(args, _input_request, _images_path, log)
 
     # Run request
     final_album, _message = process_gallery(_input_request)
@@ -385,7 +439,7 @@ if __name__ == '__main__':
         raise SystemExit(f"process_gallery failed: {final_album}")
 
     gallery_photos_info = _message.content['gallery_photos_info']
-    box_id2data = _message.designsInfo['anyPagebox_id2data']  # if 'designsInfo' in _message and 'anyPagebox_id2data' in _message['designsInfo'] else {}
+    box_id2data = _message.designsInfo['anyPagebox_id2data']
 
     is_artificial_time = _message.content.get('is_artificial_time', False)
     print('ARTIFICIAL TIME APPLIED:', is_artificial_time)
@@ -394,14 +448,8 @@ if __name__ == '__main__':
     print(final_album)
 
     # Debug with Plotting
-    id = str(_input_request["projectId"])
-    _images_path = os.path.join(input_dir, id)
-    _output_pdf_path = os.path.join(output_dir, id)
-    os.makedirs(_output_pdf_path, exist_ok=True)
-    _output_pdf_path = os.path.join(_output_pdf_path, album_name + '.pdf')
+    _output_pdf_path = os.path.join(_output_dir, args.album_name + '.pdf')
 
     visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info,
                            is_artificial_time)
-    print('album saved locally')
-
-
+    print('album saved locally:', _output_pdf_path)

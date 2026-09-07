@@ -1,5 +1,6 @@
 import os
 import struct
+from functools import lru_cache
 
 import numpy as np
 from utils.configs import CONFIGS
@@ -9,7 +10,18 @@ from io import BytesIO
 from src.selection.ai_non_wedding_selection import smart_non_wedding_selection
 from src.selection.ai_wedding_selection import smart_wedding_selection
 
-def load_pre_queries_embeddings(pre_queries_name,version):
+@lru_cache(maxsize=256)
+def load_pre_queries_embeddings(pre_queries_name, version):
+    """Load a concept's CLIP text embeddings, as a (n_phrases, dim) matrix.
+
+    Cached on (name, version): every call otherwise costs a blob round-trip
+    (~130 ms warm, and a failed one plus a local-disk fallback for any concept
+    not uploaded to storage). Selection asks for one bin per subject -- 26 on
+    the default list -- so the same handful of bins is fetched over and over
+    within a single gallery. The bins are immutable build artefacts, so caching
+    for the life of the process is safe; the returned array is shared, so
+    callers must not mutate it in place.
+    """
 
     pre_query_file_name = CONFIGS['bin_name_dictionary'].get(pre_queries_name,pre_queries_name)
 

@@ -1,5 +1,9 @@
 # AlbumDesigner Pipeline Overview
 
+> **Note:** on branch `image_selection_2` the Read and Selection stages have been
+> decomposed into named, replaceable substages. Sections 3 and 4 below describe the
+> pre-decomposition shape; see `docs/substage_pipeline.md` for the current one.
+
 This document maps the control flow, classes, methods, and major decision points that drive the AlbumDesigner service. It traces execution from `main.py` through every stage involved in processing an album request.
 
 ---
@@ -129,7 +133,7 @@ Each stage logs timing into `read_time_list`, `processing_time_list`, or `report
 
 - `main.py`: Stage orchestration, queue setup, reporting helpers.
 - `src/request_processing.py`: Message enrichment, layout ingestion, assembly output helpers.
-- `src/selection/auto_selection.py`: Entry point for AI/manual selection paths.
+- `src/selection/auto_selection.py`: Entry point for AI/manual selection paths. See `docs/image_selection_deep_dive.md` for the full stage.
 - `src/album_processing.py`: Grouping, lookup table management, spread generation.
 - `src/core/*.py`: Photo data structures, spread combinatorics, scoring heuristics.
 - `src/smart_cropping.py`: Foreground/face-aware cropping executed in a subprocess.

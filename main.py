@@ -24,14 +24,13 @@ from ptinfra import  AbortRequested
 
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
-from src.selection.auto_selection import ai_selection
+from src.pipeline import AlbumContext, build_select
 from src.core.key_pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
 from src.request_processing import read_messages, assembly_output
 from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
-from utils.lookup_table_tools import wedding_lookup_table
 
 
 if os.environ.get('PTEnvironment') == 'dev' or os.environ.get('PTEnvironment') is None:
@@ -157,9 +156,18 @@ class ReadStage(Stage):
 
 
 class SelectionStage(Stage):
+    """Choose which photos make the album.
+
+    A thin driver over the selection substages; the logic that used to be
+    inlined here now lives in `src/pipeline/select` (route -> budget -> pick ->
+    publish), with each content category's rule a separate strategy. See
+    `src.pipeline.registry.SELECT`.
+    """
+
     def __init__(self, in_q: MemoryQueue = None, out_q: MemoryQueue = None, err_q: MemoryQueue = None, logger = None):
         super().__init__('SelectionStage', self.get_selection, in_q, out_q, err_q, batch_size=1, max_threads=1)
         self.logger = logger
+        self.pipeline = build_select(logger=logger)
 
     def get_selection(self, msgs: Union[Message, List[Message], AbortRequested]):
         if isinstance(msgs, AbortRequested):
@@ -169,86 +177,20 @@ class SelectionStage(Stage):
         updated_messages = []
         messages = msgs if isinstance(msgs, list) else [msgs]
         start = datetime.now()
-        #Iterate over message and start the selection process
+
         try:
             for _msg in messages:
-                ai_metadata = _msg.content.get('aiMetadata', None)
-                if ai_metadata is None or ai_metadata['photoIds'] is None:
-                    self.logger.info(f"aiMetadata not found for message {_msg}. Continue with chosen photos.")
-                    photos = _msg.content.get('photos', [])
-                    df = pd.DataFrame(photos, columns=['image_id'])
-                    _msg.content['gallery_photos_info'] = df.merge(_msg.content['gallery_photos_info'], how='inner', on='image_id')
-                    # handle LUT for manual selection
-                    is_wedding = _msg.content.get('is_wedding', False)
-                    if is_wedding:
-                        modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-                        modified_lut['other'] = (24, 4)  # Set 'Other' event to have max spreads
-                        modified_lut['None'] = (24, 4)
-                        _msg.content['modified_lut'] = modified_lut
-                    _msg.content['manual_selection'] = True
-                    updated_messages.append(_msg)
-                    continue
-                available_photos = _msg.content.get('photos', [])
-                df = _msg.content.get('gallery_photos_info', pd.DataFrame())
-                if df.empty:
-                    raise Exception(f"Gallery photos info DataFrame is empty for message {_msg}")
-                if len(available_photos) != 0:
-                    df = df[df['image_id'].isin(available_photos)]
-                    _msg.content['gallery_photos_info'] = df
+                context = self.pipeline.run(
+                    AlbumContext.for_message(_msg, logger=self.logger)
+                )
 
-                _msg.content['gallery_all_photos_info'] = df.copy()
-
-                ten_photos = ai_metadata.get('photoIds', [])
-                people_ids = ai_metadata.get('personIds', [])
-                focus = ai_metadata.get('focus', ['everyoneElse'])
-                tags = ai_metadata.get('subjects', ['Wedding dress', 'ceremony', 'bride', 'dancing', 'bride getting ready', 'groom getting ready', 'table setting', 'flowers', 'decorations', 'family', 'baby', 'kids', 'mother', 'father', 'Romance', 'affection', 'Intimacy', 'Happiness', 'Holding hands', 'smiling', 'Hugging', 'Kissing', 'ring', 'veil', 'soft light', 'portrait'])
-                density = ai_metadata.get('density', 3)
-                rating = _msg.content.get('rating', [])
-                is_wedding = _msg.content.get('is_wedding', False)
-                df = _msg.content.get('gallery_photos_info', pd.DataFrame())
-
-                if df.empty:
-                    self.logger.error(f"Gallery photos info DataFrame is empty for message {_msg}")
-                    _msg.content['error'] = f"Gallery photos info DataFrame is empty for message {_msg}"
-                    updated_messages.append(_msg)
-                    continue
-
-                if is_wedding:
-                    modified_lut = wedding_lookup_table.copy()  # Create a copy to avoid modifying the original LUT
-
-                    density_factor = CONFIGS['density_factors'][density] if density in CONFIGS['density_factors'] else 1
-                    for event, pair in modified_lut.items():
-                        modified_lut[event] = (min(24, max(1, pair[0] * density_factor)), pair[1])
-                else:
-                    modified_lut = None
-                _msg.content['modified_lut'] = modified_lut
-
-                is_artificial_time = _msg.content['is_artificial_time']
-                ai_photos_selected, spreads_dict, min_total_spreads, max_total_spreads, errors = ai_selection(df, ten_photos, people_ids, focus, tags, is_wedding, density,is_artificial_time,
-                                                  self.logger, rating=rating)
-
-                if errors:
+                if context.failed:
                     self.logger.error(f"Error for Selection images for this message {_msg}")
                     _msg.content['error'] = f"Error for Selection images for this message {_msg}"
                     updated_messages.append(_msg)
                     continue
 
-                filtered_df = df[df['image_id'].isin(ai_photos_selected)]
-                _msg.content['gallery_photos_info'] = filtered_df
-                _msg.content['photos'] = ai_photos_selected
-                _msg.content['spreads_dict'] = spreads_dict
-                _msg.content['min_total_spreads'] = min_total_spreads
-                _msg.content['max_total_spreads'] = max_total_spreads
-
-                if _msg.pagesInfo.get("firstPage"):
-                    if _msg.content.get('is_wedding', True):
-                        all_bride_groom = filtered_df[
-                            (filtered_df["cluster_context"] == "bride and groom")]
-                        _msg.content['bride and groom'] = all_bride_groom
-                else:
-                    _msg.content['bride and groom'] = None
-
-                updated_messages.append(_msg)
+                updated_messages.append(context.sync_to_message())
 
         except Exception as ex:
             tb = traceback.extract_tb(ex.__traceback__)

@@ -269,8 +269,8 @@ if __name__ == "__main__":
     from multiprocessing import Queue
     q = Queue()
     input_path = rf'C:\Users\ZivRotman\PycharmProjects\logAnalysis\galleries_pbs2\{project_id}'
-    from utils.protos import FaceVector_pb2 as face_vector
-    from utils.protos import BGSegmentation_pb2 as meta_vector
+    from ptinfra.proto.pb import FaceVector_pb2 as face_vector
+    from ptinfra.proto.pb import BGSegmentation_pb2 as meta_vector
     import os
     
     face_file = os.path.join(input_path, "ai_face_vectors.pb")
@@ -360,3 +360,65 @@ if __name__ == "__main__":
 
     print("done")
 
+
+
+#: Columns `face_aware_crop` needs beyond `image_as`, all produced by the
+#: gallery read: the face boxes, the saliency blob and its size.
+_CROP_INPUTS = ('faces_info', 'background_centroid', 'diameter')
+
+
+def face_aware_crop(image_info, target_ar, logger=None):
+    """A crop of `target_ar` positioned to keep the faces, or None.
+
+    `process_cropping` has always been able to do this -- its general branch
+    builds a face mask and hands it to `crop_find` -- but the only caller,
+    `process_crop_images`, passes ``box_aspect_ratio=1``, so the frame carries
+    a *square* crop and nothing else. Anything wider fell through to
+    `customize_box`, which centres the window blind.
+
+    On 53507032's cover box (1.96:1) a portrait keeps 34% of its height, so the
+    centred band was y=0.33 to 0.67 -- above the faces. Of the 48 couple
+    candidates the centre crop kept the faces in 18; a window of the same
+    height, merely repositioned, contains them in 47. The height was never the
+    problem, only where it sat.
+
+    None when the inputs are missing or the search fails, so the caller can
+    keep its own behaviour rather than lose the placement.
+    """
+    for column in _CROP_INPUTS:
+        try:
+            value = image_info[column]
+        except (KeyError, IndexError):
+            if logger:
+                logger.info(f"face-aware crop: no '{column}', keeping the centred crop")
+            return None
+        if value is None:
+            return None
+
+    faces = image_info['faces_info']
+    if not isinstance(faces, list):
+        faces = list(faces) if faces is not None else []
+    if not faces:
+        # No face to aim at; the centred crop is as good a guess as any.
+        return None
+
+    try:
+        crop = process_cropping(
+            float(image_info['image_as']),
+            faces,
+            image_info['background_centroid'],
+            float(image_info['diameter']),
+            float(target_ar),
+        )
+    except Exception as exc:  # noqa: BLE001 - a crop is not worth the album
+        if logger:
+            logger.warning(f"face-aware crop failed ({type(exc).__name__}: {exc}); "
+                           "keeping the centred crop")
+        return None
+
+    # Plain floats. `process_cropping` divides numpy ints, so it answers in
+    # `np.float64`, and the album doc goes out through `json.dumps` with no
+    # `default=` handler in `push_report_msg`. That happens to work --
+    # `np.float64` subclasses `float` -- but nothing here should depend on
+    # that, and `customize_box` has always returned plain floats.
+    return tuple(float(v) for v in crop)

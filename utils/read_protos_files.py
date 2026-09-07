@@ -1,4 +1,3 @@
-import io
 import os
 import traceback
 from datetime import datetime
@@ -10,56 +9,42 @@ import pandas as pd
 from collections import Counter
 from ptinfra.azure.pt_file import PTFile
 
+# Protobuf schemas, the versioned-blob loader and the PAI codec all come from
+# ptinfra rather than being vendored here. ptinfra.proto is the shared kernel:
+# its pb/ modules are copied verbatim from pic-time/protobufs at a recorded
+# commit (ptinfra.proto.PROTOBUFS_COMMIT), so every service parses the same
+# schema. Note protobuf keys its global descriptor pool by .proto file name and
+# rejects a second registration whose bytes differ, so a local copy of any of
+# these cannot coexist with ptinfra's in one process.
+from ptinfra.exporter.pai_writer import parse_pai
+from ptinfra.proto.pb import BGSegmentation_pb2 as meta_vector
+from ptinfra.proto.pb import ContentCluster_pb2 as content_cluster
+from ptinfra.proto.pb import FaceVector_pb2 as face_vector
+from ptinfra.proto.pb import PersonInfo_pb2 as person_info
+from ptinfra.proto.pb import PersonVector_pb2 as person_vector
+from ptinfra.proto.pb import SocialCircle_pb2 as social_circle
+from ptinfra.read_stage import load_versioned
+
 from utils.reading_tools import generate_dict_key, check_gallery_type, process_content, _flatten
 from utils.configs import CONFIGS
 from utils.image_queries import generate_query
-from utils.protos import FaceVector_pb2 as face_vector
-from utils.protos import BGSegmentation_pb2 as meta_vector
-from utils.protos import PersonInfo_pb2 as person_info
-from utils.protos  import ContentCluster_pb2 as content_cluster
-from utils.protos import PersonVector_pb2 as person_vector
-from utils.protos import SocialCircle_pb2 as social_circle
 
 
 def get_image_embeddings(file, logger):
-    embed = {}
+    """Read the CLIP embedding matrix (`ai_search_matrix.pai`).
 
+    The PAI v2/v3 binary format is decoded by ptinfra's codec, the same one the
+    exporter writes with.
+    """
     try:
-        fb = PTFile(file)
-        fileBytes = fb.read_blob()
-        fileBytes = io.BytesIO(fileBytes)
-
-        header_b = fileBytes.read1(4)
-        header = header_b.decode('utf-8')
-        if header == 'pai3':
-            model_version_b = fileBytes.read(4)
-            model_version = int.from_bytes(model_version_b, 'little')
-        elif header == 'pai2':
-            model_version = 1
-        else:
-            raise Exception('Unexpected header {}, clip_file {}'.format(header, file))
-
-        num_images_b = fileBytes.read1(4)
-        num_images = int.from_bytes(num_images_b, 'little')
-
-        for _ in range(num_images):
-            photo_id_b = fileBytes.read1(8)
-            photo_id = int.from_bytes(photo_id_b, 'little')
-
-            emb_size_b = fileBytes.read1(4)
-            emb_size = int.from_bytes(emb_size_b, 'little')
-            embedding_b = fileBytes.read1(4 * emb_size)
-            embedding = np.frombuffer(embedding_b, dtype='float32').reshape((emb_size,))
-
-            embed[photo_id] = {'embedding': embedding}
-
+        model_version, embeddings = parse_pai(PTFile(file).read_blob())
     except Exception as e:
         logger.error(f"Error reading image embeddings from file: {e}")
         return None
 
     df = pd.DataFrame([
-        {"image_id": photo_id, "embedding": data["embedding"]}
-        for photo_id, data in embed.items()
+        {"image_id": photo_id, "embedding": embedding}
+        for photo_id, embedding in embeddings.items()
     ])
 
     df['model_version'] = model_version
@@ -68,16 +53,7 @@ def get_image_embeddings(file, logger):
 
 def get_faces_info(faces_file, logger):
     try:
-        faces_info_bytes = PTFile(faces_file)  # load file
-        faces_info_bytes = faces_info_bytes.read_blob()
-        face_descriptor = face_vector.FaceVectorMessageWrapper()
-        face_descriptor.ParseFromString(faces_info_bytes)
-
-        if face_descriptor.WhichOneof("versions") == 'v1':
-            message_data = face_descriptor.v1
-        else:
-            logger.error("There is no appropriate version of face vector message.")
-            return None
+        message_data = load_versioned(faces_file, face_vector.FaceVectorMessageWrapper)
 
         images_photos = message_data.photos
 
@@ -107,16 +83,7 @@ def get_faces_info(faces_file, logger):
 
 def get_photo_meta(file, logger):
     try:
-        meta_info_bytes = PTFile(file)  # load file
-        meta_info_bytes_info_bytes = meta_info_bytes.read_blob()
-        meta_descriptor = meta_vector.PhotoBGSegmentationMessageWrapper()
-        meta_descriptor.ParseFromString(meta_info_bytes_info_bytes)
-
-        if meta_descriptor.WhichOneof("versions") == 'v1':
-            message_data = meta_descriptor.v1
-        else:
-            logger.warning('There is no appropriate version of image meta message.')
-            return None
+        message_data = load_versioned(file, meta_vector.PhotoBGSegmentationMessageWrapper)
 
         images_photos = message_data.photos
         # Prepare lists to collect data
@@ -164,18 +131,10 @@ def get_photo_meta(file, logger):
 
 def get_persons_ids(persons_file, logger):
     try:
-        person_info_bytes = PTFile(persons_file)  # load file
-        if not person_info_bytes.exists():
+        message_data = load_versioned(persons_file, person_info.PersonInfoMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        person_info_bytes = person_info_bytes.read_blob()
-        person_descriptor = person_info.PersonInfoMessageWrapper()
-        person_descriptor.ParseFromString(person_info_bytes)
-
-        if person_descriptor.WhichOneof("versions") == 'v1':
-            message_data = person_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of Person vector message.')
-            raise ValueError('There is no appropriate version of Person vector message.')
 
         identity_info = message_data.identities
 
@@ -245,18 +204,10 @@ def get_persons_ids(persons_file, logger):
 
 def get_clusters_info(cluster_file, logger):
     try:
-        cluster_info_bytes = PTFile(cluster_file)  # load file
-        if not cluster_info_bytes.exists():
+        message_data = load_versioned(cluster_file, content_cluster.ContentClusterMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        cluster_info_bytes = cluster_info_bytes.read_blob()
-        cluster_descriptor = content_cluster.ContentClusterMessageWrapper()
-        cluster_descriptor.ParseFromString(cluster_info_bytes)
-
-        if cluster_descriptor.WhichOneof("versions") == 'v1':
-            message_data = cluster_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of cluster vector message.')
-            raise ValueError('There is no appropriate version of cluster vector message.')
 
         images_photos = message_data.photos
 
@@ -296,18 +247,10 @@ def get_clusters_info(cluster_file, logger):
 
 def get_person_vectors(persons_file, logger):
     try:
-        person_info_bytes = PTFile(persons_file)  # Load file
-        if not person_info_bytes.exists():
+        message_data = load_versioned(persons_file, person_vector.PersonVectorMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        person_info_bytes = person_info_bytes.read_blob()
-        person_descriptor = person_vector.PersonVectorMessageWrapper()
-        person_descriptor.ParseFromString(person_info_bytes)
-
-        if person_descriptor.WhichOneof("versions") == 'v1':
-            message_data = person_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of Person vector message.')
-            raise ValueError('There is no appropriate version of Person vector message.')
 
         images = message_data.photos
 
@@ -328,24 +271,12 @@ def get_person_vectors(persons_file, logger):
 
 def get_social_circle(social_circle_file, logger):
     try:
-        social_info_bytes = PTFile(social_circle_file)  # Load file
-        if not social_info_bytes.exists():
+        message_data = load_versioned(social_circle_file, social_circle.SocialCircleMessageWrapper,
+                                      missing_ok=True)
+        if message_data is None:
             return None
-        social_info_bytes = social_info_bytes.read_blob()
-        social_descriptor = social_circle.SocialCircleMessageWrapper()
-        social_descriptor.ParseFromString(social_info_bytes)
 
-        if social_descriptor.WhichOneof("versions") == 'v1':
-            message_data = social_descriptor.v1
-        else:
-            logger.error('There is no appropriate version of Social Circle message.')
-            raise ValueError('There is no appropriate version of  Social Circle message.')
-
-        # --- 1. Access the v1 version ---
-        data_v1 = message_data
-
-        # --- 2. Extract social circles ---
-        social_circles = data_v1.socialCircles
+        social_circles = message_data.socialCircles
 
         circle_data = []
 
@@ -371,7 +302,26 @@ def get_social_circle(social_circle_file, logger):
 
     return social_df
 
-def get_info_protobufs(project_base_url, logger,clip_df=None):
+# ==========================================================================
+# Gallery ingest / enrichment
+# ==========================================================================
+#
+# `get_info_protobufs` used to do two different jobs in one pass: read the
+# gallery protobufs, *and* derive classification, CLIP tagging and identities
+# from what it read. The substage pipeline needs those separable
+# (`src/pipeline/ingest` vs `src/pipeline/enrich`), so the work is split into
+# the functions below. `get_info_protobufs` is kept as their composition, in
+# the original order, for callers that still want it in one call.
+
+
+def load_gallery_assets(project_base_url, logger, clip_df=None):
+    """Pure ingest: decode the gallery protobufs into one photo table.
+
+    Reads and organises only. Nothing here classifies a photo, projects an
+    embedding against a query bank, or resolves an identity.
+
+    Returns ``(gallery_info_df, persons_details_df, social_circle_df, error)``.
+    """
     try:
         start = datetime.now()
         image_file = os.path.join(project_base_url, 'ai_search_matrix.pai')
@@ -383,7 +333,6 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
 
         files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
 
-        # List of functions to run in parallel
         functions = [
             partial(get_faces_info, faces_file),
             partial(get_persons_ids, persons_file),
@@ -392,7 +341,7 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
             partial(get_person_vectors, person_vector_file),
 
         ]
-        
+
         if clip_df is None:
             functions.insert(0, partial(get_image_embeddings, image_file))
 
@@ -411,9 +360,9 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
                 persons_details_df = extra
 
             if result is None:
-                return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
+                return None, None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
             elif result.empty or result.shape[0] == 0:
-                return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
+                return None, None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
             results.append(result)
 
         if clip_df is not None:
@@ -435,105 +384,181 @@ def get_info_protobufs(project_base_url, logger,clip_df=None):
             lambda x: [] if not isinstance(x, list) else x
         )
 
-        # gallery_info_df = gallery_info_df.dropna(subset=['persons_ids'])
-
-
         after = len(gallery_info_df)
 
         logger.warning(f"Dropped {before - after} rows because embedding is NaN")
 
-        is_wedding = check_gallery_type(gallery_info_df)
-
-        if is_wedding:
-            # make Cluster column
-            gallery_info_df = gallery_info_df.apply(process_content, axis=1)
-            # gallery_info_df = gallery_info_df.merge(processed_df[['image_id', 'cluster_context']],
-            #                                         how='left', on='image_id')
-            bride_id, groom_id = np.nan, np.nan
-
-            from collections import Counter
-            bride_set = Counter(
-                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
-            groom_set = Counter(
-                _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
-
-            main_row = gallery_info_df["main_persons"].dropna().iloc[0]
-
-            # bride_id = bride_set.most_common(1)[0][0] if bride_set else np.nan
-            # groom_id = groom_set.most_common(1)[0][0] if groom_set else np.nan
-
-            if bride_set:
-                bride_candidates = [id for id, count in bride_set.most_common() if
-                                    count == bride_set.most_common(1)[0][1]]
-                bride_id = next((id for id in bride_candidates if id in main_row),
-                                bride_candidates[0]) if bride_candidates else np.nan
-            else:
-                bride_id = np.nan
-
-
-            if groom_set:
-                groom_candidates = [id for id, count in groom_set.most_common() if
-                                    count == groom_set.most_common(1)[0][1]]
-                groom_id = next((id for id in groom_candidates if id in main_row),
-                                groom_candidates[0]) if groom_candidates else np.nan
-            else:
-                groom_id = np.nan
-
-            if np.isnan(bride_id) and not np.isnan(groom_id):
-                for person_id in main_row:
-                    if person_id != groom_id:
-                        bride_id = person_id
-                        break
-            elif np.isnan(groom_id) and not np.isnan(bride_id):
-                for person_id in main_row:
-                    if person_id != bride_id:
-                        groom_id = person_id
-                        break
-            elif np.isnan(bride_id) and np.isnan(groom_id):
-                if len(main_row) >= 2:
-                    bride_id = main_row[0]
-                    groom_id = main_row[1]
-
-            if groom_id not in main_row or bride_id not in main_row:
-                logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
-
-            gallery_info_df["bride_id"] = bride_id
-            gallery_info_df["groom_id"] = groom_id
-
-            gallery_info_df["main_persons"] = gallery_info_df["main_persons"].apply(
-                lambda x: x if isinstance(x, (list, tuple)) else []
-            )
-
-            gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
-                lambda x: x if isinstance(x, (list, tuple)) else []
-            )
-
-        # Get Query Content of each image
-        if gallery_info_df is not None:
-            model_version = gallery_info_df.iloc[0]['model_version']
-            if model_version == 1:
-                gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
-            else:
-                #gallery_info_df = generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
-                gallery_info_df = generate_query(CONFIGS["queries_file_v3"], gallery_info_df, num_workers=8)
-
-        logger.debug("Number of images before cleaning the nan values: {}".format(len(gallery_info_df.index)))
-        columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
-        gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
-        logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
-        # make sure it has list values not float nan
-
-        # Cluster people by number of people inside the image
-        gallery_info_df['people_cluster'] = gallery_info_df.apply(lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
-        logger.debug("Time for reading files: {}".format(datetime.now() - start))
-
         # get social circle of the project
         social_circle_file = os.path.join(project_base_url, 'social_circles.pb')
-        social_circle_df = get_social_circle(social_circle_file,logger)
+        social_circle_df = get_social_circle(social_circle_file, logger)
 
-        return gallery_info_df, is_wedding,social_circle_df,persons_details_df, None
+        logger.debug("Time for reading files: {}".format(datetime.now() - start))
 
     except Exception as ex:
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
-        return None, None,None,None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+        return None, None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+
+    return gallery_info_df, persons_details_df, social_circle_df, None
+
+
+def classify_gallery_type(gallery_info_df):
+    """Wedding vs non-wedding, from the share of unclassified `image_class`."""
+    return check_gallery_type(gallery_info_df)
+
+
+def add_content_class(gallery_info_df):
+    """Derive `cluster_context` (the category name) from `cluster_class`."""
+    return gallery_info_df.apply(process_content, axis=1)
+
+
+def _other_partner(solo_counts, named_id):
+    """The second partner, read off the solo context that named the first.
+
+    A same-sex couple puts both partners into one solo context and leaves the
+    other empty, so the usual path never names the second one: on gallery
+    52894932 the `bride` context held identities 5 and 1 exactly **32 times
+    each** while the `groom` context was empty. Whoever else that one context is
+    full of is the other partner.
+
+    This runs only when `main_persons` did not answer, which is the case it
+    exists for -- that list is the model's most-frequent identities and can be
+    empty, and when it is, the second partner used to come out as NaN. A NaN
+    partner is not a loud failure either: the category filter
+    ``persons_ids == [nan]`` simply matches nothing, so one partner would
+    quietly vanish from the album.
+    """
+    for identity, _count in solo_counts.most_common():
+        if identity != named_id:
+            return identity
+    return np.nan
+
+
+def resolve_bride_groom(gallery_info_df, logger):
+    """Resolve the couple identity ids and stamp them on every row.
+
+    Picks the most frequent identity inside the `bride` / `groom` contexts,
+    preferring a candidate that also appears in `main_persons`, with fallbacks
+    for when one or both sides are missing.
+    """
+    bride_id, groom_id = np.nan, np.nan
+
+    bride_set = Counter(
+        _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "bride", "persons_ids"]))
+    groom_set = Counter(
+        _flatten(gallery_info_df.loc[gallery_info_df["cluster_context"] == "groom", "persons_ids"]))
+
+    main_row = gallery_info_df["main_persons"].dropna().iloc[0]
+
+    if bride_set:
+        bride_candidates = [id for id, count in bride_set.most_common() if
+                            count == bride_set.most_common(1)[0][1]]
+        bride_id = next((id for id in bride_candidates if id in main_row),
+                        bride_candidates[0]) if bride_candidates else np.nan
+    else:
+        bride_id = np.nan
+
+    if groom_set:
+        groom_candidates = [id for id, count in groom_set.most_common() if
+                            count == groom_set.most_common(1)[0][1]]
+        groom_id = next((id for id in groom_candidates if id in main_row),
+                        groom_candidates[0]) if groom_candidates else np.nan
+    else:
+        groom_id = np.nan
+
+    if np.isnan(bride_id) and not np.isnan(groom_id):
+        for person_id in main_row:
+            if person_id != groom_id:
+                bride_id = person_id
+                break
+        if np.isnan(bride_id):
+            bride_id = _other_partner(groom_set, groom_id)
+    elif np.isnan(groom_id) and not np.isnan(bride_id):
+        for person_id in main_row:
+            if person_id != bride_id:
+                groom_id = person_id
+                break
+        if np.isnan(groom_id):
+            groom_id = _other_partner(bride_set, bride_id)
+    elif np.isnan(bride_id) and np.isnan(groom_id):
+        if len(main_row) >= 2:
+            bride_id = main_row[0]
+            groom_id = main_row[1]
+
+    if groom_id not in main_row or bride_id not in main_row:
+        logger.warning(f"Main persons {main_row} do not contain bride {bride_id} or groom {groom_id}")
+
+    gallery_info_df["bride_id"] = bride_id
+    gallery_info_df["groom_id"] = groom_id
+
+    gallery_info_df["main_persons"] = gallery_info_df["main_persons"].apply(
+        lambda x: x if isinstance(x, (list, tuple)) else []
+    )
+
+    gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
+        lambda x: x if isinstance(x, (list, tuple)) else []
+    )
+
+    return gallery_info_df
+
+
+def add_semantic_tags(gallery_info_df, logger=None):
+    """Project each embedding against the query bank for its model version.
+
+    Produces `image_query_content` / `image_subquery_content`. This is a
+    search, not a read, which is why it belongs in enrichment rather than
+    ingest.
+    """
+    if gallery_info_df is None:
+        return gallery_info_df
+
+    model_version = gallery_info_df.iloc[0]['model_version']
+    if model_version == 1:
+        return generate_query(CONFIGS["queries_file_v2"], gallery_info_df, num_workers=8)
+    return generate_query(CONFIGS["queries_file_v3"], gallery_info_df, num_workers=8)
+
+
+def require_cluster_data(gallery_info_df, logger):
+    """Drop rows missing the cluster columns everything downstream assumes."""
+    logger.debug("Number of images before cleaning the nan values: {}".format(len(gallery_info_df.index)))
+    columns_to_check = ["ranking", "image_order", "image_class", "cluster_label", "cluster_class"]
+    gallery_info_df = gallery_info_df.dropna(subset=columns_to_check)
+    logger.debug("Number of images after cleaning the nan values: {}".format(len(gallery_info_df.index)))
+    return gallery_info_df
+
+
+def add_people_cluster(gallery_info_df):
+    """Key each photo by who is in it, for people-based grouping."""
+    gallery_info_df['people_cluster'] = gallery_info_df.apply(
+        lambda row: generate_dict_key(row['persons_ids'], row['number_bodies']), axis=1)
+    return gallery_info_df
+
+
+def get_info_protobufs(project_base_url, logger, clip_df=None):
+    """Read + enrich in one call, in the original order.
+
+    Kept for callers outside the substage pipeline. The pipeline runs the
+    pieces individually so each one can be replaced on its own.
+    """
+    try:
+        gallery_info_df, persons_details_df, social_circle_df, error = load_gallery_assets(
+            project_base_url, logger, clip_df=clip_df)
+        if error is not None:
+            return None, None, None, None, error
+
+        is_wedding = classify_gallery_type(gallery_info_df)
+
+        if is_wedding:
+            gallery_info_df = add_content_class(gallery_info_df)
+            gallery_info_df = resolve_bride_groom(gallery_info_df, logger)
+
+        gallery_info_df = add_semantic_tags(gallery_info_df, logger)
+        gallery_info_df = require_cluster_data(gallery_info_df, logger)
+        gallery_info_df = add_people_cluster(gallery_info_df)
+
+        return gallery_info_df, is_wedding, social_circle_df, persons_details_df, None
+
+    except Exception as ex:
+        tb = traceback.extract_tb(ex.__traceback__)
+        filename, lineno, func, text = tb[-1]
+        return None, None, None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
