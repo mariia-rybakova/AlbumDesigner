@@ -36,9 +36,10 @@ albums that are worse in ways the current picker never is:
   `enrich.timeline.ordered` -- and on an artificial-time gallery the row order
   and the day order are not the same thing.
 
-Off by default (`CONFIGS['pick_cpsat']['enabled']`). Failure of any kind --
-ortools missing, no solution inside the time limit, a modelling error -- logs
-and hands back to `WeddingPicker`, so turning it on cannot cost an album.
+**The default picker** (`CONFIGS['pick_cpsat']['enabled']`). Failure of any
+kind -- ortools missing, no solution inside the time limit, a modelling error
+-- logs and hands back to `WeddingPicker`, so the loop is still the floor
+under it; `process_gallery.py --loop` forces that path for a comparison.
 `ortools` is imported inside the solve rather than at module scope, so nothing
 here is a load-time dependency; it is already installed as a dependency of
 `k_means_constrained`, which is why `requirements.txt` needs no change.

@@ -347,9 +347,13 @@ cheap. Pass --no-download to work purely off what is already local.
 
     ap.add_argument("--album-name", default=album_name,
                     help=f"Base name for the rendered PDF. Default: {album_name}")
-    ap.add_argument("--cp-sat", action="store_true",
-                    help="Pick with the one-shot CP-SAT model instead of the per-category loop "
-                         "(CONFIGS['pick_cpsat']); see src/pipeline/select/cpsat.py.")
+    picker = ap.add_mutually_exclusive_group()
+    picker.add_argument("--cp-sat", action="store_true",
+                        help="Pick with the one-shot CP-SAT model. This is the default now, so "
+                             "the flag only makes it explicit.")
+    picker.add_argument("--loop", action="store_true",
+                        help="Pick with the per-category loop instead (WeddingPicker and its "
+                             "strategies) -- the old default, for a side-by-side comparison.")
     return ap
 
 
@@ -407,9 +411,12 @@ if __name__ == '__main__':
     args = _build_arg_parser().parse_args()
     log = print
 
-    if args.cp_sat:
+    if args.loop:
+        CONFIGS['pick_cpsat'] = {**CONFIGS.get('pick_cpsat', {}), 'enabled': False}
+        log("select.pick: per-category loop (CP-SAT disabled for this run)")
+    elif args.cp_sat:
         CONFIGS['pick_cpsat'] = {**CONFIGS.get('pick_cpsat', {}), 'enabled': True}
-        log("select.pick: CP-SAT model enabled")
+        log("select.pick: CP-SAT model (the default)")
 
     settings_filename = os.environ.get('HostingSettingsPath',
                                        '/ptinternal/pictures/hosting/ai_settings_audiobeat.json.txt')

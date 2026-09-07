@@ -8,12 +8,16 @@ Companion documents: `docs/cpsat_scoring_plan.md` is the argument and the
 phase-by-phase record; this is the description. `docs/substage_pipeline.md`
 covers the pipeline it plugs into.
 
-**Status: off by default** (`CONFIGS['pick_cpsat']['enabled']`). Any failure —
-`ortools` missing, no solution inside the time limit, a modelling mistake —
-logs and hands back to `WeddingPicker`, so switching it on cannot cost an
-album. That safety has a cost of its own: a mis-modelled constraint is
-indistinguishable from a working one from outside, which is why
-`tests/test_cpsat.py` exists.
+**Status: the default picker** (`CONFIGS['pick_cpsat']['enabled']`). Any
+failure — `ortools` missing, no solution inside the time limit, a modelling
+mistake — logs and hands back to `WeddingPicker`, so the loop remains the floor
+under it, and `process_gallery.py --loop` forces that path for a comparison.
+
+That safety has a cost of its own, and it matters more now than it did as an
+opt-in: **a mis-modelled constraint is indistinguishable from a working one
+from outside**, and so is a missing `ortools`. `tests/test_cpsat.py` exists for
+the first; `ortools` is declared in `requirements.txt` rather than inherited
+from `k_means_constrained` for the second.
 
 ---
 

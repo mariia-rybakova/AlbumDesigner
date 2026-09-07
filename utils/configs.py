@@ -405,7 +405,12 @@ CONFIGS = {'DEBUG': True,
         # coverage by leaving a class empty. Untuned starting points -- they are
         # scaled against a rank term of at most 1000 per photo.
         'pick_cpsat': {
-            'enabled': False,
+            # The default picker. `WeddingPicker` remains the fallback and
+            # takes over on any failure -- ortools absent, no solution inside
+            # the time limit, a modelling mistake -- so this cannot cost an
+            # album, and `--loop` on process_gallery forces the old path for a
+            # comparison. See docs/cpsat_picker.md.
+            'enabled': True,
             'time_limit_seconds': 30,
             'workers': 8,
             'rank_weight': 1,

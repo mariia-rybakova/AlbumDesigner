@@ -2,6 +2,9 @@ numpy==1.26.4
 pandas==2.2.3
 scikit-learn
 k_means_constrained
+# Declared explicitly, not left to k_means_constrained: src/pipeline/select/cpsat.py
+# is the default picker, and without ortools it falls back to the loop silently.
+ortools>=9.11.4210
 opencv-python
 pillow
 gdown
