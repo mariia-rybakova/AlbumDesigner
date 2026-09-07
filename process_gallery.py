@@ -24,12 +24,13 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
 from utils.configs import CONFIGS
+from src.predefined.models import PredefinedLayoutInput
 
 from ptinfra.pt_queue import Message
 from main import ProcessStage
 
-request_name = 'request0'
-album_name = 'album1'
+request_name = 'request_cameron_predefined'
+album_name = 'album_predefined'
 
 
 def _group_placements_by_composition(placements_img):
@@ -231,6 +232,26 @@ def get_selection(message, logger):
     start = datetime.now()
 
     try:
+        # Third route, beside manual and AI: an external service fixed the
+        # spreads, so selection is not run at all. Mirrors SelectionStage in
+        # main.py, which is the point of this function -- a local run must
+        # exercise what the service does.
+        predefined = PredefinedLayoutInput.from_request(message.content)
+        if predefined is not None:
+            df = message.content.get('gallery_photos_info', pd.DataFrame())
+            if df.empty:
+                raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+            message.content['predefined_layout'] = predefined
+            message.content['gallery_all_photos_info'] = df.copy()
+            message.content['gallery_photos_info'] = df[df['image_id'].isin(predefined.all_photo_ids())]
+            logger.info(f"Predefined layout: {len(predefined.spreads)} spreads, skipping selection.")
+            return message
+
+        # Everything the branch had inline after this point is the pipeline's
+        # now: `select.route` splits manual from AI and narrows the pool,
+        # `select.budget` sets the spread counts, and `select.publish` writes
+        # `photos`, `spreads_dict`, the spread bounds and the `bride and groom`
+        # frame ProcessStage reads back.
         context = build_select(logger=logger).run(
             AlbumContext.for_message(message, logger=logger)
         )
