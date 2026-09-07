@@ -465,6 +465,21 @@ CONFIGS = {'DEBUG': True,
                 'per_class': {},
             },
 
+            # Drop the temporally isolated photos, as the loop does. A
+            # frame with no neighbour within twenty minutes is an outlier
+            # rather than part of a moment worth a spread, and nothing else in
+            # the model can say so -- an isolated photo is its own bucket in
+            # every coverage dimension, so coverage *rewards* taking it.
+            #
+            # Missing this cost `bride`, `first dance` and `speech` on
+            # 52282159: four isolated photos the loop rejects reached the
+            # album and restraint scored 0 of 4. It hid for so long because on
+            # every other validation gallery temporal narrowing binds at most
+            # one class.
+            'temporal_narrowing': {
+                'enabled': True,
+            },
+
             # `_take_all_distinct`, as a constraint. When a class's supply
             # is at or below its allowance the loop takes everything minus
             # frames of the same people doing the same thing, and no weighting

@@ -350,6 +350,62 @@ def test_the_preference_can_be_switched_off():
     assert 1000 in off, "rank alone, so the best-ranked frame wins"
 
 
+# -- temporally isolated photos --------------------------------------------
+
+
+def _one_outlier():
+    """Twelve portraits inside a minute, plus the *best-ranked* one three hours
+    away on its own.
+
+    Best-ranked deliberately. An isolated photo that is also the worst photo
+    gets left out on rank alone, so a test built that way passes whether the
+    narrowing runs or not -- which is how the first version of these two
+    managed to pass with the mechanism switched off.
+    """
+    photos = gallery([('portrait', [10 + i], f'a portrait {i}') for i in range(12)])
+    photos[Col.CLUSTER_CONTEXT] = 'portrait'
+    photos[Col.IMAGE_CLASS] = 21
+    photos[Col.IMAGE_ORDER] = list(range(12))          # 1000 is the best rank
+    photos[Col.IMAGE_TIME] = [1_700_000_000 + 3 * 3600] + [
+        1_700_000_000 + i * 5 for i in range(11)]      # 1000 stands alone
+    return photos
+
+
+def test_an_isolated_photo_is_dropped():
+    """A frame with no neighbour within twenty minutes is an outlier, not part
+    of a moment worth a spread. The loop drops it; the model had no equivalent,
+    and four such photos reached the album on 52282159."""
+    photos = _one_outlier()
+
+    chosen = pick(photos, {'portrait': 3})
+
+    assert 1000 not in chosen, (
+        "the isolated frame is the best-ranked one, so only the narrowing "
+        "can keep it out")
+    assert len(chosen) == 3, "and the class still fills from what is left"
+
+
+def test_narrowing_can_be_switched_off():
+    photos = _one_outlier()
+
+    off = pick(photos, {'portrait': 3}, temporal_narrowing={'enabled': False})
+
+    assert 1000 in off, "with narrowing off the best-ranked frame wins again"
+
+
+def test_a_thin_pool_is_left_alone():
+    """The loop's own escape hatch, kept: below `need * NARROW_HEADROOM` there
+    is no room to be picky, so the narrowing does not run at all."""
+    photos = gallery([('portrait', [10], 'one'), ('portrait', [11], 'two')])
+    photos[Col.CLUSTER_CONTEXT] = 'portrait'
+    photos[Col.IMAGE_CLASS] = 21
+    photos[Col.IMAGE_TIME] = [1_700_000_000, 1_700_000_000 + 5 * 3600]
+
+    chosen = pick(photos, {'portrait': 2})
+
+    assert len(chosen) == 2, "two photos and two slots: nothing to be picky with"
+
+
 # -- the quota is a ceiling -------------------------------------------------
 
 

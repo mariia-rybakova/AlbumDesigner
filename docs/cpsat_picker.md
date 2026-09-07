@@ -174,6 +174,32 @@ cap `dancing` at one photo, since every frame there holds the same couple and
 carries the same subquery. Committed photos are left out, as in the loop — two
 of them sharing a key would make the constraint infeasible.
 
+### 3.4b Temporal orphans
+`_not_orphans`, `temporal_narrowing`
+
+Drops the photos with no neighbour within twenty minutes, as
+`narrowing.drop_temporal_orphans` does for the loop. An isolated frame is
+almost always an outlier rather than part of a moment worth a spread.
+
+A hard rule, and it has to be: an isolated photo is its own bucket in every
+coverage dimension, so coverage *rewards* taking it. The loop's escape hatch is
+kept — a pool thinner than `need * NARROW_HEADROOM` is left alone, because
+there is no room to be picky — and only the free rows are judged, since a
+committed photo is in the album whatever it neighbours.
+
+**This was missing until 52282159 found it.** On that gallery temporal
+narrowing binds three classes, and four isolated photos the loop rejects went
+into the album: restraint scored **0 of 4**, against 3/3, 4/4 and 10/10
+everywhere else. It hid because every other validation gallery has at most one
+such class — and on that one it was `may kiss bride`, which became a `yes`
+class and stopped reaching the picker at all.
+
+> Map survivors back by `image_id`, never by index.
+> `identify_temporal_clusters` resets the index, so its labels no longer refer
+> to the rows they came from. The first version took `kept.index` and selected
+> 1000–1010 where the survivors were 1001–1011 — the right *number* of photos
+> and the wrong ones, which no count-based check would have caught.
+
 ### 3.5 Coverage — reaching a new part of something
 `_add_coverage`, `_cover`, `coverage`
 
@@ -312,22 +338,35 @@ Recorded so nobody spends time on them again.
 
 Scored on the two halves that matter, over the validation galleries:
 
-| gallery | density | headroom | restraint | dropped |
-|---|---|---|---|---|
-| 53459898 + 53147741 | 3 | 6/6 | 4/4 | 0 |
-| 53520346 | 2 | 2/2 | 3/3 | 0 |
-| 52989013 | 5 | 6/6 | 10/10 | **6** |
+Across all five validation galleries at densities 1, 2, 3, 4 and 5 — 996 to
+1069 photos, with and without user picks, `brideAndGroom` and `everyoneElse`:
 
-Cost: pick-stage wall time runs **1.2–1.6× the loop** throughout, and the
-model stays around 1100–1500 variables on a 1000-photo gallery.
+| | |
+|---|---|
+| headroom taken | **17/17** |
+| restraint kept | **21/21** |
+| photos dropped that the loop kept | 7 |
 
-**Open.** The six dropped photos on 52989013 are unexplained — the metric
-cannot tell six correctly-declined near-duplicates from six real losses, and
-that gallery's density-5 allowance is tight enough against supply
-(1 photo in 4, against 1 in 8–9 elsewhere) that the ceiling genuinely binds
-there. `take_all_distinct` accounts for 10 of that gallery's 16-photo
-shortfall across 5 classes, far more than anywhere else, so it is also the
-gallery on which to sanity-check that rule's threshold.
+Cost: pick-stage wall time runs **1.2–2.0× the loop**, and the model stays
+around 1100–1500 variables on a 1000-photo gallery.
+
+**The seven dropped photos are accounted for**, which closes the one item that
+stood open through the phases:
+
+* **two** are identity contradictions — `bride getting dressed` frames on
+  52989013 naming person 32 and not the bride. Correctly declined; this is the
+  rule in §3.3 doing its job, and the loop putting them on her spread is the
+  fault being fixed.
+* **three** are unknown-identity frames in that same class that the ceiling
+  simply did not fill to. Debatable, not a fault.
+* **one** is the greyscale approximation in §3.8: 53147741's
+  `bride getting dressed` has no colour at all, and the loop's
+  `_take_grayscale_only` path takes a greyscale frame where a flat 200-point
+  penalty declines it. This is the known gap.
+* **one** in `entertainment` on 52989013, unexamined.
+
+So the remaining honest weakness is the greyscale one — a flat penalty where
+the loop has an ordering — and it is worth one photo across five galleries.
 
 ## 6. Reference
 

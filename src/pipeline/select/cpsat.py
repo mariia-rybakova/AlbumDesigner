@@ -85,6 +85,7 @@ import pandas as pd
 
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.enrich import timeline as tl
+from src.pipeline.select import narrowing
 from src.pipeline.select.scoring import CandidateGate, Scorer
 from utils.configs import CONFIGS
 
@@ -276,6 +277,7 @@ class CpSatPicker:
             frame.loc[free.index, '_score'] = self._scores_for(scorer, free)
 
             shortlist = self._shortlist(gate, free, category)
+            shortlist = self._not_orphans(free.loc[shortlist], category)
             frame.loc[shortlist, '_eligible'] = True
             self.per_category[category]['bound_by'] = (
                 'solver' if len(shortlist) else 'gate_declined')
@@ -305,6 +307,59 @@ class CpSatPicker:
             return free.index[[False] * len(free)]
 
         return free.index[free[Col.IMAGE_ID].isin(set(candidate_ids))]
+
+    def _not_orphans(self, rows: pd.DataFrame, category: str):
+        """Drop the temporally isolated photos, as `select.pick` does.
+
+        A frame with no neighbour within twenty minutes is almost always an
+        outlier rather than part of a moment worth a spread. The loop applies
+        this to every class through `narrowing.drop_temporal_orphans`; the model
+        had no equivalent, and nothing else in it can express one -- Phase 3
+        established that coverage cannot, because an isolated photo is its own
+        bucket in every dimension and coverage therefore *rewards* taking it.
+        So it is a hard eligibility rule, the same shape as the distinct-shot
+        and identity exclusions.
+
+        Missing this cost `bride`, `first dance` and `speech` on 52282159: four
+        isolated photos the loop rejects went into the album, and restraint
+        scored 0 of 4. It went unnoticed for so long because on every other
+        validation gallery temporal narrowing binds at most one class -- and on
+        that one it was `may kiss bride`, which became a `yes` class and stopped
+        reaching the picker at all.
+
+        The loop's own escape hatch is kept: a pool thinner than
+        ``need * NARROW_HEADROOM`` is left alone, because there is no room to be
+        picky. So is its scope -- only the free rows are judged, since a
+        committed photo is in the album whatever it neighbours.
+        """
+        if not self.cfg.get('temporal_narrowing', {}).get('enabled', False):
+            return rows.index
+        if rows.empty:
+            return rows.index
+
+        need = int(self.plan.images.get(category, 0))
+        try:
+            timed = narrowing.add_timestamps(rows.copy())
+            kept = narrowing.drop_temporal_orphans(timed, need, self.logger)
+        except Exception as exc:  # noqa: BLE001 - a narrowing failure is not an album
+            self.logger.warning(f"cp-sat: temporal narrowing failed for "
+                                f"{category!r} ({type(exc).__name__}: {exc}); "
+                                f"keeping the class")
+            return rows.index
+
+        # Map back by `image_id`, never by index. `identify_temporal_clusters`
+        # resets the index, so its labels no longer refer to the rows they came
+        # from: taking `kept.index` selected 1000-1010 where the survivors were
+        # 1001-1011 -- the right *number* of photos and the wrong ones, which no
+        # count-based check would have caught.
+        survivors = set(kept[Col.IMAGE_ID]) if Col.IMAGE_ID in kept.columns else set()
+        keep = rows.index[rows[Col.IMAGE_ID].isin(survivors)]
+
+        dropped = len(rows) - len(keep)
+        if dropped:
+            self.logger.debug(f"cp-sat: {category!r} dropped {dropped} "
+                              f"temporally isolated photos")
+        return keep
 
     def _scores_for(self, scorer: Scorer, group: pd.DataFrame) -> pd.Series:
         """A 0..1 desirability per photo, by the same rules the loop uses."""
