@@ -19,3 +19,16 @@ experiments/*.csv
 files/confetti.pkl
 files/confetti1.pkl
 files/confetti2.pkl
+
+# The narrator policy weights: 46 MB of binary that changes on every retrain,
+# so it is delivered alongside the image rather than committed. The axes file
+# is small but comes from the same build step, so it is kept together with it.
+files/narrator/*.pt
+files/narrator/*.npz
+
+# `models/` above is meant for downloaded weight directories, but it matches any
+# directory of that name at any depth -- including src/narrator/models/, which is
+# vendored SOURCE (the policy and set encoder), not an artefact. Without this
+# negation the vendored subset commits incomplete and a fresh clone cannot import
+# ActorCritic, while the working copy keeps running because the files are on disk.
+!src/narrator/models/

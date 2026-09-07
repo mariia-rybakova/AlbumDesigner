@@ -96,6 +96,7 @@ def get_photo_meta(file, logger):
         image_orderInScenes = []
         background_centroids = []
         blob_diameters = []
+        composition_scores = []
 
         # Add safer handling of photo attributes
         for photo in images_photos:
@@ -109,6 +110,11 @@ def get_photo_meta(file, logger):
             # Safer handling of optional fields
             background_centroids.append(getattr(photo, 'blobCentroid', None))
             blob_diameters.append(getattr(photo, 'blobDiameter', None))
+            # Read for `select.narrator`, which feeds it to the policy as one of
+            # its per-photo features. Optional like the two above: it is absent
+            # on older bg_segmentation blobs, and the narrator treats a missing
+            # or out-of-range value as neutral rather than as a measurement.
+            composition_scores.append(getattr(photo, 'compositionScore', None))
 
         additional_image_info_df = pd.DataFrame({
             'image_id': photo_ids,
@@ -119,7 +125,8 @@ def get_photo_meta(file, logger):
             'image_orientation': image_orientations,
             'image_orderInScene': image_orderInScenes,
             'background_centroid': background_centroids,
-            'diameter': blob_diameters
+            'diameter': blob_diameters,
+            'composition_score': composition_scores
         })
 
     except Exception as ex:

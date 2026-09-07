@@ -24,12 +24,16 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
 from utils.configs import CONFIGS
+from src.predefined.models import PredefinedLayoutInput
 
 from ptinfra.pt_queue import Message
 from main import ProcessStage
 
-request_name = 'request0'
-album_name = 'album1'
+#: Set by --non-wedding; read in `process_gallery`.
+FORCE_NON_WEDDING = False
+
+request_name = 'request_cameron_predefined'
+album_name = 'album_predefined'
 
 
 def _group_placements_by_composition(placements_img):
@@ -231,6 +235,26 @@ def get_selection(message, logger):
     start = datetime.now()
 
     try:
+        # Third route, beside manual and AI: an external service fixed the
+        # spreads, so selection is not run at all. Mirrors SelectionStage in
+        # main.py, which is the point of this function -- a local run must
+        # exercise what the service does.
+        predefined = PredefinedLayoutInput.from_request(message.content)
+        if predefined is not None:
+            df = message.content.get('gallery_photos_info', pd.DataFrame())
+            if df.empty:
+                raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+            message.content['predefined_layout'] = predefined
+            message.content['gallery_all_photos_info'] = df.copy()
+            message.content['gallery_photos_info'] = df[df['image_id'].isin(predefined.all_photo_ids())]
+            logger.info(f"Predefined layout: {len(predefined.spreads)} spreads, skipping selection.")
+            return message
+
+        # Everything the branch had inline after this point is the pipeline's
+        # now: `select.route` splits manual from AI and narrows the pool,
+        # `select.budget` sets the spread counts, and `select.publish` writes
+        # `photos`, `spreads_dict`, the spread bounds and the `bride and groom`
+        # frame ProcessStage reads back.
         context = build_select(logger=logger).run(
             AlbumContext.for_message(message, logger=logger)
         )
@@ -283,6 +307,28 @@ def process_gallery(input_request):
     if reading_error is not None:
         print(f"Reading error: {reading_error}")
         return reading_error, None
+
+    # Local-only override for testing the non-wedding path. `is_wedding` comes
+    # from `classify_gallery_type` over the photos, and it is wrong on some
+    # genuinely non-wedding galleries -- a debutante ball reads as a wedding
+    # (white gowns, tuxedos, bouquets, garden portraits). Until such galleries
+    # route correctly on their own, this is how the non-wedding path gets
+    # exercised on real content. Never set in the service.
+    if FORCE_NON_WEDDING:
+        was = msgs[0].content.get('is_wedding')
+        msgs[0].content['is_wedding'] = False
+        # `content` alone is not enough. The read stage leaves its AlbumContext
+        # attached to the message, and `AlbumContext.for_message` reuses that
+        # object rather than rebuilding from content -- so selection reads
+        # `facts.is_wedding` from the context, and a content-only override is
+        # silently ignored: budget and preselect (both wedding-gated) still run
+        # and `select.narrator` still declines.
+        attached = getattr(msgs[0], AlbumContext._MESSAGE_SLOT, None)
+        if isinstance(attached, AlbumContext):
+            attached.facts.is_wedding = False
+        logger.warning(f"--non-wedding: is_wedding {was} -> False "
+                       f"(local override; context {'patched' if attached else 'absent'})")
+
     message = get_selection(msgs[0], logger)
 
     process_stage = ProcessStage(logger=logger)
@@ -351,6 +397,13 @@ cheap. Pass --no-download to work purely off what is already local.
     picker.add_argument("--cp-sat", action="store_true",
                         help="Pick with the one-shot CP-SAT model. This is the default now, so "
                              "the flag only makes it explicit.")
+    ap.add_argument("--narrator", action="store_true",
+                    help="Enable select.narrator (the albumNarrator policy) for this run. "
+                         "It only serves non-wedding galleries with 768-d embeddings.")
+    ap.add_argument("--non-wedding", action="store_true",
+                    help="Force is_wedding=False after the read. For testing the "
+                         "non-wedding path on a gallery the content classifier calls a "
+                         "wedding; never used by the service.")
     picker.add_argument("--loop", action="store_true",
                         help="Pick with the per-category loop instead (WeddingPicker and its "
                              "strategies) -- the old default, for a side-by-side comparison.")
@@ -410,6 +463,13 @@ def _ensure_photos(args, request, project_dir, log):
 if __name__ == '__main__':
     args = _build_arg_parser().parse_args()
     log = print
+
+    if args.narrator:
+        CONFIGS['narrator'] = {**CONFIGS.get('narrator', {}), 'enabled': True}
+        log("select.narrator: enabled")
+    if args.non_wedding:
+        FORCE_NON_WEDDING = True
+        log("is_wedding will be forced False after the read (--non-wedding)")
 
     if args.loop:
         CONFIGS['pick_cpsat'] = {**CONFIGS.get('pick_cpsat', {}), 'enabled': False}

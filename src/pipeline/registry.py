@@ -117,6 +117,11 @@ SELECT: Sequence[str] = (
     "select.route",
     "select.budget",
     "select.preselect",
+    # Before `select.pick`, and it can settle a non-wedding gallery outright:
+    # the policy composes selection and page grouping in one pass, so when it
+    # answers there is nothing for `pick` to choose. `pick` stands down only
+    # then -- an unserved or declined gallery still goes through it.
+    "select.narrator",
     "select.pick",
     "select.publish",
 )

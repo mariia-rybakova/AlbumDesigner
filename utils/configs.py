@@ -402,6 +402,42 @@ CONFIGS = {'DEBUG': True,
             'min_separation': 0.25,
         },
 
+        # `select.narrator`: the albumNarrator policy composing a non-wedding
+        # album -- selection and page grouping in one pass. Off by default,
+        # because it needs a checkpoint on disk and it changes what a
+        # non-wedding album is; turning it on is a deliberate act.
+        'narrator': {
+            'enabled': False,
+
+            # The trained policy. 46 MB, and loaded once per process. Read with
+            # `weights_only=False` because the checkpoint carries the training
+            # config the network is rebuilt from -- which makes it executable
+            # content, so it must live somewhere only we can write.
+            'checkpoint': r'files/narrator/policy.pt',
+
+            # CLIP text-concept axes for the candid / indoor / lighting /
+            # bgcolor features (tools/build_attribute_axes.py in the narrator
+            # project). Absent, those four features stay at a neutral 0.5 --
+            # which is what the narrator itself does without the file, so the
+            # album degrades rather than the request failing.
+            'attribute_axes': r'files/narrator/attribute_axes.npz',
+
+            # Stochastic rollouts to draw, best-scoring album wins. The
+            # narrator measured greedy ~= best-of-8 from v27 on, so 1 is the
+            # cheap mode and the default: 0.18 s for a 150-photo gallery at
+            # full 768-d dims on a laptop CPU.
+            'sample_k': 1,
+            'seed': 0,
+
+            # One thread, not every core. The service already processes
+            # galleries concurrently, so letting torch fan out per request
+            # oversubscribes the box and makes all of them slower.
+            'torch_threads': 1,
+
+            # Below this the album is the gallery; composing adds nothing.
+            'min_photos': 15,
+        },
+
         # Spread the profile's percentages over the categories the gallery
         # actually has, rather than over the whole profile. The weights sum to
         # 107% and a quarter to a third of that is routinely spent on
