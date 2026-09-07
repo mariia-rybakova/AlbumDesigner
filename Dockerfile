@@ -63,14 +63,9 @@ COPY ./ /usr/app/
 #
 # The URL is versioned on purpose: a rebuild must not silently pick up different
 # weights than the ones a run was validated against.
-#
-# TODO: uncomment once narrator_models_v1.zip is uploaded to the `ai-models`
-# container under album-narrator/ and the read-only SAS URL is pasted in.
-# Left commented rather than stubbed because a placeholder URL fails the build,
-# and `narrator.enabled` is False by default so nothing needs the model yet.
 # -----------------------------------------------------------------------------
-# ADD '<read-only SAS URL for ai-models/album-narrator/narrator_models_v1.zip>' ./files/narrator/models.zip
-# RUN unzip ./files/narrator/models.zip -d ./files/narrator && rm ./files/narrator/models.zip
+ADD 'https://a1devops1versions.blob.core.windows.net/ai-models/album-narrator/narrator_models_v1.zip?se=2123-08-31T07%3A37%3A22Z&sp=r&sv=2022-11-02&sr=b&sig=eNmidzNDDd3FS6XiOTUKYEwpBPGqiZxOSei5NzV5kOU%3D' ./files/narrator/models.zip
+RUN unzip ./files/narrator/models.zip -d ./files/narrator && rm ./files/narrator/models.zip
 
 
 CMD ["python3", "-W", "ignore::UserWarning", "main.py"]
