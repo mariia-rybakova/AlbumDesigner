@@ -1,10 +1,34 @@
-numpy==1.26.4
+# Not pinned to 1.26 any more. That pin was a pip-freeze artefact: before
+# a013ed73 (Apr 2025) this file was a 5 KB freeze dump carrying
+# numpy==1.26.3 alongside ortools==9.10.4067 and protobuf==5.27.0, a set that
+# was at least self-consistent. That commit curated the list, dropped the
+# ortools and k-means-constrained pins and moved protobuf to 6.x, but left
+# numpy on 1.26 -- and nothing in the tree ever required numpy 1.
+#
+# Four of our own dependencies now want numpy 2: k_means_constrained needs
+# >=2.1.1, ortools >=2.0.2, opencv-python >=2, scipy >=2.0.0. Holding numpy at
+# 1.26 meant k_means_constrained could not use its cp312 wheel and pip had to
+# backtrack to compiling an old sdist. Bounded by major, because an unbounded
+# floor is what made the ortools line below break the build.
+numpy>=2.1.1,<3
 pandas==2.2.3
 scikit-learn
-k_means_constrained
+# Pinned because it is the package that drives numpy and ortools upward: each
+# release raises those floors, and unpinned it can move the whole set without
+# anything here changing. Used on the layout path -- src/groups_operations/
+# split.py splits an oversized group into spread-sized chunks with min/max
+# size constraints, which plain KMeans cannot express.
+k_means_constrained==0.9.1
 # Declared explicitly, not left to k_means_constrained: src/pipeline/select/cpsat.py
 # is the default picker, and without ortools it falls back to the loop silently.
-ortools>=9.11.4210
+#
+# Pinned exactly, and pinned together with protobuf below. Every ortools
+# release constrains protobuf to a narrow window -- below 5.30 up to 9.12,
+# 6.31 or later from 9.13, 6.33.1 or later from 9.15 -- so an unbounded
+# `ortools>=` left pip reconciling that against a protobuf pin no release
+# accepted, which is a ResolutionImpossible naming numpy and protobuf.
+# 9.15.6755 is also the floor k_means_constrained 0.9.x asks for.
+ortools==9.15.6755
 opencv-python
 pillow
 gdown
@@ -16,7 +40,11 @@ azure-storage-queue==12.10.0
 azure-storage-blob==12.20.0
 elasticsearch==8.13.1
 pyopenssl==24.1.0
-protobuf==6.30.2
+# Matched to ortools 9.15's window rather than pinned independently, so the
+# two cannot drift apart again. Same major as the 6.30.2 it replaces, so
+# ptinfra's generated protos are unaffected: gencode is forward compatible
+# with a newer runtime within a major.
+protobuf>=6.33.1,<6.34
 networkx
 openpyxl
 reportlab
