@@ -1,5 +1,10 @@
 # Generalised per-class scoring for the CP-SAT picker
 
+> **See `docs/cpsat_picker.md` for what the model actually is now** -- every
+> mechanism, its purpose, and the five that were built and left inert. This
+> document is the argument and the phase-by-phase record, including the way the
+> thesis below failed to hold.
+
 A plan to replace the per-category strategies *and* the model's separate
 coverage penalties with one thing: a **per-class weighted score whose terms
 include coverage**. Written after measuring where `src/pipeline/select/cpsat.py`

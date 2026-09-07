@@ -1,5 +1,8 @@
 """One global CP-SAT model instead of a per-category loop.
 
+Reference for every mechanism here, and for the five that were built and
+measured and left inert: `docs/cpsat_picker.md`.
+
 `WeddingPicker` decides one category at a time: score it, gate it, narrow it,
 hand it to a strategy. Each category therefore chooses without knowing what the
 others chose, and the only thing spreading picks across the day is the diversity
