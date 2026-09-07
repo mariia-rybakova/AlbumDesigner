@@ -32,6 +32,12 @@ from src.pipeline.registry import get  # noqa: E402
 
 BRIDE, GROOM = 101, 202
 
+#: `get_important_imgs` logs from inside its own try/except, so the direct-call
+#: tests need a logger rather than None.
+import logging as _logging
+_QUIET_LOG = _logging.getLogger("test_key_pages")
+_QUIET_LOG.addHandler(_logging.NullHandler())
+
 
 def couple_gallery(n=24, orientation="landscape"):
     """A gallery whose couple photos span the day, earliest first.
@@ -379,3 +385,161 @@ def test_absent_key_pages_stay_absent():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# -- the covers must be two different photos ------------------------------
+#
+# Regression tests for 53507032, which opened *and* closed on one frame: a
+# confetti-line shot with six faces, the groom looking away and the bride's
+# face cut off at the edge.
+
+
+def mixed_orientation_gallery(n=24, landscapes=1):
+    """A gallery whose couple frames are portrait but for `landscapes` of them.
+
+    This is the shape that broke the rule. Landscape was filtered *before* the
+    couple test, so a 48-frame candidate base collapsed to the single landscape
+    frame inside it -- and one frame cannot furnish two covers.
+    """
+    frame = couple_gallery(n=n, orientation="portrait")
+    frame.loc[frame.index[:landscapes], Col.IMAGE_ORIENTATION] = "landscape"
+    return frame
+
+
+def test_one_landscape_among_portraits_still_gives_two_covers():
+    context = run(mixed_orientation_gallery(landscapes=1))
+
+    assert context.key_pages.opening, "a cover is still due"
+    assert context.key_pages.closing
+    assert context.key_pages.opening != context.key_pages.closing, (
+        "the album opened and closed on the same photo")
+
+
+def test_the_single_landscape_does_not_win_both_ends():
+    """It is early in the day, so only the opening window holds it at all."""
+    frame = mixed_orientation_gallery(landscapes=1)
+    landscape = frame.loc[frame[Col.IMAGE_ORIENTATION] == "landscape", Col.IMAGE_ID].iloc[0]
+
+    context = run(frame)
+
+    assert context.key_pages.closing != [landscape]
+
+
+def test_orientation_is_a_preference_not_a_filter():
+    """With everything else equal the landscape wins its window; the portraits
+    are still candidates, which is the difference that matters."""
+    frame = couple_gallery(n=8, orientation="portrait")
+    frame.loc[frame.index[1], Col.IMAGE_ORIENTATION] = "landscape"
+    frame[Col.IMAGE_ORDER] = 5.0  # no rank signal
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = "bride and groom smiling at each other"
+
+    context = run(frame)
+
+    assert context.key_pages.opening == [frame[Col.IMAGE_ID].iloc[1]]
+
+
+def test_covers_are_separated_across_the_day():
+    context = run(couple_gallery(n=24))
+    photos = context.photos
+
+    def position(image_id):
+        ordered = photos.sort_values(Col.GENERAL_TIME)[Col.IMAGE_ID].tolist()
+        return ordered.index(image_id) / (len(ordered) - 1)
+
+    apart = abs(position(context.key_pages.closing[0])
+                - position(context.key_pages.opening[0]))
+    assert apart >= 0.25, f"covers only {apart:.2f} of the day apart"
+
+
+def test_a_crowd_loses_to_the_couple_alone():
+    """A cover is of the two of them. The frame this replaced carried six faces."""
+    frame = couple_gallery(n=8)
+    frame[Col.IMAGE_ORDER] = 5.0
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = "bride and groom smiling at each other"
+    frame.loc[frame.index[0], Col.N_FACES] = 8      # earliest, but a crowd
+    frame.loc[frame.index[1], Col.N_FACES] = 2
+
+    context = run(frame)
+
+    assert context.key_pages.opening == [frame[Col.IMAGE_ID].iloc[1]]
+
+
+def test_a_single_face_couple_frame_is_not_a_cover():
+    """Both names in `persons_ids` can still be one clear face and one profile
+    at the frame edge, so the face count is what is required."""
+    frame = couple_gallery(n=8)
+    frame[Col.IMAGE_ORDER] = 5.0
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = "bride and groom smiling at each other"
+    frame.loc[frame.index[0], Col.N_FACES] = 1
+
+    context = run(frame)
+
+    assert context.key_pages.opening != [frame[Col.IMAGE_ID].iloc[0]]
+
+
+def test_a_gallery_of_single_face_frames_still_gets_covers():
+    """Relaxed rather than enforced: a worse cover beats no cover."""
+    frame = couple_gallery(n=8)
+    frame[Col.N_FACES] = 1
+
+    context = run(frame)
+
+    assert context.key_pages.opening and context.key_pages.closing
+    assert context.key_pages.opening != context.key_pages.closing
+
+
+def test_the_rank_fallback_takes_the_best_photo_not_the_worst():
+    """`image_order` is a rank where 0 is best. The fallback sorted it
+    descending, so the one path that ran when no candidate was found handed
+    back the worst-ranked photo in the gallery.
+    """
+    from src.core.key_pages import get_important_imgs
+
+    # No couple frames at all, so both covers fall through to the fallback.
+    frame = couple_gallery(n=6)
+    frame[Col.CLUSTER_CONTEXT] = "other"
+    frame[Col.IMAGE_ORDER] = [90.0, 2.0, 40.0, 70.0, 55.0, 80.0]
+
+    first, last = get_important_imgs(frame, None, _QUIET_LOG)
+
+    best = frame.loc[frame[Col.IMAGE_ORDER].idxmin(), Col.IMAGE_ID]
+    assert first[0] == best, f"expected the best-ranked photo, got {first[0]}"
+    assert last, "the closing cover must be filled too"
+    assert first[0] != last[0], "the fallback handed both covers the same photo"
+    worst = frame.loc[frame[Col.IMAGE_ORDER].idxmax(), Col.IMAGE_ID]
+    assert first[0] != worst
+
+
+def test_quality_decides_between_equal_candidates(monkeypatch):
+    """The term the priority ladder had no way to express: two frames matching
+    the same subquery, one of them a better photograph.
+    """
+    import src.core.key_pages as key_pages
+
+    frame = couple_gallery(n=16)
+    frame[Col.IMAGE_ORDER] = 5.0
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = "bride and groom smiling at each other"
+    favoured = frame[Col.IMAGE_ID].iloc[2]
+
+    def fake_scores(photos, concept):
+        return np.where(photos[Col.IMAGE_ID].values == favoured, 0.9, 0.1)
+
+    monkeypatch.setattr(key_pages, "_quality",
+                        lambda f, log: fake_scores(f, None))
+
+    context = run(frame)
+
+    assert context.key_pages.opening == [favoured]
+
+
+def test_covers_survive_concepts_being_unavailable():
+    """No embeddings in this frame at all, so every concept projection raises.
+    The covers are then decided by subquery and rank, as before the term
+    existed -- a missing bin costs a score term, not the covers.
+    """
+    frame = couple_gallery(n=12).drop(columns=[Col.EMBEDDING])
+
+    context = run(frame)
+
+    assert context.key_pages.opening and context.key_pages.closing
+    assert context.key_pages.opening != context.key_pages.closing

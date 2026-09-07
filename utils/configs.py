@@ -341,6 +341,67 @@ CONFIGS = {'DEBUG': True,
             },
         },
 
+        # The album's opening and closing photos. Scored rather than picked off
+        # a priority ladder, because the ladder had no way to say "this frame
+        # matches the subquery I asked for and is still a bad photo".
+        #
+        # On 53507032 it opened *and* closed the album on one frame: a
+        # confetti-line shot with six faces, the groom looking away and the
+        # bride's face cut off at the edge. Two separate faults produced it.
+        # Landscape was a hard pre-filter applied before the couple test, so a
+        # 48-frame candidate base collapsed to the single landscape frame in
+        # it; and with only that frame left, the opening ladder found no match,
+        # fell through to the rank fallback, and the fallback handed back the
+        # same photo the closing ladder had already taken.
+        'covers': {
+            # Both faces, not just both identities. `persons_ids` is built from
+            # face clusters, so a name in it means a face was recognised -- but
+            # a photo carrying both names can still be one clear face and one
+            # profile at the frame edge. Two detected faces is the cheap
+            # version of "both of them are actually in the picture". Relaxed
+            # rather than enforced when it would empty the candidate base.
+            'min_faces': 2,
+
+            # Quality, from concepts already published for both model versions
+            # -- no new bin, so this needs no blob write. `portrait` and
+            # `softlight` speak to the photograph, the rest to the moment.
+            # Their mean ranked the frame the album actually opened on 32nd of
+            # its own 48 candidates, which is the judgement the ladder had no
+            # way to make.
+            'quality_concepts': ('portrait', 'smiling', 'affection',
+                                 'romance', 'softlight', 'happiness'),
+
+            'weights': {
+                # The dominant term, and deliberately so: subquery affinity
+                # says what the frame is *of*, quality says whether it is worth
+                # putting on the cover, and the second is what was missing.
+                'quality': 1.00,
+                'subquery': 0.60,
+                # `image_order` is a rank where 0 is best; the term is inverted
+                # where it is applied.
+                'rank': 0.40,
+                # A cover box is a single large box, so a frame that fills it
+                # is preferred -- a preference, never a filter. This is what
+                # the hard landscape pre-filter became.
+                'orientation': 0.25,
+                # Faces that read at cover size. Beyond the couple, more faces
+                # means a crowd, so this is a penalty on excess.
+                'crowd': 0.30,
+            },
+
+            # Faces beyond the couple before `crowd` starts to bite.
+            'crowd_slack': 1,
+            # The orientation a single-box cover fills best.
+            'preferred_orientation': 'landscape',
+
+            # The two covers must be different photos, and far enough apart in
+            # the day to read as a beginning and an end. A share of the
+            # candidate positions, not minutes: the gallery may not be one
+            # continuous session, and `_pick_cover_subset` counts for the same
+            # reason. Distinctness holds even at zero.
+            'min_separation': 0.25,
+        },
+
         # Spread the profile's percentages over the categories the gallery
         # actually has, rather than over the whole profile. The weights sum to
         # 107% and a quarter to a third of that is routinely spent on

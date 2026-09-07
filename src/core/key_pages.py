@@ -165,6 +165,167 @@ def _select_by_priority_from_subset(df_subset, queries_primary, queries_fallback
         return picked["image_id"].tolist()
 
 
+#: Subqueries each cover prefers, best first. Affinity is graded by position in
+#: the list rather than used as a filter, so a frame tagged something else stays
+#: a candidate and competes on quality.
+FIRST_COVER_QUERIES = (
+    'bride and groom smiling at each other',
+    'bride and groom posing for a portrait',
+    'bride and groom during the ceremony',
+    'bride and groom kissing',
+)
+LAST_COVER_QUERIES = (
+    'bride and groom dancing',
+    'bride and groom smiling at each other',
+    'bride and groom kissing',
+    'bride and groom during the ceremony',
+)
+
+
+def settings() -> dict:
+    return CONFIGS['covers']
+
+
+def _quality(frame, logger):
+    """Mean cosine against the cover-quality concepts, normalised over `frame`.
+
+    Zeros when the concepts cannot be scored -- no embeddings, no
+    `model_version`, a bin missing for this model version. A gallery that
+    cannot be projected loses this term and is decided by subquery and rank,
+    which is what the rule did before this term existed.
+    """
+    concepts = tuple(settings().get('quality_concepts', ()))
+    if frame.empty or not concepts:
+        return np.zeros(len(frame), dtype=float)
+
+    # Imported here: `src.core` is reached by ProcessStage, which must not gain
+    # a hard dependency on the pipeline package for an optional score term.
+    from src.pipeline.enrich.timeline import concept_scores
+
+    scored = []
+    for concept in concepts:
+        try:
+            scored.append(np.asarray(concept_scores(frame, concept), dtype=float))
+        except Exception as exc:  # noqa: BLE001 - an absent bin costs a term, not the covers
+            logger.info(f"cover quality: {concept} unavailable ({type(exc).__name__}: {exc})")
+    if not scored:
+        return np.zeros(len(frame), dtype=float)
+
+    return np.asarray(_minmax_normalize(list(np.mean(scored, axis=0))), dtype=float)
+
+
+def _subquery_affinity(frame, queries):
+    """1.0 for the first listed subquery, falling to 0 for anything unlisted."""
+    order = {name: i for i, name in enumerate(queries)}
+    span = max(1, len(queries))
+    return frame['image_subquery_content'].map(
+        lambda name: (span - order[name]) / span if name in order else 0.0
+    ).astype(float).values
+
+
+def _crowd_penalty(frame):
+    """How far past the couple the face count runs, as a 0-1 share.
+
+    A cover is of the two of them. `n_faces` at two is the couple; the confetti
+    frame that opened 53507032 carried six.
+    """
+    slack = int(settings().get('crowd_slack', 1))
+    allowed = int(settings().get('min_faces', 2)) + slack
+    excess = (frame['n_faces'].astype(float) - allowed).clip(lower=0)
+    return (excess / excess.max()).fillna(0.0).values if excess.max() > 0 else excess.values
+
+
+def _score_covers(frame, queries, logger):
+    """Score every candidate for one cover. Higher is better."""
+    weights = settings().get('weights', {})
+    preferred = settings().get('preferred_orientation', 'landscape')
+
+    rank = np.asarray(_minmax_normalize(
+        [float(v) if v == v else 0.0 for v in frame['image_order']]), dtype=float)
+    orientation = (frame['image_orientation'] == preferred).astype(float).values
+
+    return (
+        weights.get('quality', 0.0) * _quality(frame, logger)
+        + weights.get('subquery', 0.0) * _subquery_affinity(frame, queries)
+        # `image_order` is a rank where 0 is best, so the *low* end is rewarded.
+        + weights.get('rank', 0.0) * (1.0 - rank)
+        + weights.get('orientation', 0.0) * orientation
+        - weights.get('crowd', 0.0) * _crowd_penalty(frame)
+    )
+
+
+def _ranked_ids(frame, queries, logger):
+    """Candidate ids for one cover, best first."""
+    if frame.empty:
+        return []
+    scored = frame.copy()
+    scored['__score'] = _score_covers(scored, queries, logger)
+    scored = scored.sort_values('__score', ascending=False, kind='stable')
+    return scored['image_id'].tolist()
+
+
+def _candidate_base(chosen_df, bride_id, groom_id, logger):
+    """Couple frames showing both of them.
+
+    `min_faces` is relaxed rather than enforced when it would empty the base: a
+    gallery whose couple frames are all single-face crops should get a worse
+    cover, not none.
+    """
+    couple = chosen_df[
+        (chosen_df["cluster_context"] == "bride and groom") &
+        (chosen_df["persons_ids"].apply(
+            lambda x: isinstance(x, list) and bride_id in x and groom_id in x))
+    ].copy()
+
+    min_faces = int(settings().get('min_faces', 2))
+    both_faces = couple[couple["n_faces"] >= min_faces]
+    if not both_faces.empty:
+        return both_faces
+    if not couple.empty:
+        logger.info(
+            f"cover candidates: no couple frame with {min_faces}+ faces, "
+            f"relaxing to any face over {len(couple)} frames")
+    return couple[couple["n_faces"] > 0]
+
+
+def _positions(frame):
+    """Each row's place in time order, as a 0-1 share of the candidates."""
+    axis = next((column for column in _TIME_AXES if column in frame.columns), None)
+    if axis is None or frame.empty:
+        return {}
+    ordered = frame.assign(__t=pd.to_numeric(frame[axis], errors='coerce')) \
+                   .dropna(subset=['__t']) \
+                   .sort_values('__t', kind='stable')
+    span = max(1, len(ordered) - 1)
+    return {row: i / span for i, row in enumerate(ordered['image_id'])}
+
+
+def _separated(opening, candidates, frame):
+    """First candidate that is a different photo, far enough from `opening`.
+
+    Distinctness is absolute -- opening and closing are never the same frame,
+    which is the fault this replaces. The separation is a preference: if no
+    candidate clears it, the nearest distinct one is still better than a
+    repeat.
+    """
+    distinct = [c for c in candidates if c != opening]
+    if not distinct:
+        return None
+
+    minimum = float(settings().get('min_separation', 0.0))
+    if minimum <= 0:
+        return distinct[0]
+
+    places = _positions(frame)
+    here = places.get(opening)
+    if here is None:
+        return distinct[0]
+
+    far = [c for c in distinct
+           if c in places and abs(places[c] - here) >= minimum]
+    return far[0] if far else distinct[0]
+
+
 def get_important_imgs(data_df, bride_groom_df, logger):
     try:
         if bride_groom_df is not None:
@@ -177,112 +338,46 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         bride_id = chosen_df["bride_id"].values[0]
         groom_id = chosen_df["groom_id"].values[0]
 
-        first_cover_queries = [
-            'bride and groom smiling at each other',
-            'bride and groom posing for a portrait'
-        ]
-        fallback_first_queries = [
-            'bride and groom during the ceremony',
-            'bride and groom kissing'
-        ]
-        last_cover_queries = [
-            'bride and groom dancing',
-            'bride and groom smiling at each other'
-        ]
+        base = _candidate_base(chosen_df, bride_id, groom_id, logger)
 
-        ############################################################
-        base = chosen_df[
-            (chosen_df["cluster_context"] == "bride and groom") &
-            (chosen_df["persons_ids"].apply(lambda x: isinstance(x, list) and bride_id in x and groom_id in x)) &
-            (chosen_df["n_faces"] > 0)
-            ].copy()
-
-        # 2) FIRST cover: earliest time_cluster
         subset_first = _pick_cover_subset(base, position="first", window_size=10)
-        first_page_ids = _select_by_priority_from_subset(
-            subset_first, first_cover_queries, fallback_first_queries
-        )
+        first_page_ids = _ranked_ids(subset_first, FIRST_COVER_QUERIES, logger)
 
-        # 3) LAST cover: latest time_cluster
         subset_last = _pick_cover_subset(base, position="last", window_size=10)
-        last_page_ids = _select_by_priority_from_subset(
-            subset_last, last_cover_queries, fallback_first_queries
-        )
-        # Fallback to highest ranked images if no suitable cover images found
-        if len(first_page_ids) == 0 or len(last_page_ids) == 0:
-            logger.warning("No ideal cover images found, falling back to highest ranked images.")
-            # Sort all images by image_order descending (higher value = better image)
-            if bride_groom_df is None:
-                sorted_df = data_df.sort_values("image_order", ascending=False)
-            elif bride_groom_df.empty:
-                sorted_df = data_df.sort_values("image_order", ascending=False)
-            else:
-                sorted_df = bride_groom_df.sort_values("image_order", ascending=False)
-            all_image_ids = sorted_df["image_id"].tolist()
+        last_page_ids = _ranked_ids(subset_last, LAST_COVER_QUERIES, logger)
 
-            if len(all_image_ids) == 0:
+        # Fall back only for the cover that has no candidate of its own, and
+        # rank **ascending** -- `image_order` is a rank where 0 is best, so
+        # sorting it descending handed back the worst photo in the gallery.
+        if not first_page_ids or not last_page_ids:
+            logger.warning("No ideal cover images found, falling back to highest ranked images.")
+            pool = data_df
+            if bride_groom_df is not None and not bride_groom_df.empty:
+                pool = bride_groom_df
+            all_image_ids = pool.sort_values("image_order", ascending=True)["image_id"].tolist()
+
+            if not all_image_ids:
                 logger.error("No images available in the album.")
                 return [], []
 
-            # First cover gets highest ranked, last cover gets second highest
-            if len(first_page_ids) == 0:
-                first_page_ids = [all_image_ids[0]]
+            # One photo per side, and never the photo the other side holds.
+            # Taking the whole ranked list for the missing side left the other
+            # side nothing to be distinct from, which is how the collision this
+            # replaces survived into the fallback.
+            def _best_other_than(taken):
+                return next((i for i in all_image_ids if i not in taken),
+                            all_image_ids[0])
 
-            if len(last_page_ids) == 0:
-                # Get second highest, but make sure it's different from first
-                for img_id in all_image_ids[1:]:
-                    if img_id not in first_page_ids:
-                        last_page_ids = [img_id]
-                        break
-                # If only one image exists, use same for both
-                if len(last_page_ids) == 0:
-                    last_page_ids = [all_image_ids[0]]
+            if not first_page_ids:
+                first_page_ids = [_best_other_than(last_page_ids)]
+            if not last_page_ids:
+                last_page_ids = [_best_other_than(first_page_ids)]
 
         return first_page_ids, last_page_ids
 
     except Exception as e:
         logger.error(f"Error inside the function get_important_imgs {e}")
         return None, None
-
-
-def _filter_by_orientation(df, orientation):
-    if df is None or df.empty:
-        return df
-    return df[df['image_orientation'] == orientation].copy()
-
-
-def _preferred_orientation_pool(df, bride_groom_df, orientation):
-    """Return (df, bride_groom_df) filtered to `orientation`. Falls back to originals if neither filtered pool has images."""
-    df_f = _filter_by_orientation(df, orientation)
-    bg_f = _filter_by_orientation(bride_groom_df, orientation)
-    has_any = (df_f is not None and not df_f.empty) or (bg_f is not None and not bg_f.empty)
-    return (df_f, bg_f) if has_any else (df, bride_groom_df)
-
-
-def _cosine_distance(vec_a, vec_b):
-    """Cosine distance in [0, 2]; None if either vector is missing or zero-norm."""
-    if vec_a is None or vec_b is None:
-        return None
-    a = np.asarray(vec_a, dtype=float)
-    b = np.asarray(vec_b, dtype=float)
-    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
-    if denom == 0:
-        return None
-    return 1.0 - float(np.dot(a, b) / denom)
-
-
-def _lookup_column(df, image_id, column):
-    """Return the first value of `column` for `image_id`, or None if missing."""
-    if column not in df.columns:
-        return None
-    row = df.loc[df['image_id'] == image_id, column]
-    if row.empty:
-        return None
-    val = row.iloc[0]
-    # Treat np.nan as missing for scalar columns (embeddings are arrays — check for None only)
-    if isinstance(val, float) and np.isnan(val):
-        return None
-    return val
 
 
 def _minmax_normalize(values):
@@ -295,50 +390,18 @@ def _minmax_normalize(values):
     return [(v - lo) / (hi - lo) for v in values]
 
 
-def _pick_most_dissimilar(reference_id, candidate_ids, df, dist_weight=0.4, rating_weight=0.6):
-    """Pick the candidate that best balances dissimilarity to `reference_id` with its own rating.
-
-    Score = dist_weight * normalized_embedding_distance + rating_weight * normalized_image_order.
-    When embeddings are unavailable, prefers a differing `image_subquery_content`,
-    breaking ties by `image_order`.
-    """
-    if not candidate_ids:
-        return None
-    candidates = [c for c in candidate_ids if c != reference_id] or list(candidate_ids)
-    if len(candidates) == 1:
-        return candidates[0]
-
-    ratings = [_lookup_column(df, c, 'image_order') for c in candidates]
-    ref_emb = _lookup_column(df, reference_id, 'embedding')
-    distances = [
-        _cosine_distance(ref_emb, _lookup_column(df, c, 'embedding')) if ref_emb is not None else None
-        for c in candidates
-    ]
-
-    if any(d is not None for d in distances):
-        d_norm = _minmax_normalize([d if d is not None else 0.0 for d in distances])
-        r_norm = _minmax_normalize([r if r is not None else 0.0 for r in ratings])
-        # `1 - r` because a low `image_order` is a good photo; taking the argmax
-        # over the raw normalised rank preferred the worst candidate available.
-        scores = [dist_weight * d + rating_weight * (1.0 - r) for d, r in zip(d_norm, r_norm)]
-        return candidates[int(np.argmax(scores))]
-
-    # No embeddings: prefer differing subquery_content, then highest rating
-    ref_content = _lookup_column(df, reference_id, 'image_subquery_content')
-    pool = candidates
-    if ref_content is not None:
-        different = [c for c in candidates if _lookup_column(df, c, 'image_subquery_content') != ref_content]
-        if different:
-            pool = different
-    # Best rank, i.e. lowest; a missing rank must lose, so it sorts last.
-    return min(pool, key=lambda c: (_lookup_column(df, c, 'image_order') or float('inf')))
-
-
 def _select_cover_image_ids(pool_df, pool_bg, logger):
-    """Return (first_page_ids, last_page_ids): first = top of its candidate list, last = most dissimilar to first."""
+    """Return (first_page_ids, last_page_ids), one photo each and never the same.
+
+    Both lists arrive score-ordered from `get_important_imgs`, so the opening
+    is simply its best candidate. The closing takes the best candidate of its
+    own that is a different photo and far enough away in the day, rather than
+    the one most *dissimilar* to the opening: dissimilarity blended distance
+    with rank and never looked at whether the frame was any good.
+    """
     first_candidates, last_candidates = get_important_imgs(pool_df, pool_bg, logger)
 
-    # Degenerate case: at least one candidate list is missing/empty — can't run dissimilarity pick.
+    # Degenerate case: at least one candidate list is missing/empty.
     # Forward whatever we got, normalizing None to [] so the caller always gets (list, list).
     if not first_candidates or not last_candidates:
         first_page_ids = first_candidates if first_candidates else []
@@ -346,15 +409,17 @@ def _select_cover_image_ids(pool_df, pool_bg, logger):
         return first_page_ids, last_page_ids
 
     first_id = first_candidates[0]
-    last_id = _pick_most_dissimilar(first_id, last_candidates, pool_df)
+    last_id = _separated(first_id, last_candidates, pool_df)
     last_page_ids = [last_id] if last_id is not None else []
     return [first_id], last_page_ids
 
 
 def choose_good_wedding_images(df, bride_groom_df, logger):
-    # Prefer landscape covers; fall back to the full pool only if no landscapes exist
-    pool_df, pool_bg = _preferred_orientation_pool(df, bride_groom_df, "landscape")
-    first_page_ids, last_page_ids = _select_cover_image_ids(pool_df, pool_bg, logger)
+    # Orientation is a score term, not a pre-filter. Filtering on it first cost
+    # 53507032 its covers: the gallery had 42 landscapes and 48 couple frames
+    # showing both faces, but only *one* frame in both sets, so the candidate
+    # base collapsed to that single photo and it opened and closed the album.
+    first_page_ids, last_page_ids = _select_cover_image_ids(df, bride_groom_df, logger)
 
     if bride_groom_df is not None:
         if not bride_groom_df.empty and bride_groom_df['image_id'].isin(first_page_ids).any() and bride_groom_df['image_id'].isin(last_page_ids).any():
