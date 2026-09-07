@@ -14,6 +14,7 @@ import json
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from src.core.models import GroupProcessingResult
+from src.smart_cropping import face_aware_crop
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -461,8 +462,32 @@ def convert_int64_to_int(obj):
         return obj
 
 
+def box_target_ar(box_info, album_ar=2):
+    """The box's width/height in image terms, which is what a crop is fitted to."""
+    return box_info['width'] / box_info['height'] * album_ar
+
+
+def cover_box(image_info, box_info, album_ar=2, logger=None):
+    """`customize_box` for the covers, but positioned to keep the faces.
+
+    Covers only, on purpose. `customize_box` centres its window blind for
+    every placement in the album, and widening this to all of them would move
+    the crops on every spread; the covers are where it shows, because they are
+    the one photo the album opens on and the box is 1.96:1 -- a portrait keeps
+    34% of its height there, so a centred band lands below the faces and takes
+    chins. Every other placement keeps the existing behaviour.
+    """
+    if box_info['orientation'] == 'square':
+        return customize_box(image_info, box_info, album_ar)
+
+    crop = face_aware_crop(image_info, box_target_ar(box_info, album_ar), logger)
+    if crop is None:
+        return customize_box(image_info, box_info, album_ar)
+    return crop
+
+
 def customize_box(image_info, box_info, album_ar=2):
-    target_ar = box_info['width'] / box_info['height'] * album_ar
+    target_ar = box_target_ar(box_info, album_ar)
     if box_info['orientation'] == 'square':
         crop_x = image_info['cropped_x']
         crop_y = image_info['cropped_y']
@@ -564,7 +589,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)],album_ar)
+            x, y, w, h = cover_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
                                             "compositionPackageId": message.content['compositionPackageId'],
@@ -690,7 +715,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "logicalSelectionsState": None})
 
         for idx, box_id in enumerate(all_box_ids):
-            x, y, w, h = customize_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)],album_ar)
+            x, y, w, h = cover_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                                  "compositionId": counter_comp_id,
                                                  "compositionPackageId": message.content['compositionPackageId'],
