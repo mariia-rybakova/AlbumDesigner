@@ -20,10 +20,11 @@ Importing this package registers every substage it defines.
 
 from src.pipeline.select import (  # noqa: F401  (imported for registration)
     budget,
+    narrator,
     pick,
     preselect,
     publish,
     route,
 )
 
-__all__ = ["budget", "pick", "preselect", "publish", "route"]
+__all__ = ["budget", "narrator", "pick", "preselect", "publish", "route"]

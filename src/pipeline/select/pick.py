@@ -46,7 +46,13 @@ class PickSubStage(SubStage):
         self.strategies = strategies or default_registry()
 
     def applies_to(self, context: AlbumContext) -> bool:
-        return not context.selection.manual
+        if context.selection.manual:
+            return False
+        # `select.narrator` composes selection and grouping together, so when it
+        # answered there is nothing left to choose. It declines far more often
+        # than it answers (weddings, v1 embeddings, no checkpoint), and then this
+        # runs as before.
+        return context.predefined is None
 
     def execute(self, context: AlbumContext) -> AlbumContext:
         if context.facts.is_wedding:

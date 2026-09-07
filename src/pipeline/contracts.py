@@ -312,6 +312,12 @@ class AlbumContext:
     facts: GalleryFacts = field(default_factory=GalleryFacts)
     key_pages: Optional[KeyPages] = None
     selection: Optional[SelectionOutcome] = None
+    #: A fixed page grouping, when something composed one instead of merely
+    #: choosing photos -- `select.narrator` is the only producer today. Carried
+    #: as the same `PredefinedLayoutInput` an external service would send in the
+    #: request, so ProcessStage lays it out through the one path either way.
+    #: Typed loosely to keep `src.predefined` out of the contracts' imports.
+    predefined: Optional[Any] = None
 
     # -- selection working state -------------------------------------------
     # Typed as Any to keep this module free of a dependency on the selection
@@ -447,6 +453,13 @@ class AlbumContext:
             content["modified_lut"] = self.selection.lookup_table
             if self.selection.manual:
                 content["manual_selection"] = True
+
+        # The key ProcessStage reads to take the predefined-layout path. The
+        # request-level `predefinedLayout` block is parsed in SelectionStage
+        # before the pipeline runs; this is the same object arriving from
+        # inside it instead, so the layout side cannot tell the two apart.
+        if self.predefined is not None:
+            content["predefined_layout"] = self.predefined
 
         if self.error is not None:
             content["error"] = self.error

@@ -29,6 +29,17 @@ k_means_constrained==0.9.1
 # accepted, which is a ResolutionImpossible naming numpy and protobuf.
 # 9.15.6755 is also the floor k_means_constrained 0.9.x asks for.
 ortools==9.15.6755
+
+# `select.narrator` runs the albumNarrator policy for non-wedding galleries.
+# Inference only and CPU only -- no autograd, one thread per request, and the
+# measured cost is 0.18 s for a 150-photo gallery at full 768-d dims. Install
+# from the CPU index so the build does not pull the CUDA wheels:
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# Bounded by major. torch pins nothing we pin, so it does not participate in
+# the numpy/protobuf window that the ortools line above has to sit inside.
+torch>=2.0,<3
 opencv-python
 pillow
 gdown
