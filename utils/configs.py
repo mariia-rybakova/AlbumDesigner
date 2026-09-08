@@ -407,7 +407,12 @@ CONFIGS = {'DEBUG': True,
         # because it needs a checkpoint on disk and it changes what a
         # non-wedding album is; turning it on is a deliberate act.
         'narrator': {
-            'enabled': False,
+            # On for the population it was built for: a non-wedding gallery
+            # where the service is being asked to choose. It still declines far
+            # more often than it answers -- weddings keep the budgeted CP-SAT
+            # path, a v1 gallery cannot be read at 768-d, and any decline falls
+            # through to `smart_non_wedding_selection` exactly as before.
+            'enabled': True,
 
             # The trained policy. 46 MB, and loaded once per process. Read with
             # `weights_only=False` because the checkpoint carries the training

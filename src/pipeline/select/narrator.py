@@ -331,6 +331,25 @@ class NarratorSubStage(SubStage):
         if context.facts.is_wedding:
             return False
         # A manual request is already the user's album; nothing to compose.
+        #
+        # This is the boundary of "no user selection", and it is drawn at the
+        # request shape rather than at intent, because nothing distinguishes
+        # the two intents:
+        #
+        #   photoIds [1,2,3] -> AI, the user steered      -> served
+        #   photoIds []      -> AI, the user chose nothing -> served
+        #   photoIds null    -> manual                     -> NOT served
+        #   no aiMetadata    -> manual                     -> NOT served
+        #
+        # A null `photoIds` means the user assembled the album by hand and
+        # `content['photos']` holds their picks, so composing over it would
+        # discard their work -- 52755795 is a real 42-page album of exactly
+        # that kind. The cost of the rule is that a non-wedding request whose
+        # producer sends null rather than [] gets no composition at all and its
+        # whole gallery reaches layout unnarrowed. Decided deliberately: not
+        # overriding a real album is worth more than serving a request shape
+        # nothing produces yet, and Album Designer is reachable only from a
+        # wedding gallery today, so no such traffic exists to measure.
         if context.selection is not None and context.selection.manual:
             return False
         photos = context.photos

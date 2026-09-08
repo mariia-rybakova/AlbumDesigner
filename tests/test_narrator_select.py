@@ -374,3 +374,33 @@ def test_page_sizes_respect_the_policys_own_bounds():
 
     sizes = [len(s.photo_ids) for s in ctx.predefined.spreads]
     assert all(env.min_photos_per_page <= n <= env.max_photos_per_page for n in sizes), sizes
+
+
+# -- the population it is on for ------------------------------------------
+
+
+def test_enabled_by_default():
+    """It is on for non-wedding galleries; a decline still falls through to
+    `smart_non_wedding_selection`, so being on costs nothing where it does not
+    apply."""
+    from utils.configs import CONFIGS as LIVE
+
+    # Read the shipped value, not the fixture's override.
+    import importlib
+    import utils.configs as configs_module
+    shipped = importlib.reload(configs_module).CONFIGS['narrator']['enabled']
+    assert shipped is True
+
+
+def test_serves_a_non_wedding_request_where_the_user_picked_nothing():
+    """`photoIds: []` -- an AI request in which the user chose no photos. This
+    is the shape tools/dummy_request.py produces and the case the narrator
+    exists for."""
+    ctx = context()
+    ctx.hints = AiHints(present=True, photo_ids=[])
+
+    assert applies(ctx) is True
+
+
+def test_a_wedding_is_still_never_served():
+    assert applies(context(is_wedding=True)) is False
