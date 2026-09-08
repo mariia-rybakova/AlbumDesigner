@@ -261,12 +261,69 @@ class ProcessStage(Stage):
         self.logger = logger
         self.q = mp.Queue()
 
+    #: What `process_crop_images` needs, and all it needs. Every one of them is
+    #: a property of the photo, which is why one crop pass can serve N albums.
+    CROP_COLUMNS = ['image_id', 'faces_info', 'background_centroid', 'diameter',
+                    'image_as']
+
+    def _crop_once(self, messages):
+        """Crop every photo any album needs, in one subprocess.
+
+        A crop depends only on the photo -- its faces, saliency blob and aspect
+        -- never on which album chose it, so N albums cropping their own
+        selections is N passes over largely the same photos. The union is
+        deduplicated on `image_id` and cropped once.
+
+        Returns None for a single album, which keeps that path on exactly the
+        code it has always used.
+        """
+        if len(messages) < 2:
+            return None
+
+        frames = []
+        for message in messages:
+            for key in ('gallery_photos_info', 'bride and groom'):
+                part = message.content.get(key)
+                if part is None or getattr(part, 'empty', True):
+                    continue
+                if not set(self.CROP_COLUMNS).issubset(part.columns):
+                    self.logger.warning(
+                        f"Cannot share crops: {key} lacks "
+                        f"{sorted(set(self.CROP_COLUMNS) - set(part.columns))}")
+                    return None
+                frames.append(part[self.CROP_COLUMNS])
+        if not frames:
+            return None
+
+        union = pd.concat(frames).drop_duplicates(subset='image_id')
+        wanted = sum(len(f) for f in frames)
+        self.logger.info(
+            f"Cropping once for {len(messages)} albums: {len(union)} distinct "
+            f"photos of {wanted} selected ({wanted - len(union)} shared)")
+
+        worker = mp.Process(target=process_crop_images, args=(self.q, union))
+        worker.start()
+        try:
+            cropped = self.q.get(timeout=200)
+        except Exception as ex:
+            worker.terminate()
+            raise Exception('shared cropping process not completed: {}'.format(ex))
+        worker.join(timeout=5)
+        if worker.is_alive():
+            worker.terminate()
+            self.logger.error('shared cropping process not completed')
+            raise Exception('shared cropping process not completed.')
+        return cropped
+
     def process_message(self, msgs: Union[Message, List[Message]]):
         # check if its single message or list
         messages = msgs if isinstance(msgs, list) else [msgs]
         whole_messages_start = datetime.now()
 
         params = SpreadSearchParams()
+
+        # One crop pass for every album of this request, or None for one album.
+        shared_cropped = self._crop_once(messages)
 
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
@@ -286,8 +343,10 @@ class ProcessStage(Stage):
             df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
-            p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
-            p.start()
+            p = None
+            if shared_cropped is None:
+                p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
+                p.start()
 
             try:
                 stage_start = datetime.now()
@@ -336,16 +395,20 @@ class ProcessStage(Stage):
                                                 is_artificial_time=message.content.get('is_artificial_time', False))
 
                 wait_start = datetime.now()
-                try:
-                    cropped_df = self.q.get(timeout=200)
-                except Exception as e:
-                    p.terminate()
-                    raise Exception('cropping process not completed: {}'.format(e))
-                p.join(timeout=5)
-                if p.is_alive():
-                    p.terminate()
-                    self.logger.error('cropping process not completed 2')
-                    raise Exception('cropping process not completed.')
+                if p is None:
+                    # Already cropped for every album of this request.
+                    cropped_df = shared_cropped
+                else:
+                    try:
+                        cropped_df = self.q.get(timeout=200)
+                    except Exception as e:
+                        p.terminate()
+                        raise Exception('cropping process not completed: {}'.format(e))
+                    p.join(timeout=5)
+                    if p.is_alive():
+                        p.terminate()
+                        self.logger.error('cropping process not completed 2')
+                        raise Exception('cropping process not completed.')
 
                 df = df.merge(cropped_df, how='left', on='image_id')
 
