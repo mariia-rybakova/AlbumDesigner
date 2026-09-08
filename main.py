@@ -24,12 +24,14 @@ from ptinfra import  AbortRequested
 
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
-from src.pipeline import AlbumContext, build_select
+from src.pipeline import (AlbumContext, album_group, build_select,
+                          compose_albums)
 from src.core.key_pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
 from src.predefined.models import PredefinedLayoutInput
 from src.predefined.processing import predefined_layout_processing, build_first_last_pages
+from src.album_response import build_reply, encoded_size
 from src.request_processing import read_messages, assembly_output
 from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
@@ -84,8 +86,13 @@ def push_report_error(one_msg, az_connection_string, logger=None):
         raise Exception(f'Report queue error, message not sent, error: {ex}. Exception in function: {func}, line {lineno}, file {filename}.')
 
 
-def push_report_msg(one_msg, az_connection_string, logger=None):
-    '''Push result to the report queue'''
+def push_report_msg(one_msg, az_connection_string, logger=None, result_doc=None):
+    '''Push result to the report queue.
+
+    ``result_doc`` overrides the message's own `album_doc`, which is how a
+    multi-album reply -- one payload covering every album of the request -- is
+    sent without giving any single album's message a doc it did not produce.
+    '''
 
     try:
         q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
@@ -93,7 +100,7 @@ def push_report_msg(one_msg, az_connection_string, logger=None):
     except Exception as ex:
         pass
     # q_name = one_msg.content['replyQueueName']
-    result_doc = one_msg.album_doc
+    result_doc = one_msg.album_doc if result_doc is None else result_doc
     jsonContent = json.dumps(result_doc)
     compressed = gzip.compress(jsonContent.encode("ascii"))
     base64Content = base64.b64encode(compressed).decode("ascii")
@@ -205,17 +212,34 @@ class SelectionStage(Stage):
                 # merged: `route._manual` aligns the frame with the user's list
                 # and widens the lookup table, and `route._ai` does the pool
                 # narrowing that used to sit here.
-                context = self.pipeline.run(
-                    AlbumContext.for_message(_msg, logger=self.logger)
-                )
+                # One album per planned variant, each composed from its own
+                # copy of the read's output. At N=1 -- which is every request
+                # until `enrich.variants` lands -- this is exactly the single
+                # `pipeline.run(for_message(...))` it replaces; the point is
+                # that N>1 cannot contaminate, because albums never share the
+                # frame selection narrows.
+                # N comes from `enrich.variants` -- a fact about the gallery,
+                # carried on the context the read attached. `count` is only the
+                # fallback for a message that never went through ENRICH.
+                settings = CONFIGS.get('albums', {})
+                runs = compose_albums(_msg, self.pipeline,
+                                      count=int(settings.get('count', 1)),
+                                      logger=self.logger,
+                                      seed=settings.get('seed'))
 
-                if context.failed:
-                    self.logger.error(f"Error for Selection images for this message {_msg}")
-                    _msg.content['error'] = f"Error for Selection images for this message {_msg}"
-                    updated_messages.append(_msg)
-                    continue
-
-                updated_messages.append(context.sync_to_message())
+                # One message per album -- siblings after the first -- so
+                # ProcessStage lays each one out without them colliding. At
+                # count=1 this is the original message and nothing changes.
+                for run in runs:
+                    if run.context.failed:
+                        self.logger.error(
+                            f"Error for Selection images for this message {_msg}"
+                            + (f" (album {run.index})" if len(runs) > 1 else ""))
+                        run.message.content['error'] = (
+                            f"Error for Selection images for this message {_msg}")
+                        updated_messages.append(run.message)
+                        continue
+                    updated_messages.append(run.context.sync_to_message())
 
         except Exception as ex:
             tb = traceback.extract_tb(ex.__traceback__)
@@ -237,12 +261,69 @@ class ProcessStage(Stage):
         self.logger = logger
         self.q = mp.Queue()
 
+    #: What `process_crop_images` needs, and all it needs. Every one of them is
+    #: a property of the photo, which is why one crop pass can serve N albums.
+    CROP_COLUMNS = ['image_id', 'faces_info', 'background_centroid', 'diameter',
+                    'image_as']
+
+    def _crop_once(self, messages):
+        """Crop every photo any album needs, in one subprocess.
+
+        A crop depends only on the photo -- its faces, saliency blob and aspect
+        -- never on which album chose it, so N albums cropping their own
+        selections is N passes over largely the same photos. The union is
+        deduplicated on `image_id` and cropped once.
+
+        Returns None for a single album, which keeps that path on exactly the
+        code it has always used.
+        """
+        if len(messages) < 2:
+            return None
+
+        frames = []
+        for message in messages:
+            for key in ('gallery_photos_info', 'bride and groom'):
+                part = message.content.get(key)
+                if part is None or getattr(part, 'empty', True):
+                    continue
+                if not set(self.CROP_COLUMNS).issubset(part.columns):
+                    self.logger.warning(
+                        f"Cannot share crops: {key} lacks "
+                        f"{sorted(set(self.CROP_COLUMNS) - set(part.columns))}")
+                    return None
+                frames.append(part[self.CROP_COLUMNS])
+        if not frames:
+            return None
+
+        union = pd.concat(frames).drop_duplicates(subset='image_id')
+        wanted = sum(len(f) for f in frames)
+        self.logger.info(
+            f"Cropping once for {len(messages)} albums: {len(union)} distinct "
+            f"photos of {wanted} selected ({wanted - len(union)} shared)")
+
+        worker = mp.Process(target=process_crop_images, args=(self.q, union))
+        worker.start()
+        try:
+            cropped = self.q.get(timeout=200)
+        except Exception as ex:
+            worker.terminate()
+            raise Exception('shared cropping process not completed: {}'.format(ex))
+        worker.join(timeout=5)
+        if worker.is_alive():
+            worker.terminate()
+            self.logger.error('shared cropping process not completed')
+            raise Exception('shared cropping process not completed.')
+        return cropped
+
     def process_message(self, msgs: Union[Message, List[Message]]):
         # check if its single message or list
         messages = msgs if isinstance(msgs, list) else [msgs]
         whole_messages_start = datetime.now()
 
         params = SpreadSearchParams()
+
+        # One crop pass for every album of this request, or None for one album.
+        shared_cropped = self._crop_once(messages)
 
         for i,message in enumerate(messages):
             self.logger.debug("Params for this Gallery are: {}".format(params))
@@ -262,8 +343,10 @@ class ProcessStage(Stage):
             df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
-            p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
-            p.start()
+            p = None
+            if shared_cropped is None:
+                p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
+                p.start()
 
             try:
                 stage_start = datetime.now()
@@ -312,16 +395,20 @@ class ProcessStage(Stage):
                                                 is_artificial_time=message.content.get('is_artificial_time', False))
 
                 wait_start = datetime.now()
-                try:
-                    cropped_df = self.q.get(timeout=200)
-                except Exception as e:
-                    p.terminate()
-                    raise Exception('cropping process not completed: {}'.format(e))
-                p.join(timeout=5)
-                if p.is_alive():
-                    p.terminate()
-                    self.logger.error('cropping process not completed 2')
-                    raise Exception('cropping process not completed.')
+                if p is None:
+                    # Already cropped for every album of this request.
+                    cropped_df = shared_cropped
+                else:
+                    try:
+                        cropped_df = self.q.get(timeout=200)
+                    except Exception as e:
+                        p.terminate()
+                        raise Exception('cropping process not completed: {}'.format(e))
+                    p.join(timeout=5)
+                    if p.is_alive():
+                        p.terminate()
+                        self.logger.error('cropping process not completed 2')
+                        raise Exception('cropping process not completed.')
 
                 df = df.merge(cropped_df, how='left', on='image_id')
 
@@ -422,12 +509,13 @@ class ReportStage(Stage):
                                                avg_time(processing_time_list), avg_time(reporting_time_list),
                                                global_average))
 
-    def report_one_message(self, one_msg):
+    def report_one_message(self, one_msg, result_doc=None):
         if one_msg.error:
             push_report_error(one_msg,self.az_connection_string,self.logger)
             self.logger.debug('REPORT ERROR MESSAGE  {}.'.format(one_msg.error))
         else:
-            push_report_msg(one_msg, self.az_connection_string, self.logger)
+            push_report_msg(one_msg, self.az_connection_string, self.logger,
+                            result_doc=result_doc)
             self.logger.debug('Message was reported to the queue: {}/{}. '.format(one_msg.content['projectId'], one_msg.content['conditionId']))
 
     def report_message(self, msgs: Union[Message, List[Message]]):
@@ -440,13 +528,34 @@ class ReportStage(Stage):
             except Exception as e:
                 self.logger.error('Error while deleting message: {}. Exception: {}'.format(msgs, e))
         elif isinstance(msgs, list):
-            for one_msg in msgs:
-                self.report_one_message(one_msg)
+            # Grouped by the queue message they came from, because N albums of
+            # one gallery arrive as N sibling messages sharing one `source`.
+            # Reporting each would send N results for one request and, worse,
+            # delete the same underlying queue message N times. So: one report
+            # and one delete per group.
+            for group in album_group(msgs):
+                first = group[0]
+                reply = None
+                if len(group) > 1:
+                    # One payload for the whole request: `composition` is the
+                    # first album, `albums` carries them all, and the size
+                    # guard drops any that will not fit rather than letting
+                    # the send fail opaquely at the queue.
+                    reply = build_reply(
+                        [getattr(m, 'album_doc', None) for m in group],
+                        [getattr(m, 'variant_name', None) for m in group],
+                        logger=self.logger)
+                    self.logger.info(
+                        f"Reporting {len(group)} albums for request "
+                        f"{first.content.get('conditionId')}"
+                        + (f", {encoded_size(reply)} bytes encoded"
+                           if reply else ""))
+                self.report_one_message(first, result_doc=reply)
                 try:
-                    self.logger.debug('deleting message id  {}.'.format(one_msg.source.id))
-                    one_msg.delete()
+                    self.logger.debug('deleting message id  {}.'.format(first.source.id))
+                    first.delete()
                 except Exception as e:
-                    self.logger.error('Error while deleting message: {}. Exception: {}'.format(one_msg, e))
+                    self.logger.error('Error while deleting message: {}. Exception: {}'.format(first, e))
 
         reporting_time = (datetime.now() - start) / (len(msgs) if isinstance(msgs, list) and len(msgs) > 0 else 1)
         reporting_time_list.append(reporting_time)

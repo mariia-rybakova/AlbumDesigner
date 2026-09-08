@@ -110,6 +110,9 @@ ENRICH: Sequence[str] = (
     "enrich.parents",
     "enrich.ceremony_anchor",
     "enrich.key_pages",
+    # Last: the album plan is derived from everything above it, and its count
+    # is what SELECT then runs once per.
+    "enrich.variants",
 )
 
 #: Choosing the photos and the per-category spread budget.

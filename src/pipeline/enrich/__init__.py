@@ -23,7 +23,7 @@ anything else, which is the reason for pulling them apart.
 Importing this package registers every substage it defines.
 """
 
-from src.pipeline.enrich import (  # noqa: F401  (imported for registration)
+from src.pipeline.enrich import (  # noqa: F401  (imported for registration,
     ceremony_anchor,
     classification,
     dedupe,
@@ -31,7 +31,8 @@ from src.pipeline.enrich import (  # noqa: F401  (imported for registration)
     identities,
     key_pages,
     temporal,
+    variants,
 )
 
 __all__ = ["ceremony_anchor", "classification", "dedupe", "hygiene", "identities",
-           "key_pages", "temporal", "timeline"]
+           "key_pages", "temporal", "timeline", "variants"]

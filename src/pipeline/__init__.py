@@ -38,6 +38,9 @@ from src.pipeline.contracts import (
     ctx,
     photo,
 )
+from src.pipeline.albums import (AlbumRun, AlbumVariant, GalleryBase,
+                                 album_group, compose_albums,
+                                 sibling_message)
 from src.pipeline.runner import Pipeline, chain
 from src.pipeline.substage import FunctionSubStage, SubStage
 
@@ -62,6 +65,12 @@ from src.pipeline.registry import (  # noqa: E402
 )
 
 __all__ = [
+    "AlbumRun",
+    "AlbumVariant",
+    "GalleryBase",
+    "album_group",
+    "compose_albums",
+    "sibling_message",
     "AiHints",
     "AlbumContext",
     "Col",

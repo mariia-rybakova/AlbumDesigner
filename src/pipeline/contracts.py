@@ -318,6 +318,13 @@ class AlbumContext:
     #: request, so ProcessStage lays it out through the one path either way.
     #: Typed loosely to keep `src.predefined` out of the contracts' imports.
     predefined: Optional[Any] = None
+    #: The albums `enrich.variants` planned for this gallery, one brief each.
+    #: ``len(variants)`` is how many albums get composed; one is the normal
+    #: case and overrides nothing. Typed loosely to keep `albums` out of the
+    #: contracts' imports.
+    variants: Optional[List[Any]] = None
+    #: Which brief produced this album, for logs and for the report.
+    variant_name: Optional[str] = None
 
     # -- selection working state -------------------------------------------
     # Typed as Any to keep this module free of a dependency on the selection
