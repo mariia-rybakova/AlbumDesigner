@@ -323,6 +323,9 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
         # the laid-out frame, `album_doc` -- cannot collide. Album 0 keeps the
         # original, so N=1 is unchanged.
         context.message = sibling_message(message, index, len(planned))
+        # The report side labels each album from its message, because that is
+        # all it has by then -- the contexts do not travel between stages.
+        setattr(context.message, "variant_name", context.variant_name)
         runs.append(AlbumRun(index=index, context=pipeline.run(context),
                              variant=variant))
     return runs

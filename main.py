@@ -31,6 +31,7 @@ from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
 from src.predefined.models import PredefinedLayoutInput
 from src.predefined.processing import predefined_layout_processing, build_first_last_pages
+from src.album_response import build_reply, encoded_size
 from src.request_processing import read_messages, assembly_output
 from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
@@ -85,8 +86,13 @@ def push_report_error(one_msg, az_connection_string, logger=None):
         raise Exception(f'Report queue error, message not sent, error: {ex}. Exception in function: {func}, line {lineno}, file {filename}.')
 
 
-def push_report_msg(one_msg, az_connection_string, logger=None):
-    '''Push result to the report queue'''
+def push_report_msg(one_msg, az_connection_string, logger=None, result_doc=None):
+    '''Push result to the report queue.
+
+    ``result_doc`` overrides the message's own `album_doc`, which is how a
+    multi-album reply -- one payload covering every album of the request -- is
+    sent without giving any single album's message a doc it did not produce.
+    '''
 
     try:
         q_client = QueueClient.from_connection_string(az_connection_string, one_msg.content['replyQueueName'])
@@ -94,7 +100,7 @@ def push_report_msg(one_msg, az_connection_string, logger=None):
     except Exception as ex:
         pass
     # q_name = one_msg.content['replyQueueName']
-    result_doc = one_msg.album_doc
+    result_doc = one_msg.album_doc if result_doc is None else result_doc
     jsonContent = json.dumps(result_doc)
     compressed = gzip.compress(jsonContent.encode("ascii"))
     base64Content = base64.b64encode(compressed).decode("ascii")
@@ -440,12 +446,13 @@ class ReportStage(Stage):
                                                avg_time(processing_time_list), avg_time(reporting_time_list),
                                                global_average))
 
-    def report_one_message(self, one_msg):
+    def report_one_message(self, one_msg, result_doc=None):
         if one_msg.error:
             push_report_error(one_msg,self.az_connection_string,self.logger)
             self.logger.debug('REPORT ERROR MESSAGE  {}.'.format(one_msg.error))
         else:
-            push_report_msg(one_msg, self.az_connection_string, self.logger)
+            push_report_msg(one_msg, self.az_connection_string, self.logger,
+                            result_doc=result_doc)
             self.logger.debug('Message was reported to the queue: {}/{}. '.format(one_msg.content['projectId'], one_msg.content['conditionId']))
 
     def report_message(self, msgs: Union[Message, List[Message]]):
@@ -465,14 +472,22 @@ class ReportStage(Stage):
             # and one delete per group.
             for group in album_group(msgs):
                 first = group[0]
+                reply = None
                 if len(group) > 1:
+                    # One payload for the whole request: `composition` is the
+                    # first album, `albums` carries them all, and the size
+                    # guard drops any that will not fit rather than letting
+                    # the send fail opaquely at the queue.
+                    reply = build_reply(
+                        [getattr(m, 'album_doc', None) for m in group],
+                        [getattr(m, 'variant_name', None) for m in group],
+                        logger=self.logger)
                     self.logger.info(
                         f"Reporting {len(group)} albums for request "
-                        f"{first.content.get('conditionId')}")
-                # Which album is reported is Phase 4's question -- the
-                # `albums` key and the size guard. Until then the first one
-                # goes out, which is the contract that exists today.
-                self.report_one_message(first)
+                        f"{first.content.get('conditionId')}"
+                        + (f", {encoded_size(reply)} bytes encoded"
+                           if reply else ""))
+                self.report_one_message(first, result_doc=reply)
                 try:
                     self.logger.debug('deleting message id  {}.'.format(first.source.id))
                     first.delete()

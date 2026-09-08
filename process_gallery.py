@@ -342,8 +342,15 @@ def process_gallery(input_request):
 
     message = get_selection(msgs[0], logger)
 
+    # Lay out every album, not just the first. ProcessStage already accepts a
+    # list -- which is how the service receives sibling messages -- so passing
+    # the whole set is both what production does and the only way each album
+    # ends up with an `album_doc` for the reply. One album passes a single
+    # message, exactly as before.
     process_stage = ProcessStage(logger=logger)
-    message = process_stage.process_message(message)
+    to_lay_out = [run.message for run in ALBUM_RUNS] if len(ALBUM_RUNS) > 1 else message
+    laid_out = process_stage.process_message(to_lay_out)
+    message = laid_out[0] if isinstance(laid_out, list) else laid_out
     final_album_result = message.album_doc
 
     return final_album_result, message
@@ -539,9 +546,22 @@ if __name__ == '__main__':
               f'photos each {[len(c) for c in chosen]}, '
               f'distinct selections {distinct}')
         print('ALBUMS IDENTICAL' if distinct == 1 else 'ALBUMS DIFFER')
-        first = set(chosen[0])
-        for other in chosen[1:]:
-            print(f'  overlap with album 0: {len(first & set(other))} photos')
+        # The reply that would go on the queue for this request.
+        from src.album_response import build_reply, encoded_size
+        reply = build_reply(
+            [getattr(r.message, 'album_doc', None) for r in ALBUM_RUNS],
+            [getattr(r.message, 'variant_name', None) for r in ALBUM_RUNS])
+        if reply is not None:
+            print('REPLY keys', sorted(reply))
+            entries = reply.get('albums') or []
+            for entry in entries:
+                print('REPLY album', entry['albumIndex'],
+                      'variant', entry.get('variant'),
+                      'spreads', len(entry['composition']['compositions']))
+            if not entries:
+                print('REPLY single album (no `albums` key)')
+            print('REPLY encoded', encoded_size(reply), 'bytes of 65536 cap,',
+                  'omitted', reply.get('albumsOmitted', 0))
 
     print('FINAL SPREADS', len(final_album['composition']['compositions']))
     print(final_album)
