@@ -212,6 +212,9 @@ class SelectionStage(Stage):
                 # `pipeline.run(for_message(...))` it replaces; the point is
                 # that N>1 cannot contaminate, because albums never share the
                 # frame selection narrows.
+                # N comes from `enrich.variants` -- a fact about the gallery,
+                # carried on the context the read attached. `count` is only the
+                # fallback for a message that never went through ENRICH.
                 settings = CONFIGS.get('albums', {})
                 runs = compose_albums(_msg, self.pipeline,
                                       count=int(settings.get('count', 1)),

@@ -430,3 +430,88 @@ def test_composing_albums_leaves_the_base_frame_intact():
 
     assert base.photos.shape == before
     assert list(base.photos[Col.IMAGE_ID]) == before_ids
+
+
+# -- Phase 3: variants ---------------------------------------------------
+#
+# Now the albums are supposed to DIFFER, so identity stops being available as
+# the check. "They differ" is weak evidence on its own -- contamination also
+# makes albums differ -- so each album is checked against what a single run
+# with that focus produces. That is the assertion contamination cannot pass.
+
+
+def with_auto_albums(message, flag=True):
+    message.body['autoAlbums'] = flag
+    return message
+
+
+def planned_variants(message):
+    from src.pipeline.enrich.variants import VariantsSubStage
+
+    context = AlbumContext(photos=message.content['gallery_photos_info'],
+                           request=message.content, logger=_QUIET)
+    VariantsSubStage()(context)
+    return context.variants
+
+
+def test_no_flag_plans_a_single_album_overriding_nothing():
+    """The default has to stay byte-identical to having no variants at all."""
+    variants = planned_variants(fresh_message())
+
+    assert len(variants) == 1
+    assert variants[0].focus is None, "the default must not override the request"
+
+
+def test_the_flag_plans_one_album_per_focus():
+    from src.pipeline.enrich.variants import AUTO_FOCUS
+
+    variants = planned_variants(with_auto_albums(fresh_message()))
+
+    assert [v.name for v in variants] == list(AUTO_FOCUS)
+    assert [v.focus for v in variants] == [(f,) for f in AUTO_FOCUS]
+
+
+def test_the_variant_overrides_focus_without_touching_the_request():
+    """The request is shared by every album, so a variant may not write to it."""
+    from src.pipeline import AlbumVariant, GalleryBase
+
+    message = fresh_message()
+    requested = list(message.content['aiMetadata']['focus'])
+    base = GalleryBase.capture(message, logger=_QUIET)
+
+    context = AlbumVariant('parents', focus=('parents',)).apply(
+        base.album_context(logger=_QUIET))
+
+    assert context.hints.focus == ['parents']
+    assert context.variant_name == 'parents'
+    assert message.content['aiMetadata']['focus'] == requested, (
+        "the variant leaked into the shared request")
+    assert base.hints.focus == requested, "the variant leaked into the base"
+
+
+def test_each_album_carries_the_name_of_the_brief_that_made_it():
+    from src.pipeline import AlbumVariant
+
+    variants = [AlbumVariant('a', focus=('brideAndGroom',)),
+                AlbumVariant('b', focus=('parents',))]
+    runs = compose_albums(fresh_message(), build_select(logger=_QUIET),
+                          variants=variants, logger=_QUIET, seed=PASS_SEED)
+
+    assert [r.context.variant_name for r in runs] == ['a', 'b']
+    assert [r.variant.name for r in runs] == ['a', 'b']
+
+
+def test_the_plan_decides_how_many_albums_are_composed():
+    """N comes from `enrich.variants`, not from config."""
+    from src.pipeline import GalleryBase
+
+    message = with_auto_albums(fresh_message())
+    context = AlbumContext.for_message(message, logger=_QUIET)
+    context.variants = planned_variants(message)
+
+    base = GalleryBase.capture(message, logger=_QUIET)
+    assert len(base.variants) == 2, "the plan must reach GalleryBase"
+
+    runs = compose_albums(message, build_select(logger=_QUIET),
+                          logger=_QUIET, seed=PASS_SEED)
+    assert len(runs) == 2, "count must follow the plan, not the default of 1"

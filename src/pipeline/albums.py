@@ -31,7 +31,41 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from dataclasses import replace as _replace
+
 from src.pipeline.contracts import AlbumContext, AiHints, GalleryFacts, Services
+
+
+@dataclass(frozen=True)
+class AlbumVariant:
+    """One album's brief: what to compose differently from the request.
+
+    A variant is an *override*, not a whole configuration, so a field left
+    None means "as the request asked". That is what makes the default -- a
+    single variant overriding nothing -- byte-identical to not having variants
+    at all.
+
+    ``focus`` is the only axis today, and it is the cheapest real one: it names
+    a column of `files/focus_csv.csv`, which is the per-category spread profile
+    the budget is built from, so two focus values give genuinely different
+    albums out of one gallery read. `brideAndGroom`, `parents` and
+    `everyoneElse` are the columns that exist.
+    """
+
+    name: str
+    focus: Optional[Tuple[str, ...]] = None
+
+    def apply(self, context: AlbumContext) -> AlbumContext:
+        """Overlay this variant onto a fresh album context.
+
+        Applied to the context rather than to the request, because the request
+        is shared by every album -- and `hints` is replaced rather than mutated
+        for the same reason.
+        """
+        if self.focus is not None:
+            context.hints = _replace(context.hints, focus=list(self.focus))
+        context.variant_name = self.name
+        return context
 
 
 @dataclass(frozen=True)
@@ -66,8 +100,12 @@ class GalleryBase:
     available_photo_ids: Tuple[int, ...]
     key_pages: Any
 
+    #: The album briefs `enrich.variants` planned for this gallery. Empty means
+    #: nobody planned any, and one album with no overrides is composed.
+    variants: Tuple[Any, ...] = ()
+
     #: Shared (by reference).
-    designs: Any
+    designs: Any = None
     clip_embeddings: Optional[pd.DataFrame] = None
     ratings: Optional[pd.DataFrame] = None
     social_circles: Optional[pd.DataFrame] = None
@@ -96,6 +134,7 @@ class GalleryBase:
             hints=source.hints,
             available_photo_ids=tuple(source.available_photo_ids or ()),
             key_pages=source.key_pages,
+            variants=tuple(getattr(source, "variants", None) or ()),
             designs=source.designs,
             clip_embeddings=source.clip_embeddings,
             ratings=source.ratings,
@@ -262,7 +301,15 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
     where it should come from.
     """
     base = GalleryBase.capture(message, logger=logger, services=services)
-    planned = list(variants) if variants is not None else [None] * max(1, count)
+    if variants is not None:
+        planned = list(variants)
+    elif base.variants:
+        # What `enrich.variants` decided for this gallery. The count comes from
+        # the plan, not from config: how many albums are worth making is a fact
+        # about the gallery.
+        planned = list(base.variants)
+    else:
+        planned = [None] * max(1, count)
 
     runs: List[AlbumRun] = []
     for index, variant in enumerate(planned):
@@ -270,6 +317,8 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
             random.seed(seed)
             np.random.seed(seed)
         context = base.album_context(logger=logger)
+        if variant is not None and hasattr(variant, "apply"):
+            variant.apply(context)
         # Each album publishes to its own message, so ProcessStage's writes --
         # the laid-out frame, `album_doc` -- cannot collide. Album 0 keeps the
         # original, so N=1 is unchanged.

@@ -530,10 +530,18 @@ if __name__ == '__main__':
     if len(ALBUM_RUNS) > 1:
         chosen = [tuple(run.photo_ids) for run in ALBUM_RUNS]
         distinct = len(set(chosen))
+        for run in ALBUM_RUNS:
+            name = run.context.variant_name or f'album {run.index}'
+            focus = run.context.hints.focus
+            print(f'ALBUM {run.index} variant={name} focus={focus} '
+                  f'photos={len(run.photo_ids)}')
         print(f'ALBUMS COMPOSED {len(ALBUM_RUNS)}, '
               f'photos each {[len(c) for c in chosen]}, '
               f'distinct selections {distinct}')
-        print('ALBUMS IDENTICAL' if distinct == 1 else 'ALBUMS DIVERGED')
+        print('ALBUMS IDENTICAL' if distinct == 1 else 'ALBUMS DIFFER')
+        first = set(chosen[0])
+        for other in chosen[1:]:
+            print(f'  overlap with album 0: {len(first & set(other))} photos')
 
     print('FINAL SPREADS', len(final_album['composition']['compositions']))
     print(final_album)
