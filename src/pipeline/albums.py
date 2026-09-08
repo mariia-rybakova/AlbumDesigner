@@ -139,6 +139,79 @@ class GalleryBase:
         )
 
 
+#: Attributes ProcessStage and assembly_output read off the message object
+#: itself rather than out of ``content``. A sibling is useless without them,
+#: and they are reference data, so they are shared rather than copied.
+_SHARED_MESSAGE_ATTRS = ("designsInfo", "pagesInfo")
+
+
+def sibling_message(message, index: int, count: int):
+    """A message of its own for album ``index``, sharing the source.
+
+    Albums after the first need somewhere private to put their results:
+    ProcessStage writes the laid-out frame and ``album_doc`` onto the message,
+    so N albums on one message would overwrite each other. ``content`` is a
+    read-only property over ``body``, so the body is what gets replaced -- a
+    shallow copy, which gives each album its own key mapping while the values
+    it never writes (designInfo, aiMetadata, ...) stay shared.
+
+    The source and parent queue are deliberately the *same* object: this is one
+    queue message that happens to produce several albums. That makes
+    ``delete()`` dangerous on a sibling -- it would delete the one underlying
+    queue message N times -- so only the group's first message is ever deleted.
+    :func:`album_group` is how the report side finds that out.
+
+    Album 0 keeps the original message, so at N=1 nothing about the message
+    plumbing changes at all.
+    """
+    if index == 0:
+        original = message
+        setattr(original, "album_index", 0)
+        setattr(original, "album_count", count)
+        return original
+
+    # `copy.copy` rather than `type(message)(...)`: the constructor signature
+    # is ptinfra's, and reconstructing would also drop any attribute a stage
+    # has since hung on the message. The copy keeps `source` and `parent`, so
+    # the sibling still refers to the one real queue message.
+    twin = copy.copy(message)
+    if not hasattr(message, "body"):
+        # `content` is a read-only property over `body` on a real Message, so
+        # `body` is the only place a private mapping can be installed. Refuse
+        # loudly rather than hand back a sibling that silently shares content.
+        raise TypeError(f"{type(message).__name__} has no `body`; a sibling "
+                        "album message cannot be given its own content")
+    twin.body = dict(message.body)
+    for attr in _SHARED_MESSAGE_ATTRS:
+        if hasattr(message, attr):
+            setattr(twin, attr, getattr(message, attr))
+    twin.error = None
+    setattr(twin, "album_index", index)
+    setattr(twin, "album_count", count)
+    setattr(twin, "album_sibling_of", message)
+    return twin
+
+
+def album_group(messages) -> List[List[Any]]:
+    """Group messages by the queue message they came from, order preserved.
+
+    Siblings share ``source``, so this is what lets the report side send one
+    result and delete one queue message however many albums were produced.
+    Messages with no siblings group alone, which is every message today.
+    """
+    groups: List[List[Any]] = []
+    seen: Dict[int, int] = {}
+    for message in messages:
+        source = getattr(message, "source", None)
+        key = id(source) if source is not None else id(message)
+        if key in seen:
+            groups[seen[key]].append(message)
+        else:
+            seen[key] = len(groups)
+            groups.append([message])
+    return groups
+
+
 @dataclass
 class AlbumRun:
     """One album's outcome: which variant produced it, and what it produced."""
@@ -146,6 +219,11 @@ class AlbumRun:
     index: int
     context: AlbumContext
     variant: Optional[Any] = None
+
+    @property
+    def message(self):
+        """The message this album publishes to (its sibling, or the original)."""
+        return self.context.message
 
     @property
     def failed(self) -> bool:
@@ -191,6 +269,11 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
-        context = pipeline.run(base.album_context(logger=logger))
-        runs.append(AlbumRun(index=index, context=context, variant=variant))
+        context = base.album_context(logger=logger)
+        # Each album publishes to its own message, so ProcessStage's writes --
+        # the laid-out frame, `album_doc` -- cannot collide. Album 0 keeps the
+        # original, so N=1 is unchanged.
+        context.message = sibling_message(message, index, len(planned))
+        runs.append(AlbumRun(index=index, context=pipeline.run(context),
+                             variant=variant))
     return runs

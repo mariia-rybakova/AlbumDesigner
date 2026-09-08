@@ -24,7 +24,8 @@ from ptinfra import  AbortRequested
 
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
-from src.pipeline import AlbumContext, build_select, compose_albums
+from src.pipeline import (AlbumContext, album_group, build_select,
+                          compose_albums)
 from src.core.key_pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
@@ -211,17 +212,25 @@ class SelectionStage(Stage):
                 # `pipeline.run(for_message(...))` it replaces; the point is
                 # that N>1 cannot contaminate, because albums never share the
                 # frame selection narrows.
-                runs = compose_albums(_msg, self.pipeline, count=1,
-                                      logger=self.logger)
-                context = runs[0].context
+                settings = CONFIGS.get('albums', {})
+                runs = compose_albums(_msg, self.pipeline,
+                                      count=int(settings.get('count', 1)),
+                                      logger=self.logger,
+                                      seed=settings.get('seed'))
 
-                if context.failed:
-                    self.logger.error(f"Error for Selection images for this message {_msg}")
-                    _msg.content['error'] = f"Error for Selection images for this message {_msg}"
-                    updated_messages.append(_msg)
-                    continue
-
-                updated_messages.append(context.sync_to_message())
+                # One message per album -- siblings after the first -- so
+                # ProcessStage lays each one out without them colliding. At
+                # count=1 this is the original message and nothing changes.
+                for run in runs:
+                    if run.context.failed:
+                        self.logger.error(
+                            f"Error for Selection images for this message {_msg}"
+                            + (f" (album {run.index})" if len(runs) > 1 else ""))
+                        run.message.content['error'] = (
+                            f"Error for Selection images for this message {_msg}")
+                        updated_messages.append(run.message)
+                        continue
+                    updated_messages.append(run.context.sync_to_message())
 
         except Exception as ex:
             tb = traceback.extract_tb(ex.__traceback__)
@@ -446,13 +455,26 @@ class ReportStage(Stage):
             except Exception as e:
                 self.logger.error('Error while deleting message: {}. Exception: {}'.format(msgs, e))
         elif isinstance(msgs, list):
-            for one_msg in msgs:
-                self.report_one_message(one_msg)
+            # Grouped by the queue message they came from, because N albums of
+            # one gallery arrive as N sibling messages sharing one `source`.
+            # Reporting each would send N results for one request and, worse,
+            # delete the same underlying queue message N times. So: one report
+            # and one delete per group.
+            for group in album_group(msgs):
+                first = group[0]
+                if len(group) > 1:
+                    self.logger.info(
+                        f"Reporting {len(group)} albums for request "
+                        f"{first.content.get('conditionId')}")
+                # Which album is reported is Phase 4's question -- the
+                # `albums` key and the size guard. Until then the first one
+                # goes out, which is the contract that exists today.
+                self.report_one_message(first)
                 try:
-                    self.logger.debug('deleting message id  {}.'.format(one_msg.source.id))
-                    one_msg.delete()
+                    self.logger.debug('deleting message id  {}.'.format(first.source.id))
+                    first.delete()
                 except Exception as e:
-                    self.logger.error('Error while deleting message: {}. Exception: {}'.format(one_msg, e))
+                    self.logger.error('Error while deleting message: {}. Exception: {}'.format(first, e))
 
         reporting_time = (datetime.now() - start) / (len(msgs) if isinstance(msgs, list) and len(msgs) > 0 else 1)
         reporting_time_list.append(reporting_time)

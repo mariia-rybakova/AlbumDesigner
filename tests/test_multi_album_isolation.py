@@ -103,23 +103,48 @@ def gallery_frame(n: int = GALLERY_SIZE) -> pd.DataFrame:
     })
 
 
-def fresh_message(frame: pd.DataFrame | None = None):
+class FakeMessage:
+    """A stand-in with the parts of ptinfra's `Message` that matter here.
+
+    Faithful on the one point that constrains the design: `content` is a
+    **read-only property** over `body`, so anything wanting a private content
+    mapping has to replace `body`. A double with a writable `content` would let
+    a broken `sibling_message` look correct.
+    """
+
+    def __init__(self, body, source=None):
+        self.source = source if source is not None else object()
+        self.body = body
+        self.parent = None
+        self.insertedOn = None
+        self.error = None
+        self.pagesInfo = {}
+        self.designsInfo = {}
+
+    @property
+    def content(self):
+        return self.body
+
+    def delete(self):
+        raise AssertionError("a test must not delete a queue message")
+
+
+def fresh_message(frame: pd.DataFrame | None = None) -> FakeMessage:
     """A message as ReadStage would hand one on, for a non-wedding AI request.
 
     `photoIds: []` rather than null: an AI request in which the user picked
     nothing, which is the case a composed album is for. Null would route as
     manual and skip selection entirely.
     """
-    return types.SimpleNamespace(
-        content={
-            'gallery_photos_info': (gallery_frame() if frame is None else frame).copy(),
-            'projectId': 1,
-            'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [],
-                           'subjects': [], 'density': 3},
-            'photos': [],
-            'is_wedding': False,
-        },
-        pagesInfo={}, designsInfo={}, error=None)
+    return FakeMessage({
+        'gallery_photos_info': (gallery_frame() if frame is None else frame).copy(),
+        'projectId': 1,
+        'conditionId': 'TEST_MULTI_ALBUM',
+        'aiMetadata': {'photoIds': [], 'focus': [], 'personIds': [],
+                       'subjects': [], 'density': 3},
+        'photos': [],
+        'is_wedding': False,
+    })
 
 
 class Pass(NamedTuple):
@@ -284,3 +309,124 @@ def test_a_later_pass_selects_what_that_album_would_select_alone():
 
     assert passes[1].selected == reference.selected, (
         "album 2 differs from the same album run on its own")
+
+
+# -- Phase 2: fanning out to N ------------------------------------------
+#
+# The acceptance is identity: with the same variant and the same seed, N
+# albums must equal each other and equal the N=1 answer. If they diverge,
+# state is leaking between them, and this is the phase that says so.
+
+
+def test_n_identical_variants_produce_identical_albums():
+    passes = album_passes(fresh_message(), 4)
+
+    chosen = [tuple(p.selected) for p in passes]
+    assert len(set(chosen)) == 1, (
+        f"identical variants diverged: {[len(c) for c in chosen]} photos, "
+        f"{len(set(chosen))} distinct outcomes")
+    assert all(not p.failed for p in passes)
+
+
+def test_n_albums_equal_the_single_album_answer():
+    """Fanning out must not change what one album is."""
+    single = album_passes(fresh_message(), 1)[0]
+    many = album_passes(fresh_message(), 3)
+
+    assert [tuple(p.selected) for p in many] == [tuple(single.selected)] * 3
+
+
+def test_each_album_publishes_to_its_own_message():
+    """ProcessStage writes the laid-out frame and `album_doc` onto the message,
+    so N albums on one message would overwrite each other."""
+    message = fresh_message()
+    runs = compose_albums(message, build_select(logger=_QUIET), count=3,
+                          logger=_QUIET, seed=PASS_SEED)
+
+    targets = [run.message for run in runs]
+    assert targets[0] is message, "album 0 keeps the original message"
+    assert len({id(t) for t in targets}) == 3, "each album needs its own message"
+    assert len({id(t.content) for t in targets}) == 3, (
+        "siblings must not share the content mapping")
+
+
+def test_siblings_share_the_source_so_the_queue_message_is_deleted_once():
+    from src.pipeline import album_group
+
+    message = fresh_message()
+    runs = compose_albums(message, build_select(logger=_QUIET), count=3,
+                          logger=_QUIET, seed=PASS_SEED)
+    messages = [run.message for run in runs]
+
+    assert len({id(m.source) for m in messages}) == 1, "one queue message"
+    groups = album_group(messages)
+    assert len(groups) == 1 and len(groups[0]) == 3, (
+        "all three albums must group under the one source they came from")
+    assert groups[0][0] is message
+
+
+def test_unrelated_messages_do_not_group_together():
+    """`album_group` must not fold independent requests into one report."""
+    from src.pipeline import album_group
+
+    first, second = fresh_message(), fresh_message()
+
+    groups = album_group([first, second])
+
+    assert len(groups) == 2
+
+
+def test_a_sibling_cannot_be_made_without_a_private_content_mapping():
+    """Refuse loudly rather than hand back a sibling that shares content --
+    that would look like isolation and silently not be."""
+    from src.pipeline import sibling_message
+
+    class NoBody:
+        source = object()
+        content = {'a': 1}
+
+    with pytest.raises(TypeError, match="no `body`"):
+        sibling_message(NoBody(), index=1, count=2)
+
+
+def test_each_album_gets_its_own_frame_object():
+    """Structural, because the outcome tests cannot see this.
+
+    Selection *rebinds* `context.photos` when it narrows rather than mutating
+    the row set, so handing every album the same frame object happens to
+    produce identical albums today -- sharing it is caught by nothing above.
+    That makes the copy look optional when it is actually the invariant: the
+    first in-place mutation anywhere in SELECT would start leaking between
+    albums, with no test to notice.
+    """
+    from src.pipeline import GalleryBase
+
+    message = fresh_message()
+    base = GalleryBase.capture(message, logger=_QUIET)
+    before_rows, before_cols = base.photos.shape
+
+    frames = [base.album_context(logger=_QUIET).photos for _ in range(3)]
+
+    assert len({id(f) for f in frames}) == 3, (
+        "each album must own its frame, not share the base's")
+    for frame in frames:
+        assert frame is not base.photos
+    assert base.photos.shape == (before_rows, before_cols), (
+        "the base frame must not be touched by handing out album contexts")
+
+
+def test_composing_albums_leaves_the_base_frame_intact():
+    """The base is the one thing every album is measured against, so nothing an
+    album does may reach it."""
+    from src.pipeline import GalleryBase
+
+    message = fresh_message()
+    base = GalleryBase.capture(message, logger=_QUIET)
+    before = base.photos.shape
+    before_ids = list(base.photos[Col.IMAGE_ID])
+
+    compose_albums(message, build_select(logger=_QUIET), count=3,
+                   logger=_QUIET, seed=PASS_SEED)
+
+    assert base.photos.shape == before
+    assert list(base.photos[Col.IMAGE_ID]) == before_ids

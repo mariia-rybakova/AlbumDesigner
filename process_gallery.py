@@ -32,6 +32,9 @@ from main import ProcessStage
 #: Set by --non-wedding; read in `process_gallery`.
 FORCE_NON_WEDDING = False
 
+#: Every album composed by the last run, for --albums verification.
+ALBUM_RUNS = []
+
 request_name = 'request_cameron_predefined'
 album_name = 'album_predefined'
 
@@ -257,8 +260,14 @@ def get_selection(message, logger):
         # frame ProcessStage reads back.
         # Mirrors SelectionStage: one album per variant, each from its own
         # copy of the base. N=1 here until enrich.variants lands.
+        settings = CONFIGS.get('albums', {})
         runs = compose_albums(message, build_select(logger=logger),
-                              count=1, logger=logger)
+                              count=int(settings.get('count', 1)),
+                              logger=logger, seed=settings.get('seed'))
+        for run in runs:
+            if not run.context.failed:
+                run.context.sync_to_message()
+        ALBUM_RUNS.extend(runs)
         context = runs[0].context
     except Exception as e:
         tb = traceback.extract_tb(e.__traceback__)
@@ -402,6 +411,13 @@ cheap. Pass --no-download to work purely off what is already local.
     ap.add_argument("--narrator", action="store_true",
                     help="Enable select.narrator (the albumNarrator policy) for this run. "
                          "It only serves non-wedding galleries with 768-d embeddings.")
+    ap.add_argument("--albums", type=int, default=None,
+                    help="Compose N albums from the one gallery read (Phase 2 of "
+                         "docs/multi_album_plan.md). Implies --seed-albums so the "
+                         "N are comparable; only the first is laid out and rendered.")
+    ap.add_argument("--seed-albums", type=int, default=12345,
+                    help="Seed both global RNGs identically before each album, so "
+                         "identical variants are comparable. Only used with --albums.")
     ap.add_argument("--non-wedding", action="store_true",
                     help="Force is_wedding=False after the read. For testing the "
                          "non-wedding path on a gallery the content classifier calls a "
@@ -466,6 +482,11 @@ if __name__ == '__main__':
     args = _build_arg_parser().parse_args()
     log = print
 
+    if args.albums:
+        CONFIGS['albums'] = {**CONFIGS.get('albums', {}), 'count': args.albums,
+                             'seed': args.seed_albums}
+        log(f"composing {args.albums} albums (seed {args.seed_albums})")
+
     if args.narrator:
         CONFIGS['narrator'] = {**CONFIGS.get('narrator', {}), 'enabled': True}
         log("select.narrator: enabled")
@@ -505,6 +526,14 @@ if __name__ == '__main__':
 
     is_artificial_time = _message.content.get('is_artificial_time', False)
     print('ARTIFICIAL TIME APPLIED:', is_artificial_time)
+
+    if len(ALBUM_RUNS) > 1:
+        chosen = [tuple(run.photo_ids) for run in ALBUM_RUNS]
+        distinct = len(set(chosen))
+        print(f'ALBUMS COMPOSED {len(ALBUM_RUNS)}, '
+              f'photos each {[len(c) for c in chosen]}, '
+              f'distinct selections {distinct}')
+        print('ALBUMS IDENTICAL' if distinct == 1 else 'ALBUMS DIVERGED')
 
     print('FINAL SPREADS', len(final_album['composition']['compositions']))
     print(final_album)

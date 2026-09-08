@@ -402,6 +402,22 @@ CONFIGS = {'DEBUG': True,
             'min_separation': 0.25,
         },
 
+        # How many albums one gallery produces. A temporary lever: Phase 3 of
+        # docs/multi_album_plan.md replaces it with `enrich.variants`, which
+        # derives the count from the gallery rather than from config, because
+        # how many albums are worth making depends on what enrich found. 1 is
+        # the shipped behaviour and the only value exercised in production.
+        'albums': {
+            'count': 1,
+            # Reseed both global RNGs identically before each album. Off in
+            # production: the pipeline samples randomly in several places
+            # (combination sampling in spreads_layout, cover choice in
+            # album_tools, medoids in time_orientation_selection, the
+            # non-wedding selection), so seeding would move a single album's
+            # output. On, it is what makes N identical variants comparable.
+            'seed': None,
+        },
+
         # `select.narrator`: the albumNarrator policy composing a non-wedding
         # album -- selection and page grouping in one pass. Off by default,
         # because it needs a checkpoint on disk and it changes what a
