@@ -51,7 +51,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.pipeline import AlbumContext, Col, build_select  # noqa: E402
+from src.pipeline import (AlbumContext, Col, build_select,  # noqa: E402
+                          compose_albums)
 from utils.configs import CONFIGS  # noqa: E402
 
 GALLERY_SIZE = 60
@@ -160,6 +161,41 @@ def selection_passes(message, count: int) -> List[Pass]:
     return passes
 
 
+def album_passes(message, count: int) -> List[Pass]:
+    """The production path: `compose_albums`, one album per pass.
+
+    Same recording as `selection_passes`, same seeding, so the two are directly
+    comparable -- the only difference is who drives the loop.
+    """
+    saw_before = len(message.content['gallery_photos_info'])
+    # `seed` makes every album start from the same RNG state, so a difference
+    # between albums can only come from what they were handed.
+    runs = compose_albums(message, build_select(logger=_QUIET),
+                          count=count, logger=_QUIET, seed=PASS_SEED)
+    passes: List[Pass] = []
+    for run in runs:
+        # Each album is composed from its own copy of the base, so what it saw
+        # is the base frame's size, not whatever the message currently holds.
+        passes.append(Pass(saw=saw_before, selected=run.photo_ids,
+                           context=run.context, failed=run.failed))
+    return passes
+
+
+def album_pass_inputs(message, count: int) -> List[int]:
+    """How many photos each album's own frame started with."""
+    sizes: List[int] = []
+    base = None
+    from src.pipeline import GalleryBase
+    base = GalleryBase.capture(message, logger=_QUIET)
+    for _ in range(count):
+        random.seed(PASS_SEED)
+        np.random.seed(PASS_SEED)
+        context = base.album_context(logger=_QUIET)
+        sizes.append(len(context.photos))
+        build_select(logger=_QUIET).run(context)
+    return sizes
+
+
 # -- the mechanism, pinned as fact ----------------------------------------
 #
 # These pass today and must keep passing: narrowing is correct for one album,
@@ -186,6 +222,19 @@ def test_publish_narrows_the_message_frame_to_the_selection():
     assert len(message.content['gallery_photos_info']) == len(single.selected)
 
 
+def test_the_naive_loop_still_contaminates():
+    """Why `compose_albums` exists. Driving selection straight off one message
+    -- the obvious first implementation -- collapses the gallery to the first
+    album's output and keeps it there. Pinned so the reason for the machinery
+    cannot quietly stop being true."""
+    passes = selection_passes(fresh_message(), 3)
+
+    saw = [p.saw for p in passes]
+    assert saw[0] == GALLERY_SIZE
+    assert saw[1] < GALLERY_SIZE, f"expected contamination, saw {saw}"
+    assert saw[1] == saw[2] == len(passes[0].selected)
+
+
 def test_the_context_is_cached_on_the_message():
     """Also intended -- it is what lets a later stage reuse the read's context
     instead of rebuilding from `content`. It is the reason a second pass
@@ -204,31 +253,22 @@ def test_the_context_is_cached_on_the_message():
 # moment it starts passing, so the markers get removed deliberately.
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 0: siblings share "
-                   "content['gallery_photos_info']; a second pass sees only "
-                   "the first pass's selection (60 -> 5 -> 5)")
 def test_every_pass_sees_the_whole_gallery():
     """The core isolation requirement: album 2 composes from the gallery, not
     from album 1."""
-    passes = selection_passes(fresh_message(), 3)
+    sizes = album_pass_inputs(fresh_message(), 3)
 
-    assert [p.saw for p in passes] == [GALLERY_SIZE] * 3, (
-        f"each pass must see all {GALLERY_SIZE} photos, saw {[p.saw for p in passes]}")
+    assert sizes == [GALLERY_SIZE] * 3, (
+        f"each album must see all {GALLERY_SIZE} photos, saw {sizes}")
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 0: AlbumContext.for_message "
-                   "reuses the context cached on the message, so pass 2 "
-                   "inherits pass 1's facts, selection and predefined")
 def test_every_pass_gets_its_own_context():
-    passes = selection_passes(fresh_message(), 3)
+    passes = album_passes(fresh_message(), 3)
 
     contexts = [id(p.context) for p in passes]
     assert len(set(contexts)) == 3, "each album needs its own context object"
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 0: a later pass selects from the "
-                   "earlier pass's output, so it cannot match what that album "
-                   "would be on its own")
 def test_a_later_pass_selects_what_that_album_would_select_alone():
     """The requirement stated as an outcome rather than as plumbing: with
     identical inputs, album 2 must be the album a single run produces. This is
@@ -239,8 +279,8 @@ def test_a_later_pass_selects_what_that_album_would_select_alone():
     satisfiable: with a fresh message per album it holds, so it is a test of
     isolation and not of the RNG.
     """
-    reference = selection_passes(fresh_message(), 1)[0]
-    passes = selection_passes(fresh_message(), 2)
+    reference = album_passes(fresh_message(), 1)[0]
+    passes = album_passes(fresh_message(), 2)
 
     assert passes[1].selected == reference.selected, (
         "album 2 differs from the same album run on its own")

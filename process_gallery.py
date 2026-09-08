@@ -16,7 +16,7 @@ from qdrant_client import QdrantClient
 
 from src.request_processing import read_messages
 
-from src.pipeline import AlbumContext, build_select
+from src.pipeline import AlbumContext, build_select, compose_albums
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
@@ -255,9 +255,11 @@ def get_selection(message, logger):
         # `select.budget` sets the spread counts, and `select.publish` writes
         # `photos`, `spreads_dict`, the spread bounds and the `bride and groom`
         # frame ProcessStage reads back.
-        context = build_select(logger=logger).run(
-            AlbumContext.for_message(message, logger=logger)
-        )
+        # Mirrors SelectionStage: one album per variant, each from its own
+        # copy of the base. N=1 here until enrich.variants lands.
+        runs = compose_albums(message, build_select(logger=logger),
+                              count=1, logger=logger)
+        context = runs[0].context
     except Exception as e:
         tb = traceback.extract_tb(e.__traceback__)
         filename, lineno, func, text = tb[-1]

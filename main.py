@@ -24,7 +24,7 @@ from ptinfra import  AbortRequested
 
 from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
-from src.pipeline import AlbumContext, build_select
+from src.pipeline import AlbumContext, build_select, compose_albums
 from src.core.key_pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
@@ -205,9 +205,15 @@ class SelectionStage(Stage):
                 # merged: `route._manual` aligns the frame with the user's list
                 # and widens the lookup table, and `route._ai` does the pool
                 # narrowing that used to sit here.
-                context = self.pipeline.run(
-                    AlbumContext.for_message(_msg, logger=self.logger)
-                )
+                # One album per planned variant, each composed from its own
+                # copy of the read's output. At N=1 -- which is every request
+                # until `enrich.variants` lands -- this is exactly the single
+                # `pipeline.run(for_message(...))` it replaces; the point is
+                # that N>1 cannot contaminate, because albums never share the
+                # frame selection narrows.
+                runs = compose_albums(_msg, self.pipeline, count=1,
+                                      logger=self.logger)
+                context = runs[0].context
 
                 if context.failed:
                     self.logger.error(f"Error for Selection images for this message {_msg}")
