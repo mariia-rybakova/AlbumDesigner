@@ -256,6 +256,34 @@ class CeremonyAnchorSubStage(SubStage):
             claimed += picked
         return claimed
 
+    @staticmethod
+    def _drop_unconfirmed_crowds(solo, who, logger):
+        """Keep narrow frames; keep wide ones only if the subquery confirms.
+
+        ``aisle_max_people`` is the width at which the identity test stops being
+        evidence on its own. Rows with no ``persons_ids`` to count are treated as
+        narrow: the identity already matched, so the list is not empty.
+        """
+        limit = CONFIGS.get('aisle_max_people')
+        if not limit:
+            return solo
+
+        crowd = solo[Col.PERSONS_IDS].apply(
+            lambda ids: len(ids) > limit if isinstance(ids, (list, tuple, set)) else False)
+        confirmed = solo[Col.IMAGE_SUBQUERY_CONTENT].isin(AISLE_QUERIES.get(who, ()))
+        keep = ~crowd | confirmed
+
+        dropped = int((~keep).sum())
+        if dropped and logger:
+            logger.info(
+                f"{who} processional: dropped {dropped} frame(s) holding more than "
+                f"{limit} people without a processional subquery -- present at the "
+                f"ceremony is not walking into it")
+        if dropped == len(solo) and logger:
+            logger.info(f"No {who} processional: every solo-{who} frame is an "
+                        f"unconfirmed crowd")
+        return solo[keep]
+
     def _tag_one_walk(self, context, ceremony, window, who, identity, other, tag, exclude):
         logger = context.logger
         if identity is None or (isinstance(identity, float) and np.isnan(identity)):
@@ -269,6 +297,23 @@ class CeremonyAnchorSubStage(SubStage):
         if solo.empty:
             if logger:
                 logger.info(f"No {who} processional: no solo-{who} frame before the ceremony")
+            return []
+
+        # 1b. Present is not the same as walking in. "Solo" only excludes the
+        #    other partner, so a hall full of guests that happens to contain the
+        #    groom passes it -- on 49995684 the frame that reached the album as
+        #    "groom walking the aisle" holds six people and is captioned "guests
+        #    watching ceremony". The groom is sitting in it.
+        #
+        #    A crowd therefore has to be *confirmed* rather than merely allowed:
+        #    it qualifies only when its subquery says a processional. That keeps
+        #    the bride's genuine wide shots -- hers carry "bride walking down
+        #    aisle with father" at five and six people -- and drops the groom's,
+        #    which carry no processional caption at any size. The narrow frames
+        #    are left alone: with few enough people in shot the identity test is
+        #    already doing the work.
+        solo = self._drop_unconfirmed_crowds(solo, who, logger)
+        if solo.empty:
             return []
 
         position = ceremony.frame[tl.POSITION]

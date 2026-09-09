@@ -1062,3 +1062,77 @@ if __name__ == "__main__":
         test()
         print(f"ok  {test.__name__}")
     print(f"\n{len(tests)} send-off tests passed")
+
+
+# -- present at the ceremony is not walking into it -------------------------
+
+
+def _make_groom_walk(persons, subquery):
+    """The gallery, with the groom's processional frames rewritten."""
+    df = make_gallery()
+    walk = (df[Col.CLUSTER_CONTEXT] == 'walking the aisle') & \
+           df['persons_ids'].apply(lambda ids: GROOM_ID in ids and BRIDE_ID not in ids)
+    assert walk.any(), "fixture should have groom-solo processional frames"
+    df.loc[walk, 'persons_ids'] = pd.Series(
+        [list(persons)] * int(walk.sum()), index=df.index[walk])
+    df.loc[walk, 'image_subquery_content'] = subquery
+    return df
+
+
+def test_a_crowd_the_groom_happens_to_be_in_is_not_his_walk_in():
+    """49995684: the frame that reached the album as `groom walking the aisle`
+    holds six people and is captioned "guests watching ceremony". He is sitting
+    in it. "Solo" only ever excluded the *bride*, so a hall full of guests
+    passed the one hard test the tag has."""
+    df = _make_groom_walk([GROOM_ID, 11, 12, 13, 14, 15], 'guests watching ceremony')
+
+    context = run(df)
+
+    assert len(walked(context, GROOM_AISLE)) == 0
+
+
+def test_a_narrow_frame_still_needs_no_caption():
+    """The control. Below `aisle_max_people` the identity test is evidence on
+    its own, so nothing changes for the frames that were always fine."""
+    df = _make_groom_walk([GROOM_ID, 11], 'guests watching ceremony')
+
+    context = run(df)
+
+    assert len(walked(context, GROOM_AISLE)) > 0
+
+
+def test_a_confirmed_crowd_survives():
+    """The bride's genuine wide shots run to five and six people and carry
+    "bride walking down aisle with father". Dropping those would trade one bug
+    for a worse one."""
+    df = _make_groom_walk([GROOM_ID, 11, 12, 13, 14, 15],
+                          'groom waiting for bride at the aisle')
+
+    context = run(df)
+
+    assert len(walked(context, GROOM_AISLE)) > 0
+
+
+def test_the_brides_wide_processional_is_untouched():
+    df = make_gallery()
+    wide = (df[Col.CLUSTER_CONTEXT] == 'walking the aisle') & \
+           df['persons_ids'].apply(lambda ids: BRIDE_ID in ids)
+    df.loc[wide, 'persons_ids'] = pd.Series(
+        [[BRIDE_ID, GUEST_ID, 51, 52, 53, 54]] * int(wide.sum()), index=df.index[wide])
+
+    context = run(df)
+
+    assert len(walked(context, BRIDE_AISLE)) > 0, (
+        "her subquery confirms the frame, however many guests are in it")
+
+
+def test_the_crowd_gate_can_be_switched_off():
+    df = _make_groom_walk([GROOM_ID, 11, 12, 13, 14, 15], 'guests watching ceremony')
+    original = CONFIGS.get('aisle_max_people')
+    CONFIGS['aisle_max_people'] = 0
+    try:
+        context = run(df)
+    finally:
+        CONFIGS['aisle_max_people'] = original
+
+    assert len(walked(context, GROOM_AISLE)) > 0

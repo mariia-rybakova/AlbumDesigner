@@ -162,6 +162,25 @@ class Indicators:
             return "groom"
         return None
 
+    def leaning_side(self) -> Optional[str]:
+        """The side a candidate tilts to, for when `side_skew` will not commit.
+
+        Same measurement, a lower bar (``min_side_share_lean``). Still requires
+        `min_side_frames` of evidence and still returns None at a genuine tie,
+        so this widens the gate rather than removing it -- `resolve` pairs it
+        with a raised score floor.
+        """
+        total = self.with_bride + self.with_groom
+        if total < settings()["min_side_frames"]:
+            return None
+        share = self.with_bride / total
+        margin = settings()["min_side_share_lean"]
+        if share >= margin:
+            return "bride"
+        if (1.0 - share) >= margin:
+            return "groom"
+        return None
+
     def own_side(self, side: str) -> int:
         """Frames alone with that partner -- the couple's other half absent.
 
@@ -454,10 +473,37 @@ def resolve(candidates: Sequence[Indicators]) -> Resolution:
     resolution = Resolution()
 
     by_side: Dict[str, List[Indicators]] = {"bride": [], "groom": []}
+    ambiguous: List[Indicators] = []
     for candidate in candidates:
         side = candidate.side_skew()
         if side is not None:
             by_side[side].append(candidate)
+        else:
+            ambiguous.append(candidate)
+
+    # A parent whose side is not clean enough to assert is still a parent. The
+    # mother of the bride on 49995684 sits at 10 frames alone with her daughter
+    # against 7 alone with the groom -- 58.8%, under the 70% the strict gate
+    # wants -- so she was dropped from both pools and never ranked, despite
+    # being the second-strongest bride-side candidate in the gallery at 0.66.
+    #
+    # That is not a harmless miss. `label` requires a portrait to hold nobody
+    # outside the named family, so an unnamed parent does not merely go
+    # uncredited: she invalidates every family portrait she stands in. All seven
+    # `[bride, her, her husband]` portraits failed on her alone, and the gallery
+    # ended with a resolved father and zero parent portraits.
+    #
+    # So the lean is allowed to decide when it is still a lean, and the price is
+    # a higher score bar than the strict path pays -- being obviously a parent is
+    # what earns the weaker side evidence. Candidates with no lean at all remain
+    # unplaceable, which is the case the strict gate was really written for.
+    for candidate in ambiguous:
+        side = candidate.leaning_side()
+        if side is None:
+            continue
+        if score(candidate, side) < config["min_score_ambiguous_side"]:
+            continue
+        by_side[side].append(candidate)
 
     for side, pool in by_side.items():
         chosen, note = _resolve_side(side, pool, config)

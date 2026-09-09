@@ -583,3 +583,134 @@ def test_the_old_rule_is_still_reachable():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# -- an ambiguous side is not a reason to discard a parent ------------------
+
+
+#: The three-person family portraits, which is what the whole gate costs.
+TRIO_PORTRAITS = 7
+
+
+def _leaning_mother():
+    """A mother whose side leans without reaching the strict 70% skew.
+
+    Tuned to 49995684's own ratio -- 20 frames alone with her daughter against
+    14 alone with the groom, the same 58.8% -- and otherwise obviously a
+    parent: her daughter's prep, a mother-daughter dance, and the family
+    portraits. The point of the fixture is that *only* the side gate is
+    marginal; every other indicator is emphatic.
+    """
+    rows = [("bride getting dressed", [BRIDE, MOTHER]) for _ in range(4)]
+    rows += [("dancing", [BRIDE, MOTHER]) for _ in range(2)]
+    rows += [("portrait", [BRIDE, MOTHER]) for _ in range(7)]
+    rows += [("portrait", [BRIDE, MOTHER, FATHER]) for _ in range(TRIO_PORTRAITS)]
+    rows += [("portrait", [GROOM, MOTHER]) for _ in range(14)]
+    rows += [("walking the aisle", [BRIDE, FATHER]) for _ in range(4)]
+    rows += [("portrait", [BRIDE, FATHER]) for _ in range(8)]
+    rows += [("bride party", [BRIDE, BRIDESMAID]) for _ in range(30)]
+    for guest in CROWD:
+        rows += [("ceremony", [BRIDE, GROOM, guest]) for _ in range(3)]
+        rows += [("dancing", [guest, BRIDE]) for _ in range(3)]
+    return gallery(rows)
+
+
+def _trio_portraits(frame):
+    """The `[bride, mother, father]` rows -- the ones that hinge on the gate."""
+    return frame[frame[Col.PERSONS_IDS].apply(
+        lambda ids: set(ids) == {BRIDE, MOTHER, FATHER})]
+
+
+def test_a_leaning_parent_is_named_rather_than_dropped():
+    """The bride's mother on 49995684 was the second-strongest bride-side
+    candidate in the gallery and was never ranked at all: 58.8% missed the 70%
+    the strict gate wants, so she went into neither pool."""
+    frame = _leaning_mother()
+
+    candidates, outcome = resolve(frame)
+
+    mother = next(c for c in candidates if c.identity == MOTHER)
+    assert mother.side_skew() is None, "the strict gate still declines to commit"
+    assert mother.leaning_side() == "bride"
+    assert MOTHER in outcome.bride_parents
+
+
+def test_an_unconvincing_leaner_is_still_refused():
+    """The lean buys a weaker *side* test, paid for with a stronger *parent*
+    test: `min_score_ambiguous_side` is 0.60 against the usual 0.50.
+
+    So the candidate here is deliberately in the band between the two -- old
+    enough, leaning the right way, and scoring ~0.56 on portraits alone with no
+    prep, no aisle and no parent dance. She clears the ordinary floor and is
+    still refused, which is the whole point: a marginal side is only acceptable
+    from someone who is otherwise unmistakably a parent.
+    """
+    rows = [("portrait", [BRIDE, MOTHER]) for _ in range(3)]
+    rows += [("portrait", [BRIDE, MOTHER, FATHER]) for _ in range(7)]
+    rows += [("portrait", [GROOM, MOTHER]) for _ in range(7)]
+    rows += [("walking the aisle", [BRIDE, FATHER]) for _ in range(4)]
+    rows += [("portrait", [BRIDE, FATHER]) for _ in range(8)]
+    rows += [("bride party", [BRIDE, BRIDESMAID]) for _ in range(30)]
+    for guest in CROWD:
+        rows += [("ceremony", [BRIDE, GROOM, guest]) for _ in range(3)]
+        rows += [("dancing", [guest, BRIDE]) for _ in range(3)]
+
+    candidates, outcome = resolve(gallery(rows))
+
+    mother = next(c for c in candidates if c.identity == MOTHER)
+    assert mother.leaning_side() == "bride", "she does lean"
+    assert mother.age_rank >= CONFIGS['parents']['min_age_rank'], "and is old enough"
+    ordinary = CONFIGS['parents']['min_score']
+    raised = CONFIGS['parents']['min_score_ambiguous_side']
+    assert ordinary <= parents.score(mother, "bride") < raised, (
+        "the fixture must sit between the two floors or this proves nothing")
+    assert MOTHER not in outcome.all_parents()
+
+
+def test_a_dead_even_split_is_still_unplaceable():
+    """`min_side_share_lean` is 0.55, so a genuine 50/50 remains what the
+    strict gate was really written for."""
+    rows = [("portrait", [BRIDE, MOTHER]) for _ in range(6)]
+    rows += [("portrait", [GROOM, MOTHER]) for _ in range(6)]
+
+    candidates, outcome = resolve(gallery(rows))
+
+    mother = next(c for c in candidates if c.identity == MOTHER)
+    assert mother.leaning_side() is None
+    assert MOTHER not in outcome.all_parents()
+
+
+def test_naming_the_second_parent_is_what_rescues_the_portraits():
+    """Why the side gate mattered so much. `label` requires a portrait to hold
+    nobody outside the named family, so an unnamed parent does not merely go
+    uncredited -- she invalidates every family portrait she stands in. On
+    49995684 all seven `[bride, mother, father]` portraits failed on her alone
+    and the gallery produced zero parent portraits."""
+    frame = _leaning_mother()
+
+    _candidates, outcome = resolve(frame)
+    labelled, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert MOTHER in outcome.bride_parents and FATHER in outcome.bride_parents
+    assert count > 0
+    trio = _trio_portraits(labelled)
+    assert (trio[Col.PARENT_CATEGORY] == "bride with her parents").all(), (
+        "the family portraits are exactly what naming the second parent buys")
+
+
+def test_dropping_the_mother_still_costs_the_family_portraits():
+    """The failure mode itself, pinned: with only the father named, every
+    portrait holding all three is rejected for one extra person -- his wife.
+
+    Counted over those rows alone, because the two-person `[bride, father]`
+    portraits still qualify and would mask it in a total.
+    """
+    frame = _leaning_mother()
+    only_father = parents.Resolution(bride_parents=(FATHER,))
+
+    labelled, _count = parents.label(frame, only_father, BRIDE, GROOM)
+
+    trio = _trio_portraits(labelled)
+    assert len(trio) == TRIO_PORTRAITS, "fixture should hold the family portraits"
+    assert trio[Col.PARENT_CATEGORY].isna().all(), (
+        "the unnamed mother invalidates every portrait she stands in")

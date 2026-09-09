@@ -111,7 +111,9 @@ class WeddingPicker:
             self.inputs.ratings,
             self.logger,
         )
-        self.gate = CandidateGate(scorer, self.inputs.unscored, self.plan.images, self.logger)
+        self.gate = CandidateGate(scorer, self.inputs.unscored, self.plan.images, self.logger,
+                                  bride_id=context.facts.bride_id,
+                                  groom_id=context.facts.groom_id)
 
         # Whatever `select.preselect` committed is already in the album; the
         # loop below starts from it and does not offer those photos again.
