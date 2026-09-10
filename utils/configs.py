@@ -539,6 +539,25 @@ CONFIGS = {'DEBUG': True,
             # The orientation a single-box cover fills best.
             'preferred_orientation': 'landscape',
 
+            # A body photo this close to a cover is the same shot, and the
+            # album should not close on a photograph the reader has already
+            # turned past. Taking the cover out of the body does not cover it:
+            # the next frame of the burst is a different `image_id`.
+            #
+            # CP-SAT's own exclusion is set at 0.97 for burst-identical frames
+            # and, more to the point, runs during selection -- before anyone
+            # knows which photo becomes a cover, which is decided later at
+            # layout. So this is a separate, narrower check.
+            #
+            # 0.80 has room in both directions on the galleries measured: the
+            # real pair on 53227528 is 0.840 and the next nearest 0.719, while
+            # nothing on 49995684 exceeds 0.567. Set to 0 to disable.
+            'cover_duplicate_similarity': 0.80,
+            # At most this many, so a cover resembling half the gallery cannot
+            # empty the body. Two similar photos inside the body are an
+            # editing choice; a repeated *cover* is a mistake.
+            'cover_duplicate_max_drop': 3,
+
             # The two covers must be different photos, and far enough apart in
             # the day to read as a beginning and an end. A share of the
             # candidate positions, not minutes: the gallery may not be one

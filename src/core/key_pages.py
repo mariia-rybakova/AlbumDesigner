@@ -500,7 +500,69 @@ def _select_cover_image_ids(pool_df, pool_bg, logger):
     return [first_id], last_page_ids
 
 
-def choose_good_wedding_images(df, bride_groom_df, logger):
+def _drop_cover_duplicates(df, cover_rows, logger):
+    """Drop body photos that repeat a cover.
+
+    Taking the cover out of the body was never enough. The frame beside it in
+    the burst is a different `image_id` and survives, so the album closes on a
+    photograph the reader has already turned past: on 53227528 the back cover
+    and a body photo are the same forehead kiss one step wider, cosine 0.840,
+    consecutive ids.
+
+    CP-SAT's own near-duplicate exclusion cannot catch this and should not be
+    asked to. It fires at 0.97 -- burst-identical frames -- and it runs during
+    *selection*, before anyone knows which photo will be promoted to a cover.
+    That is decided later, here, over the pool selection returned. So the check
+    belongs at the point the covers are finally known.
+
+    Only against the covers, and only a handful of them: two similar photos
+    inside the body are an ordinary editing choice, while a repeated cover
+    reads as a mistake. The threshold has measured room -- 0.840 for the real
+    pair on 53227528 against 0.719 for the next nearest, and a maximum of
+    0.567 anywhere on 49995684, which loses nothing at any threshold to 0.75.
+    """
+    threshold = float(settings().get('cover_duplicate_similarity', 0.0))
+    if threshold <= 0 or df.empty or cover_rows is None or len(cover_rows) == 0:
+        return df
+    if 'embedding' not in df.columns or 'embedding' not in cover_rows.columns:
+        return df
+
+    def unit(vector):
+        try:
+            vector = np.asarray(vector, dtype=np.float32)
+        except (TypeError, ValueError):
+            return None
+        if vector.ndim != 1 or vector.size == 0:
+            return None
+        norm = float(np.linalg.norm(vector))
+        return None if norm == 0 else vector / norm
+
+    reference = [v for v in (unit(e) for e in cover_rows['embedding']) if v is not None]
+    if not reference:
+        return df
+
+    similarity = {}
+    for image_id, embedding in zip(df['image_id'], df['embedding']):
+        candidate = unit(embedding)
+        if candidate is None or candidate.shape != reference[0].shape:
+            continue
+        similarity[image_id] = max(float(r @ candidate) for r in reference)
+
+    over = sorted((score, image_id) for image_id, score in similarity.items()
+                  if score >= threshold)
+    cap = int(settings().get('cover_duplicate_max_drop', 3))
+    dropped = [image_id for _score, image_id in over[-cap:]] if cap > 0 else []
+    if not dropped:
+        return df
+
+    if logger:
+        detail = ", ".join(f"{i} ({similarity[i]:.3f})" for i in dropped)
+        logger.info(f"covers: dropped {len(dropped)} body photo(s) repeating a cover "
+                    f"above {threshold}: {detail}")
+    return df[~df['image_id'].isin(dropped)]
+
+
+def choose_good_wedding_images(df, bride_groom_df, logger, prune_duplicates=True):
     # Orientation is a score term, not a pre-filter. Filtering on it first cost
     # 53507032 its covers: the gallery had 42 landscapes and 48 couple frames
     # showing both faces, but only *one* frame in both sets, so the candidate
@@ -521,6 +583,12 @@ def choose_good_wedding_images(df, bride_groom_df, logger):
 
     # Remove selected images from main dataframe
     df = df[~df['image_id'].isin(first_page_ids + last_page_ids)]
+    # Only for the caller that keeps the pruned frame. `enrich.key_pages` calls
+    # this for the two ids alone and discards the body, so pruning there is
+    # both wasted over the whole gallery and a second, misleading log line.
+    if prune_duplicates:
+        df = _drop_cover_duplicates(
+            df, pd.concat([first_cover_image_df, last_cover_image_df]), logger)
 
     return df, first_page_ids, first_cover_image_df, last_page_ids, last_cover_image_df
 

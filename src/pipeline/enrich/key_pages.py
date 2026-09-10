@@ -145,8 +145,11 @@ class KeyPagesSubStage(SubStage):
         pool = context.photos.sort_values(Col.IMAGE_ORDER, ascending=False)
         couple = pool[pool[Col.CLUSTER_CONTEXT] == COUPLE]
 
+        # `prune_duplicates=False`: only the two ids are wanted here and the
+        # body frame is discarded, so pruning it would scan the whole gallery
+        # for nothing and log a drop that never happens.
         _, opening, _, closing, _ = choose_good_wedding_images(
-            pool, couple, context.logger or _QUIET)
+            pool, couple, context.logger or _QUIET, prune_duplicates=False)
 
         return _ids(opening), _ids(closing)
 

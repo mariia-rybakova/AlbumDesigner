@@ -722,3 +722,86 @@ def test_the_affection_concepts_ship_for_both_model_versions():
         for version in (1, 2):
             assert len(load_pre_queries_embeddings(concept, version)) > 0, \
                 f"{concept} missing for v{version}"
+
+
+# -- a cover must not be repeated inside the album -------------------------
+
+
+def _cover_and_body(similarity):
+    """A body frame at a chosen cosine to the cover, and one far from it."""
+    import numpy as _np
+    cover = _np.array([1.0, 0.0], dtype=_np.float32)
+    near = _np.array([similarity, (1 - similarity ** 2) ** 0.5], dtype=_np.float32)
+    far = _np.array([0.0, 1.0], dtype=_np.float32)
+    body = pd.DataFrame({
+        Col.IMAGE_ID: [10, 11],
+        'embedding': [near, far],
+    })
+    covers = pd.DataFrame({Col.IMAGE_ID: [1], 'embedding': [cover]})
+    return body, covers
+
+
+def test_a_body_photo_that_repeats_a_cover_is_dropped():
+    """Taking the cover out of the body is not enough -- the next frame of the
+    burst is a different `image_id`. On 53227528 the back cover and a body
+    photo are the same forehead kiss one step wider, cosine 0.840."""
+    from src.core.key_pages import _drop_cover_duplicates
+
+    body, covers = _cover_and_body(0.84)
+
+    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+
+    assert list(kept[Col.IMAGE_ID]) == [11]
+
+
+def test_a_merely_related_body_photo_is_kept():
+    """The threshold has to leave the ordinary run of couple photos alone: the
+    next-nearest on 53227528 is 0.719 and nothing on 49995684 exceeds 0.567."""
+    from src.core.key_pages import _drop_cover_duplicates
+
+    body, covers = _cover_and_body(0.72)
+
+    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+
+    assert list(kept[Col.IMAGE_ID]) == [10, 11]
+
+
+def test_the_drop_is_capped():
+    """A cover resembling half the gallery must not empty the body."""
+    from src.core.key_pages import _drop_cover_duplicates
+    import numpy as _np
+
+    cover = _np.array([1.0, 0.0], dtype=_np.float32)
+    body = pd.DataFrame({
+        Col.IMAGE_ID: list(range(20, 30)),
+        'embedding': [cover.copy() for _ in range(10)],
+    })
+    covers = pd.DataFrame({Col.IMAGE_ID: [1], 'embedding': [cover]})
+
+    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+
+    cap = CONFIGS['covers']['cover_duplicate_max_drop']
+    assert len(kept) == 10 - cap
+
+
+def test_no_embeddings_is_not_an_error():
+    from src.core.key_pages import _drop_cover_duplicates
+
+    body = pd.DataFrame({Col.IMAGE_ID: [10, 11]})
+    covers = pd.DataFrame({Col.IMAGE_ID: [1]})
+
+    assert len(_drop_cover_duplicates(body, covers, _QUIET_LOG)) == 2
+
+
+def test_the_cover_duplicate_check_can_be_switched_off():
+    from src.core.key_pages import _drop_cover_duplicates
+
+    body, covers = _cover_and_body(0.99)
+    original = CONFIGS['covers']
+    CONFIGS['covers'] = {**original, 'cover_duplicate_similarity': 0.0}
+    try:
+        kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+    finally:
+        CONFIGS['covers'] = original
+
+    assert len(kept) == 2
