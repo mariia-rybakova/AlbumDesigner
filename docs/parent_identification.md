@@ -211,7 +211,22 @@ the two.
 
 ---
 
-## 8. Reference
+## 8. Cases
+
+`files/parent_cases/` holds galleries this stage gets wrong, as JSON: who it
+should name, who it must never name, and the measured indicators, so a new
+approach can be scored offline. People are keyed by **photo id**, because
+identity ids do not survive a reprocess -- 49995684's changed wholesale on
+2026-09-10, which is also when its social circles first appeared (0 -> 22) and
+the groom's mother became resolvable.
+
+| gallery | status |
+|---|---|
+| 49995684 | groom's father missed: 0.001 from the guest who blocks him |
+
+---
+
+## 9. Reference
 
 Code: `src/pipeline/enrich/parents.py` — `measure` (evidence), `score`
 (weighting), `resolve` (the decision), `label` (the photo table).

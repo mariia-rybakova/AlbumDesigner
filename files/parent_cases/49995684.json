@@ -1,0 +1,316 @@
+{
+  "projectId": 49995684,
+  "request": "files/test_requests/49995684_brideAndGroom_d3.json",
+  "capturedUtc": "2026-09-10",
+  "imageModelVersion": 2,
+  "photos": 1008,
+  "status": "partially resolved -- the groom's father is not named",
+  "whyItIsHere": "The groom's father is visible, hand-identifiable, and the scorer cannot separate him from another old man on his side: 0.746 against 0.747, inside the 0.10 margin. Kept as a case for a new approach to beat. Nothing in the pipeline is expected to change for it yet.",
+  "identityIdsAreNotStable": "This gallery was reprocessed on 2026-09-10 and every identity id changed (bride 1->2, groom 7->13, her father 27->17). Match people by anchorPhotoIds, never by identityIdAtCapture, which is recorded only to reproduce this capture.",
+  "couple": {
+    "bride": {
+      "label": "bride",
+      "expected": "couple",
+      "identityIdAtCapture": 2,
+      "anchorPhotoIds": [
+        11547935827,
+        11547935829,
+        11547935834,
+        11547935835,
+        11547935837
+      ],
+      "photoCount": 289,
+      "estimatedAge": 28,
+      "estimatedGender": "female",
+      "labelSource": "pipeline (resolve_bride_groom)",
+      "indicators": null,
+      "note": "Not a candidate: below min_appearances."
+    },
+    "groom": {
+      "label": "groom",
+      "expected": "couple",
+      "identityIdAtCapture": 13,
+      "anchorPhotoIds": [
+        11547935859,
+        11547935865,
+        11547935875,
+        11547935876,
+        11547935883
+      ],
+      "photoCount": 318,
+      "estimatedAge": 40,
+      "estimatedGender": "male",
+      "labelSource": "pipeline (resolve_bride_groom)",
+      "indicators": null,
+      "note": "Not a candidate: below min_appearances."
+    }
+  },
+  "outcomeAtCapture": {
+    "brideParents": [
+      17,
+      8
+    ],
+    "groomParents": [
+      10
+    ],
+    "unresolved": [
+      "groom's father"
+    ],
+    "reason": "candidates 42 and 53 are within min_margin (0.10) of each other at 0.746 and 0.747; the side declines rather than guess"
+  },
+  "people": [
+    {
+      "label": "bride's father",
+      "expected": "named",
+      "identityIdAtCapture": 17,
+      "anchorPhotoIds": [
+        11547935884,
+        11547935890,
+        11547935900,
+        11547935902,
+        11547935903
+      ],
+      "photoCount": 81,
+      "estimatedAge": 60,
+      "estimatedGender": "male",
+      "labelSource": "pipeline + photo check (11547936379)",
+      "note": "Walks her up the aisle; 12 small family portraits.",
+      "indicators": {
+        "ageRank": 0.89,
+        "aloneWithBride": 15,
+        "aloneWithGroom": 1,
+        "familyPortraitsBride": 12,
+        "familyPortraitsGroom": 3,
+        "partyFrames": 0,
+        "ceremonyShare": 0.07,
+        "parentDanceBride": 1,
+        "parentDanceGroom": 0,
+        "aisleBride": 4,
+        "aisleGroom": 0,
+        "socialCircle": [
+          8
+        ],
+        "sideSkew": "bride",
+        "sideLean": "bride",
+        "scoreBride": 1.355,
+        "scoreGroom": 0.713
+      }
+    },
+    {
+      "label": "bride's mother",
+      "expected": "named",
+      "identityIdAtCapture": 8,
+      "anchorPhotoIds": [
+        11547935840,
+        11547935898,
+        11547935976,
+        11547935988,
+        11547936015
+      ],
+      "photoCount": 69,
+      "estimatedAge": 63,
+      "estimatedGender": "female",
+      "labelSource": "pipeline + photo check (11547936379)",
+      "note": "Corroborated by the circle she shares with 17.",
+      "indicators": {
+        "ageRank": 0.92,
+        "aloneWithBride": 10,
+        "aloneWithGroom": 4,
+        "familyPortraitsBride": 12,
+        "familyPortraitsGroom": 3,
+        "partyFrames": 0,
+        "ceremonyShare": 0.04,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "aisleBride": 0,
+        "aisleGroom": 0,
+        "socialCircle": [
+          17
+        ],
+        "sideSkew": "bride",
+        "sideLean": "bride",
+        "scoreBride": 0.967,
+        "scoreGroom": 0.785
+      }
+    },
+    {
+      "label": "groom's mother",
+      "expected": "named",
+      "identityIdAtCapture": 10,
+      "anchorPhotoIds": [
+        11547935846,
+        11547935869,
+        11547935873,
+        11547936627,
+        11547936732
+      ],
+      "photoCount": 50,
+      "estimatedAge": 50,
+      "estimatedGender": "female",
+      "labelSource": "pipeline; not independently photo-verified",
+      "note": "Resolved only after the 2026-09-10 reprocess populated social circles.",
+      "indicators": {
+        "ageRank": 0.8,
+        "aloneWithBride": 3,
+        "aloneWithGroom": 4,
+        "familyPortraitsBride": 3,
+        "familyPortraitsGroom": 3,
+        "partyFrames": 0,
+        "ceremonyShare": 0.06,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 1,
+        "aisleBride": 0,
+        "aisleGroom": 0,
+        "socialCircle": [
+          16
+        ],
+        "sideSkew": null,
+        "sideLean": "groom",
+        "scoreBride": 0.716,
+        "scoreGroom": 0.986
+      }
+    },
+    {
+      "label": "groom's father",
+      "expected": "named -- CURRENTLY MISSED",
+      "identityIdAtCapture": 42,
+      "anchorPhotoIds": [
+        11547935857,
+        11547935863,
+        11547936300,
+        11547935849,
+        11547935856
+      ],
+      "photoCount": 28,
+      "estimatedAge": 69,
+      "estimatedGender": "male",
+      "labelSource": "user-identified, corroborated by photo 11547935857",
+      "note": "Hand-identified from photo 11547935864, shaking the groom's hand before the ceremony. Highest family-portrait count on his side (4). The case.",
+      "indicators": {
+        "ageRank": 0.99,
+        "aloneWithBride": 0,
+        "aloneWithGroom": 5,
+        "familyPortraitsBride": 3,
+        "familyPortraitsGroom": 4,
+        "partyFrames": 0,
+        "ceremonyShare": 0.18,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "aisleBride": 0,
+        "aisleGroom": 0,
+        "socialCircle": [],
+        "sideSkew": "groom",
+        "sideLean": "groom",
+        "scoreBride": 0.583,
+        "scoreGroom": 0.746
+      }
+    },
+    {
+      "label": "older guest on the groom side",
+      "expected": "not a parent",
+      "identityIdAtCapture": 53,
+      "anchorPhotoIds": [
+        11547936093,
+        11547936645,
+        11547936468,
+        11547935927,
+        11547936070
+      ],
+      "photoCount": 19,
+      "estimatedAge": 68,
+      "estimatedGender": "male",
+      "labelSource": "UNVERIFIED inference -- photo 11547936645 shows a reception guest, but he has not been ruled out by hand",
+      "note": "Ties with 42 at 0.747 and is what blocks him. A new approach has to separate these two, not merely raise 42.",
+      "indicators": {
+        "ageRank": 0.98,
+        "aloneWithBride": 0,
+        "aloneWithGroom": 4,
+        "familyPortraitsBride": 2,
+        "familyPortraitsGroom": 2,
+        "partyFrames": 0,
+        "ceremonyShare": 0.11,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "aisleBride": 0,
+        "aisleGroom": 0,
+        "socialCircle": [
+          74
+        ],
+        "sideSkew": "groom",
+        "sideLean": "groom",
+        "scoreBride": 0.667,
+        "scoreGroom": 0.747
+      }
+    },
+    {
+      "label": "officiant",
+      "expected": "never a parent",
+      "identityIdAtCapture": 88,
+      "anchorPhotoIds": [
+        11547935939,
+        11547935940,
+        11547935954,
+        11547935981,
+        11547935995
+      ],
+      "photoCount": 30,
+      "estimatedAge": 57,
+      "estimatedGender": "male",
+      "labelSource": "photo 11547936062 shows him officiating",
+      "note": "Was the top-scoring groom-parent candidate before the ceremony-share rule.",
+      "indicators": {
+        "ageRank": 0.86,
+        "aloneWithBride": 4,
+        "aloneWithGroom": 9,
+        "familyPortraitsBride": 0,
+        "familyPortraitsGroom": 0,
+        "partyFrames": 0,
+        "ceremonyShare": 0.9,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "aisleBride": 0,
+        "aisleGroom": 0,
+        "socialCircle": [],
+        "sideSkew": null,
+        "sideLean": "groom",
+        "scoreBride": -0.077,
+        "scoreGroom": 0.023
+      }
+    },
+    {
+      "label": "frequent guest, high co-occurrence",
+      "expected": "not a parent",
+      "identityIdAtCapture": 18,
+      "anchorPhotoIds": [
+        11547936034,
+        11547936503,
+        11547936536,
+        11547935914,
+        11547935915
+      ],
+      "photoCount": 49,
+      "estimatedAge": 32,
+      "estimatedGender": "female",
+      "labelSource": "UNVERIFIED inference -- ruled out by absent family portraits, not by hand",
+      "note": "Photographed with the groom more than anyone (21 frames) and initially suspected of being his mother, but has no family portrait with him at all. A frequency-led approach will name her wrongly.",
+      "indicators": {
+        "ageRank": 0.37,
+        "aloneWithBride": 3,
+        "aloneWithGroom": 21,
+        "familyPortraitsBride": 0,
+        "familyPortraitsGroom": 0,
+        "partyFrames": 0,
+        "ceremonyShare": 0.27,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "aisleBride": 0,
+        "aisleGroom": 0,
+        "socialCircle": [],
+        "sideSkew": "groom",
+        "sideLean": "groom",
+        "scoreBride": 0.207,
+        "scoreGroom": 0.347
+      }
+    }
+  ]
+}
