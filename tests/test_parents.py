@@ -635,36 +635,55 @@ def test_a_leaning_parent_is_named_rather_than_dropped():
     assert MOTHER in outcome.bride_parents
 
 
+def _bare(**kw):
+    """One candidate with every indicator off unless named.
+
+    Built directly rather than from a gallery: this test is about a *threshold*,
+    and a fixture that has to land inside a narrow score band keeps breaking
+    whenever a new indicator is added -- which is exactly what happened when
+    `family` arrived.
+    """
+    base = dict(identity=MOTHER, appearances=20, age=60.0, age_rank=0.90, gender=1,
+                with_bride=0, with_groom=0, prep_bride=0, prep_groom=0,
+                aisle_bride=0, aisle_groom=0, duo_dance_bride=0, duo_dance_groom=0,
+                ceremony=0, party=0, attributable=0, parent_query=0.0,
+                dance_query=0.0, celebrant_query=0.0)
+    base.update(kw)
+    return parents.Indicators(**base)
+
+
 def test_an_unconvincing_leaner_is_still_refused():
     """The lean buys a weaker *side* test, paid for with a stronger *parent*
     test: `min_score_ambiguous_side` is 0.60 against the usual 0.50.
 
-    So the candidate here is deliberately in the band between the two -- old
-    enough, leaning the right way, and scoring ~0.56 on portraits alone with no
-    prep, no aisle and no parent dance. She clears the ordinary floor and is
-    still refused, which is the whole point: a marginal side is only acceptable
-    from someone who is otherwise unmistakably a parent.
+    So this candidate is deliberately between the two -- old enough, leaning
+    the right way on 49995684's own 10/7 ratio, and carrying nothing else. She
+    clears the ordinary floor and is still refused, which is the point: a
+    marginal side is only acceptable from someone otherwise unmistakably a
+    parent.
     """
-    rows = [("portrait", [BRIDE, MOTHER]) for _ in range(3)]
-    rows += [("portrait", [BRIDE, MOTHER, FATHER]) for _ in range(7)]
-    rows += [("portrait", [GROOM, MOTHER]) for _ in range(7)]
-    rows += [("walking the aisle", [BRIDE, FATHER]) for _ in range(4)]
-    rows += [("portrait", [BRIDE, FATHER]) for _ in range(8)]
-    rows += [("bride party", [BRIDE, BRIDESMAID]) for _ in range(30)]
-    for guest in CROWD:
-        rows += [("ceremony", [BRIDE, GROOM, guest]) for _ in range(3)]
-        rows += [("dancing", [guest, BRIDE]) for _ in range(3)]
-
-    candidates, outcome = resolve(gallery(rows))
-
-    mother = next(c for c in candidates if c.identity == MOTHER)
-    assert mother.leaning_side() == "bride", "she does lean"
-    assert mother.age_rank >= CONFIGS['parents']['min_age_rank'], "and is old enough"
+    candidate = _bare(with_bride=10, with_groom=7)
     ordinary = CONFIGS['parents']['min_score']
     raised = CONFIGS['parents']['min_score_ambiguous_side']
-    assert ordinary <= parents.score(mother, "bride") < raised, (
+
+    assert candidate.side_skew() is None, "the strict gate declines to commit"
+    assert candidate.leaning_side() == "bride", "but she does lean"
+    assert ordinary <= parents.score(candidate, "bride") < raised, (
         "the fixture must sit between the two floors or this proves nothing")
+
+    outcome = parents.resolve([candidate])
+
     assert MOTHER not in outcome.all_parents()
+
+
+def test_a_convincing_leaner_is_taken():
+    """The other side of the same threshold: add the family portraits and she
+    clears the raised floor."""
+    candidate = _bare(with_bride=10, with_groom=7, family_bride=4)
+
+    assert candidate.side_skew() is None
+    assert parents.score(candidate, "bride") >= CONFIGS['parents']['min_score_ambiguous_side']
+    assert MOTHER in parents.resolve([candidate]).bride_parents
 
 
 def test_a_dead_even_split_is_still_unplaceable():
@@ -714,3 +733,71 @@ def test_dropping_the_mother_still_costs_the_family_portraits():
     assert len(trio) == TRIO_PORTRAITS, "fixture should hold the family portraits"
     assert trio[Col.PARENT_CATEGORY].isna().all(), (
         "the unnamed mother invalidates every portrait she stands in")
+
+
+# -- the officiant, and the family portrait --------------------------------
+
+
+def test_the_officiant_is_caught_even_when_he_spans_the_day():
+    """`officiant_span` alone misses him. On 49995684 id 34 gives a speech and
+    stands in a portrait, so he spans 0.71 of the day -- nowhere near the 0.15
+    band -- and he was the *top-scoring* groom's-parent candidate in the
+    gallery. What still gives him away is that 76% of his own frames are the
+    ceremony, against at most 33% for anyone else."""
+    wide = _bare(age_rank=0.86, with_groom=17, ceremony=29, ceremony_share=0.76,
+                 span=(0.10, 0.81))
+    ordinary = _bare(age_rank=0.86, with_groom=17, ceremony=29, ceremony_share=0.30,
+                     span=(0.10, 0.81))
+
+    assert parents.score(wide, "groom") < parents.score(ordinary, "groom")
+
+
+def test_a_narrow_officiant_is_still_caught():
+    """The original span route has to keep working."""
+    narrow = _bare(age_rank=0.86, with_groom=17, ceremony=29, ceremony_share=0.30,
+                   span=(0.40, 0.50))
+    spread = _bare(age_rank=0.86, with_groom=17, ceremony=29, ceremony_share=0.30,
+                   span=(0.10, 0.81))
+
+    assert parents.score(narrow, "groom") < parents.score(spread, "groom")
+
+
+def test_a_parent_at_the_ceremony_is_not_an_officiant():
+    """Parents sit through the whole ceremony too. The penalty needs both a
+    real count and the concentration, or it would charge every parent."""
+    parent = _bare(age_rank=0.90, with_bride=12, ceremony=4, ceremony_share=0.20)
+    assert parents.score(parent, "bride") == parents.score(
+        _bare(age_rank=0.90, with_bride=12, ceremony=0, ceremony_share=0.0), "bride")
+
+
+def test_the_family_portrait_counts_only_small_frames():
+    """Uncapped, the twenty-two-person group shot counts and half the guest
+    list looks like family. On 49995684 the bride's parents separate from the
+    field only once the frame is capped: 12 each against at most 4."""
+    rows = [("portrait", [BRIDE, MOTHER, FATHER]) for _ in range(6)]
+    rows += [("portrait", [BRIDE, GROOM, MOTHER] + list(CROWD)) for _ in range(10)]
+
+    candidates, _outcome = resolve(gallery(rows))
+
+    mother = next(c for c in candidates if c.identity == MOTHER)
+    assert mother.family_bride == 6, "only the small ones count"
+
+
+def test_the_family_portrait_is_side_specific():
+    rows = [("portrait", [BRIDE, MOTHER]) for _ in range(8)]
+    rows += [("portrait", [GROOM, GROOM_MOTHER]) for _ in range(7)]
+
+    candidates, _outcome = resolve(gallery(rows))
+
+    mother = next(c for c in candidates if c.identity == MOTHER)
+    his = next(c for c in candidates if c.identity == GROOM_MOTHER)
+    assert (mother.family_bride, mother.family_groom) == (8, 0)
+    assert (his.family_bride, his.family_groom) == (0, 7)
+
+
+def test_the_family_portrait_separates_a_parent_from_a_guest():
+    """The signal that named the bride's parents, stated on its own."""
+    parent = _bare(age_rank=0.90, with_bride=10, family_bride=4)
+    guest = _bare(age_rank=0.90, with_bride=10, family_bride=0)
+
+    assert parents.score(parent, "bride") - parents.score(guest, "bride") >= 0.2

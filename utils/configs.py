@@ -401,6 +401,21 @@ CONFIGS = {'DEBUG': True,
             # confined to a narrow band of the day.
             'officiant_span': 0.15,
             'officiant_ceremony': 10,
+            # The second route to the officiant, for the one who also gives a
+            # speech or stands in a portrait and so spans most of the day. He
+            # is still at the ceremony almost exclusively: on 49995684 id 34
+            # sits at 0.76 of his own frames against at most 0.33 for every
+            # other candidate, while his span is 0.71 -- outside any usable
+            # band. He was the top-scoring "groom's parent" in that gallery.
+            'officiant_ceremony_share': 0.60,
+
+            # A small posed portrait holding the candidate and one partner.
+            # `family_max_people` is what makes it mean anything: uncapped, the
+            # twenty-two-person group shot counts and half the guest list looks
+            # like family. Capped at four on 49995684, the bride's mother and
+            # father sit at 12 each and nobody else clears 4.
+            'family_max_people': 4,
+            'family_full': 4,
 
             # Circles this size or smaller read as a household rather than a
             # guest list; a circle shared with another *old* candidate is how
@@ -412,6 +427,7 @@ CONFIGS = {'DEBUG': True,
                 'own_side': 0.20,
                 'prep': 0.20,
                 'aisle': 0.15,
+                'family': 0.25,
                 'duo_dance': 0.25,
                 'circle': 0.15,
                 'query': 0.15,
