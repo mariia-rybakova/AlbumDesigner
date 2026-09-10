@@ -191,6 +191,14 @@ CONFIGS = {'DEBUG': True,
         # the bound is the ceremony START, not the climax: "before the ceremony"
         # means before it begins. Bounding at the anchor instead pulled in
         # mid-ceremony vows and officiant frames as "processional".
+        # How far before the detected ceremony block a `ceremony`-classed
+        # frame is still plausibly the ceremony opening. The block is found
+        # from a density of ceremony-ish frames, so its start lands inside
+        # the first minutes rather than exactly on them; without a lead-in
+        # the real opening frames would be demoted. On 49995684 the two
+        # bogus frames sit ~90 positions before the block, so this is not
+        # a close call there. None disables the check.
+        'ceremony_lead_in': 30,
         'aisle_lead_in': 80,
         'aisle_upper_overlap': 20,
         'aisle_max_gap': 4,

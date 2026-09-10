@@ -1136,3 +1136,66 @@ def test_the_crowd_gate_can_be_switched_off():
         CONFIGS['aisle_max_people'] = original
 
     assert len(walked(context, GROOM_AISLE)) > 0
+
+
+# -- the ceremony cannot happen before the ceremony -------------------------
+
+
+def _with_early_ceremony(n=2):
+    """The gallery, with `ceremony`-classed frames planted during the prep."""
+    df = make_gallery()
+    prep = df.index[df[Col.CLUSTER_CONTEXT] == 'portrait'][:n]
+    df.loc[prep, Col.CLUSTER_CONTEXT] = 'ceremony'
+    df.loc[prep, 'image_subquery_content'] = 'officiant leading wedding ceremony'
+    return df, list(prep)
+
+
+def test_a_ceremony_frame_from_before_the_ceremony_is_demoted():
+    """49995684: two frames at 20:13 classed `ceremony` and captioned
+    "officiant leading wedding ceremony" are the groom shaking hands with an
+    older man in daylight -- sixteen minutes before the processional. Both
+    reached the album because `ceremony` has a budget."""
+    df, planted = _with_early_ceremony()
+
+    context = run(df)
+
+    assert (context.photos.loc[planted, Col.CLUSTER_CONTEXT] == 'other').all()
+
+
+def test_the_real_ceremony_is_untouched():
+    df = make_gallery()
+    before = int((df[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+
+    context = run(df)
+
+    after = int((context.photos[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+    assert after == before, "the ceremony's own frames must survive"
+
+
+def test_the_lead_in_protects_the_ceremony_opening():
+    """The block start is found from a density of ceremony-ish frames, so it
+    lands inside the first minutes rather than exactly on them. Without a
+    lead-in the real opening would be demoted."""
+    df = make_gallery()
+    original = CONFIGS.get('ceremony_lead_in')
+    CONFIGS['ceremony_lead_in'] = 0
+    try:
+        aggressive = int((run(df.copy())
+                          .photos[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+    finally:
+        CONFIGS['ceremony_lead_in'] = original
+    protected = int((run(df.copy()).photos[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+
+    assert protected >= aggressive
+
+
+def test_the_early_check_can_be_switched_off():
+    df, planted = _with_early_ceremony()
+    original = CONFIGS.get('ceremony_lead_in')
+    CONFIGS['ceremony_lead_in'] = None
+    try:
+        context = run(df)
+    finally:
+        CONFIGS['ceremony_lead_in'] = original
+
+    assert (context.photos.loc[planted, Col.CLUSTER_CONTEXT] == 'ceremony').all()

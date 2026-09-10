@@ -63,6 +63,10 @@ GROOM_AISLE = "groom walking the aisle"
 WALKING_THE_AISLE = "walking the aisle"
 OTHER = "other"
 
+#: The content model's ceremony class, which it also puts on frames from
+#: before the ceremony started.
+CEREMONY_CLASS = ("ceremony",)
+
 #: Subqueries that identify a kiss frame.
 KISS_QUERIES = (
     "wedding kiss at ceremony",
@@ -138,12 +142,65 @@ class CeremonyAnchorSubStage(SubStage):
                 f"(core {ceremony.core_start}-{ceremony.core_end}, "
                 f"{len(ceremony.climax_positions)} climax frames)")
 
+        self._demote_early_ceremony(context, ceremony)
         self._demote_late_processional(context, ceremony)
 
         claimed = list(self._tag_kiss(context, ceremony))
         claimed += self._tag_aisle(context, ceremony, exclude=claimed)
         self._tag_send_off(context, ceremony, exclude=claimed)
         return context
+
+    # -- the ceremony cannot happen before the ceremony ----------------------
+
+    def _demote_early_ceremony(self, context: AlbumContext,
+                               ceremony: tl.CeremonyTimeline) -> int:
+        """Reclass a `ceremony` photo that sits well before the ceremony began.
+
+        The mirror of :meth:`_demote_late_processional`, and the same mistake
+        read from the other end: the content model puts a label on a frame that
+        the day's own order says cannot carry it. On 49995684 two frames at
+        20:13 are classed `ceremony` and captioned "officiant leading wedding
+        ceremony". They are the groom shaking hands with an older man in
+        daylight, sixteen minutes before the processional and twenty-four
+        before the vows. Both reached the album, because `ceremony` has a
+        budget and they were ranked inside it.
+
+        The cut is ``core_start`` less a lead-in, not ``core_start`` itself. The
+        ceremony block is found from a density of ceremony-ish frames, so its
+        start lands somewhere inside the first minutes rather than exactly on
+        them, and shaving frames just before it would demote the real opening.
+
+        Only ``cluster_context`` is rewritten, for the reason given on the late
+        case: `image_class` is the model's own output and enrich does not edit
+        it.
+        """
+        lead_in = CONFIGS.get('ceremony_lead_in')
+        if lead_in is None:
+            return 0
+
+        photos = context.photos
+        position = ceremony.frame[tl.POSITION]
+        cut = ceremony.core_start - lead_in
+        before = position.index[position < cut]
+
+        candidates = photos.index.intersection(before)
+        if len(candidates) == 0:
+            return 0
+
+        early = photos.loc[candidates, Col.CLUSTER_CONTEXT].isin(CEREMONY_CLASS)
+        demoted = early.index[early]
+        if len(demoted) == 0:
+            return 0
+
+        photos.loc[demoted, Col.CLUSTER_CONTEXT] = OTHER
+        if context.logger:
+            span = sorted(int(position.loc[i]) for i in demoted)
+            context.logger.info(
+                f"Reclassified {len(demoted)} '{CEREMONY_CLASS[0]}' photos at positions "
+                f"{span[0]}-{span[-1]} as '{OTHER}': they sit before the ceremony "
+                f"started ({ceremony.core_start}, less a {lead_in} lead-in), so "
+                f"whatever they show, it is not the ceremony")
+        return len(demoted)
 
     # -- the processional cannot happen after the ceremony -------------------
 
