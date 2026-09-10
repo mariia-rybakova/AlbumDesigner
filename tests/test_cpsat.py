@@ -451,3 +451,129 @@ def test_a_model_with_nothing_to_decide_hands_back():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# -- the ramp into the duplicate wall --------------------------------------
+
+
+def _burst(similarity, category='dancing'):
+    """Two same-class frames a chosen cosine apart, plus a distinct third.
+
+    Quota of one, so the model has to choose. The pair sits adjacent in time
+    so it is inside the cohesion window that pays for neighbours -- which is
+    the reward this penalty exists to outweigh.
+    """
+    import numpy as _np
+    a = _np.array([1.0, 0.0, 0.0], dtype=_np.float32)
+    near = _np.array([similarity, (1 - similarity ** 2) ** 0.5, 0.0], dtype=_np.float32)
+    far = _np.array([0.0, 0.0, 1.0], dtype=_np.float32)
+    rows = []
+    for i, (vector, order) in enumerate(((a, 0.0), (near, 1.0), (far, 2.0))):
+        rows.append({
+            Col.IMAGE_ID: 2000 + i,
+            Col.CLUSTER_CONTEXT: category,
+            Col.IMAGE_CLASS: 8,
+            Col.EMBEDDING: vector,
+            Col.GENERAL_TIME: float(i),
+            Col.IMAGE_ORDER: order,
+            Col.PERSONS_IDS: [],
+            Col.N_FACES: 0,
+            Col.IMAGE_COLOR: 1,
+            Col.IMAGE_ORIENTATION: 'landscape',
+        })
+    return pd.DataFrame(rows)
+
+
+def test_a_near_duplicate_pair_is_charged_but_not_forbidden():
+    """Soft, deliberately: the wall at `duplicate_similarity` forbids, this
+    only makes the closer frame the dearer buy."""
+    photos = _burst(0.94)
+
+    both = pick(photos, {'dancing': 2})
+
+    assert len(both) == 2, "a quota that needs two still gets two"
+
+
+def test_the_charge_moves_the_model_off_the_near_duplicate():
+    """What "choose at least the second closest" means in a solver: the pair
+    is priced, so once the charge outweighs what the rest of the objective
+    pays for it, the model takes the frame further from the one it has.
+
+    The weight is asserted as a direction rather than a number. Three photos
+    is not the balance a real gallery strikes -- the window and coverage terms
+    dominate a day this short -- so the production weight is set from measured
+    galleries, not from here.
+    """
+    photos = _burst(0.94)
+
+    free = pick(photos, {'dancing': 2}, similar_penalty_weight=0)
+    charged = pick(photos, {'dancing': 2}, similar_penalty_weight=5000)
+
+    assert {2000, 2001}.issubset(free), "unpriced, the model takes the burst pair"
+    assert not {2000, 2001}.issubset(charged), "priced, it does not"
+
+
+def test_a_pair_below_the_soft_threshold_is_free():
+    """Ordinary variety must not be charged. The soft threshold sits above the
+    median nearest-neighbour cosine on both measured galleries."""
+    soft = CONFIGS['pick_cpsat']['similar_soft_threshold']
+    photos = _burst(soft - 0.10)
+
+    chosen = pick(photos, {'dancing': 2})
+
+    assert len(chosen) == 2
+
+
+def test_the_charge_can_be_switched_off():
+    photos = _burst(0.94)
+    chosen = pick(photos, {'dancing': 2}, similar_penalty_weight=0)
+
+    assert len(chosen) == 2
+
+
+def test_the_wall_still_stands_above_the_ramp():
+    """At and above `duplicate_similarity` the pair is excluded outright.
+
+    The ramp is switched off here on purpose: with it on, the charge alone
+    keeps the pair apart and the test would pass whether or not the hard rule
+    still existed.
+    """
+    photos = _burst(0.99)
+
+    chosen = pick(photos, {'dancing': 2}, similar_penalty_weight=0)
+
+    assert not {2000, 2001}.issubset(chosen), "identical frames stay mutually exclusive"
+
+
+def test_the_ramp_does_not_charge_what_the_wall_already_forbids():
+    """Double counting would make an excluded pair look expensive rather than
+    impossible, and would distort every score reported beside it."""
+    from src.pipeline.select import cpsat as _cpsat
+
+    added = []
+    original = _cpsat.CpSatPicker._add_similarity_penalty
+
+    def spy(self, model, frame, x, penalties):
+        before = len(penalties)
+        original(self, model, frame, x, penalties)
+        added.append(len(penalties) - before)
+
+    _cpsat.CpSatPicker._add_similarity_penalty = spy
+    try:
+        pick(_burst(0.99), {'dancing': 2})
+    finally:
+        _cpsat.CpSatPicker._add_similarity_penalty = original
+
+    assert added == [0], "a pair at or above the wall is not also charged"
+
+
+def test_the_shipped_weight_is_on_and_below_the_shortage_penalty():
+    """The sweep is in `utils/configs.py`. What matters structurally: the
+    charge is live, it starts above the median nearest-neighbour cosine
+    measured on real galleries, and it stays under `shortage_weight` so a
+    quota slot is dropped only when nothing less similar can fill it."""
+    cfg = CONFIGS['pick_cpsat']
+
+    assert cfg['similar_penalty_weight'] > 0
+    assert 0.80 < cfg['similar_soft_threshold'] < cfg['duplicate_similarity']
+    assert cfg['similar_penalty_weight'] < cfg['shortage_weight']

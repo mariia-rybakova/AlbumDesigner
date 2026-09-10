@@ -161,6 +161,7 @@ class CpSatPicker:
         for index in self.contradictions(frame):
             model.Add(x[index] == 0)
         self._add_distinct_shots(model, frame, x)
+        self._add_similarity_penalty(model, frame, x, penalties)
         self._add_repeat_penalty(model, frame, x, penalties)
         self._add_cohesion(model, frame, x, rewards)
 
@@ -852,6 +853,78 @@ class CpSatPicker:
                 # Penalised, so the solver drives it to max(0, picked - allowed).
                 model.Add(repeats >= sum(x[index] for index in members) - allowed)
                 penalties.append(repeats * weight)
+
+    def _add_similarity_penalty(self, model, frame, x, penalties) -> None:
+        """Charge for picking two photos that are nearly the same shot.
+
+        `_add_exclusions` is a wall at 0.97 and nothing stands below it, so the
+        picker sits just underneath: on the two galleries measured the closest
+        selected pairs land at 0.972 and 0.964, and the *median* photo in the
+        body has a neighbour at 0.902 and 0.841. The rule almost never binds,
+        and everything short of identical is free.
+
+        Worse, it is free while `_add_cohesion` is actively *paying* for
+        neighbours -- and the second frame of a burst is the nearest neighbour
+        there is. So the album fills with the same shot twice.
+
+        This is the ramp into that wall. The charge rises from nothing at
+        `similar_soft_threshold` to the full weight at `duplicate_similarity`,
+        where the hard rule takes over, so the closer two frames are the more a
+        pair costs. That is what makes it prefer the second-closest frame over
+        the closest without ever forbidding either: a pair worth having -- both
+        well ranked, or needed to fill a quota -- can still be bought.
+
+        Same class and inside the cohesion window, like the two terms it sits
+        between, which keeps it O(n) rather than O(n^2) over the gallery.
+        """
+        weight = int(self.cfg.get('similar_penalty_weight', 0))
+        soft = float(self.cfg.get('similar_soft_threshold', 1.0))
+        hard = float(self.cfg.get('duplicate_similarity', 0.97))
+        if weight <= 0 or soft >= 1.0 or soft >= hard:
+            return
+        if Col.EMBEDDING not in frame.columns:
+            return
+
+        reach = int(self.cfg.get('cohesion_max_gap', 10))
+        span = hard - soft
+        charged = 0
+
+        for _category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            index = list(group.index)
+            vectors = {i: _unit(group.at[i, Col.EMBEDDING]) for i in index}
+            positions = group[tl.POSITION].values
+
+            for a in range(len(index)):
+                first = index[a]
+                if vectors[first] is None:
+                    continue
+                for b in range(a + 1, len(index)):
+                    if int(positions[b] - positions[a]) > reach:
+                        break
+                    second = index[b]
+                    if vectors[second] is None:
+                        continue
+                    similarity = float(vectors[first] @ vectors[second])
+                    # At or above `hard` the pair is already forbidden outright,
+                    # so charging it as well would be double counting.
+                    if similarity < soft or similarity >= hard:
+                        continue
+                    if frame.at[first, '_committed'] and frame.at[second, '_committed']:
+                        continue
+                    charge = int(round(weight * (similarity - soft) / span))
+                    if charge <= 0:
+                        continue
+                    # Only the lower bound is needed: this is a cost, so the
+                    # solver drives the pair variable to 0 wherever it may.
+                    pair = model.NewBoolVar(f"sim_{first}_{second}")
+                    model.Add(pair >= x[first] + x[second] - 1)
+                    penalties.append(pair * charge)
+                    charged += 1
+
+        if charged and self.logger:
+            self.logger.info(
+                f"cp-sat: {charged} near-duplicate pairs charged between "
+                f"{soft} and {hard} (max {weight})")
 
     def _add_exclusions(self, model, frame, x) -> None:
         """Near-identical frames of the same class cannot both be picked.

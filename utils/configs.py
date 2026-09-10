@@ -709,6 +709,45 @@ CONFIGS = {'DEBUG': True,
             # Colour is preferred the way the loop's two pools prefer it, but
             # as a penalty -- one model has one pool.
             'grayscale_penalty': 200,
+
+            # The ramp into `duplicate_similarity`. That rule is a wall at 0.97
+            # with nothing beneath it, so the picker sits just underneath: the
+            # closest selected pairs measured 0.972 and 0.964 on the two
+            # galleries, and the median body photo has a neighbour at 0.902 and
+            # 0.841. Everything short of identical was free -- while
+            # `cohesion_weight` was paying 60 for neighbours, which is exactly
+            # where the second frame of a burst lives.
+            #
+            # The charge rises from nothing at the soft threshold to the full
+            # weight at the hard one, so the closest frame costs most and the
+            # second-closest is the cheaper buy. Soft, so a pair worth having
+            # can still be bought.
+            #
+            # 0.88 starts above the median on both galleries, so ordinary
+            # variety is untouched and only the genuinely repeated shot pays.
+            # 250 outweighs the 60 cohesion pays for the same adjacency well
+            # before the pair reaches the wall. Set the weight to 0 to disable.
+            'similar_soft_threshold': 0.88,
+            #
+            # Swept on both galleries, selection only. Columns are photos
+            # selected, the median nearest-neighbour cosine among them, and how
+            # many have a neighbour at 0.95 / 0.90:
+            #
+            #          53227528                  49995684
+            #     0 | 62  0.894  17  30  |  99  0.838  10  28
+            #   250 | 61  0.872   9  21  |  99  0.816   0  12
+            #   600 | 60  0.871   7  18  |  99  0.808   0  10
+            #  1200 | 59  0.870   6  16  |  99  0.808   0  10
+            #  2000 | 57  0.857   2  13  |  98  0.792   0   6
+            #
+            # 600 is where the gain stops being cheap. It more than halves the
+            # near-identical pairs on 53227528 for two photos and on 49995684
+            # for none; 1200 buys almost nothing beyond it and 2000 costs five.
+            # The erosion is the solver declining to fill a quota rather than
+            # pay -- which is why the weight stays well under `shortage_weight`
+            # (4000), so a slot is dropped only when nothing less similar can
+            # fill it.
+            'similar_penalty_weight': 600,
             # Cohesion rewards neighbours, and the second copy of a shot is a
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
