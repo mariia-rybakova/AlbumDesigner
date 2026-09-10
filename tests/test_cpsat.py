@@ -67,11 +67,12 @@ def gallery(rows):
     ])
 
 
-def pick(photos, images, committed=None, **overrides):
+def pick(photos, images, committed=None, artificial_time=False, **overrides):
     """Run the solver alone, with a hand-made plan."""
     context = AlbumContext(
         logger=quiet(), photos=photos,
-        facts=GalleryFacts(is_wedding=True, model_version=2),
+        facts=GalleryFacts(is_wedding=True, model_version=2,
+                           is_artificial_time=artificial_time),
         selection_inputs=SelectionInputs(),
         selection_plan=SelectionPlan(images=dict(images),
                                      committed=dict(committed or {})),
@@ -614,7 +615,7 @@ def test_one_shot_in_colour_and_black_and_white_is_not_taken_twice():
     # The soft charge is off throughout this block: at 0.917 it separates the
     # pair on its own, so with it on these tests pass whether or not the
     # treatment rule exists.
-    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0, artificial_time=True)
 
     assert not {3000, 3001}.issubset(chosen)
 
@@ -625,17 +626,26 @@ def test_two_frames_in_the_same_treatment_are_left_alone():
     Without it this would be an exclusion at 0.90 and would gut a burst."""
     photos = _treatment_pair(0.917, colours=(1, 1))
 
-    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0, artificial_time=True)
 
     assert {3000, 3001}.issubset(chosen)
 
 
-def test_a_merely_similar_pair_in_two_treatments_survives():
-    """Verified burst pairs on 53227528 sit at 0.882-0.892 -- different poses
-    in one session, checked by eye -- and must not be excluded."""
-    photos = _treatment_pair(0.85)
+def test_a_loosely_similar_pair_in_two_treatments_survives():
+    """The threshold is a floor, not a licence to pair anything greyscale with
+    anything colour.
 
-    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+    Where it sits is a judgement, and worth being plain about: verified twins
+    on 53227528 measure 0.836 to 0.929 and verified *bursts* 0.832 to 0.925,
+    so the two populations run straight through each other and no cut
+    separates them. 0.83 sits just under the lowest twin, which favours
+    removing a redundant copy over keeping a distinct frame -- acceptable only
+    because this runs on artificial-time galleries alone, where the clock
+    cannot answer and `enrich.duplicate_shots` is inert.
+    """
+    photos = _treatment_pair(0.78)
+
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0, artificial_time=True)
 
     assert {3000, 3001}.issubset(chosen)
 
@@ -647,7 +657,7 @@ def test_the_treatment_rule_reads_no_clock():
     photos = _treatment_pair(0.917)
     photos[Col.IMAGE_TIME] = 1_700_000_000  # one identical, useless timestamp
 
-    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0, artificial_time=True)
 
     assert not {3000, 3001}.issubset(chosen)
 
@@ -657,7 +667,7 @@ def test_the_treatment_rule_can_be_switched_off():
     own and the test would pass whether or not the rule were off."""
     photos = _treatment_pair(0.917)
 
-    chosen = pick(photos, {'groom': 2},
+    chosen = pick(photos, {'groom': 2}, artificial_time=True,
                   treatment_duplicate_similarity=1.0, similar_penalty_weight=0)
 
     assert {3000, 3001}.issubset(chosen)
@@ -668,9 +678,25 @@ def test_the_colour_flag_is_what_makes_it_a_re_export():
     similarity, the mixed-treatment pair is excluded and the same-treatment
     pair is not. Without the condition the two would behave alike."""
     same = pick(_treatment_pair(0.917, colours=(1, 1)), {'groom': 2},
-                similar_penalty_weight=0)
+                similar_penalty_weight=0, artificial_time=True)
     mixed = pick(_treatment_pair(0.917, colours=(1, 0)), {'groom': 2},
-                 similar_penalty_weight=0)
+                 similar_penalty_weight=0, artificial_time=True)
 
     assert {3000, 3001}.issubset(same), "a burst keeps both frames"
     assert not {3000, 3001}.issubset(mixed), "one shot in two treatments does not"
+
+
+def test_the_treatment_rule_stands_down_when_the_clock_works():
+    """Where the EXIF is usable the capture second settles it exactly -- a
+    re-export preserves the timestamp, so a true twin is delta 0, and
+    `enrich.duplicate_shots` has already removed those upstream. What is left
+    at a high cosine there is a burst: on 49995684 the four mixed pairs this
+    rule would exclude sit 1s, 1s, 4s and 23s apart and are all different
+    frames. Cosine cannot separate the two populations -- twins measure
+    0.836-0.929 and those bursts 0.832-0.925 -- so the clock decides."""
+    photos = _treatment_pair(0.917)
+
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0,
+                  artificial_time=False)
+
+    assert {3000, 3001}.issubset(chosen)

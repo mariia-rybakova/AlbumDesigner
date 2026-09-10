@@ -938,6 +938,20 @@ class CpSatPicker:
         treatment = float(self.cfg.get('treatment_duplicate_similarity', 1.0))
         if Col.EMBEDDING not in frame.columns:
             return
+
+        # Only where the clock cannot answer. On a gallery with usable EXIF the
+        # capture second settles it exactly -- a re-export preserves the
+        # timestamp, so a true twin is delta 0 -- and `enrich.duplicate_shots`
+        # has already removed those upstream (24 of them on 49995684). What is
+        # left there at a high cosine is a *burst*: the four mixed pairs this
+        # rule was excluding on that gallery sit 1s, 1s, 4s and 23s apart, and
+        # every one is a genuinely different frame. Cosine cannot tell them
+        # from a re-export -- true twins measure 0.836 to 0.929 and those
+        # bursts 0.832 to 0.925, straight through each other -- so where the
+        # clock works, the clock decides and this stands down.
+        artificial = bool(getattr(self.context.facts, 'is_artificial_time', False))
+        if not artificial:
+            treatment = 1.0
         if threshold >= 1.0 and treatment >= 1.0:
             return
 

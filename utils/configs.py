@@ -769,7 +769,7 @@ CONFIGS = {'DEBUG': True,
             # at or below every verified twin (0.900-0.929). The margin is
             # thin, which is why the differing colour flag is required as well:
             # a burst does not change treatment between frames.
-            'treatment_duplicate_similarity': 0.90,
+            'treatment_duplicate_similarity': 0.83,
 
             # Who a class is about, as a score. `bride` means the bride on
             # her own, `bride and groom` means the two of them and nobody
