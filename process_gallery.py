@@ -485,6 +485,30 @@ def _ensure_photos(args, request, project_dir, log):
     log("  " + ", ".join(f"{k}={v}" for k, v in counts.items()))
 
 
+def _exit_now(code=0, message=None):
+    """End the process without waiting for ptinfra's queue thread.
+
+    `ptinfra.intialize` registers a **non-daemon** `ElasticQueueThread`, so a
+    normal return -- or a `SystemExit` -- unwinds the main thread and then
+    blocks forever waiting for that one to finish. The album is already on
+    disk by then, so the run looks finished and simply never exits, and each
+    one leaves an interpreter alive holding the whole photo table and its
+    embeddings. Fifteen albums in a session is enough to exhaust memory.
+
+    `os._exit` skips interpreter shutdown entirely, which is why the streams
+    are flushed by hand first: it does not run `atexit`, and anything sitting
+    in a buffer would be lost.
+
+    Local driver only. The service's own shutdown is ptinfra's business and
+    `main.py` does not do this -- there the queue thread is the point.
+    """
+    if message:
+        print(message, file=sys.stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if __name__ == '__main__':
     args = _build_arg_parser().parse_args()
     log = print
@@ -526,7 +550,7 @@ if __name__ == '__main__':
     # Run request
     final_album, _message = process_gallery(_input_request)
     if _message is None:
-        raise SystemExit(f"process_gallery failed: {final_album}")
+        _exit_now(1, f"process_gallery failed: {final_album}")
 
     gallery_photos_info = _message.content['gallery_photos_info']
     box_id2data = _message.designsInfo['anyPagebox_id2data']
@@ -572,3 +596,6 @@ if __name__ == '__main__':
     visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info,
                            is_artificial_time)
     print('album saved locally:', _output_pdf_path)
+
+    # The PDF is written and closed, so there is nothing left to wait for.
+    _exit_now(0)
