@@ -460,6 +460,39 @@ CONFIGS = {'DEBUG': True,
             # rather than enforced when it would empty the candidate base.
             'min_faces': 2,
 
+            # The classes a cover may come from. `kiss` and `couple` are couple
+            # moments by definition and were unreachable while the base was
+            # `bride and groom` alone.
+            'cover_classes': ('bride and groom', 'couple', 'kiss'),
+
+            # The old gate: both identities required, everything else dropped
+            # before scoring. Off, because `persons_ids` is built from face
+            # clusters -- a frame with no detected face carries no identity, so
+            # the gate silently required them to be facing the camera and threw
+            # away the embrace shots. 18 of 117 couple frames on 49995684 and 53
+            # of 204 on 53227528 were unreachable. `presence` grades the same
+            # evidence instead. Set True to restore the filter.
+            'require_identities': False,
+
+            # How surely both of them are in frame, as a score rather than a
+            # gate. A frame naming both still beats one that does not, all else
+            # equal; a faceless one starts 0.8 of a presence-weight behind and
+            # has to make it up on affection and quality.
+            'presence_grades': {
+                'both': 1.0,        # both identities named
+                'one': 0.6,         # one named, the other unrecognised
+                'faces_only': 0.35, # faces detected, neither identified
+                'neither': 0.2,     # no face at all -- backs turned, or buried
+            },
+
+            # What makes a cover *special*: a look, a touch, a candid moment
+            # that reads as mutual. Combined with `max`, not `mean` -- a frame
+            # shows one kind of affection, and averaging across the rest
+            # punishes it for being emphatically one thing. All six bins ship
+            # for both model versions already, so this needs no blob write.
+            'affection_concepts': ('affection', 'intimacy', 'hugging',
+                                   'holdinghands', 'kissing', 'romance'),
+
             # Quality, from concepts already published for both model versions
             # -- no new bin, so this needs no blob write. `portrait` and
             # `softlight` speak to the photograph, the rest to the moment.
@@ -470,11 +503,25 @@ CONFIGS = {'DEBUG': True,
                                  'romance', 'softlight', 'happiness'),
 
             'weights': {
-                # The dominant term, and deliberately so: subquery affinity
-                # says what the frame is *of*, quality says whether it is worth
-                # putting on the cover, and the second is what was missing.
+                # The leading term. `quality` says whether it is a good
+                # photograph and `subquery` says what it is of; neither asks
+                # whether the two of them are visibly feeling anything, which
+                # is the only thing that makes a cover worth being a cover.
+                'affection': 1.20,
                 'quality': 1.00,
                 'subquery': 0.60,
+                # Set against the affection range on purpose. Affection is
+                # normalised 0-1 at weight 1.20, and the gap between naming
+                # both and naming neither is 0.8 of this weight -- so 0.75
+                # makes a faceless frame find half the affection range to win.
+                # Reachable, and it has to be earned.
+                #
+                # Swept on both galleries. At 0.45 the handicap is 0.36 and
+                # 49995684 takes faceless frames at *both* ends; at 1.10 it is
+                # 0.88 and nothing faceless ever wins, which is the filter
+                # again by another name. 53227528 does not move anywhere in
+                # 0.45-1.10, so this is not tuned against it.
+                'presence': 0.75,
                 # `image_order` is a rank where 0 is best; the term is inverted
                 # where it is applied.
                 'rank': 0.40,

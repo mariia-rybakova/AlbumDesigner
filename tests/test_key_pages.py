@@ -29,6 +29,7 @@ from src.core.key_pages import (  # noqa: E402
 )
 from src.pipeline.enrich.key_pages import CLOSING, OPENING  # noqa: E402
 from src.pipeline.registry import get  # noqa: E402
+from utils.configs import CONFIGS  # noqa: E402
 
 BRIDE, GROOM = 101, 202
 
@@ -464,17 +465,50 @@ def test_a_crowd_loses_to_the_couple_alone():
     assert context.key_pages.opening == [frame[Col.IMAGE_ID].iloc[1]]
 
 
-def test_a_single_face_couple_frame_is_not_a_cover():
-    """Both names in `persons_ids` can still be one clear face and one profile
-    at the frame edge, so the face count is what is required."""
+def test_a_thinner_presence_loses_all_else_being_equal():
+    """Presence is graded, not required. Both names and two faces still beats
+    one clear face and a profile at the frame edge -- it just no longer
+    excludes it before anything is scored."""
     frame = couple_gallery(n=8)
     frame[Col.IMAGE_ORDER] = 5.0
     frame[Col.IMAGE_SUBQUERY_CONTENT] = "bride and groom smiling at each other"
     frame.loc[frame.index[0], Col.N_FACES] = 1
+    frame.at[frame.index[0], Col.PERSONS_IDS] = [BRIDE]
 
     context = run(frame)
 
     assert context.key_pages.opening != [frame[Col.IMAGE_ID].iloc[0]]
+
+
+def test_a_faceless_embrace_is_a_candidate_at_all():
+    """The point of relaxing the gate. `persons_ids` is built from face
+    clusters, so an embrace with faces turned away carries no face *and* no
+    identity, and the old base dropped it twice over -- 53 of 204 couple
+    frames on 53227528. It must at least be reachable."""
+    frame = couple_gallery(n=8)
+    frame[Col.N_FACES] = 0
+    frame[Col.PERSONS_IDS] = [[] for _ in range(len(frame))]
+
+    context = run(frame)
+
+    assert context.key_pages.opening, "a gallery of faceless couple frames still gets a cover"
+    assert context.key_pages.opening != context.key_pages.closing
+
+
+def test_the_old_gate_can_be_restored():
+    frame = couple_gallery(n=8)
+    frame[Col.N_FACES] = 0
+    frame[Col.PERSONS_IDS] = [[] for _ in range(len(frame))]
+    original = CONFIGS['covers']
+    CONFIGS['covers'] = {**original, 'require_identities': True}
+    try:
+        context = run(frame)
+    finally:
+        CONFIGS['covers'] = original
+
+    # Nothing names the couple, so the fallback hands back the couple frames
+    # rather than nothing -- a worse cover beats no cover, as before.
+    assert context.key_pages.opening
 
 
 def test_a_gallery_of_single_face_frames_still_gets_covers():
@@ -543,3 +577,148 @@ def test_covers_survive_concepts_being_unavailable():
 
     assert context.key_pages.opening and context.key_pages.closing
     assert context.key_pages.opening != context.key_pages.closing
+
+
+# -- affection: what makes a cover worth being one --------------------------
+
+
+def _scored(frame, queries=None, bride=BRIDE, groom=GROOM):
+    from src.core.key_pages import FIRST_COVER_QUERIES, _score_covers
+    return _score_covers(frame, queries or FIRST_COVER_QUERIES, _QUIET_LOG, bride, groom)
+
+
+def test_affection_takes_the_max_and_quality_the_mean():
+    """A frame shows one kind of affection -- a kiss, or held hands, or a look
+    -- so averaging across the bank punishes it for being emphatically one
+    thing, which is the photo we are after. Quality is the opposite: a cover
+    should be a good photograph on every count at once.
+
+    Row 0 is emphatic on one concept and poor on the other (max 0.9, mean
+    0.5); row 1 is evenly good (max 0.6, mean 0.6). Max ranks row 0 first,
+    mean ranks row 1 first.
+    """
+    from src.core.key_pages import _concept_score
+    import src.pipeline.enrich.timeline as tl
+
+    def fake(frame, concept):
+        return {'a': [0.9, 0.6], 'b': [0.1, 0.6]}[concept]
+
+    original = tl.concept_scores
+    tl.concept_scores = fake
+    try:
+        frame = couple_gallery(n=2)
+        by_max = _concept_score(frame, ('a', 'b'), _QUIET_LOG, 'max', 'x')
+        by_mean = _concept_score(frame, ('a', 'b'), _QUIET_LOG, 'mean', 'x')
+    finally:
+        tl.concept_scores = original
+
+    assert by_max[0] > by_max[1], "max keeps the emphatic frame ahead"
+    assert by_mean[1] > by_mean[0], "mean prefers the evenly good one"
+
+
+def test_a_candid_beats_a_posed_portrait_on_subquery():
+    """The commonest couple subquery by a wide margin is the posed portrait --
+    147 of 211 on 53227528 -- and it used to rank second of four, so the cover
+    was the album's most generic frame."""
+    from src.core.key_pages import FIRST_COVER_QUERIES, _subquery_affinity
+
+    frame = couple_gallery(n=2)
+    frame.loc[frame.index[0], Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom kissing'
+    frame.loc[frame.index[1], Col.IMAGE_SUBQUERY_CONTENT] = \
+        'bride and groom posing for a portrait'
+
+    affinity = _subquery_affinity(frame, FIRST_COVER_QUERIES)
+
+    assert affinity[0] > affinity[1]
+
+
+def test_presence_grades_rather_than_gates():
+    from src.core.key_pages import _presence
+
+    frame = couple_gallery(n=4)
+    frame.at[frame.index[1], Col.PERSONS_IDS] = [BRIDE]
+    frame.at[frame.index[2], Col.PERSONS_IDS] = []
+    frame.at[frame.index[3], Col.PERSONS_IDS] = []
+    frame.loc[frame.index[3], Col.N_FACES] = 0
+
+    grades = _presence(frame, BRIDE, GROOM)
+
+    assert grades[0] > grades[1] > grades[2] > grades[3]
+    assert grades[3] > 0, "a faceless frame is handicapped, never excluded"
+
+
+def _affection_frame(named_first=0.0, faceless=1.0):
+    """Two identical frames -- one naming the couple, one with no face at all
+    -- with the affection term stubbed so the trade-off is the only variable.
+    """
+    frame = couple_gallery(n=2)
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom smiling at each other'
+    frame[Col.IMAGE_ORDER] = 3.0
+    frame.at[frame.index[1], Col.PERSONS_IDS] = []
+    frame.loc[frame.index[1], Col.N_FACES] = 0
+
+    import src.pipeline.enrich.timeline as tl
+    original = tl.concept_scores
+    # Only the concepts affection does *not* share with quality may vary, or
+    # the stub leaks into the quality term and carries the result there --
+    # which is exactly what happened, and let the test pass with the affection
+    # weight zeroed.
+    exclusive = (set(CONFIGS['covers']['affection_concepts'])
+                 - set(CONFIGS['covers']['quality_concepts']))
+    assert exclusive, "affection needs at least one concept of its own"
+    tl.concept_scores = lambda f, concept: (
+        [named_first, faceless] if concept in exclusive else [0.5] * len(f))
+    return frame, original, tl
+
+
+def test_all_else_equal_the_frame_naming_both_wins():
+    frame, original, tl = _affection_frame(named_first=0.5, faceless=0.5)
+    try:
+        scores = _scored(frame)
+    finally:
+        tl.concept_scores = original
+
+    assert scores[0] > scores[1], "the handicap decides when affection does not"
+
+
+def test_a_faceless_frame_wins_when_it_is_the_more_affectionate_photograph():
+    """The whole point of relaxing the gate. An embrace with faces turned away
+    carries no face and so no identity, and it must be able to beat a frame
+    that merely names the couple -- by being the better photograph, against a
+    handicap of 0.8 of the presence weight."""
+    frame, original, tl = _affection_frame(named_first=0.0, faceless=1.0)
+    try:
+        scores = _scored(frame)
+    finally:
+        tl.concept_scores = original
+
+    assert scores[1] > scores[0]
+
+
+def test_the_couple_classes_are_all_reachable():
+    """`kiss` and `couple` are couple moments by definition and were
+    unreachable while the base was `bride and groom` alone."""
+    for category in ('bride and groom', 'kiss', 'couple'):
+        assert category in CONFIGS['covers']['cover_classes']
+
+
+def test_a_kiss_frame_can_be_a_cover_now():
+    from src.core.key_pages import _candidate_base
+
+    frame = couple_gallery(n=4)
+    frame.loc[frame.index[0], Col.CLUSTER_CONTEXT] = 'kiss'
+
+    base = _candidate_base(frame, BRIDE, GROOM, _QUIET_LOG)
+
+    assert frame[Col.IMAGE_ID].iloc[0] in set(base[Col.IMAGE_ID])
+
+
+def test_the_affection_concepts_ship_for_both_model_versions():
+    """No new bin, so no blob write -- the same constraint the quality term
+    was built under."""
+    from src.selection.auto_selection import load_pre_queries_embeddings
+    from utils.configs import CONFIGS as C
+    for concept in C['covers']['affection_concepts']:
+        for version in (1, 2):
+            assert len(load_pre_queries_embeddings(concept, version)) > 0, \
+                f"{concept} missing for v{version}"

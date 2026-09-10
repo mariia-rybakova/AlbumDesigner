@@ -169,16 +169,29 @@ def _select_by_priority_from_subset(df_subset, queries_primary, queries_fallback
 #: the list rather than used as a filter, so a frame tagged something else stays
 #: a candidate and competes on quality.
 FIRST_COVER_QUERIES = (
-    'bride and groom smiling at each other',
-    'bride and groom posing for a portrait',
-    'bride and groom during the ceremony',
+    'bride and groom kissing romantically',
     'bride and groom kissing',
+    'bride and groom hugging or kissing',
+    'bride and groom smiling at each other',
+    'bride and groom not formal pose',
+    'bride and groom walking together',
+    'bride and groom during the ceremony',
+    # Last on purpose. A posed portrait is the two of them *presenting*, and it
+    # is the commonest couple subquery by a wide margin -- 147 of 211 on
+    # 53227528 -- so ranking it near the top made the cover the album's most
+    # generic frame rather than its most particular one.
+    'bride and groom posing for a portrait',
 )
 LAST_COVER_QUERIES = (
+    'bride and groom kissing romantically',
+    'bride and groom kissing',
+    'bride and groom hugging or kissing',
     'bride and groom dancing',
     'bride and groom smiling at each other',
-    'bride and groom kissing',
+    'bride and groom not formal pose',
+    'bride and groom walking together',
     'bride and groom during the ceremony',
+    'bride and groom posing for a portrait',
 )
 
 
@@ -186,15 +199,21 @@ def settings() -> dict:
     return CONFIGS['covers']
 
 
-def _quality(frame, logger):
-    """Mean cosine against the cover-quality concepts, normalised over `frame`.
+def _concept_score(frame, concepts, logger, aggregate, label):
+    """Cosine against a bank of concepts, combined and normalised over `frame`.
+
+    ``aggregate`` is the whole difference between the two terms that use this.
+    Quality takes the **mean**: a cover should be a good photograph on every
+    count at once, so strong on one and weak on the rest is not the same
+    thing. Affection takes the **max**: a frame shows one kind of it -- a kiss,
+    or held hands, or a look -- and averaging across the others would punish a
+    photo for being emphatically one thing, which is the photo we are after.
 
     Zeros when the concepts cannot be scored -- no embeddings, no
     `model_version`, a bin missing for this model version. A gallery that
-    cannot be projected loses this term and is decided by subquery and rank,
-    which is what the rule did before this term existed.
+    cannot be projected loses the term and is decided by subquery and rank,
+    which is what the rule did before these terms existed.
     """
-    concepts = tuple(settings().get('quality_concepts', ()))
     if frame.empty or not concepts:
         return np.zeros(len(frame), dtype=float)
 
@@ -207,11 +226,67 @@ def _quality(frame, logger):
         try:
             scored.append(np.asarray(concept_scores(frame, concept), dtype=float))
         except Exception as exc:  # noqa: BLE001 - an absent bin costs a term, not the covers
-            logger.info(f"cover quality: {concept} unavailable ({type(exc).__name__}: {exc})")
+            logger.info(f"cover {label}: {concept} unavailable "
+                        f"({type(exc).__name__}: {exc})")
     if not scored:
         return np.zeros(len(frame), dtype=float)
 
-    return np.asarray(_minmax_normalize(list(np.mean(scored, axis=0))), dtype=float)
+    combined = np.max(scored, axis=0) if aggregate == 'max' else np.mean(scored, axis=0)
+    return np.asarray(_minmax_normalize(list(combined)), dtype=float)
+
+
+def _quality(frame, logger):
+    """How good a photograph it is, averaged over the quality concepts."""
+    return _concept_score(frame, tuple(settings().get('quality_concepts', ())),
+                          logger, 'mean', 'quality')
+
+
+def _affection(frame, logger):
+    """How much the frame shows the two of them meaning it.
+
+    The term this module was missing. A cover has to be *particular* -- a look,
+    a touch, a candid moment that reads as mutual -- and nothing here measured
+    that: `affection` and `romance` were two of six concepts averaged into
+    `quality`, so a frame that was emphatically affectionate and unremarkable
+    on the rest scored no better than a well-lit posed portrait.
+    """
+    return _concept_score(frame, tuple(settings().get('affection_concepts', ())),
+                          logger, 'max', 'affection')
+
+
+def _presence(frame, bride_id, groom_id):
+    """How surely both of them are in the frame, graded rather than required.
+
+    This replaces a hard filter, and the filter is why the best frames were
+    unreachable. `persons_ids` is built from face clusters, so a photo with no
+    detected face carries no identity at all -- and an embrace with faces
+    turned away, buried in a shoulder, or shot from behind is exactly that. On
+    53227528, 53 of the 204 `bride and groom` frames have no face and so no
+    identity, and every one was dropped before it could be scored. Requiring a
+    face is close to requiring them to look at the camera.
+
+    So presence became a preference. A frame naming both of them still wins
+    every tie; a faceless one has to earn the cover on affection and quality,
+    against a handicap.
+    """
+    grades = settings().get('presence_grades', {})
+    both = float(grades.get('both', 1.0))
+    one = float(grades.get('one', 0.6))
+    faces_only = float(grades.get('faces_only', 0.35))
+    neither = float(grades.get('neither', 0.2))
+
+    def grade(row):
+        people = row['persons_ids']
+        people = set(people) if isinstance(people, (list, tuple, set)) else set()
+        named = sum(1 for i in (bride_id, groom_id) if i is not None and i in people)
+        if named >= 2:
+            return both
+        if named == 1:
+            return one
+        faces = row.get('n_faces')
+        return faces_only if faces is not None and faces == faces and faces > 0 else neither
+
+    return frame.apply(grade, axis=1).astype(float).values
 
 
 def _subquery_affinity(frame, queries):
@@ -235,7 +310,7 @@ def _crowd_penalty(frame):
     return (excess / excess.max()).fillna(0.0).values if excess.max() > 0 else excess.values
 
 
-def _score_covers(frame, queries, logger):
+def _score_covers(frame, queries, logger, bride_id=None, groom_id=None):
     """Score every candidate for one cover. Higher is better."""
     weights = settings().get('weights', {})
     preferred = settings().get('preferred_orientation', 'landscape')
@@ -245,8 +320,10 @@ def _score_covers(frame, queries, logger):
     orientation = (frame['image_orientation'] == preferred).astype(float).values
 
     return (
-        weights.get('quality', 0.0) * _quality(frame, logger)
+        weights.get('affection', 0.0) * _affection(frame, logger)
+        + weights.get('quality', 0.0) * _quality(frame, logger)
         + weights.get('subquery', 0.0) * _subquery_affinity(frame, queries)
+        + weights.get('presence', 0.0) * _presence(frame, bride_id, groom_id)
         # `image_order` is a rank where 0 is best, so the *low* end is rewarded.
         + weights.get('rank', 0.0) * (1.0 - rank)
         + weights.get('orientation', 0.0) * orientation
@@ -254,38 +331,45 @@ def _score_covers(frame, queries, logger):
     )
 
 
-def _ranked_ids(frame, queries, logger):
+def _ranked_ids(frame, queries, logger, bride_id=None, groom_id=None):
     """Candidate ids for one cover, best first."""
     if frame.empty:
         return []
     scored = frame.copy()
-    scored['__score'] = _score_covers(scored, queries, logger)
+    scored['__score'] = _score_covers(scored, queries, logger, bride_id, groom_id)
     scored = scored.sort_values('__score', ascending=False, kind='stable')
     return scored['image_id'].tolist()
 
 
 def _candidate_base(chosen_df, bride_id, groom_id, logger):
-    """Couple frames showing both of them.
+    """Every couple frame, with presence left to the scoring.
 
-    `min_faces` is relaxed rather than enforced when it would empty the base: a
-    gallery whose couple frames are all single-face crops should get a worse
-    cover, not none.
+    The class is the gate and nothing else is. This used to require both
+    identities *and* two faces, and drop everything else before scoring --
+    which quietly made "a cover shows their faces" the rule. It cannot be:
+    `persons_ids` comes from face clusters, so a frame with no detected face
+    has no identity either, and the embrace shot with faces turned away fails
+    both halves at once. On 49995684 that removed 18 of 117 couple frames and
+    on 53227528 53 of 204, none of which could be looked at.
+
+    `_presence` grades the same evidence instead, so a faceless frame is
+    handicapped rather than absent and has to be a better photograph to win.
+    Set `require_identities` to restore the old gate.
     """
-    couple = chosen_df[
-        (chosen_df["cluster_context"] == "bride and groom") &
-        (chosen_df["persons_ids"].apply(
-            lambda x: isinstance(x, list) and bride_id in x and groom_id in x))
-    ].copy()
+    classes = tuple(settings().get('cover_classes', ('bride and groom',)))
+    couple = chosen_df[chosen_df["cluster_context"].isin(classes)].copy()
 
-    min_faces = int(settings().get('min_faces', 2))
-    both_faces = couple[couple["n_faces"] >= min_faces]
-    if not both_faces.empty:
-        return both_faces
+    if not settings().get('require_identities', False):
+        return couple
+
+    named = couple[couple["persons_ids"].apply(
+        lambda x: isinstance(x, list) and bride_id in x and groom_id in x)]
+    if not named.empty:
+        return named
     if not couple.empty:
-        logger.info(
-            f"cover candidates: no couple frame with {min_faces}+ faces, "
-            f"relaxing to any face over {len(couple)} frames")
-    return couple[couple["n_faces"] > 0]
+        logger.info(f"cover candidates: no frame names both of them, "
+                    f"falling back to {len(couple)} couple frames")
+    return couple
 
 
 def _positions(frame):
@@ -341,10 +425,12 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         base = _candidate_base(chosen_df, bride_id, groom_id, logger)
 
         subset_first = _pick_cover_subset(base, position="first", window_size=10)
-        first_page_ids = _ranked_ids(subset_first, FIRST_COVER_QUERIES, logger)
+        first_page_ids = _ranked_ids(subset_first, FIRST_COVER_QUERIES, logger,
+                                     bride_id, groom_id)
 
         subset_last = _pick_cover_subset(base, position="last", window_size=10)
-        last_page_ids = _ranked_ids(subset_last, LAST_COVER_QUERIES, logger)
+        last_page_ids = _ranked_ids(subset_last, LAST_COVER_QUERIES, logger,
+                                    bride_id, groom_id)
 
         # Fall back only for the cover that has no candidate of its own, and
         # rank **ascending** -- `image_order` is a rank where 0 is best, so
