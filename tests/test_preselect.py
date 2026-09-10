@@ -75,7 +75,7 @@ def run(photos=None, *, user_picks=(), person_ids=(), key_pages=None,
     context = AlbumContext(
         logger=logger,
         photos=photos,
-        # Unresolved by default, which switches `select.subject` off and keeps
+        # Unresolved by default, which switches `pipeline.subject` off and keeps
         # every test written before it meaning what it meant.
         facts=GalleryFacts(is_wedding=True, bride_id=bride_id, groom_id=groom_id),
         key_pages=key_pages,

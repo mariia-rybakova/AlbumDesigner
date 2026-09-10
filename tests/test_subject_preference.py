@@ -28,7 +28,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pipeline.contracts import Col  # noqa: E402
-from src.pipeline.select import subject  # noqa: E402
+from src.pipeline import subject  # noqa: E402
 from src.selection.ai_wedding_selection import calculate_scores, get_scores  # noqa: E402
 from utils.configs import CONFIGS  # noqa: E402
 
@@ -205,3 +205,77 @@ def test_the_preference_can_be_switched_off():
         CONFIGS['subject'] = original
 
     assert len(kept) == 2
+
+
+# -- a class meaning "the two of them" needs both of them -------------------
+
+
+def _couple_frame(specs):
+    return pd.DataFrame([
+        {Col.IMAGE_ID: image_id, Col.CLUSTER_CONTEXT: category,
+         Col.PERSONS_IDS: list(people)}
+        for image_id, category, people in specs
+    ])
+
+
+def test_one_of_them_with_a_stranger_is_not_a_couple_photo():
+    """Page 17 on 49995684: a `bride and groom` spread carrying the bride and a
+    groomsman. The other half is not merely unrecognised -- two people were
+    identified and neither is the groom."""
+    assert subject.one_half_with_an_outsider([BRIDE, 29], BRIDE, GROOM)
+    assert subject.one_half_with_an_outsider([GROOM, 19], BRIDE, GROOM)
+
+
+def test_one_of_them_alone_is_left_alone():
+    """The distinction the whole rule turns on. `[bride]` is almost always the
+    couple with one face unrecognised -- 29 of 120 on 49995684 -- and demoting
+    those would cost a quarter of the class to a detection gap."""
+    assert not subject.one_half_with_an_outsider([BRIDE], BRIDE, GROOM)
+    assert not subject.one_half_with_an_outsider([], BRIDE, GROOM)
+    assert not subject.one_half_with_an_outsider([BRIDE, GROOM], BRIDE, GROOM)
+    assert not subject.one_half_with_an_outsider([BRIDE, GROOM, 29], BRIDE, GROOM)
+
+
+def test_the_misfiled_photo_is_re_filed_not_dropped():
+    """It has to be a relabel: the offending photo on 49995684 is one of the
+    request's own `aiMetadata.photoIds`, and `select.preselect` commits a hand
+    pick whatever it scores, so no preference can displace it. The user picked a
+    photo, not a category."""
+    frame = _couple_frame([
+        (1, 'bride and groom', [BRIDE, 29]),
+        (2, 'bride and groom', [BRIDE, GROOM]),
+        (3, 'bride and groom', [BRIDE]),
+    ])
+
+    out, moved = subject.refile_misfiled_couple(frame, BRIDE, GROOM)
+
+    assert moved == 1
+    assert len(out) == 3, "nothing is dropped"
+    by_id = out.set_index(Col.IMAGE_ID)[Col.CLUSTER_CONTEXT]
+    assert by_id[1] == 'portrait'
+    assert by_id[2] == 'bride and groom'
+    assert by_id[3] == 'bride and groom'
+
+
+def test_re_filing_needs_both_halves_named():
+    frame = _couple_frame([(1, 'bride and groom', [BRIDE, 29])])
+
+    _out, moved = subject.refile_misfiled_couple(frame, BRIDE, None)
+
+    assert moved == 0
+
+
+def test_only_the_couple_alone_classes_are_re_filed():
+    """`walking the aisle` and the party classes legitimately hold other
+    people, so the rule must not reach them."""
+    frame = _couple_frame([
+        (1, 'walking the aisle', [BRIDE, 29]),
+        (2, 'bride party', [BRIDE, 29]),
+        (3, 'cake cutting', [BRIDE, 29]),
+    ])
+
+    out, moved = subject.refile_misfiled_couple(frame, BRIDE, GROOM)
+
+    assert moved == 0
+    assert list(out[Col.CLUSTER_CONTEXT]) == ['walking the aisle', 'bride party',
+                                              'cake cutting']

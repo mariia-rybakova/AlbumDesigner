@@ -139,6 +139,15 @@ CONFIGS = {'DEBUG': True,
             # can disagree about what `bride and groom` means is a bug waiting
             # to be written. This flag only turns the *preference* off.
             #
+            # Where a photo classed as the couple goes when it holds one of
+            # them and a third person, the other half absent -- the bride with
+            # a groomsman rather than with the groom. `portrait` because that is
+            # what they are: a posed shot of people. Set to None to leave the
+            # class alone. It is a relabel and not merely a preference because
+            # it has to reach hand picks, which `select.preselect` commits
+            # unconditionally and no ranking can displace.
+            'misfiled_couple_class': 'portrait',
+
             # Classes that name no real content. A photo the album is only
             # taking to cover a named identity should not come from one of
             # these if any real class holds that person.

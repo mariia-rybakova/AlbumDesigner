@@ -130,6 +130,66 @@ IDENTITY_RULES = {
 }
 
 
+#: Classes that mean *the two of them*, so one of them is not enough.
+COUPLE_ALONE_CLASSES = tuple(
+    category for category, (rule, _subjects, _exclusive) in IDENTITY_RULES.items()
+    if rule is _couple_alone)
+
+
+def one_half_with_an_outsider(persons_ids: Any, bride_id, groom_id) -> bool:
+    """One of the couple, a third person, and not the other half.
+
+    The distinction that matters for a class meaning *the two of them*. Three
+    things look alike in `persons_ids` and are not alike at all:
+
+    * ``[bride, groom]`` -- the photo the class is for;
+    * ``[bride]`` -- almost always the couple with one face unrecognised, which
+      is ordinary and common (29 of 120 on 49995684). Demoting these would cost
+      a quarter of the class to a detection gap;
+    * ``[bride, someone]`` -- the bride standing with a groomsman. The model saw
+      two people, recognised both, and neither is the other half.
+
+    Only the third is a wrong photo, and it is rare: 9 of 120.
+    """
+    people = _people_of(persons_ids)
+    couple = {i for i in (bride_id, groom_id) if i is not None}
+    if len(couple) < 2 or not people:
+        return False
+    return bool(people & couple) and not couple <= people and bool(people - couple)
+
+
+def refile_misfiled_couple(photos, bride_id, groom_id, logger=None):
+    """Move "one of them plus a stranger" out of the couple classes.
+
+    Returns ``(photos, moved)``. A relabel rather than a preference because it
+    has to reach the photos `select.preselect` commits unconditionally: on
+    49995684 the couple spread carried a bride-and-groomsman shot that was one
+    of the request's own ``aiMetadata.photoIds``, and a preference cannot
+    displace a hand pick. Re-filing keeps the photo the user asked for and only
+    corrects the class the content model gave it -- they picked a photo, not a
+    category.
+    """
+    destination = settings().get("misfiled_couple_class")
+    if not enabled() or not destination or photos is None or photos.empty:
+        return photos, 0
+    if Col.PERSONS_IDS not in photos.columns or Col.CLUSTER_CONTEXT not in photos.columns:
+        return photos, 0
+
+    misfiled = photos[Col.CLUSTER_CONTEXT].isin(COUPLE_ALONE_CLASSES) & \
+        photos[Col.PERSONS_IDS].apply(
+            lambda ids: one_half_with_an_outsider(ids, bride_id, groom_id))
+
+    moved = int(misfiled.sum())
+    if moved:
+        photos.loc[misfiled, Col.CLUSTER_CONTEXT] = destination
+        if logger:
+            logger.info(
+                f"subject: re-filed {moved} photo(s) from the couple classes to "
+                f"'{destination}' -- they hold one of the couple and a third "
+                f"person, not the two of them")
+    return photos, moved
+
+
 def required_roles(category: Any) -> Tuple[str, ...]:
     """Which of the couple this category is about, empty when it is nobody."""
     if not enabled():

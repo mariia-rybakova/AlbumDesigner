@@ -86,7 +86,7 @@ import pandas as pd
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.enrich import timeline as tl
 from src.pipeline.select import narrowing
-from src.pipeline.select.subject import IDENTITY_RULES, _people_of
+from src.pipeline.subject import IDENTITY_RULES, _people_of
 from src.pipeline.select.scoring import CandidateGate, Scorer
 from utils.configs import CONFIGS
 

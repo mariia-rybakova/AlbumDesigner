@@ -53,7 +53,7 @@ import pandas as pd
 
 from src.pipeline.contracts import AlbumContext, Col, ctx, photo
 from src.pipeline.registry import register
-from src.pipeline.select import subject
+from src.pipeline import subject
 from src.pipeline.select.scoring import Scorer
 from src.pipeline.select.strategies import default_registry
 from src.pipeline.substage import SubStage
@@ -160,7 +160,7 @@ class Preselector:
         satisfies the guarantee, so score alone used to decide it -- and on
         49995684 that put two `other` photos in the album to cover identities 58
         and 71, a class budgeted at 0% precisely because it carries nothing
-        worth a spread. `select.subject.identity_tiers` prefers a real class,
+        worth a spread. `pipeline.subject.identity_tiers` prefers a real class,
         and one the couple is not the subject of, falling through only when the
         person appears nowhere better.
         """

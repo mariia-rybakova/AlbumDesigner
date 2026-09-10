@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from src.pipeline.select import subject
+from src.pipeline import subject
 from src.selection.ai_wedding_selection import get_scores
 from utils.configs import selection_threshold
 
@@ -55,7 +55,7 @@ class CandidateGate:
         self.allocation = allocation
         self.logger = logger
         #: The couple, so a category can be narrowed to the photos it is
-        #: actually about before anything is ranked. See `select.subject`.
+        #: actually about before anything is ranked. See `pipeline.subject`.
         self.bride_id = bride_id
         self.groom_id = groom_id
         #: Off for CP-SAT, which reads the same `IDENTITY_RULES` table itself --
