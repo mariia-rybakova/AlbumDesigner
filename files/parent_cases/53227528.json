@@ -1,0 +1,162 @@
+{
+  "projectId": 53227528,
+  "request": "files/test_requests/53227528_brideAndGroom_d2.json",
+  "capturedUtc": "2026-09-10",
+  "imageModelVersion": 2,
+  "photos": 636,
+  "status": "bride's side correct; groom's side declined",
+  "whyItIsHere": "A true positive that nearly was not. The bride's mother is named on an age rank of 0.72 against a floor of 0.70 -- two hundredths of margin -- because the face model estimates her at 45 and she is visibly a generation older than the bride. The same underestimate is what loses a mother on 49995684. Any change to min_age_rank has to keep this one.",
+  "identityIdsAreNotStable": "Match by anchorPhotoIds. identityIdAtCapture is a snapshot.",
+  "galleryTraits": {
+    "artificialTime": true,
+    "scenes": 1,
+    "note": "EXIF unusable and the whole gallery is one scene, so every temporal mechanism has a single window to work with."
+  },
+  "couple": {
+    "bride": {
+      "label": "bride",
+      "expected": "couple",
+      "identityIdAtCapture": 3,
+      "anchorPhotoIds": [
+        12308802081,
+        12308802106,
+        12308802107,
+        12308802108,
+        12308802109
+      ],
+      "photoCount": 389,
+      "estimatedAge": 32,
+      "estimatedGender": "female",
+      "labelSource": "pipeline (resolve_bride_groom)",
+      "indicators": null
+    },
+    "groom": {
+      "label": "groom",
+      "expected": "couple",
+      "identityIdAtCapture": 5,
+      "anchorPhotoIds": [
+        12308802183,
+        12308802184,
+        12308802185,
+        12308802186,
+        12308802256
+      ],
+      "photoCount": 270,
+      "estimatedAge": 48,
+      "estimatedGender": "male",
+      "labelSource": "pipeline (resolve_bride_groom)",
+      "indicators": null
+    }
+  },
+  "outcomeAtCapture": {
+    "brideParents": [
+      21,
+      25
+    ],
+    "groomParents": [],
+    "unresolved": [
+      "groom's parents"
+    ],
+    "reason": "best groom-side candidate 28 scores 0.42 at age rank 0.62; floor is 0.50 at rank 0.70"
+  },
+  "people": [
+    {
+      "label": "bride's mother",
+      "expected": "named",
+      "identityIdAtCapture": 21,
+      "anchorPhotoIds": [
+        12308802375,
+        12308802380,
+        12308802381,
+        12308802382,
+        12308802383
+      ],
+      "photoCount": 56,
+      "estimatedAge": 45,
+      "estimatedGender": "female",
+      "labelSource": "photo-verified: 12308802381 and 12308802368 show her with the couple",
+      "note": "Age estimated 45, rank 0.72 against a 0.70 floor. Cleared it by 0.02.",
+      "indicators": {
+        "ageRank": 0.72,
+        "aloneWithBride": 9,
+        "aloneWithGroom": 4,
+        "familyPortraitsBride": 18,
+        "familyPortraitsGroom": 13,
+        "partyFrames": 0,
+        "ceremonyShare": 0.11,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "socialCircle": [],
+        "sideSkew": null,
+        "sideLean": "bride",
+        "scoreBride": 0.72,
+        "scoreGroom": 0.62
+      }
+    },
+    {
+      "label": "bride's father",
+      "expected": "named",
+      "identityIdAtCapture": 25,
+      "anchorPhotoIds": [
+        12308802445,
+        12308802366,
+        12308802367,
+        12308802368,
+        12308802369
+      ],
+      "photoCount": 48,
+      "estimatedAge": 59,
+      "estimatedGender": "male",
+      "labelSource": "photo-verified: 12308802368 shows the family group",
+      "indicators": {
+        "ageRank": 0.97,
+        "aloneWithBride": 8,
+        "aloneWithGroom": 4,
+        "familyPortraitsBride": 4,
+        "familyPortraitsGroom": 0,
+        "partyFrames": 5,
+        "ceremonyShare": 0.0,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "socialCircle": [],
+        "sideSkew": null,
+        "sideLean": "bride",
+        "scoreBride": 0.747,
+        "scoreGroom": 0.417
+      }
+    },
+    {
+      "label": "bride's brother",
+      "expected": "not a parent",
+      "identityIdAtCapture": 4,
+      "anchorPhotoIds": [
+        12308802163,
+        12308802164,
+        12308802165,
+        12308802166,
+        12308802167
+      ],
+      "photoCount": 91,
+      "estimatedAge": 19,
+      "estimatedGender": "male",
+      "labelSource": "photo-verified: 12308802368",
+      "note": "Age 19, 91 photos -- the most of any non-couple identity here, so a frequency-led approach names him.",
+      "indicators": {
+        "ageRank": 0.05,
+        "aloneWithBride": 36,
+        "aloneWithGroom": 6,
+        "familyPortraitsBride": 20,
+        "familyPortraitsGroom": 15,
+        "partyFrames": 6,
+        "ceremonyShare": 0.08,
+        "parentDanceBride": 0,
+        "parentDanceGroom": 0,
+        "socialCircle": [],
+        "sideSkew": "bride",
+        "sideLean": "bride",
+        "scoreBride": 0.557,
+        "scoreGroom": 0.327
+      }
+    }
+  ]
+}
