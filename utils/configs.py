@@ -752,6 +752,25 @@ CONFIGS = {'DEBUG': True,
             # neighbour; above this cosine two frames of a class are exclusive.
             'duplicate_similarity': 0.97,
 
+            # The same shot in two treatments -- classically colour and black
+            # and white. Lower than the identical-frame wall because
+            # desaturating moves an image a long way in CLIP space: measured
+            # twins on 53227528 sit at 0.900-0.929 while the plain wall wants
+            # 0.97, so they sailed under it.
+            #
+            # This exists because `enrich.duplicate_shots` cannot fire on an
+            # artificial-time gallery. It keys on the capture second, and
+            # 53227528 has **3 distinct `image_time` values across 636
+            # photos**, so every group is far too large to be a re-upload set.
+            # Nothing here reads a clock, which is the whole point.
+            #
+            # 0.90 sits above the verified burst pairs on that gallery (0.882
+            # -0.892, different poses in the same session, checked by eye) and
+            # at or below every verified twin (0.900-0.929). The margin is
+            # thin, which is why the differing colour flag is required as well:
+            # a burst does not change treatment between frames.
+            'treatment_duplicate_similarity': 0.90,
+
             # Who a class is about, as a score. `bride` means the bride on
             # her own, `bride and groom` means the two of them and nobody
             # else, `getting hair-makeup` means the bride. The loop says this

@@ -935,10 +935,15 @@ class CpSatPicker:
         which keeps it O(n) in practice rather than O(n^2) over the gallery.
         """
         threshold = float(self.cfg.get('duplicate_similarity', 0.97))
-        if threshold >= 1.0 or Col.EMBEDDING not in frame.columns:
+        treatment = float(self.cfg.get('treatment_duplicate_similarity', 1.0))
+        if Col.EMBEDDING not in frame.columns:
+            return
+        if threshold >= 1.0 and treatment >= 1.0:
             return
 
         reach = int(self.cfg.get('cohesion_max_gap', 10))
+        has_colour = Col.IMAGE_COLOR in frame.columns
+        excluded = 0
 
         for _category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             index = list(group.index)
@@ -955,11 +960,45 @@ class CpSatPicker:
                     second = index[b]
                     if vectors[second] is None:
                         continue
-                    if float(vectors[first] @ vectors[second]) < threshold:
+                    similarity = float(vectors[first] @ vectors[second])
+
+                    # The same frame in two treatments. `enrich.duplicate_shots`
+                    # is supposed to remove these, and cannot when the capture
+                    # times are unusable: 53227528 carries **3 distinct
+                    # `image_time` values across 636 photos**, so every
+                    # same-second group is far too big to be a re-upload set and
+                    # the stage does nothing at all. The album then closed with
+                    # the groom's balcony portrait in colour *and* in black and
+                    # white.
+                    #
+                    # Nothing here reads a clock, which is the point -- it is
+                    # the time key that artificial time breaks. A colour and a
+                    # greyscale frame of one class, this alike, are redundant
+                    # whether they are one file exported twice or two frames a
+                    # moment apart, and only one belongs in the album.
+                    #
+                    # A hard exclusion rather than a charge because the soft
+                    # penalty cannot win here: `groom` needed eight photos and
+                    # the run alternates treatments, so the solver rightly paid
+                    # 600 rather than leave a quota slot empty against a
+                    # shortage of 4000.
+                    treatment_pair = (
+                        has_colour
+                        and similarity >= treatment
+                        and group.at[first, Col.IMAGE_COLOR]
+                        != group.at[second, Col.IMAGE_COLOR]
+                    )
+                    if similarity < threshold and not treatment_pair:
                         continue
                     if frame.at[first, '_committed'] and frame.at[second, '_committed']:
                         continue
                     model.Add(x[first] + x[second] <= 1)
+                    excluded += 1
+
+        if excluded and self.logger:
+            self.logger.info(f"cp-sat: {excluded} pairs excluded as the same shot "
+                             f"(identical above {threshold}, or one shot in two "
+                             f"treatments above {treatment})")
 
     def _add_cohesion(self, model, frame, x, rewards) -> None:
         """Reward picking consecutive photos of the same class.

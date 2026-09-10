@@ -577,3 +577,100 @@ def test_the_shipped_weight_is_on_and_below_the_shortage_penalty():
     assert cfg['similar_penalty_weight'] > 0
     assert 0.80 < cfg['similar_soft_threshold'] < cfg['duplicate_similarity']
     assert cfg['similar_penalty_weight'] < cfg['shortage_weight']
+
+
+# -- the same shot in two treatments ---------------------------------------
+
+
+def _treatment_pair(similarity, colours=(1, 0)):
+    """Two same-class frames at a chosen cosine, in the given colour flags."""
+    import numpy as _np
+    a = _np.array([1.0, 0.0, 0.0], dtype=_np.float32)
+    near = _np.array([similarity, (1 - similarity ** 2) ** 0.5, 0.0], dtype=_np.float32)
+    far = _np.array([0.0, 0.0, 1.0], dtype=_np.float32)
+    rows = []
+    for i, (vector, colour) in enumerate(((a, colours[0]), (near, colours[1]), (far, 1))):
+        rows.append({
+            Col.IMAGE_ID: 3000 + i,
+            Col.CLUSTER_CONTEXT: 'groom',
+            Col.IMAGE_CLASS: 15,
+            Col.EMBEDDING: vector,
+            Col.GENERAL_TIME: float(i),
+            Col.IMAGE_ORDER: float(i),
+            Col.PERSONS_IDS: [],
+            Col.N_FACES: 1,
+            Col.IMAGE_COLOR: colour,
+            Col.IMAGE_ORIENTATION: 'portrait',
+        })
+    return pd.DataFrame(rows)
+
+
+def test_one_shot_in_colour_and_black_and_white_is_not_taken_twice():
+    """53227528 closed with the groom's balcony portrait in both treatments.
+    The pair sits at 0.917 -- far under the identical-frame wall at 0.97,
+    because desaturating moves an image a long way in CLIP space."""
+    photos = _treatment_pair(0.917)
+
+    # The soft charge is off throughout this block: at 0.917 it separates the
+    # pair on its own, so with it on these tests pass whether or not the
+    # treatment rule exists.
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+
+    assert not {3000, 3001}.issubset(chosen)
+
+
+def test_two_frames_in_the_same_treatment_are_left_alone():
+    """A burst does not change treatment between frames, so the differing
+    colour flag is what makes the pair a re-export rather than two photos.
+    Without it this would be an exclusion at 0.90 and would gut a burst."""
+    photos = _treatment_pair(0.917, colours=(1, 1))
+
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+
+    assert {3000, 3001}.issubset(chosen)
+
+
+def test_a_merely_similar_pair_in_two_treatments_survives():
+    """Verified burst pairs on 53227528 sit at 0.882-0.892 -- different poses
+    in one session, checked by eye -- and must not be excluded."""
+    photos = _treatment_pair(0.85)
+
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+
+    assert {3000, 3001}.issubset(chosen)
+
+
+def test_the_treatment_rule_reads_no_clock():
+    """Which is the point: `enrich.duplicate_shots` keys on the capture second
+    and cannot fire on 53227528, where 636 photos carry 3 distinct
+    `image_time` values."""
+    photos = _treatment_pair(0.917)
+    photos[Col.IMAGE_TIME] = 1_700_000_000  # one identical, useless timestamp
+
+    chosen = pick(photos, {'groom': 2}, similar_penalty_weight=0)
+
+    assert not {3000, 3001}.issubset(chosen)
+
+
+def test_the_treatment_rule_can_be_switched_off():
+    """The soft charge is switched off too, or it separates the pair on its
+    own and the test would pass whether or not the rule were off."""
+    photos = _treatment_pair(0.917)
+
+    chosen = pick(photos, {'groom': 2},
+                  treatment_duplicate_similarity=1.0, similar_penalty_weight=0)
+
+    assert {3000, 3001}.issubset(chosen)
+
+
+def test_the_colour_flag_is_what_makes_it_a_re_export():
+    """Stated as a contrast, so removing the colour condition breaks it: at one
+    similarity, the mixed-treatment pair is excluded and the same-treatment
+    pair is not. Without the condition the two would behave alike."""
+    same = pick(_treatment_pair(0.917, colours=(1, 1)), {'groom': 2},
+                similar_penalty_weight=0)
+    mixed = pick(_treatment_pair(0.917, colours=(1, 0)), {'groom': 2},
+                 similar_penalty_weight=0)
+
+    assert {3000, 3001}.issubset(same), "a burst keeps both frames"
+    assert not {3000, 3001}.issubset(mixed), "one shot in two treatments does not"
