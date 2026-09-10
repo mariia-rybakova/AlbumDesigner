@@ -1062,3 +1062,140 @@ if __name__ == "__main__":
         test()
         print(f"ok  {test.__name__}")
     print(f"\n{len(tests)} send-off tests passed")
+
+
+# -- present at the ceremony is not walking into it -------------------------
+
+
+def _make_groom_walk(persons, subquery):
+    """The gallery, with the groom's processional frames rewritten."""
+    df = make_gallery()
+    walk = (df[Col.CLUSTER_CONTEXT] == 'walking the aisle') & \
+           df['persons_ids'].apply(lambda ids: GROOM_ID in ids and BRIDE_ID not in ids)
+    assert walk.any(), "fixture should have groom-solo processional frames"
+    df.loc[walk, 'persons_ids'] = pd.Series(
+        [list(persons)] * int(walk.sum()), index=df.index[walk])
+    df.loc[walk, 'image_subquery_content'] = subquery
+    return df
+
+
+def test_a_crowd_the_groom_happens_to_be_in_is_not_his_walk_in():
+    """49995684: the frame that reached the album as `groom walking the aisle`
+    holds six people and is captioned "guests watching ceremony". He is sitting
+    in it. "Solo" only ever excluded the *bride*, so a hall full of guests
+    passed the one hard test the tag has."""
+    df = _make_groom_walk([GROOM_ID, 11, 12, 13, 14, 15], 'guests watching ceremony')
+
+    context = run(df)
+
+    assert len(walked(context, GROOM_AISLE)) == 0
+
+
+def test_a_narrow_frame_still_needs_no_caption():
+    """The control. Below `aisle_max_people` the identity test is evidence on
+    its own, so nothing changes for the frames that were always fine."""
+    df = _make_groom_walk([GROOM_ID, 11], 'guests watching ceremony')
+
+    context = run(df)
+
+    assert len(walked(context, GROOM_AISLE)) > 0
+
+
+def test_a_confirmed_crowd_survives():
+    """The bride's genuine wide shots run to five and six people and carry
+    "bride walking down aisle with father". Dropping those would trade one bug
+    for a worse one."""
+    df = _make_groom_walk([GROOM_ID, 11, 12, 13, 14, 15],
+                          'groom waiting for bride at the aisle')
+
+    context = run(df)
+
+    assert len(walked(context, GROOM_AISLE)) > 0
+
+
+def test_the_brides_wide_processional_is_untouched():
+    df = make_gallery()
+    wide = (df[Col.CLUSTER_CONTEXT] == 'walking the aisle') & \
+           df['persons_ids'].apply(lambda ids: BRIDE_ID in ids)
+    df.loc[wide, 'persons_ids'] = pd.Series(
+        [[BRIDE_ID, GUEST_ID, 51, 52, 53, 54]] * int(wide.sum()), index=df.index[wide])
+
+    context = run(df)
+
+    assert len(walked(context, BRIDE_AISLE)) > 0, (
+        "her subquery confirms the frame, however many guests are in it")
+
+
+def test_the_crowd_gate_can_be_switched_off():
+    df = _make_groom_walk([GROOM_ID, 11, 12, 13, 14, 15], 'guests watching ceremony')
+    original = CONFIGS.get('aisle_max_people')
+    CONFIGS['aisle_max_people'] = 0
+    try:
+        context = run(df)
+    finally:
+        CONFIGS['aisle_max_people'] = original
+
+    assert len(walked(context, GROOM_AISLE)) > 0
+
+
+# -- the ceremony cannot happen before the ceremony -------------------------
+
+
+def _with_early_ceremony(n=2):
+    """The gallery, with `ceremony`-classed frames planted during the prep."""
+    df = make_gallery()
+    prep = df.index[df[Col.CLUSTER_CONTEXT] == 'portrait'][:n]
+    df.loc[prep, Col.CLUSTER_CONTEXT] = 'ceremony'
+    df.loc[prep, 'image_subquery_content'] = 'officiant leading wedding ceremony'
+    return df, list(prep)
+
+
+def test_a_ceremony_frame_from_before_the_ceremony_is_demoted():
+    """49995684: two frames at 20:13 classed `ceremony` and captioned
+    "officiant leading wedding ceremony" are the groom shaking hands with an
+    older man in daylight -- sixteen minutes before the processional. Both
+    reached the album because `ceremony` has a budget."""
+    df, planted = _with_early_ceremony()
+
+    context = run(df)
+
+    assert (context.photos.loc[planted, Col.CLUSTER_CONTEXT] == 'other').all()
+
+
+def test_the_real_ceremony_is_untouched():
+    df = make_gallery()
+    before = int((df[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+
+    context = run(df)
+
+    after = int((context.photos[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+    assert after == before, "the ceremony's own frames must survive"
+
+
+def test_the_lead_in_protects_the_ceremony_opening():
+    """The block start is found from a density of ceremony-ish frames, so it
+    lands inside the first minutes rather than exactly on them. Without a
+    lead-in the real opening would be demoted."""
+    df = make_gallery()
+    original = CONFIGS.get('ceremony_lead_in')
+    CONFIGS['ceremony_lead_in'] = 0
+    try:
+        aggressive = int((run(df.copy())
+                          .photos[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+    finally:
+        CONFIGS['ceremony_lead_in'] = original
+    protected = int((run(df.copy()).photos[Col.CLUSTER_CONTEXT] == 'ceremony').sum())
+
+    assert protected >= aggressive
+
+
+def test_the_early_check_can_be_switched_off():
+    df, planted = _with_early_ceremony()
+    original = CONFIGS.get('ceremony_lead_in')
+    CONFIGS['ceremony_lead_in'] = None
+    try:
+        context = run(df)
+    finally:
+        CONFIGS['ceremony_lead_in'] = original
+
+    assert (context.photos.loc[planted, Col.CLUSTER_CONTEXT] == 'ceremony').all()

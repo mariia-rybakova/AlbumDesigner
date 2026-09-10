@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from src.pipeline import subject
 from src.selection.ai_wedding_selection import get_scores
 from utils.configs import selection_threshold
 
@@ -45,13 +46,24 @@ class Scorer:
 class CandidateGate:
     """Cut a scored category down to the photos worth considering."""
 
-    def __init__(self, scorer: Scorer, unscored: bool, allocation: Dict[str, int], logger):
+    def __init__(self, scorer: Scorer, unscored: bool, allocation: Dict[str, int], logger,
+                 bride_id=None, groom_id=None, prefer_subject: bool = True):
         self.scorer = scorer
         #: True when the request carried no hints at all, so there is nothing to
         #: score against and ``image_order`` decides.
         self.unscored = unscored
         self.allocation = allocation
         self.logger = logger
+        #: The couple, so a category can be narrowed to the photos it is
+        #: actually about before anything is ranked. See `pipeline.subject`.
+        self.bride_id = bride_id
+        self.groom_id = groom_id
+        #: Off for CP-SAT, which reads the same `IDENTITY_RULES` table itself --
+        #: as a scored bonus and a hard exclusion for the classes that are about
+        #: exactly one person. Narrowing here as well would be both redundant and
+        #: blunter: it would take rows out of the model that the solver is meant
+        #: to weigh against coverage and cohesion.
+        self.prefer_subject = prefer_subject
 
     def candidates(self, frame: pd.DataFrame, category: str):
         """Returns ``(scored_frame, candidate_ids, used_image_order)``.
@@ -59,6 +71,12 @@ class CandidateGate:
         ``used_image_order`` tells the caller which ranking convention applies
         downstream.
         """
+        # Before scoring, not after: a photo that does not hold the category's
+        # subject is a worse answer for that category whatever it scores, and
+        # ranking it first only to discard it wastes the allowance on it.
+        if self.prefer_subject:
+            frame = subject.prefer_subject(frame, category, self.bride_id, self.groom_id,
+                                           self.logger)
         try:
             if self.unscored:
                 scored = frame.copy()

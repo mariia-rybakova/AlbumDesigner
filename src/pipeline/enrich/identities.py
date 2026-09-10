@@ -8,6 +8,7 @@ from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
 from src.pipeline.enrich import parents
+from src.pipeline import subject
 from src.request_processing import identify_parents
 from utils.configs import CONFIGS
 from utils.read_protos_files import add_people_cluster, resolve_bride_groom
@@ -34,6 +35,14 @@ class IdentitiesSubStage(SubStage):
         if not context.photos.empty:
             context.facts.bride_id = context.photos.iloc[0][Col.BRIDE_ID]
             context.facts.groom_id = context.photos.iloc[0][Col.GROOM_ID]
+
+        # Now that both are named, a class meaning *the two of them* can be
+        # checked against who is actually in frame. Here rather than in SELECT
+        # because it has to hold for the photos selection never gets to weigh:
+        # a hand pick is committed whatever it scores.
+        context.photos, _moved = subject.refile_misfiled_couple(
+            context.photos, context.facts.bride_id, context.facts.groom_id,
+            context.logger)
         return context
 
 

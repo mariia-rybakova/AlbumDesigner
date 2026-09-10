@@ -53,6 +53,7 @@ import pandas as pd
 
 from src.pipeline.contracts import AlbumContext, Col, ctx, photo
 from src.pipeline.registry import register
+from src.pipeline import subject
 from src.pipeline.select.scoring import Scorer
 from src.pipeline.select.strategies import default_registry
 from src.pipeline.substage import SubStage
@@ -105,6 +106,10 @@ class Preselector:
             self.logger,
         )
 
+        #: The couple, so a category can be narrowed to the photos it is about.
+        self._bride_id = context.facts.bride_id
+        self._groom_id = context.facts.groom_id
+
         #: {image_id: reason}
         self.committed: Dict[Any, str] = {}
         self._settings = CONFIGS['preselect']
@@ -149,15 +154,38 @@ class Preselector:
                 self._charge(image_id)
 
     def _commit_identity_coverage(self) -> None:
-        """Each named identity gets its photos, whatever the ranking says."""
+        """Each named identity gets its photos, whatever the ranking says.
+
+        Ranked within a preference over *classes* first. Any photo of the person
+        satisfies the guarantee, so score alone used to decide it -- and on
+        49995684 that put two `other` photos in the album to cover identities 58
+        and 71, a class budgeted at 0% precisely because it carries nothing
+        worth a spread. `pipeline.subject.identity_tiers` prefers a real class,
+        and one the couple is not the subject of, falling through only when the
+        person appears nowhere better.
+        """
         wanted = self._settings.get('photos_per_identity', 1)
         for identity in self.inputs.person_ids or []:
             gap = wanted - len(self._committed_with(identity))
             if gap <= 0:
                 continue
             candidates = self._with_identity(self._remaining(), identity)
-            for image_id in self._best_of(candidates, gap):
+            for image_id in self._best_by_tier(candidates, gap, identity):
                 self._commit(image_id, f"identity:{identity}")
+
+    def _best_by_tier(self, frame: pd.DataFrame, count: int, identity: Any) -> List[Any]:
+        """``_best_of``, but exhausting each class tier before the next."""
+        chosen: List[Any] = []
+        for tier, pool in enumerate(subject.identity_tiers(frame), start=1):
+            if len(chosen) >= count or pool is None or pool.empty:
+                continue
+            picked = self._best_of(pool, count - len(chosen))
+            if picked and tier > 1 and self.logger:
+                self.logger.info(
+                    f"Preselect: identity {identity} covered from tier {tier} "
+                    f"(no photo of them in a better class)")
+            chosen.extend(picked)
+        return chosen
 
     def _commit_key_pages(self) -> None:
         """The opening and closing photos, taking the best still available."""
@@ -206,6 +234,12 @@ class Preselector:
 
             frame = self._remaining()
             frame = frame[frame[Col.CLUSTER_CONTEXT] == category]
+            # A `yes` category gets exactly one photo and no second chance, so
+            # it is the worst place to rank a frame that does not hold the
+            # subject. `may kiss bride` on 49995684 went to the only one of six
+            # frames with no faces in it.
+            frame = subject.prefer_subject(frame, category, self._bride_id, self._groom_id,
+                                           self.logger)
             for image_id in self._best_of(frame, need - self._committed_in(category)):
                 self._commit(image_id, f"yes:{category}")
 

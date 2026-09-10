@@ -69,7 +69,22 @@ CONFIGS = {'DEBUG': True,
            'content_threads': 4,
            'small_groups': 3,
            'max_number_images': 130,
-           'person_score': 0.0000001,
+           # A photo carrying no identified people, when the request DID name
+           # identities. Zero, not a small positive number.
+           #
+           # It used to be 1e-7, which is not "low relevance" but the highest
+           # score in the category whenever no photo contains a named person:
+           # a genuine non-match scores 0.0, `normalize()` maps the range onto
+           # 0-1, and 1e-7 is 100x the degenerate-range guard ('ε': 1e-9). So a
+           # faceless frame normalised to 1.0 and every photo of actual people
+           # to 0.0, on the heaviest weight there is ('person': 0.4).
+           #
+           # It decided real albums. On 49995684 the user named [58, 100, 71] --
+           # not the couple -- and the `may kiss bride` pick went to the one
+           # frame of six with no faces at all (0.539 against 0.317), and the
+           # cake spread took the single photo of thirteen without the couple in
+           # it. Both were the worst available choice by every other signal.
+           'person_score': 0.0,
            'similarity_score': 0.00001,
            'class_matching_zero_score': 0.0001,
            'class_matching_penalty': 0.001,
@@ -105,6 +120,39 @@ CONFIGS = {'DEBUG': True,
             'user_rating': 0.3
          },
         'user_rating_max_scale': 5,
+        # Who a category is *about*. `person_score` answers "is this one of the
+        # people the request named", which is a different question and says
+        # nothing about the couple unless the user happened to name them -- on
+        # 49995684 they named [58, 100, 71], so no signal preferred a cake photo
+        # with the couple in it over one of an empty cake.
+        #
+        # A preference, never a filter: if no candidate in the category holds
+        # the subject, the whole category is offered unchanged rather than
+        # emptied. Measured coverage on 49995684 (with-subject / total):
+        # cake cutting 12/13, send off 10/10, first dance 8/9, kiss 10/12,
+        # bride and groom 100/120, both processionals 100%, may kiss bride 3/6 --
+        # so nothing here starves a category.
+        'subject': {
+            'enabled': True,
+            # Which class is about whom is `select.subject.IDENTITY_RULES`, not
+            # a second list here: it already carried that, and two tables that
+            # can disagree about what `bride and groom` means is a bug waiting
+            # to be written. This flag only turns the *preference* off.
+            #
+            # Where a photo classed as the couple goes when it holds one of
+            # them and a third person, the other half absent -- the bride with
+            # a groomsman rather than with the groom. `portrait` because that is
+            # what they are: a posed shot of people. Set to None to leave the
+            # class alone. It is a relabel and not merely a preference because
+            # it has to reach hand picks, which `select.preselect` commits
+            # unconditionally and no ranking can displace.
+            'misfiled_couple_class': 'portrait',
+
+            # Classes that name no real content. A photo the album is only
+            # taking to cover a named identity should not come from one of
+            # these if any real class holds that person.
+            'unknown_categories': ('other', 'None', 'none'),
+        },
         'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
         # The ceremony exit: guests showering the couple as they leave
         # (confetti, petals, bubbles, rice, sparklers). Detected as a temporal
@@ -143,6 +191,14 @@ CONFIGS = {'DEBUG': True,
         # the bound is the ceremony START, not the climax: "before the ceremony"
         # means before it begins. Bounding at the anchor instead pulled in
         # mid-ceremony vows and officiant frames as "processional".
+        # How far before the detected ceremony block a `ceremony`-classed
+        # frame is still plausibly the ceremony opening. The block is found
+        # from a density of ceremony-ish frames, so its start lands inside
+        # the first minutes rather than exactly on them; without a lead-in
+        # the real opening frames would be demoted. On 49995684 the two
+        # bogus frames sit ~90 positions before the block, so this is not
+        # a close call there. None disables the check.
+        'ceremony_lead_in': 30,
         'aisle_lead_in': 80,
         'aisle_upper_overlap': 20,
         'aisle_max_gap': 4,
@@ -152,6 +208,15 @@ CONFIGS = {'DEBUG': True,
         'aisle_extend_gap': 10,
         'aisle_min_photos': 2,
         'aisle_max_photos': 6,
+        # How many identified people a processional frame may hold before the
+        # identity test stops being evidence on its own. Above this it needs a
+        # processional subquery to confirm it. Three, because the walk in is the
+        # walker plus at most an escort and one bystander; on 49995684 the
+        # groom's bogus run sat at 4, 4 and 6 people with captions like "guests
+        # watching ceremony", while the bride's genuine 5- and 6-person frames
+        # all carry "bride walking down aisle with father" and survive.
+        # Set to 0 or None to disable the check.
+        'aisle_max_people': 3,
         'aisle_eligible_labels': ('walking the aisle', 'ceremony', 'bride', 'groom',
                                   'bride and groom', 'bride party', 'groom party',
                                   'other', 'portrait'),
@@ -274,6 +339,23 @@ CONFIGS = {'DEBUG': True,
             'min_side_frames': 4,
             'min_side_share': 0.7,
 
+            # The fallback for a candidate the strict share will not place.
+            # Dropping them outright costs more than a wrong side does, because
+            # `label` requires a family portrait to hold nobody outside the
+            # named family: an unnamed parent invalidates every portrait she
+            # stands in. On 49995684 the bride's mother sits at 10 frames alone
+            # with her daughter against 7 alone with the groom -- 58.8%, so the
+            # strict gate dropped her, and all seven `[bride, her, her husband]`
+            # portraits then failed on her alone. The gallery resolved a father
+            # and produced zero parent portraits.
+            #
+            # 0.55 is a lean rather than a skew, so it is paid for with a higher
+            # score floor than `min_score`: weaker side evidence is only
+            # acceptable from a candidate who is obviously a parent on
+            # everything else. A genuine 50/50 is still unplaceable.
+            'min_side_share_lean': 0.55,
+            'min_score_ambiguous_side': 0.60,
+
             # A parent sits in the older part of the gallery's own identities.
             # This is a rank, never an offset in years: face-age estimators
             # regress toward the mean, so the gap compresses while the
@@ -319,6 +401,21 @@ CONFIGS = {'DEBUG': True,
             # confined to a narrow band of the day.
             'officiant_span': 0.15,
             'officiant_ceremony': 10,
+            # The second route to the officiant, for the one who also gives a
+            # speech or stands in a portrait and so spans most of the day. He
+            # is still at the ceremony almost exclusively: on 49995684 id 34
+            # sits at 0.76 of his own frames against at most 0.33 for every
+            # other candidate, while his span is 0.71 -- outside any usable
+            # band. He was the top-scoring "groom's parent" in that gallery.
+            'officiant_ceremony_share': 0.60,
+
+            # A small posed portrait holding the candidate and one partner.
+            # `family_max_people` is what makes it mean anything: uncapped, the
+            # twenty-two-person group shot counts and half the guest list looks
+            # like family. Capped at four on 49995684, the bride's mother and
+            # father sit at 12 each and nobody else clears 4.
+            'family_max_people': 4,
+            'family_full': 4,
 
             # Circles this size or smaller read as a household rather than a
             # guest list; a circle shared with another *old* candidate is how
@@ -330,6 +427,7 @@ CONFIGS = {'DEBUG': True,
                 'own_side': 0.20,
                 'prep': 0.20,
                 'aisle': 0.15,
+                'family': 0.25,
                 'duo_dance': 0.25,
                 'circle': 0.15,
                 'query': 0.15,

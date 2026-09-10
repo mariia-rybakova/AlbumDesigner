@@ -86,6 +86,7 @@ import pandas as pd
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.enrich import timeline as tl
 from src.pipeline.select import narrowing
+from src.pipeline.subject import IDENTITY_RULES, _people_of
 from src.pipeline.select.scoring import CandidateGate, Scorer
 from utils.configs import CONFIGS
 
@@ -243,7 +244,11 @@ class CpSatPicker:
         user_selected = photos[photos[Col.IMAGE_ID].isin(self.inputs.user_selected_ids)]
         scorer = Scorer(user_selected, self.inputs.person_ids, self.inputs.tags_features,
                         self.inputs.ratings, self.logger)
-        gate = CandidateGate(scorer, self.inputs.unscored, self.plan.images, self.logger)
+        # `prefer_subject=False`: the same table drives `_identity_bonus` and
+        # `contradictions` below, where it can be traded off instead of removing
+        # candidates the model never gets to see.
+        gate = CandidateGate(scorer, self.inputs.unscored, self.plan.images, self.logger,
+                             prefer_subject=False)
 
         frame['_score'] = 0.0
         frame['_eligible'] = False
@@ -1071,74 +1076,6 @@ def _by_appearance(threshold: float):
                 buckets[bucket] = [index]
         return buckets
     return buckets_of
-
-
-# -- who a class is about ----------------------------------------------------
-#
-# The identity rules `CoupleTimelineStrategy` and `BridePrepStrategy` apply as
-# hard filters. Here they are preferences, scored in `_identity_bonus`.
-
-
-def _people_of(value) -> set:
-    return set(value) if isinstance(value, (list, tuple, set)) else set()
-
-
-def _solo(who):
-    """Only that person in frame -- `persons_ids == [id]` in the loop."""
-    def rule(people, bride, groom):
-        target = bride if who == 'bride' else groom
-        return target is not None and people == {target}
-    return rule
-
-
-def _couple_alone(people, bride, groom) -> bool:
-    """Both of them and nobody else.
-
-    The loop reaches the same place from the other side, pairing "has both"
-    with `n_faces == 2 or number_bodies == 2`; stating it as the identity set
-    says it once and does not depend on the face count being right.
-    """
-    if bride is None or groom is None:
-        return False
-    return people == {bride, groom}
-
-
-def _includes(who):
-    def rule(people, bride, groom):
-        target = bride if who == 'bride' else groom
-        return target is not None and target in people
-    return rule
-
-
-def _includes_either(people, bride, groom) -> bool:
-    return bool(people & {i for i in (bride, groom) if i is not None})
-
-
-#: Class -> ``(rule, subjects)``. The rule is what a photo of that class should
-#: hold; `subjects` names who it is about, which is what makes a *wrong*
-#: identity distinguishable from a *missing* one. Absent from the table means
-#: the class is not about a particular person and rank decides on its own.
-IDENTITY_RULES = {
-    # Exclusive: the class is *only* about its subject, so another face in
-    # frame with the subject absent is the wrong photo.
-    'bride': (_solo('bride'), ('bride',), True),
-    'groom': (_solo('groom'), ('groom',), True),
-    'bride and groom': (_couple_alone, ('bride', 'groom'), True),
-    'bride getting dressed': (_includes('bride'), ('bride',), True),
-    'getting hair-makeup': (_includes('bride'), ('bride',), True),
-    'bride walking the aisle': (_includes('bride'), ('bride',), True),
-    'groom walking the aisle': (_includes('groom'), ('groom',), True),
-
-    # Not exclusive: other people belong in these. Parents and flower girls
-    # walk the aisle, and the party classes are about a group -- so a frame
-    # naming someone other than the couple is not a wrong photo, it is just
-    # not the *preferred* one. Penalising it emptied `walking the aisle`
-    # outright on 53459898, where the couple is detected in none of its
-    # frames, losing a scripted moment of the wedding to a detection gap.
-    'bride party': (_includes('bride'), ('bride',), False),
-    'groom party': (_includes('groom'), ('groom',), False),
-    'walking the aisle': (_includes_either, ('bride', 'groom'), False),
-}
 
 
 def _identity_from(frame: pd.DataFrame, column: str, fallback):

@@ -63,6 +63,10 @@ GROOM_AISLE = "groom walking the aisle"
 WALKING_THE_AISLE = "walking the aisle"
 OTHER = "other"
 
+#: The content model's ceremony class, which it also puts on frames from
+#: before the ceremony started.
+CEREMONY_CLASS = ("ceremony",)
+
 #: Subqueries that identify a kiss frame.
 KISS_QUERIES = (
     "wedding kiss at ceremony",
@@ -138,12 +142,65 @@ class CeremonyAnchorSubStage(SubStage):
                 f"(core {ceremony.core_start}-{ceremony.core_end}, "
                 f"{len(ceremony.climax_positions)} climax frames)")
 
+        self._demote_early_ceremony(context, ceremony)
         self._demote_late_processional(context, ceremony)
 
         claimed = list(self._tag_kiss(context, ceremony))
         claimed += self._tag_aisle(context, ceremony, exclude=claimed)
         self._tag_send_off(context, ceremony, exclude=claimed)
         return context
+
+    # -- the ceremony cannot happen before the ceremony ----------------------
+
+    def _demote_early_ceremony(self, context: AlbumContext,
+                               ceremony: tl.CeremonyTimeline) -> int:
+        """Reclass a `ceremony` photo that sits well before the ceremony began.
+
+        The mirror of :meth:`_demote_late_processional`, and the same mistake
+        read from the other end: the content model puts a label on a frame that
+        the day's own order says cannot carry it. On 49995684 two frames at
+        20:13 are classed `ceremony` and captioned "officiant leading wedding
+        ceremony". They are the groom shaking hands with an older man in
+        daylight, sixteen minutes before the processional and twenty-four
+        before the vows. Both reached the album, because `ceremony` has a
+        budget and they were ranked inside it.
+
+        The cut is ``core_start`` less a lead-in, not ``core_start`` itself. The
+        ceremony block is found from a density of ceremony-ish frames, so its
+        start lands somewhere inside the first minutes rather than exactly on
+        them, and shaving frames just before it would demote the real opening.
+
+        Only ``cluster_context`` is rewritten, for the reason given on the late
+        case: `image_class` is the model's own output and enrich does not edit
+        it.
+        """
+        lead_in = CONFIGS.get('ceremony_lead_in')
+        if lead_in is None:
+            return 0
+
+        photos = context.photos
+        position = ceremony.frame[tl.POSITION]
+        cut = ceremony.core_start - lead_in
+        before = position.index[position < cut]
+
+        candidates = photos.index.intersection(before)
+        if len(candidates) == 0:
+            return 0
+
+        early = photos.loc[candidates, Col.CLUSTER_CONTEXT].isin(CEREMONY_CLASS)
+        demoted = early.index[early]
+        if len(demoted) == 0:
+            return 0
+
+        photos.loc[demoted, Col.CLUSTER_CONTEXT] = OTHER
+        if context.logger:
+            span = sorted(int(position.loc[i]) for i in demoted)
+            context.logger.info(
+                f"Reclassified {len(demoted)} '{CEREMONY_CLASS[0]}' photos at positions "
+                f"{span[0]}-{span[-1]} as '{OTHER}': they sit before the ceremony "
+                f"started ({ceremony.core_start}, less a {lead_in} lead-in), so "
+                f"whatever they show, it is not the ceremony")
+        return len(demoted)
 
     # -- the processional cannot happen after the ceremony -------------------
 
@@ -256,6 +313,34 @@ class CeremonyAnchorSubStage(SubStage):
             claimed += picked
         return claimed
 
+    @staticmethod
+    def _drop_unconfirmed_crowds(solo, who, logger):
+        """Keep narrow frames; keep wide ones only if the subquery confirms.
+
+        ``aisle_max_people`` is the width at which the identity test stops being
+        evidence on its own. Rows with no ``persons_ids`` to count are treated as
+        narrow: the identity already matched, so the list is not empty.
+        """
+        limit = CONFIGS.get('aisle_max_people')
+        if not limit:
+            return solo
+
+        crowd = solo[Col.PERSONS_IDS].apply(
+            lambda ids: len(ids) > limit if isinstance(ids, (list, tuple, set)) else False)
+        confirmed = solo[Col.IMAGE_SUBQUERY_CONTENT].isin(AISLE_QUERIES.get(who, ()))
+        keep = ~crowd | confirmed
+
+        dropped = int((~keep).sum())
+        if dropped and logger:
+            logger.info(
+                f"{who} processional: dropped {dropped} frame(s) holding more than "
+                f"{limit} people without a processional subquery -- present at the "
+                f"ceremony is not walking into it")
+        if dropped == len(solo) and logger:
+            logger.info(f"No {who} processional: every solo-{who} frame is an "
+                        f"unconfirmed crowd")
+        return solo[keep]
+
     def _tag_one_walk(self, context, ceremony, window, who, identity, other, tag, exclude):
         logger = context.logger
         if identity is None or (isinstance(identity, float) and np.isnan(identity)):
@@ -269,6 +354,23 @@ class CeremonyAnchorSubStage(SubStage):
         if solo.empty:
             if logger:
                 logger.info(f"No {who} processional: no solo-{who} frame before the ceremony")
+            return []
+
+        # 1b. Present is not the same as walking in. "Solo" only excludes the
+        #    other partner, so a hall full of guests that happens to contain the
+        #    groom passes it -- on 49995684 the frame that reached the album as
+        #    "groom walking the aisle" holds six people and is captioned "guests
+        #    watching ceremony". The groom is sitting in it.
+        #
+        #    A crowd therefore has to be *confirmed* rather than merely allowed:
+        #    it qualifies only when its subquery says a processional. That keeps
+        #    the bride's genuine wide shots -- hers carry "bride walking down
+        #    aisle with father" at five and six people -- and drops the groom's,
+        #    which carry no processional caption at any size. The narrow frames
+        #    are left alone: with few enough people in shot the identity test is
+        #    already doing the work.
+        solo = self._drop_unconfirmed_crowds(solo, who, logger)
+        if solo.empty:
             return []
 
         position = ceremony.frame[tl.POSITION]

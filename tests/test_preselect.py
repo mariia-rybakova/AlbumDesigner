@@ -66,7 +66,8 @@ def gallery():
 
 
 def run(photos=None, *, user_picks=(), person_ids=(), key_pages=None,
-        images=None, yes_categories=('rings', 'invite')):
+        images=None, yes_categories=('rings', 'invite'),
+        bride_id=None, groom_id=None):
     photos = gallery() if photos is None else photos
     logger = logging.getLogger("preselect-test")
     logger.addHandler(logging.NullHandler())
@@ -74,7 +75,9 @@ def run(photos=None, *, user_picks=(), person_ids=(), key_pages=None,
     context = AlbumContext(
         logger=logger,
         photos=photos,
-        facts=GalleryFacts(is_wedding=True),
+        # Unresolved by default, which switches `pipeline.subject` off and keeps
+        # every test written before it meaning what it meant.
+        facts=GalleryFacts(is_wedding=True, bride_id=bride_id, groom_id=groom_id),
         key_pages=key_pages,
         selection=SelectionOutcome(manual=False),
         selection_inputs=SelectionInputs(
@@ -313,3 +316,90 @@ def test_reasons_are_recorded_for_every_commitment():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# -- the category's subject, and covering a named identity ------------------
+
+
+def _rows(specs):
+    """``(image_id, category, persons_ids, image_order)`` each."""
+    return pd.DataFrame([
+        {Col.IMAGE_ID: image_id, Col.CLUSTER_CONTEXT: category,
+         Col.PERSONS_IDS: list(people), Col.IMAGE_ORDER: float(order),
+         Col.N_FACES: len(people), Col.IMAGE_ORIENTATION: 'landscape',
+         Col.EMBEDDING: np.linspace(order, order + 1, 8).astype(np.float32)}
+        for image_id, category, people, order in specs
+    ])
+
+
+def test_a_yes_category_prefers_the_photo_holding_its_subject():
+    """`may kiss bride` gets one photo and no second chance. On 49995684 it went
+    to the only one of six frames with no faces in it, because `person_score`
+    scored an empty `persons_ids` above a couple the request had not named."""
+    photos = _rows([
+        (1, 'may kiss bride', [], 0),            # best rank, nobody in it
+        (2, 'may kiss bride', [BRIDE, GROOM], 5),
+    ])
+
+    with only(yes_categories=True):
+        context = run(photos, person_ids=[GUEST], images={'may kiss bride': 1},
+                      yes_categories=('may kiss bride',),
+                      bride_id=BRIDE, groom_id=GROOM)
+
+    assert set(context.selection_plan.committed) == {2}
+
+
+def test_a_yes_category_falls_back_when_nobody_qualifies():
+    photos = _rows([(1, 'may kiss bride', [], 0), (2, 'may kiss bride', [GUEST], 5)])
+
+    with only(yes_categories=True):
+        context = run(photos, images={'may kiss bride': 1},
+                      yes_categories=('may kiss bride',),
+                      bride_id=BRIDE, groom_id=GROOM)
+
+    assert len(context.selection_plan.committed) == 1, (
+        "a category with no subject-bearing photo is still filled")
+
+
+def test_covering_an_identity_avoids_the_zero_budget_classes():
+    """`other` is budgeted 0% because it carries nothing worth a spread, yet two
+    of 49995684's `other` photos are in the album purely to cover identities 58
+    and 71 -- settled on score, which had no opinion about the class."""
+    photos = _rows([
+        (1, 'other', [GUEST], 0),      # best rank, worst class
+        (2, 'dancing', [GUEST], 5),
+    ])
+
+    with only(identities=True):
+        context = run(photos, person_ids=[GUEST], images={'dancing': 1, 'other': 1},
+                      bride_id=BRIDE, groom_id=GROOM)
+
+    assert set(context.selection_plan.committed) == {2}
+
+
+def test_a_guest_is_covered_outside_the_couples_own_photos_first():
+    """A named guest standing in a couple portrait is incidental to it, and that
+    spread would have existed anyway."""
+    photos = _rows([
+        (1, 'bride and groom', [BRIDE, GROOM, GUEST], 0),
+        (2, 'dancing', [GUEST], 5),
+    ])
+
+    with only(identities=True):
+        context = run(photos, person_ids=[GUEST],
+                      images={'dancing': 1, 'bride and groom': 1},
+                      bride_id=BRIDE, groom_id=GROOM)
+
+    assert set(context.selection_plan.committed) == {2}
+
+
+def test_an_identity_seen_only_in_other_is_still_covered():
+    """The guarantee survives the preference: the tiers are an ordering, not a
+    filter."""
+    photos = _rows([(1, 'other', [GUEST], 0), (2, 'dancing', [BRIDE], 5)])
+
+    with only(identities=True):
+        context = run(photos, person_ids=[GUEST], images={'other': 1, 'dancing': 1},
+                      bride_id=BRIDE, groom_id=GROOM)
+
+    assert set(context.selection_plan.committed) == {1}

@@ -144,6 +144,21 @@ class Indicators:
     circle_partners: Tuple[int, ...] = ()
     span: Tuple[float, float] = (0.0, 1.0)
 
+    #: Small posed portraits holding this candidate and that partner. The
+    #: signal that actually named the bride's parents on 49995684: her mother
+    #: and father sit at 12 each against a field of at most 4. A parent stands
+    #: in the family group; a guest is in the big crowd shots instead, which is
+    #: why the frame has to be small for this to count.
+    family_bride: int = 0
+    family_groom: int = 0
+
+    #: Ceremony frames as a share of this candidate's own appearances. The
+    #: officiant's tell, and a better one than `span`: he is *at* the ceremony
+    #: almost exclusively. On 49995684 id 34 sits at 0.76 and every other
+    #: candidate at or below 0.33, while his span is 0.71 -- far outside the
+    #: 0.15 band `officiant_span` looks for, because he also gives a speech.
+    ceremony_share: float = 0.0
+
     def side_skew(self) -> Optional[str]:
         """``'bride'``, ``'groom'`` or None when the two sides are too close.
 
@@ -162,6 +177,25 @@ class Indicators:
             return "groom"
         return None
 
+    def leaning_side(self) -> Optional[str]:
+        """The side a candidate tilts to, for when `side_skew` will not commit.
+
+        Same measurement, a lower bar (``min_side_share_lean``). Still requires
+        `min_side_frames` of evidence and still returns None at a genuine tie,
+        so this widens the gate rather than removing it -- `resolve` pairs it
+        with a raised score floor.
+        """
+        total = self.with_bride + self.with_groom
+        if total < settings()["min_side_frames"]:
+            return None
+        share = self.with_bride / total
+        margin = settings()["min_side_share_lean"]
+        if share >= margin:
+            return "bride"
+        if (1.0 - share) >= margin:
+            return "groom"
+        return None
+
     def own_side(self, side: str) -> int:
         """Frames alone with that partner -- the couple's other half absent.
 
@@ -174,6 +208,9 @@ class Indicators:
 
     def prep(self, side: str) -> int:
         return self.prep_bride if side == "bride" else self.prep_groom
+
+    def family(self, side: str) -> int:
+        return self.family_bride if side == "bride" else self.family_groom
 
     def aisle(self, side: str) -> int:
         return self.aisle_bride if side == "bride" else self.aisle_groom
@@ -208,6 +245,27 @@ class Resolution:
 
 
 # -- measurement ------------------------------------------------------------
+
+
+#: Posed-portrait classes a family group photo lands in.
+FAMILY_PORTRAIT = ("portrait", "parents portrait", "bride with her parents",
+                   "groom with his parents", "bride and groom with parents")
+
+
+def _family_frames(here, labels, people, partner, config) -> int:
+    """Small posed portraits holding this candidate and that partner.
+
+    Small is the whole point. "A portrait with a partner" admits the twenty-two
+    person group shot that half the guest list is in; on 49995684 the bride's
+    parents separate from the field only once the frame is capped
+    (`family_max_people`), at 12 each against at most 4 for anyone else.
+    """
+    if partner is None or pd.isna(partner):
+        return 0
+    cap = int(config.get("family_max_people", 4))
+    small_with_partner = people.apply(
+        lambda group: partner in group and len(group) <= cap)
+    return int((here & labels.isin(FAMILY_PORTRAIT) & small_with_partner).sum())
 
 
 def _saturate(count: int, full: int) -> float:
@@ -357,6 +415,10 @@ def measure(
             duo_dance_bride=duo(bride_id),
             duo_dance_groom=duo(groom_id),
             ceremony=int((here & labels.isin(CEREMONY_CLASS)).sum()),
+            ceremony_share=(int((here & labels.isin(CEREMONY_CLASS)).sum()) / appearances
+                            if appearances else 0.0),
+            family_bride=_family_frames(here, labels, people, bride_id, config),
+            family_groom=_family_frames(here, labels, people, groom_id, config),
             party=int((here & labels.isin(PARTY)).sum()),
             attributable=n_attr,
             parent_query=_shrink(parent_delta, n_attr, config["query_prior"]),
@@ -424,6 +486,7 @@ def score(candidate: Indicators, side: str) -> float:
                                              config["own_side_full"])
     value += weights["prep"] * _saturate(candidate.prep(side), config["prep_full"])
     value += weights["aisle"] * _saturate(candidate.aisle(side), config["aisle_full"])
+    value += weights["family"] * _saturate(candidate.family(side), config["family_full"])
     value += weights["duo_dance"] * (1.0 if candidate.duo_dance(side) else 0.0)
     value += weights["circle"] * (1.0 if candidate.circle_partners else 0.0)
     value += weights["query"] * float(
@@ -434,8 +497,16 @@ def score(candidate: Indicators, side: str) -> float:
     # The officiant: old, at the ceremony, on neither side, and present in a
     # narrow band of the day. Ranks well on age alone otherwise -- id 26 on
     # 53459898 is 61 and appears in 28 ceremony frames inside 8% of the day.
+    # Two routes to the same person. The span test catches an officiant who
+    # appears only at the ceremony; the share test catches one who also gives a
+    # speech or stands in a portrait, which widens his span past any usable
+    # band. On 49995684 id 34 spans 0.71 -- nowhere near the 0.15 the first
+    # test wants -- while 76% of his frames are the ceremony against at most
+    # 33% for every other candidate.
     width = candidate.span[1] - candidate.span[0]
-    if width <= config["officiant_span"] and candidate.ceremony >= config["officiant_ceremony"]:
+    narrow = width <= config["officiant_span"]
+    concentrated = candidate.ceremony_share >= config["officiant_ceremony_share"]
+    if (narrow or concentrated) and candidate.ceremony >= config["officiant_ceremony"]:
         value -= weights["officiant"]
 
     return value
@@ -454,10 +525,37 @@ def resolve(candidates: Sequence[Indicators]) -> Resolution:
     resolution = Resolution()
 
     by_side: Dict[str, List[Indicators]] = {"bride": [], "groom": []}
+    ambiguous: List[Indicators] = []
     for candidate in candidates:
         side = candidate.side_skew()
         if side is not None:
             by_side[side].append(candidate)
+        else:
+            ambiguous.append(candidate)
+
+    # A parent whose side is not clean enough to assert is still a parent. The
+    # mother of the bride on 49995684 sits at 10 frames alone with her daughter
+    # against 7 alone with the groom -- 58.8%, under the 70% the strict gate
+    # wants -- so she was dropped from both pools and never ranked, despite
+    # being the second-strongest bride-side candidate in the gallery at 0.66.
+    #
+    # That is not a harmless miss. `label` requires a portrait to hold nobody
+    # outside the named family, so an unnamed parent does not merely go
+    # uncredited: she invalidates every family portrait she stands in. All seven
+    # `[bride, her, her husband]` portraits failed on her alone, and the gallery
+    # ended with a resolved father and zero parent portraits.
+    #
+    # So the lean is allowed to decide when it is still a lean, and the price is
+    # a higher score bar than the strict path pays -- being obviously a parent is
+    # what earns the weaker side evidence. Candidates with no lean at all remain
+    # unplaceable, which is the case the strict gate was really written for.
+    for candidate in ambiguous:
+        side = candidate.leaning_side()
+        if side is None:
+            continue
+        if score(candidate, side) < config["min_score_ambiguous_side"]:
+            continue
+        by_side[side].append(candidate)
 
     for side, pool in by_side.items():
         chosen, note = _resolve_side(side, pool, config)
