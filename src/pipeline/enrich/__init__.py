@@ -12,6 +12,7 @@ none of them is reading — each one *infers* something:
 ``enrich.semantic_tags``     CLIP projection against a text query bank
 ``enrich.people_cluster``    people-composition key
 ``enrich.temporal``          usable timeline + artificial-time detection
+``enrich.couple_scenes``     whole scenes misfiled as the couple
 ``enrich.parents``           couple-with-parents portraits
 ``enrich.ceremony_anchor``   the kiss and the send-off, from one anchor
 ``enrich.key_pages``         the photos that open and close the album
@@ -26,6 +27,7 @@ Importing this package registers every substage it defines.
 from src.pipeline.enrich import (  # noqa: F401  (imported for registration,
     ceremony_anchor,
     classification,
+    couple_scenes,
     dedupe,
     hygiene,
     identities,
@@ -34,5 +36,6 @@ from src.pipeline.enrich import (  # noqa: F401  (imported for registration,
     variants,
 )
 
-__all__ = ["ceremony_anchor", "classification", "dedupe", "hygiene", "identities",
+__all__ = ["ceremony_anchor", "classification", "couple_scenes", "dedupe",
+           "hygiene", "identities",
            "key_pages", "temporal", "timeline", "variants"]

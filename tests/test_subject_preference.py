@@ -279,3 +279,108 @@ def test_only_the_couple_alone_classes_are_re_filed():
     assert moved == 0
     assert list(out[Col.CLUSTER_CONTEXT]) == ['walking the aisle', 'bride party',
                                               'cake cutting']
+
+
+# -- whole scenes filed as the couple ---------------------------------------
+#
+# 49996919: the album opened on the bride being kissed by her father, in a
+# first look filed `bride and groom`. The father is never recognised, so no
+# frame-level test can see it; across the scene the bride is named four times
+# and the groom not once.
+
+FATHER_SCENE = [
+    # (image_id, general_time, persons_ids) -- the real run, as read.
+    (11548148002, 12591, []),
+    (11548148006, 12593, [BRIDE]),
+    (11548148022, 12598, [BRIDE]),
+    (11548148023, 12605, [BRIDE]),
+]
+
+
+def scene_frame(scene, category="bride and groom", extra=()):
+    """A gallery of one scene plus whatever context the test needs."""
+    rows_ = [{Col.IMAGE_ID: i, Col.GENERAL_TIME: t, Col.PERSONS_IDS: list(p),
+              Col.CLUSTER_CONTEXT: category} for i, t, p in scene]
+    rows_.extend({Col.IMAGE_ID: i, Col.GENERAL_TIME: t, Col.PERSONS_IDS: list(p),
+                  Col.CLUSTER_CONTEXT: c} for i, t, p, c in extra)
+    return pd.DataFrame(rows_)
+
+
+def _couple_context(n=6, start=90000):
+    """Enough frames naming the groom that his absence elsewhere means something."""
+    return [(9000 + i, start + i * 10, [BRIDE, GROOM], "bride and groom")
+            for i in range(n)]
+
+
+def test_a_one_sided_scene_is_refiled():
+    frame = scene_frame(FATHER_SCENE, extra=_couple_context())
+
+    out, moved = subject.refile_lopsided_couple_scenes(frame, BRIDE, GROOM)
+
+    assert moved == len(FATHER_SCENE)
+    misfiled = out[out[Col.IMAGE_ID].isin(i for i, _, _ in FATHER_SCENE)]
+    assert set(misfiled[Col.CLUSTER_CONTEXT]) == {
+        CONFIGS['subject']['misfiled_couple_class']}
+
+
+def test_the_couple_keep_their_own_scenes():
+    """The frames naming both are the control: whatever the rule does to the
+    first look, it must not touch these."""
+    frame = scene_frame(FATHER_SCENE, extra=_couple_context())
+
+    out, _ = subject.refile_lopsided_couple_scenes(frame, BRIDE, GROOM)
+
+    context_ids = {i for i, _t, _p, _c in _couple_context()}
+    kept = out[out[Col.IMAGE_ID].isin(context_ids)]
+    assert set(kept[Col.CLUSTER_CONTEXT]) == {"bride and groom"}
+
+
+def test_a_single_frame_naming_one_of_them_is_not_a_scene():
+    """The ordinary case the rule must stay cheap on: the couple with one face
+    unrecognised. 29 of 120 couple frames on 49995684 look like this, and one
+    detection is not a pattern."""
+    lone = [(11548148023, 12605, [BRIDE])]
+    frame = scene_frame(lone, extra=_couple_context())
+
+    _out, moved = subject.refile_lopsided_couple_scenes(frame, BRIDE, GROOM)
+
+    assert moved == 0
+
+
+def test_a_scene_the_groom_appears_in_is_left_alone():
+    """One frame naming him is enough -- it is his scene, shot from behind."""
+    scene = [(1, 100, [BRIDE]), (2, 110, [BRIDE]), (3, 120, [GROOM])]
+    frame = scene_frame(scene, extra=_couple_context())
+
+    _out, moved = subject.refile_lopsided_couple_scenes(frame, BRIDE, GROOM)
+
+    assert moved == 0
+
+
+def test_a_gallery_that_never_recognises_the_groom_is_left_alone():
+    """Absence is only evidence if the model can find him at all. Without this
+    guard every couple scene on such a gallery looks lopsided and the rule
+    empties the class."""
+    frame = scene_frame(FATHER_SCENE)
+
+    _out, moved = subject.refile_lopsided_couple_scenes(frame, BRIDE, GROOM)
+
+    assert moved == 0
+
+
+def test_a_far_apart_run_is_two_scenes():
+    """The gap is what makes a scene. Two frames an hour apart, each naming
+    only the bride, are not one lopsided moment."""
+    scene = [(1, 100, [BRIDE]), (2, 100 + 3600, [BRIDE])]
+    frame = scene_frame(scene, extra=_couple_context())
+
+    _out, moved = subject.refile_lopsided_couple_scenes(frame, BRIDE, GROOM)
+
+    assert moved == 0
+
+
+def test_an_unresolved_couple_is_not_an_error():
+    frame = scene_frame(FATHER_SCENE, extra=_couple_context())
+
+    assert subject.lopsided_couple_scenes(frame, BRIDE, None) is None
+    assert subject.lopsided_couple_scenes(frame, None, None) is None

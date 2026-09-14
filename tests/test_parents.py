@@ -801,3 +801,36 @@ def test_the_family_portrait_separates_a_parent_from_a_guest():
     guest = _bare(age_rank=0.90, with_bride=10, family_bride=0)
 
     assert parents.score(parent, "bride") - parents.score(guest, "bride") >= 0.2
+
+
+def test_a_family_moment_misfiled_as_the_couple_is_still_relabelled():
+    """The guard has to look where the error actually lands.
+
+    A tuxedo and a wedding dress read as a couple, so the content model files
+    the bride with her father under `bride and groom` -- never under
+    `portrait`, which is the only class this relabel used to examine. On
+    49996919 that frame went on to open the album: `refile_misfiled_couple`
+    could not catch it either (it needs one of the couple recognised, and the
+    bride's face was turned away), so nothing looked at it at all.
+    """
+    frame = gallery([("bride and groom", [BRIDE, FATHER])])
+    outcome = parents.Resolution(bride_parents=(FATHER,))
+
+    labelled, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert count == 1
+    assert labelled[Col.CLUSTER_CONTEXT].iloc[0] == parents.PARENTS_PORTRAIT
+    assert labelled[Col.PARENT_CATEGORY].iloc[0] == parents.BRIDE_PARENTS
+
+
+def test_a_real_couple_photo_is_untouched_by_the_widened_relabel():
+    """Widening the classes must not cost the couple their own photos. The
+    existing tests still apply: a frame only moves if it holds one of them
+    *and* a named parent, so `bride and groom` alone stays where it is."""
+    frame = gallery([("bride and groom", [BRIDE, GROOM])])
+    outcome = parents.Resolution(bride_parents=(MOTHER, FATHER))
+
+    labelled, count = parents.label(frame, outcome, BRIDE, GROOM)
+
+    assert count == 0
+    assert labelled[Col.CLUSTER_CONTEXT].iloc[0] == "bride and groom"

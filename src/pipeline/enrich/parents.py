@@ -675,7 +675,15 @@ def label(photos: pd.DataFrame, resolution: Resolution, bride_id, groom_id):
     groom_set = set(resolution.groom_parents)
     family = bride_set | groom_set | {i for i in (bride_id, groom_id)
                                       if i is not None and not pd.isna(i)}
-    portraits = photos[Col.CLUSTER_CONTEXT] == "portrait"
+    # The classes a family portrait can be hiding in. `portrait` was the only
+    # one for a long time, which made the guard useless against exactly the
+    # error it should catch: a photo of the bride and her father is filed as
+    # `bride and groom` by a content model that sees a tuxedo and a wedding
+    # dress, and a guard gated on `portrait` never looks at it. On 49996919
+    # that frame went on to open the album. The couple classes are where a
+    # misread family moment actually lands, so they are where this has to look.
+    eligible = tuple(settings().get('relabel_classes', ('portrait',)))
+    portraits = photos[Col.CLUSTER_CONTEXT].isin(eligible)
 
     def classify(row) -> Optional[str]:
         group = set(row[Col.PERSONS_IDS] or [])

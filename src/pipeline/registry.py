@@ -107,6 +107,10 @@ ENRICH: Sequence[str] = (
     "ingest.merge_ratings",
     "ingest.scenes",
     "enrich.temporal",
+    # After `enrich.temporal`, which is what gives it a day to cut into
+    # scenes, and before `enrich.parents`, so a misread family moment can
+    # still be recognised as one once it is out of the couple classes.
+    "enrich.couple_scenes",
     "enrich.parents",
     "enrich.ceremony_anchor",
     "enrich.key_pages",

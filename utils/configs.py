@@ -148,6 +148,33 @@ CONFIGS = {'DEBUG': True,
             # unconditionally and no ranking can displace.
             'misfiled_couple_class': 'portrait',
 
+            # -- whole scenes filed as the couple -----------------------------
+            #
+            # `enrich.couple_scenes`. The frame-level test above needs the third
+            # person recognised; this one does not, because it reads a whole
+            # time-contiguous run at once and asks whether the *other* half of
+            # the couple ever turns up in it.
+            #
+            # The classes a misread couple scene lands in. `bride and groom` is
+            # where it actually landed on 49996919 -- a tuxedo and a wedding
+            # dress read as a couple -- and `couple` and `kiss` are the other
+            # two the cover rule will draw from.
+            'scene_classes': ('bride and groom', 'couple', 'kiss'),
+            # Seconds on `general_time` before a run is a different scene. The
+            # first look on 49996919 spans 14 seconds of it.
+            'scene_max_gap': 120,
+            # How often one of them must be named before the other's absence
+            # means anything. Two, so a single detection cannot condemn a
+            # scene, and a two-frame run is still enough to act on.
+            'scene_min_named': 2,
+            # ...and how well the identity model must do on the *absent* one
+            # gallery-wide before absence is evidence at all. On a gallery
+            # where the groom is never recognised -- a detection failure, or
+            # identities that never resolved -- every couple scene looks
+            # lopsided and the rule would empty the class. Five frames is the
+            # same noise floor `parents.min_appearances` uses.
+            'scene_min_partner_frames': 5,
+
             # Classes that name no real content. A photo the album is only
             # taking to cover a named identity should not come from one of
             # these if any real class holds that person.
@@ -327,6 +354,17 @@ CONFIGS = {'DEBUG': True,
             'max_extra_people': 0,
             'max_unidentified_faces': 1,
 
+            # Which classes the family-portrait relabel is allowed to rewrite.
+            # `portrait` alone was the old behaviour and it could not fire on
+            # the case that matters: the content model files the bride with her
+            # father under `bride and groom` -- a tuxedo and a wedding dress
+            # look like a couple -- so the frame is never a `portrait` and the
+            # guard never sees it. The couple classes are added for that. The
+            # tests above still apply unchanged: a frame only moves if it holds
+            # one of the couple *and* a named parent and nobody else, so a real
+            # `bride and groom` photo is untouched.
+            'relabel_classes': ('portrait', 'bride and groom', 'couple', 'kiss'),
+
             # Noise floor. Below this an identity has no measurable pattern.
             'min_appearances': 5,
             # At most this many identities per side -- two parents, or three to
@@ -452,12 +490,12 @@ CONFIGS = {'DEBUG': True,
         # fell through to the rank fallback, and the fallback handed back the
         # same photo the closing ladder had already taken.
         'covers': {
-            # Both faces, not just both identities. `persons_ids` is built from
-            # face clusters, so a name in it means a face was recognised -- but
-            # a photo carrying both names can still be one clear face and one
-            # profile at the frame edge. Two detected faces is the cheap
-            # version of "both of them are actually in the picture". Relaxed
-            # rather than enforced when it would empty the candidate base.
+            # The face count a cover is measured against. This was once a
+            # candidate gate -- "both faces, not just both identities" -- and
+            # the comment here still described it as one long after `_presence`
+            # replaced the gate with a grade. Its only reader now is
+            # `_crowd_penalty`, which takes it as the size of the couple and
+            # penalises faces beyond it.
             'min_faces': 2,
 
             # The classes a cover may come from. `kiss` and `couple` are couple
@@ -483,7 +521,50 @@ CONFIGS = {'DEBUG': True,
                 'one': 0.6,         # one named, the other unrecognised
                 'faces_only': 0.35, # faces detected, neither identified
                 'neither': 0.2,     # no face at all -- backs turned, or buried
+                # Somebody *is* recognised here and it is neither of them.
+                # `faces_only` treats "we recognised nobody" and "we recognised
+                # the wrong person" as the same evidence, and they are
+                # opposites: one is absence of evidence, the other evidence of
+                # absence. Graded 0.35, a frame naming somebody else needed
+                # only 0.41 of the affection range to beat a frame naming them
+                # both, which a kiss clears without trying.
+                #
+                # Not the fix for 49996919, despite being written for it: the
+                # frame that opened that album names the *bride*
+                # (`persons_ids == [9]`, from her body, `n_faces == 0`) and the
+                # father is recognised nowhere in the scene, so it grades `one`
+                # and this never fires. `enrich.couple_scenes` is what answers
+                # that gallery. This grade stands on its own merit, for the
+                # case where the model did name the other person.
+                #
+                # Below `neither` on purpose: a frame with no identity at all
+                # may still be the couple, and that is the case `presence`
+                # became a grade rather than a filter to protect. A frame
+                # naming somebody else cannot be.
+                'others': 0.05,
             },
+
+            # How far affection is discounted when presence is unsure: the
+            # affection term is multiplied by `floor + (1 - floor) * presence`,
+            # so at 1.0 it is not discounted at all and the score is the plain
+            # sum it has always been.
+            #
+            # **Off, because it was measured and it does not do what it looks
+            # like it does.** The idea was that multiplying makes `affection`
+            # mean "affection between *the two of them*" rather than between
+            # whoever is in the frame. What it actually does is discount the
+            # frames with the *least* identity hardest -- and the misread frame
+            # it was aimed at, the bride and her father on 49996919, names the
+            # bride and so is discounted *less* than a genuine faceless embrace
+            # of the couple. Swept over that gallery's real 46 candidates it
+            # never changes whether a father frame opens the album, only which
+            # one does.
+            #
+            # The scene rule in `subject.refile_lopsided_couple_scenes` is what
+            # addresses that case, by taking the frames out of the couple
+            # classes entirely rather than trying to out-weigh them. Kept as a
+            # lever, at the value that leaves scoring alone.
+            'affection_presence_floor': 1.0,
 
             # What makes a cover *special*: a look, a touch, a candid moment
             # that reads as mutual. Combined with `max`, not `mean` -- a frame
@@ -499,6 +580,29 @@ CONFIGS = {'DEBUG': True,
             # Their mean ranked the frame the album actually opened on 32nd of
             # its own 48 candidates, which is the judgement the ladder had no
             # way to make.
+            #
+            # `affection` and `romance` appear here *and* in
+            # `affection_concepts`, so affection is counted twice: once at
+            # weight 1.20 through its own term, and again as two sixths of a
+            # mean at weight 1.00, for an effective 1.53 against presence at
+            # 0.75. That looks like an oversight left behind when the dedicated
+            # `affection` term landed, and it was removed on those grounds --
+            # then measured, and put back.
+            #
+            # The overlap is doing real work. Taking the two out drops the
+            # quality score of exactly the photographs that carry a cover
+            # without showing a face: on 49995684 the album stopped closing on
+            # an intimate black-and-white detail of their hands -- no faces, so
+            # no identity, `persons_ids == []` -- and closed instead on the
+            # couple applauding at the dinner table. A correct pair of
+            # identities and a much weaker back cover.
+            #
+            # It also buys nothing. The gallery the removal was aimed at,
+            # 49996919, is fixed by `enrich.couple_scenes` taking the misread
+            # first-look scene out of the couple classes, and with that rule in
+            # place both banks pick the same correct opening. So the double
+            # count stays, documented, and 1.53 is the affection weight this
+            # module actually means.
             'quality_concepts': ('portrait', 'smiling', 'affection',
                                  'romance', 'softlight', 'happiness'),
 

@@ -268,12 +268,31 @@ def _presence(frame, bride_id, groom_id):
     So presence became a preference. A frame naming both of them still wins
     every tie; a faceless one has to earn the cover on affection and quality,
     against a handicap.
+
+    **A missing identity and a wrong one are not the same evidence.** The
+    grades above were blind to the difference: a frame in which nobody was
+    recognised and a frame in which somebody was recognised and it is neither
+    of them both scored `faces_only`. The first may well be the couple -- that
+    is the case this grade exists to protect. The second cannot be, so `others`
+    grades it apart.
+
+    It is worth being exact about what this does *not* fix, because the gallery
+    that prompted it is not an instance of it. On 49996919 the album opened on
+    the bride being kissed by her father, and that frame carries
+    ``persons_ids == [9]`` -- the **bride**, recognised from her body with
+    ``n_faces == 0``. The father is not recognised in it or in any other frame
+    of the scene, so there is no wrong identity to see: the frame grades `one`,
+    exactly like the ordinary and common "the couple with one face missed".
+    `enrich.couple_scenes` is what answers that, by reading the whole scene
+    instead of the frame. This grade is for the case where the identity model
+    did see the other person and said who they were.
     """
     grades = settings().get('presence_grades', {})
     both = float(grades.get('both', 1.0))
     one = float(grades.get('one', 0.6))
     faces_only = float(grades.get('faces_only', 0.35))
     neither = float(grades.get('neither', 0.2))
+    others = float(grades.get('others', 0.05))
 
     def grade(row):
         people = row['persons_ids']
@@ -283,6 +302,11 @@ def _presence(frame, bride_id, groom_id):
             return both
         if named == 1:
             return one
+        # Neither of them named. Recognising *somebody* here is positive
+        # evidence against the frame, not the absence of evidence `faces_only`
+        # stands for.
+        if people:
+            return others
         faces = row.get('n_faces')
         return faces_only if faces is not None and faces == faces and faces > 0 else neither
 
@@ -311,19 +335,42 @@ def _crowd_penalty(frame):
 
 
 def _score_covers(frame, queries, logger, bride_id=None, groom_id=None):
-    """Score every candidate for one cover. Higher is better."""
+    """Score every candidate for one cover. Higher is better.
+
+    Affection can be **gated on presence** rather than added beside it, by
+    setting `affection_presence_floor` below 1.0. The idea is that `affection`
+    otherwise scores whatever feeling the frame shows between whoever happens
+    to be in it, and multiplying by presence would make it mean "affection
+    between *the two of them*".
+
+    **It ships off, because it was measured and it does not do that.** What the
+    multiplier actually does is discount the frames carrying the *least*
+    identity hardest -- and the misread frame it was written for, the bride and
+    her father on 49996919, names the bride and so is discounted *less* than a
+    genuine faceless embrace of the couple. Swept over that gallery's real 46
+    candidates it never changes whether a father frame opens the album, only
+    which one does. `enrich.couple_scenes` addresses that case instead, by
+    taking the scene out of the couple classes rather than out-weighing it.
+
+    Kept as a lever, at the value that leaves the score the plain sum it has
+    always been.
+    """
     weights = settings().get('weights', {})
     preferred = settings().get('preferred_orientation', 'landscape')
+    floor = float(settings().get('affection_presence_floor', 1.0))
 
     rank = np.asarray(_minmax_normalize(
         [float(v) if v == v else 0.0 for v in frame['image_order']]), dtype=float)
     orientation = (frame['image_orientation'] == preferred).astype(float).values
+    presence = _presence(frame, bride_id, groom_id)
+    # Confidence that the affection on show is *theirs*, never below `floor`.
+    affection_gate = floor + (1.0 - floor) * presence
 
     return (
-        weights.get('affection', 0.0) * _affection(frame, logger)
+        weights.get('affection', 0.0) * _affection(frame, logger) * affection_gate
         + weights.get('quality', 0.0) * _quality(frame, logger)
         + weights.get('subquery', 0.0) * _subquery_affinity(frame, queries)
-        + weights.get('presence', 0.0) * _presence(frame, bride_id, groom_id)
+        + weights.get('presence', 0.0) * presence
         # `image_order` is a rank where 0 is best, so the *low* end is rewarded.
         + weights.get('rank', 0.0) * (1.0 - rank)
         + weights.get('orientation', 0.0) * orientation

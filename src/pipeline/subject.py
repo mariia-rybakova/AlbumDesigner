@@ -26,7 +26,7 @@ watching ceremony".
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -54,6 +54,16 @@ def enabled() -> bool:
 # CP-SAT was the picker -- the loop had no notion of a class's subject at all,
 # and neither did the `yes` categories, which is where `may kiss bride` is
 # settled.
+
+
+def _is_missing(value) -> bool:
+    """True for None and for a pandas null, which `bride_id` can both be."""
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def _people_of(value) -> set:
@@ -187,6 +197,128 @@ def refile_misfiled_couple(photos, bride_id, groom_id, logger=None):
                 f"subject: re-filed {moved} photo(s) from the couple classes to "
                 f"'{destination}' -- they hold one of the couple and a third "
                 f"person, not the two of them")
+    return photos, moved
+
+
+def _scene_runs(photos: pd.DataFrame, max_gap: float) -> List[List[Any]]:
+    """Index labels of each time-contiguous run, in time order.
+
+    ``general_time`` rather than ``image_time``: on a gallery whose EXIF is
+    unusable the first is a synthetic monotonic day rebuilt from scene order
+    and the second is the unusable original, and `image_order` is not a time
+    axis at all -- it is a quality rank, so splitting on it interleaves photos
+    from opposite ends of the day.
+    """
+    if photos.empty or Col.GENERAL_TIME not in photos.columns:
+        return []
+    ordered = photos.assign(__t=pd.to_numeric(photos[Col.GENERAL_TIME], errors="coerce")) \
+                    .dropna(subset=["__t"]) \
+                    .sort_values("__t", kind="stable")
+    runs, current, previous = [], [], None
+    for label, moment in zip(ordered.index, ordered["__t"]):
+        if previous is not None and moment - previous > max_gap:
+            runs.append(current)
+            current = []
+        current.append(label)
+        previous = moment
+    if current:
+        runs.append(current)
+    return runs
+
+
+def lopsided_couple_scenes(photos: pd.DataFrame, bride_id, groom_id) -> Optional[pd.Series]:
+    """Couple-class scenes that hold one of them and never the other.
+
+    The frame-by-frame test cannot see this. On 49996919 the album opened on
+    the bride being kissed by her **father** -- a first look with dad, shot
+    against the same wall as the couple portraits, and filed `bride and groom`
+    by a content model that sees a tuxedo and a wedding dress. The father is
+    never recognised in any frame of it, and the bride is named in some and not
+    others, so every frame reads as the ordinary and common "the couple with
+    one face missed":
+
+        11548148002  persons_ids []     11548148006  persons_ids [9]
+        11548148022  persons_ids [9]    11548148023  persons_ids [9]
+
+    `one_half_with_an_outsider` needs the third person recognised; the parents
+    relabel needs one of the couple *and* a named parent; `_presence` grades
+    each frame alone. All three are blind to it, and because the scene spans
+    three different presence grades, demoting any one of them merely promotes
+    another frame of the same scene -- measured across a sweep of the presence
+    weight, no setting picks a correct opening without also picking the least
+    affectionate photo in the gallery.
+
+    Aggregated over the scene it is unambiguous. A real couple scene names the
+    groom in *some* of its frames; this one never does. On 49996919 exactly one
+    run of the 183 couple-class frames is lopsided -- all seven frames of the
+    first look, catching all four of the ones that reached the cover rule --
+    and **none** of the 106 frames naming both is touched.
+
+    Returns a boolean mask, or ``None`` when the question cannot be asked.
+    """
+    if photos is None or photos.empty:
+        return None
+    if Col.PERSONS_IDS not in photos.columns or Col.CLUSTER_CONTEXT not in photos.columns:
+        return None
+
+    couple = {i for i in (bride_id, groom_id) if i is not None and not _is_missing(i)}
+    if len(couple) < 2:
+        return None
+
+    config = settings()
+    classes = tuple(config.get("scene_classes", ()))
+    if not classes:
+        return None
+    max_gap = float(config.get("scene_max_gap", 120))
+    min_named = int(config.get("scene_min_named", 2))
+    min_partner_frames = int(config.get("scene_min_partner_frames", 5))
+
+    # Absence only means something if the identity model can find that person
+    # at all. On a gallery where the groom is never recognised -- a detection
+    # failure, or the identities never resolved -- every couple scene would
+    # look lopsided and the rule would empty the class.
+    seen = photos[Col.PERSONS_IDS].apply(_people_of)
+    reach = {i: int(seen.apply(lambda people, who=i: who in people).sum()) for i in couple}
+    if min(reach.values()) < min_partner_frames:
+        return None
+
+    mask = pd.Series(False, index=photos.index)
+    candidates = photos[photos[Col.CLUSTER_CONTEXT].isin(classes)]
+    for run in _scene_runs(candidates, max_gap):
+        people = [seen.loc[label] for label in run]
+        counts = {i: sum(1 for p in people if i in p) for i in couple}
+        present = [i for i, n in counts.items() if n >= min_named]
+        absent = [i for i, n in counts.items() if n == 0]
+        # One of them recurs across the scene and the other never appears.
+        if len(present) == 1 and len(absent) == 1:
+            mask.loc[run] = True
+    return mask
+
+
+def refile_lopsided_couple_scenes(photos, bride_id, groom_id, logger=None):
+    """Move whole one-sided scenes out of the couple classes.
+
+    Returns ``(photos, moved)``. A relabel for the same reason
+    `refile_misfiled_couple` is one: it has to reach the photos
+    `select.preselect` commits unconditionally, and on 49996919 the misread
+    scene supplied one of the request's own ``aiMetadata.photoIds``.
+    """
+    destination = settings().get("misfiled_couple_class")
+    if not enabled() or not destination or photos is None or photos.empty:
+        return photos, 0
+
+    mask = lopsided_couple_scenes(photos, bride_id, groom_id)
+    if mask is None:
+        return photos, 0
+
+    moved = int(mask.sum())
+    if moved:
+        photos.loc[mask, Col.CLUSTER_CONTEXT] = destination
+        if logger:
+            logger.info(
+                f"subject: re-filed {moved} photo(s) from the couple classes to "
+                f"'{destination}' -- whole scenes holding one of the couple "
+                f"repeatedly and the other never")
     return photos, moved
 
 

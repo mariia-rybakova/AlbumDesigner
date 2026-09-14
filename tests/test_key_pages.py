@@ -805,3 +805,102 @@ def test_the_cover_duplicate_check_can_be_switched_off():
         CONFIGS['covers'] = original
 
     assert len(kept) == 2
+
+
+# -- a recognised face that is not theirs ------------------------------------
+#
+# 49996919 opened on the bride and her *father*: a cheek kiss scoring the top
+# of the affection range, `persons_ids == [5]` -- a bride-side parent
+# `enrich.parents` had already resolved at 0.95 -- and the bride's own face
+# turned away and so unlisted. Three guards missed it (`refile_misfiled_couple`
+# needs one of the couple present, the parents relabel was gated on `portrait`,
+# and `_presence` scored "recognised nobody" and "recognised somebody else"
+# alike) and it won the cover over frames naming them both.
+
+#: A stand-in for the father: an identity that is neither of the couple.
+OUTSIDER = 5
+
+
+def test_a_recognised_outsider_scores_below_a_frame_that_recognised_nobody():
+    """Absence of evidence and evidence of absence are not the same grade.
+
+    A frame with no identity at all may still be the couple -- that is the case
+    `_presence` became a grade to protect. A frame naming somebody else cannot
+    be, and must not share its score.
+    """
+    from src.core.key_pages import _presence
+
+    frame = couple_gallery(n=3)
+    frame.at[frame.index[1], Col.PERSONS_IDS] = []          # faces, no identity
+    frame.at[frame.index[2], Col.PERSONS_IDS] = [OUTSIDER]  # the father
+
+    grades = _presence(frame, BRIDE, GROOM)
+
+    assert grades[0] > grades[1] > grades[2]
+    assert grades[2] > 0, "graded down, never excluded"
+
+
+def test_a_recognised_outsider_is_a_real_handicap():
+    """What the `others` grade is worth, stated as the thing it actually does.
+
+    It is a handicap, not a veto: the same frame scores strictly lower for
+    naming somebody who is neither of them than it would for naming them both.
+    A veto is what `require_identities` was, and this module removed it on
+    purpose.
+
+    It is deliberately *not* asserted here that such a frame can never open an
+    album -- with the affection gate off it still can, given enough affection,
+    and on 49996919 it did. Scoring was the wrong place to fix that: the whole
+    misread scene spans three presence grades, so demoting one only promotes
+    another frame of the same scene. `enrich.couple_scenes` takes the scene out
+    of the couple classes instead, and
+    `test_a_one_sided_scene_is_refiled` is where that is guarded.
+    """
+    def score_with(persons_ids):
+        frame = couple_gallery(n=2)
+        frame[Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom smiling at each other'
+        frame[Col.IMAGE_ORDER] = 3.0
+        frame.at[frame.index[1], Col.PERSONS_IDS] = persons_ids
+
+        import src.pipeline.enrich.timeline as tl
+        original = tl.concept_scores
+        exclusive = (set(CONFIGS['covers']['affection_concepts'])
+                     - set(CONFIGS['covers']['quality_concepts']))
+        tl.concept_scores = lambda f, concept: (
+            [0.5, 0.5] if concept in exclusive else [0.5] * len(f))
+        try:
+            return _scored(frame)[1]
+        finally:
+            tl.concept_scores = original
+
+    named_both = score_with([BRIDE, GROOM])
+    outsider = score_with([OUTSIDER])
+    nobody = score_with([])
+
+    assert outsider < nobody < named_both,         "recognising the wrong person is worse evidence than recognising none"
+
+
+def test_affection_is_undiluted_for_a_frame_naming_both():
+    """The constraint the gate had to respect: affection keeps its full weight
+    where the identities confirm the couple. Only frames whose presence is in
+    doubt are discounted, so the gate is not a quiet cut to the weight."""
+    from src.core.key_pages import _score_covers, FIRST_COVER_QUERIES
+
+    frame = couple_gallery(n=2)
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom smiling at each other'
+    frame[Col.IMAGE_ORDER] = 3.0
+
+    import src.pipeline.enrich.timeline as tl
+    original = tl.concept_scores
+    exclusive = (set(CONFIGS['covers']['affection_concepts'])
+                 - set(CONFIGS['covers']['quality_concepts']))
+    tl.concept_scores = lambda f, concept: (
+        [0.0, 1.0] if concept in exclusive else [0.5] * len(f))
+    try:
+        scores = _score_covers(frame, FIRST_COVER_QUERIES, _QUIET_LOG, BRIDE, GROOM)
+    finally:
+        tl.concept_scores = original
+
+    weight = CONFIGS['covers']['weights']['affection']
+    assert scores[1] - scores[0] == pytest.approx(weight), \
+        "both named: the full affection weight separates the two frames"
