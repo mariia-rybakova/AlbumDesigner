@@ -180,6 +180,52 @@ CONFIGS = {'DEBUG': True,
             # these if any real class holds that person.
             'unknown_categories': ('other', 'None', 'none'),
         },
+        # -- the parents album `enrich.variants` plans for `autoAlbums` -------
+        #
+        # A focus changes the album's *shape*: `parents` asks the budget for
+        # more family spreads. It does not change what fills them, and on a
+        # gallery the couple dominates the picker fills a family profile with
+        # the couple. So the variant also carries a pseudo `aiMetadata` --
+        # `select.preselect` commits `photoIds` before any ranking and
+        # guarantees each `personIds` entry its photos, and `person_score`
+        # weighs the rest -- built by `src.pipeline.family` from the identities
+        # `enrich.parents` resolved.
+        #
+        # Off means the second album is focus-only, which is what it was.
+        'family_album': {
+            'enabled': True,
+
+            # How many photos the pseudo selection commits, over both sides.
+            # `select.preselect` honours these unconditionally, so this is a
+            # floor on the album's family content and not a target: eight of
+            # roughly a hundred is a visible spine without spending the album.
+            # Split evenly, so with both sides resolved it is four each.
+            'max_photos': 8,
+
+            # The couple are left out of the pseudo `personIds`. They stand
+            # beside their parents in most of the frames that matter, so they
+            # would head the co-appearance ranking on every gallery -- and
+            # `person_score` is the *share* of a photo's people who are named,
+            # so naming them scores the couple's own photos highly and pulls
+            # this album back to the subject the first one already has.
+            'include_couple': False,
+
+            # The parents' own circle, by co-appearance in the gallery's
+            # photos. Not the `socialCircles` proto: that is a clustering made
+            # elsewhere for another purpose, and "who is this parent
+            # photographed with" is answerable straight from `persons_ids`,
+            # including on galleries that ship no circles.
+            'contacts_max': 6,
+            # One shared frame is a guest who walked past, not a relation.
+            'contacts_min_together': 3,
+
+            # The pseudo picks replace the request's own `photoIds` for this
+            # album rather than joining them. The variant is a different brief;
+            # hand picks made for the couple's album would compete with the
+            # family spreads this one exists to fill. False unions instead.
+            'replace_user_picks': True,
+        },
+
         'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
         # The ceremony exit: guests showering the couple as they leave
         # (confetti, petals, bubbles, rice, sparklers). Detected as a temporal

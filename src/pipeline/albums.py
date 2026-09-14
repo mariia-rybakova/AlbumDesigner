@@ -45,15 +45,29 @@ class AlbumVariant:
     single variant overriding nothing -- byte-identical to not having variants
     at all.
 
-    ``focus`` is the only axis today, and it is the cheapest real one: it names
-    a column of `files/focus_csv.csv`, which is the per-category spread profile
-    the budget is built from, so two focus values give genuinely different
-    albums out of one gallery read. `brideAndGroom`, `parents` and
-    `everyoneElse` are the columns that exist.
+    ``focus`` names a column of `files/focus_csv.csv`, which is the
+    per-category spread profile the budget is built from, so two focus values
+    give genuinely different albums out of one gallery read. `brideAndGroom`,
+    `parents` and `everyoneElse` are the columns that exist.
+
+    ``photo_ids`` and ``person_ids`` are the *content* axis to focus's *shape*
+    one. A focus changes how many spreads each category gets and leaves the
+    picker to fill them, which on a gallery the couple dominates fills a
+    family profile with the couple. These two override `aiMetadata`, which
+    `select.preselect` honours before any ranking and `person_score` weighs
+    everywhere else -- so a variant can state what an album is *of*, not only
+    how it is shaped. `src.pipeline.family` builds the pair for a parents
+    album.
+
+    Overriding rather than extending is deliberate: a variant is a different
+    brief, and the request's own hand picks are for the album the request
+    asked for. Set `family_album.replace_user_picks` False to union instead.
     """
 
     name: str
     focus: Optional[Tuple[str, ...]] = None
+    photo_ids: Optional[Tuple[int, ...]] = None
+    person_ids: Optional[Tuple[int, ...]] = None
 
     def apply(self, context: AlbumContext) -> AlbumContext:
         """Overlay this variant onto a fresh album context.
@@ -61,9 +75,20 @@ class AlbumVariant:
         Applied to the context rather than to the request, because the request
         is shared by every album -- and `hints` is replaced rather than mutated
         for the same reason.
+
+        ``present`` is never touched. It is what `select.route` splits manual
+        from AI on, and a variant that flipped it would not steer an album, it
+        would send the request down a different path entirely.
         """
+        changes: Dict[str, Any] = {}
         if self.focus is not None:
-            context.hints = _replace(context.hints, focus=list(self.focus))
+            changes["focus"] = list(self.focus)
+        if self.photo_ids is not None:
+            changes["photo_ids"] = list(self.photo_ids)
+        if self.person_ids is not None:
+            changes["person_ids"] = list(self.person_ids)
+        if changes:
+            context.hints = _replace(context.hints, **changes)
         context.variant_name = self.name
         return context
 

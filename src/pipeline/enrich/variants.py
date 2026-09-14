@@ -18,12 +18,28 @@ one gallery read, with no extra reading and no new selection code.
 
 ``autoAlbums`` on the request turns it on, and it is false unless asked for:
 two albums where one was expected is a product decision, not a default.
+
+The second album is **seeded** when `enrich.parents` resolved anybody. Focus on
+its own changes the album's shape and not its content: a `parents` profile asks
+for more family spreads and the picker fills them with whatever ranked best,
+which on a gallery the couple dominates is the couple. So where there are
+parents to build an album around, the variant also carries a pseudo
+``aiMetadata`` -- their photos and their people -- which `select.preselect`
+commits before ranking and `person_score` weighs everywhere else. See
+`src.pipeline.family`.
+
+Where no parents were resolved there is nothing to seed from, and the plan is
+exactly what it was: two focus-only variants. That is the normal outcome on a
+gallery whose candidates cannot be separated, not an error, so it must stay a
+working two-album plan rather than a failure.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import List
 
+from src.pipeline import family
 from src.pipeline.albums import AlbumVariant
 from src.pipeline.contracts import AlbumContext, Col, ctx, photo
 from src.pipeline.registry import register
@@ -31,6 +47,9 @@ from src.pipeline.substage import SubStage
 
 #: The request flag. Absent or false means one album, as today.
 AUTO_ALBUMS = "autoAlbums"
+
+#: The focus whose album gets the parents seed.
+PARENTS_FOCUS = "parents"
 
 #: What ``autoAlbums`` asks for: the couple, and the family. Both are columns
 #: of the focus CSV, so each gets its own per-category budget out of the same
@@ -53,6 +72,14 @@ class VariantsSubStage(SubStage):
     """
 
     name = "enrich.variants"
+    #: Deliberately still just the photo table's identity column, even though
+    #: the parents seed reads `persons_ids` and `cluster_context` too.
+    #: Declaring those would make this substage *fail* on a gallery that lacks
+    #: them -- and this one is not allowed to fail: planning is what guarantees
+    #: there is at least one album, so a gallery with no identity data must
+    #: still come out of here with a plan. The seed checks for its own columns
+    #: and stands down when they are missing, which is the correct degradation:
+    #: no seed, still an album.
     requires = frozenset({photo(Col.IMAGE_ID)})
     provides = frozenset({ctx("variants")})
 
@@ -70,9 +97,39 @@ class VariantsSubStage(SubStage):
         if not request.get(AUTO_ALBUMS):
             return [AS_REQUESTED]
 
-        # One album per focus. Nothing gallery-dependent yet -- the facts to
-        # gate on (which identities `enrich.parents` actually resolved, whether
-        # the couple classes exist) are available here and are the obvious next
-        # refinement, but a flag that silently produced one album would be
-        # worse than one that produces two the gallery cannot fill well.
-        return [AlbumVariant(name=focus, focus=(focus,)) for focus in AUTO_FOCUS]
+        plan = [AlbumVariant(name=focus, focus=(focus,)) for focus in AUTO_FOCUS]
+        return [VariantsSubStage._seed(variant, context) for variant in plan]
+
+    @staticmethod
+    def _seed(variant: AlbumVariant, context: AlbumContext) -> AlbumVariant:
+        """Give the parents album a pseudo selection, where there is one.
+
+        Every other variant is returned untouched, so this cannot reach the
+        album the request actually asked for.
+        """
+        if variant.name != PARENTS_FOCUS or not family.enabled():
+            return variant
+
+        facts = context.facts
+        photo_ids, person_ids = family.parents_seed(
+            context.photos,
+            getattr(facts, "bride_parents", ()),
+            getattr(facts, "groom_parents", ()),
+            getattr(facts, "bride_id", None),
+            getattr(facts, "groom_id", None),
+        )
+        if not photo_ids:
+            # Parents resolved but nothing to show them in, or none resolved at
+            # all. A focus-only variant is still a valid album.
+            return variant
+
+        if not family.settings().get("replace_user_picks", True):
+            existing = tuple(context.hints.photo_ids or ())
+            photo_ids = tuple(dict.fromkeys(existing + photo_ids))
+
+        if context.logger:
+            context.logger.info(
+                f"Variants: seeded the '{variant.name}' album with "
+                f"{len(photo_ids)} parent photo(s) and {len(person_ids)} "
+                f"identity/identities")
+        return replace(variant, photo_ids=photo_ids, person_ids=person_ids)
