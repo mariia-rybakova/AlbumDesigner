@@ -533,6 +533,23 @@ def get_mirrored_boxes(boxes):
     return sort_boxes(mirrored_boxes)
 
 
+def _fillable_cover_boxes(all_box_ids, images_df, image_ids, part, logger):
+    """The boxes a cover section has photos for.
+
+    The cover layout is meant to hold exactly one photo, and
+    `_find_single_box_layout` now guarantees that. This is the second line:
+    should a layout with more boxes than cover photos ever reach here again,
+    the extra boxes are left empty instead of `iloc` running off the end of the
+    frame and failing the entire album -- which is how 53009168 was lost.
+    """
+    usable = min(len(all_box_ids), len(images_df), len(image_ids))
+    if usable < len(all_box_ids) and logger:
+        logger.warning(
+            f"{part}: layout has {len(all_box_ids)} box(es) but only {usable} cover "
+            f"photo(s); leaving {len(all_box_ids) - usable} box(es) empty")
+    return all_box_ids[:usable]
+
+
 def assembly_output(output_list, message, images_df, first_last_pages_data_dict, album_ar = 2,logger=None):
     result_dict = dict()
     result_dict['compositions'] = list()
@@ -588,6 +605,9 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                        "boxes": design_boxes,
                                        "logicalSelectionsState": None})
 
+        all_box_ids = _fillable_cover_boxes(
+            all_box_ids, first_page_data['first_images_df'],
+            first_page_data['first_images_ids'], 'firstPage', logger)
         for idx, box_id in enumerate(all_box_ids):
             x, y, w, h = cover_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
@@ -714,6 +734,9 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "boxes": design_boxes,
                                             "logicalSelectionsState": None})
 
+        all_box_ids = _fillable_cover_boxes(
+            all_box_ids, last_page_data['last_images_df'],
+            last_page_data['last_images_ids'], 'lastPage', logger)
         for idx, box_id in enumerate(all_box_ids):
             x, y, w, h = cover_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,

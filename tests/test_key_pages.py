@@ -965,3 +965,73 @@ def test_affection_is_undiluted_for_a_frame_naming_both():
     weight = CONFIGS['covers']['weights']['affection']
     assert scores[1] - scores[0] == pytest.approx(weight), \
         "both named: the full affection weight separates the two frames"
+
+
+# -- a "single-box" cover layout that is not single-box -----------------------
+#
+# 53009168 failed its whole album on `single positional indexer is
+# out-of-bounds`. The cover section is filled from the cover photos -- one, for
+# a wedding -- but the loop walked every box of the chosen layout, and the
+# chosen layout had more than one: the preferred branches of
+# `_find_single_box_layout` tested only "max landscapes == 1", which a
+# three-box design with one large landscape satisfies.
+
+def _layout_row(**over):
+    row = {
+        "id": 1, "number of boxes": 1,
+        "max landscapes": 0, "max portraits": 0,
+        "left_large_landscape": 0, "right_large_landscape": 0,
+        "left_large_portrait": 0, "right_large_portrait": 0,
+        "left_large_square": 0, "right_large_square": 0,
+    }
+    row.update(over)
+    return row
+
+
+def test_a_multi_box_layout_is_never_offered_as_a_cover():
+    from src.core.key_pages import _find_single_box_layout
+
+    layouts = pd.DataFrame([
+        # one large landscape, but three boxes: accepted before, fatal later
+        _layout_row(id=10, **{"number of boxes": 3, "max landscapes": 1,
+                              "left_large_landscape": 1}),
+        # the honest single-box landscape
+        _layout_row(id=11, **{"number of boxes": 1, "max landscapes": 1,
+                              "right_large_landscape": 1}),
+    ])
+
+    chosen = _find_single_box_layout(layouts, "landscape")
+
+    assert chosen, "a single-box landscape layout exists and must be found"
+    assert all(layouts.loc[key]["number of boxes"] == 1 for key in chosen)
+    assert 0 not in chosen, "the three-box layout must not be offered"
+
+
+def test_a_multi_box_portrait_layout_is_never_offered_as_a_cover():
+    from src.core.key_pages import _find_single_box_layout
+
+    layouts = pd.DataFrame([
+        _layout_row(id=20, **{"number of boxes": 2, "max portraits": 1,
+                              "left_large_portrait": 1}),
+        _layout_row(id=21, **{"number of boxes": 1, "max portraits": 1,
+                              "right_large_portrait": 1}),
+    ])
+
+    chosen = _find_single_box_layout(layouts, "portrait")
+
+    assert chosen
+    assert all(layouts.loc[key]["number of boxes"] == 1 for key in chosen)
+
+
+def test_the_cover_loop_leaves_extra_boxes_empty_rather_than_failing():
+    """The second line: a mismatch must cost boxes, not the whole album."""
+    from src.request_processing import _fillable_cover_boxes
+
+    images_df = pd.DataFrame({Col.IMAGE_ID: [7]})          # one cover photo
+    fillable = _fillable_cover_boxes([101, 102, 103], images_df, [7],
+                                     'firstPage', _QUIET_LOG)
+
+    assert fillable == [101]
+    # and every box is filled when the counts agree
+    two = pd.DataFrame({Col.IMAGE_ID: [7, 8]})
+    assert _fillable_cover_boxes([101, 102], two, [7, 8], 'firstPage', _QUIET_LOG) == [101, 102]

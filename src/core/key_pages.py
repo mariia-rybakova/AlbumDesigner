@@ -8,10 +8,19 @@ def _find_single_box_layout(layouts_df, orientation):
     """Find a single-box layout matching the image orientation.
 
     Prefers large boxes, falls back to any single-box layout.
+
+    Every branch requires ``number of boxes == 1``. "max landscapes == 1" only
+    says the layout accepts at most one landscape -- a three-box design with one
+    large landscape and two portrait slots satisfies it. The caller fills this
+    layout from the cover photos, of which a wedding has exactly one, and then
+    walks `iloc` over every box: a two-box "single-box" layout indexes past the
+    end and fails the whole album with `single positional indexer is
+    out-of-bounds`. 53009168 died that way.
     """
     if orientation == "landscape":
         # Prefer large landscape or large square
         candidates = [key for key, layout in layouts_df.iterrows() if layout["max landscapes"] == 1 and (
+            layout["number of boxes"] == 1) and (
             layout['right_large_landscape'] == 1 or layout["left_large_landscape"] == 1 or
             layout["left_large_square"] == 1 or layout["right_large_square"] == 1)]
         if not candidates:
@@ -21,6 +30,7 @@ def _find_single_box_layout(layouts_df, orientation):
     else:
         # Prefer large portrait or large square
         candidates = [key for key, layout in layouts_df.iterrows() if layout["max portraits"] == 1 and (
+            layout["number of boxes"] == 1) and (
             layout['left_large_portrait'] == 1 or layout["right_large_portrait"] == 1 or
             layout["left_large_square"] == 1 or layout["right_large_square"] == 1)]
         if not candidates:
