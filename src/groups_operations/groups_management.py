@@ -147,10 +147,22 @@ def handle_wedding_bride_groom_merge(photos_df: pd.DataFrame, logger=None) -> pd
     merge_groups = merge_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, _ = get_groups_time(photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']))
 
+    # One album-wide budget, spent across both rounds rather than per round. Each
+    # of these merges yields a 2-photo facing pair, i.e. exactly one spread, so
+    # the spread ceiling is enforced as a merge count - see the constant's
+    # comment. Round 0 (getting ready) is served first and may use it all up.
+    remaining_spreads = CONFIGS['special_merge_max_spreads']
+
     for cent_idx in range(len(BRIDE_CENTRIC_CLASSES)):
+        if remaining_spreads <= 0:
+            break
+
         merge_candidates = get_merge_candidates_bridegroom(merge_groups, targets_df, general_times_list, cent_idx=cent_idx)
 
-        update_with_merges_bridegroom(photos_df, merge_groups, merge_candidates, cent_idx)
+        remaining_spreads -= update_with_merges_bridegroom(
+            photos_df, merge_groups, merge_candidates, cent_idx,
+            max_merges=remaining_spreads,
+        )
 
     return photos_df
 

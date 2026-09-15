@@ -669,8 +669,9 @@ def _update_with_merges(
         merge_groups: Any,
         merge_candidates: List[Tuple[Tuple[str, str, int], pd.DataFrame, float]],
         *args,
+        max_merges: Optional[int] = None,
         **kwargs
-    ) -> None:
+    ) -> int:
     """
     Apply merges to photo groups based on merge candidates.
 
@@ -694,18 +695,34 @@ def _update_with_merges(
               - selected_time_difference: The time difference used for sorting.
         *args:
             Additional positional arguments passed to `_get_merged_group`.
+        max_merges (Optional[int]):
+            Ceiling on how many merges may actually be applied. Candidates past
+            the ceiling are recorded as skipped rather than dropped silently, so
+            the merge log still shows what was on the table. None means no
+            ceiling, which is what the 'other' merge path uses. Counts applied
+            merges, not candidates, because a candidate can still be rejected by
+            `_get_merged_group` or by a partner that is already spoken for.
         **kwargs:
             Additional keyword arguments passed to `_get_merged_group`.
 
     Returns:
-        None: Updates are applied directly to `photos_df`.
+        int: How many merges were applied, so a caller spending a budget across
+            several calls can carry the remainder forward.
     """
     current_merges = set()
+    applied = 0
     merge_type = 'bridegroom' if _update_merged_photos is _update_merged_photos_bridegroom else 'other'
     for group_key, selected_cluster, selected_time_difference in merge_candidates:
         to_merge_group = merge_groups.get_group(group_key)
         selected_key = (selected_cluster['time_cluster'].iloc[0], selected_cluster['cluster_context'].iloc[0],
                         selected_cluster['group_sub_index'].iloc[0])
+
+        if max_merges is not None and applied >= max_merges:
+            # Candidates arrive sorted by time distance, so the budget is already
+            # spent on the closest pairs; the rest are logged, not merged.
+            record_skip(merge_type, group_key, selected_key,
+                        selected_time_difference, 'merge_budget_exhausted')
+            continue
 
         if group_key in current_merges:
             record_skip(merge_type, group_key, selected_key,
@@ -733,6 +750,9 @@ def _update_with_merges(
 
         current_merges.add(group_key)
         current_merges.add(selected_key)
+        applied += 1
+
+    return applied
 
 
 # Convenience wrapper for bride/groom merges
