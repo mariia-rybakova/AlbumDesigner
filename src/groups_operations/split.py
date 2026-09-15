@@ -5,7 +5,7 @@ import pandas as pd
 from k_means_constrained import KMeansConstrained
 from sklearn.metrics import silhouette_score
 
-from utils.configs import CONFIGS
+from utils.configs import CONFIGS, TIME_SPLIT_ALLOWED_CLASSES
 
 
 # split diverse group
@@ -230,15 +230,30 @@ def get_split_points(general_times_list: List[float], group_time_list: List[floa
     """
     Identify temporal split points where a group is interrupted by other photos.
 
-    For eligible wedding categories, examines consecutive pairs of timestamps in
-    the group and marks a split point wherever more than 2 photos from other
-    groups fall between them.
+    Examines consecutive pairs of timestamps in the group and marks a split point
+    wherever more than 2 photos from other groups fall between them.
+
+    Only classes in `TIME_SPLIT_ALLOWED_CLASSES` are eligible, and the criterion
+    behind that list is temporal TIGHTNESS rather than subject importance: this
+    rule is only meaningful for a class whose photos are naturally contiguous in
+    time, where a hole means the class genuinely happened twice. A scattered class
+    ('detail', 'settings', 'dancing', ...) has a flat gap distribution, so nearly
+    every interval would clear the threshold and the group would shatter into
+    near-singletons. See the comment on the tuple in `utils.configs` for the full
+    reasoning and the classes deliberately left out.
+
+    Note `general_times_list` is built from the selected photos, not the whole
+    gallery, and only from groups of size >= `CONFIGS['max_img_split']` - so
+    photos sitting in singleton groups never count toward the >2, which can make
+    a real gap under-count and fail to trigger.
 
     Args:
         general_times_list: Sorted list of all photo times across the album.
         group_time_list: Sorted list of times for the current group.
         group_key: The cluster context string (e.g. 'bride', 'ceremony').
-            Only specific wedding categories are eligible for splitting.
+            Matched exactly against `TIME_SPLIT_ALLOWED_CLASSES`, so a decorated
+            special context ('other|4') never matches - which is intended, those
+            groups were just clustered visually and should not be re-cut by time.
         details: Optional dict; when provided, it's populated so the split visualizer
             can render the log: `group_key_matched`, `n_group_times`,
             `intervals` per consecutive pair with the between-times, and the
@@ -248,8 +263,7 @@ def get_split_points(general_times_list: List[float], group_time_list: List[floa
         A list of time values at which to split the group, or None if the group
         is too small, not an eligible category, or has no gaps.
     """
-    allowed = ['walking the aisle', 'bride', 'groom', 'bride and groom',
-               'groom party', 'bride party', 'portrait', 'ceremony', 'kiss']
+    allowed = TIME_SPLIT_ALLOWED_CLASSES
 
     if details is not None:
         details.update({

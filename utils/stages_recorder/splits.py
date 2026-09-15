@@ -28,12 +28,6 @@ from utils.stages_recorder.time_utils import build_general_time_to_clock
 _GROUPS_OUT_DIR = os.path.join('files', 'stages_info', 'groups')
 _OUT_FILE = 'split.json'
 
-# Group-key classes that get the time-based split path. Mirrors the literal in
-# `get_split_points`; duplicated here only for note formatting.
-_ALLOWED_TIME_BASED_KEYS = ('walking the aisle', 'bride', 'groom', 'bride and groom',
-                            'groom party', 'bride party', 'portrait')
-
-
 def build_split_notes(group_key_class: str, split_method: str,
                       details: Optional[dict],
                       split_points: Optional[List[float]],

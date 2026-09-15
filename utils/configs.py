@@ -1627,3 +1627,50 @@ SPECIAL_GROUP_SEP = '|'
 # this tuple, so they cannot drift apart.
 SPECIAL_CONTENT_CLASSES = ('None', 'other')
 
+
+
+# Content classes eligible for the time-based split in `split.get_split_points`.
+#
+# The criterion is temporal TIGHTNESS, not subject importance. The rule splits
+# wherever more than 2 other photos fall between two consecutive photos of the
+# group, which is only meaningful for a class whose photos are naturally
+# contiguous in time: a hole in such a class means the class genuinely happened
+# twice (a couple dancing briefly after the ceremony and again at the reception,
+# bride portraits before the ceremony and again at sunset). For a tight class the
+# rule is self-limiting - it can only fire where a real hole exists, so the blast
+# radius is one or two subgroups.
+#
+# Scattered classes are excluded for exactly that reason, not because they matter
+# less. 'detail', 'settings', 'accessories', 'food', 'rings', 'invite',
+# 'wedding dress', 'suit', 'vehicle' are shot all day long, so their gap
+# distribution is flat and nearly every interval clears the threshold; with
+# 'max_img_split' at 2 a scattered group would shatter into near-singletons that
+# the merge stage then has to glue back. 'dancing' spans the whole reception with
+# speeches and cake in the middle and would shatter the same way (and it is
+# already the class most exposed to dilution). 'entertainment' and
+# 'getting hair-makeup' sprawl similarly.
+#
+# Note the timeline is built from the SELECTED photos, not the full gallery, so
+# ">2 photos between" is a coarse signal: three surviving foreign photos span a
+# substantial stretch of real time. That makes the rule conservative for tight
+# classes.
+TIME_SPLIT_TIGHT_CLASSES = (
+    # Recurring-subject classes - the original allow-list.
+    'walking the aisle', 'bride', 'groom', 'bride and groom',
+    'groom party', 'bride party', 'portrait', 'ceremony', 'kiss',
+    # Single-moment classes: tight by definition, so a hole is evidence of two
+    # distinct sub-events rather than classifier noise.
+    'first dance', 'cake cutting', 'send off', 'may kiss bride',
+    'bride getting dressed',
+    # Remaining people classes, same family as the recurring ones above.
+    'full party', 'very large group', 'two brides', 'two grooms',
+)
+
+# Kept separate from the tuple above so it can be toggled on its own: 'speech' is
+# tight per speaker but there are usually 3-5 speeches across a reception, so it
+# fires several times where the others fire once. That is arguably correct (one
+# group per speaker) and limit_imgs['speech'] is 8 so the fragments are not tiny,
+# but it is the one addition worth measuring by itself.
+TIME_SPLIT_WATCH_CLASSES = ('speech',)
+
+TIME_SPLIT_ALLOWED_CLASSES = TIME_SPLIT_TIGHT_CLASSES + TIME_SPLIT_WATCH_CLASSES
