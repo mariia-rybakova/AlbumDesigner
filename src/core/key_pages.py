@@ -547,8 +547,15 @@ def _select_cover_image_ids(pool_df, pool_bg, logger):
     return [first_id], last_page_ids
 
 
-def _drop_cover_duplicates(df, cover_rows, logger):
-    """Drop body photos that repeat a cover.
+def _drop_cover_duplicates(df, cover_rows, logger, manual_selection=False):
+    """Drop body photos that repeat a cover, unless the user chose them.
+
+    Never fires on the manual route. There the photo list *is* the user's
+    decision -- they picked each one and expect to find it in the album, so a
+    near-duplicate of the cover among them is a choice to honour, not a
+    mistake to correct. Dropping even one silently is what made 44573310 look
+    broken: 55 photos chosen, 16 placed. The rule is for the AI route, where
+    the pool is the pipeline's own doing and a repeated cover is its own error.
 
     Taking the cover out of the body was never enough. The frame beside it in
     the burst is a different `image_id` and survives, so the album closes on a
@@ -568,6 +575,14 @@ def _drop_cover_duplicates(df, cover_rows, logger):
     pair on 53227528 against 0.719 for the next nearest, and a maximum of
     0.567 anywhere on 49995684, which loses nothing at any threshold to 0.75.
     """
+    if manual_selection:
+        # Logged, because the alternative is someone finding the cover shot
+        # twice in a manual album and having nothing to explain it.
+        if logger:
+            logger.info("covers: manual selection -- keeping every chosen photo, "
+                        "cover duplicates not pruned")
+        return df
+
     threshold = float(settings().get('cover_duplicate_similarity', 0.0))
     if threshold <= 0 or df.empty or cover_rows is None or len(cover_rows) == 0:
         return df
@@ -609,7 +624,8 @@ def _drop_cover_duplicates(df, cover_rows, logger):
     return df[~df['image_id'].isin(dropped)]
 
 
-def choose_good_wedding_images(df, bride_groom_df, logger, prune_duplicates=True):
+def choose_good_wedding_images(df, bride_groom_df, logger, prune_duplicates=True,
+                               manual_selection=False):
     # Orientation is a score term, not a pre-filter. Filtering on it first cost
     # 53507032 its covers: the gallery had 42 landscapes and 48 couple frames
     # showing both faces, but only *one* frame in both sets, so the candidate
@@ -635,7 +651,8 @@ def choose_good_wedding_images(df, bride_groom_df, logger, prune_duplicates=True
     # both wasted over the whole gallery and a second, misleading log line.
     if prune_duplicates:
         df = _drop_cover_duplicates(
-            df, pd.concat([first_cover_image_df, last_cover_image_df]), logger)
+            df, pd.concat([first_cover_image_df, last_cover_image_df]), logger,
+            manual_selection=manual_selection)
 
     return df, first_page_ids, first_cover_image_df, last_page_ids, last_cover_image_df
 
@@ -707,10 +724,15 @@ def generate_first_last_pages(message, df, logger):
 
     if message.pagesInfo.get("firstPage"):
         if message.content.get('is_wedding', True):
+            # The same flag ProcessStage reads a few lines later: on the manual
+            # route the chosen photos are the user's, and none of them is the
+            # pipeline's to discard.
+            manual_selection = message.content.get('manual_selection', False)
             df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,
                                                                                                             message.content.get(
                                                                                                                 'bride and groom'),
-                                                                                                            logger)
+                                                                                                            logger,
+                                                                                                            manual_selection=manual_selection)
         else:
             df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 1,
                                                                                                                 logger)
