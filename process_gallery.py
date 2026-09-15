@@ -356,6 +356,24 @@ def process_gallery(input_request):
     return final_album_result, message
 
 
+def _albums_to_render(final_album, message):
+    """``(filename suffix, album_doc, message)`` for every album composed.
+
+    A single-album run keeps the bare `--album-name`, so the file a normal run
+    writes is exactly the file it always wrote. A multi-album run suffixes each
+    with its variant name, because "the album" is no longer a single thing and
+    overwriting one PDF with the next would hide that.
+    """
+    if len(ALBUM_RUNS) <= 1:
+        return [("", final_album, message)]
+
+    rendered = []
+    for run in ALBUM_RUNS:
+        name = run.context.variant_name or f"album{run.index}"
+        rendered.append((f"_{name}", getattr(run.message, 'album_doc', None), run.message))
+    return rendered
+
+
 def _build_arg_parser():
     import argparse
 
@@ -552,9 +570,6 @@ if __name__ == '__main__':
     if _message is None:
         _exit_now(1, f"process_gallery failed: {final_album}")
 
-    gallery_photos_info = _message.content['gallery_photos_info']
-    box_id2data = _message.designsInfo['anyPagebox_id2data']
-
     is_artificial_time = _message.content.get('is_artificial_time', False)
     print('ARTIFICIAL TIME APPLIED:', is_artificial_time)
 
@@ -590,12 +605,23 @@ if __name__ == '__main__':
     print('FINAL SPREADS', len(final_album['composition']['compositions']))
     print(final_album)
 
-    # Debug with Plotting
-    _output_pdf_path = os.path.join(_output_dir, args.album_name + '.pdf')
-
-    visualize_album_to_pdf(final_album, _images_path, _output_pdf_path, box_id2data, gallery_photos_info,
-                           is_artificial_time)
-    print('album saved locally:', _output_pdf_path)
+    # Debug with Plotting. One PDF per album composed, not just the first:
+    # rendering `runs[0]` alone meant the *variant* album -- the whole point of
+    # a multi-album run -- could only be inspected through the log, so the one
+    # artifact a local run produces was always the album the variant changed
+    # least. Each album carries its own `album_doc` and its own selected frame,
+    # so each renders from its own message.
+    for suffix, album_doc, album_message in _albums_to_render(final_album, _message):
+        if album_doc is None:
+            print(f'! no album_doc for {suffix or "the album"}; nothing to render')
+            continue
+        _output_pdf_path = os.path.join(_output_dir, args.album_name + suffix + '.pdf')
+        visualize_album_to_pdf(
+            album_doc, _images_path, _output_pdf_path,
+            album_message.designsInfo['anyPagebox_id2data'],
+            album_message.content['gallery_photos_info'],
+            is_artificial_time)
+        print('album saved locally:', _output_pdf_path)
 
     # The PDF is written and closed, so there is nothing left to wait for.
     _exit_now(0)
