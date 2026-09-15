@@ -10,8 +10,28 @@
 # 1.26 meant k_means_constrained could not use its cp312 wheel and pip had to
 # backtrack to compiling an old sdist. Bounded by major, because an unbounded
 # floor is what made the ortools line below break the build.
-numpy>=2.1.1,<3
-pandas==2.2.3
+#
+# Floor raised from 2.1.1 to the version this set is actually exercised on.
+# The binding ceiling is not the `<3` below but scipy's own, which every
+# resolve has to sit inside and which moves with it (`numpy<2.7` on scipy
+# 1.17.1, `<2.6` on 1.16); `<3` only guards against a major.
+numpy>=2.4.6,<3
+# Was 2.2.3. Moved to 3.0.5 to match the interpreter this is developed and
+# replayed on -- running the service on 2.2.3 while every local reproduction
+# ran on 3.0.5 made the two disagree about a failure that had nothing to do
+# with the request (47401217: identical payload, catalog, ratings and
+# selection; crash in the container, clean album locally).
+#
+# Not a version bump so much as a behaviour change, and worth watching in the
+# first runs after it ships: pandas 3.0 makes Copy-on-Write the default. Code
+# that writes through a slice -- the old SettingWithCopyWarning shape -- used
+# to mutate the parent frame and now does not. The layout and cover paths
+# build frames by filtering and then assigning, so that is where a difference
+# would show first.
+#
+# `ortools` is the only thing here that depends on pandas at all (>=2.0.0,
+# no ceiling), so nothing else in this file constrains the major.
+pandas==3.0.5
 scikit-learn
 # Pinned because it is the package that drives numpy and ortools upward: each
 # release raises those floors, and unpinned it can move the whole set without
