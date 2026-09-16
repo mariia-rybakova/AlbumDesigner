@@ -1,5 +1,5 @@
 import math
-from typing import List, Tuple, Iterable, Callable, Any, Optional, Dict
+from typing import List, Tuple, Iterable, Callable, Any, NamedTuple, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -56,8 +56,45 @@ L2_SIMILARITY = 0.5
 # weak to stop the bad merges).
 SPECIAL_CLASS_SIMILARITY = L2_SIMILARITY
 
-BRIDE_CENTRIC_CLASSES = [('bride', 'getting hair-makeup', 'bride getting dressed'), ('bride party',)]
-GROOM_CENTRIC_CLASSES = [('groom', 'suit'), ('groom party',)]
+class SpecialMergeRound(NamedTuple):
+    """One round of the paired special merge.
+
+    Each round takes a singleton from `side_a` and pairs it with a group from
+    `side_b` (or the reverse - the rounds are symmetric), producing a two-photo
+    facing pair. The functions implementing this are named `*_bridegroom` for
+    historical reasons, and so is the `merge_type` in the merge log; the rounds
+    below are no longer all about the bride and groom.
+
+    These are ordinary merges - same time cluster, same size rules - that simply
+    run before the general merge loop gets a say, which is the whole point of
+    making them special. Claiming the pairing early is the only privilege; it
+    buys no licence to break chronology, so two sides that landed in different
+    time clusters are left alone rather than dragged together.
+
+    budget:
+        Which pool in `CONFIGS['special_merge_max_spreads']` this round draws
+        from. Rounds sharing a pool compete for it in order.
+    """
+    side_a: Tuple[str, ...]
+    side_b: Tuple[str, ...]
+    budget: str
+
+
+SPECIAL_MERGE_ROUNDS: List[SpecialMergeRound] = [
+    SpecialMergeRound(('bride', 'getting hair-makeup', 'bride getting dressed'),
+                      ('groom', 'suit'), budget='bridegroom'),
+    SpecialMergeRound(('bride party',), ('groom party',), budget='bridegroom'),
+    # The kiss and the send-off on one spread. Usually close enough in time to
+    # share a cluster - the send-off is detected by reading forward from the
+    # ceremony anchor, not from the end of the night - and on a gallery where
+    # they are not, no pairing happens and both stay where they belong.
+    SpecialMergeRound(('may kiss bride',), ('send off',), budget='send_off'),
+]
+
+#: Every class that can take part in a special merge, either side, any round.
+SPECIAL_MERGE_CLASSES = tuple(
+    cls for rnd in SPECIAL_MERGE_ROUNDS for cls in rnd.side_a + rnd.side_b
+)
 
 
 def _df_group_key(df: pd.DataFrame) -> tuple:
@@ -299,7 +336,7 @@ def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: 
 # Merge candidates
 def _filter_merge_targets_bridegroom(targets_df: pd.DataFrame, group: pd.DataFrame, group_key) -> pd.DataFrame:
     """
-    Filter potential merge targets for a bride/groom group.
+    Filter potential merge targets for a special-merge group.
 
     This function selects candidate groups from `targets_df` that:
         - Belong to the same time cluster as the current group.
@@ -308,7 +345,7 @@ def _filter_merge_targets_bridegroom(targets_df: pd.DataFrame, group: pd.DataFra
 
     Args:
         targets_df (pd.DataFrame): DataFrame containing candidate groups for merging.
-        group (pd.DataFrame): The current bride/groom group being considered for merging.
+        group (pd.DataFrame): The current group being considered for merging.
         group_key (tuple): Key identifying the group (time_cluster, cluster_context, group_sub_index).
 
     Returns:
@@ -344,8 +381,8 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
 
     This function selects candidate groups from `merge_target_groups` that:
       - Are not the same as the current group (`group_key`).
-      - Belong to complementary bride/groom class pairs defined by
-        `BRIDE_CENTRIC_CLASSES[cent_idx]` and `GROOM_CENTRIC_CLASSES[cent_idx]`.
+      - Belong to the complementary sides of the round defined by
+        `SPECIAL_MERGE_ROUNDS[cent_idx]`.
 
     Args:
         merge_target_groups (Iterable[Tuple[Tuple[str, str, int], pd.DataFrame]]):
@@ -355,20 +392,21 @@ def _get_main_groups_bridegroom(merge_target_groups: Iterable[Tuple[Tuple[str, s
         group:
             Group to be merged
         cent_idx (int):
-            Index pointing to the bride/groom class pairing to check against.
+            Index of the round in `SPECIAL_MERGE_ROUNDS` to check against.
 
     Returns:
         List[pd.DataFrame]:
             A list of DataFrames representing groups that are valid bride/groom merge candidates.
     """
+    rnd = SPECIAL_MERGE_ROUNDS[cent_idx]
     return [
         m_group for m_key, m_group in merge_target_groups
         if (
                 m_key != group_key and
                 (
-                    (group_key[1] in BRIDE_CENTRIC_CLASSES[cent_idx] and m_key[1] in GROOM_CENTRIC_CLASSES[cent_idx])
+                    (group_key[1] in rnd.side_a and m_key[1] in rnd.side_b)
                     or
-                    (group_key[1] in GROOM_CENTRIC_CLASSES[cent_idx] and m_key[1] in BRIDE_CENTRIC_CLASSES[cent_idx])
+                    (group_key[1] in rnd.side_b and m_key[1] in rnd.side_a)
                 )
         )
     ]
@@ -491,31 +529,25 @@ get_merge_candidates_other = lambda *args, **kwargs: _get_merge_candidates(
 
 
 # Merge updates
-def _is_bride_groom_pair(group_key: Tuple[str, str, int], selected_cluster: pd.DataFrame, cent_idx: int) -> bool:
+def _is_special_merge_pair(group_key: Tuple[str, str, int], selected_cluster: pd.DataFrame, cent_idx: int) -> bool:
     """
-    Check if the given group and selected cluster form a valid bride/groom pair.
+    Check if the given group and selected cluster sit on opposite sides of the round.
 
     Args:
         group_key (tuple): Key of the current group (time_cluster, cluster_context, group_sub_index).
         selected_cluster (DataFrame): Candidate group to merge with.
-        cent_idx (int): Index pointing to the bride/groom class pairing.
+        cent_idx (int): Index of the round in `SPECIAL_MERGE_ROUNDS`.
 
     Returns:
-        bool: True if the groups are opposite bride/groom classes, False otherwise.
+        bool: True if the groups sit on opposite sides of the round, False otherwise.
     """
     cluster_context = selected_cluster['cluster_context'].iloc[0]
+    rnd = SPECIAL_MERGE_ROUNDS[cent_idx]
 
-    bride_condition = (
-        group_key[1] in BRIDE_CENTRIC_CLASSES[cent_idx]
-        and cluster_context in GROOM_CENTRIC_CLASSES[cent_idx]
-    )
+    a_then_b = group_key[1] in rnd.side_a and cluster_context in rnd.side_b
+    b_then_a = group_key[1] in rnd.side_b and cluster_context in rnd.side_a
 
-    groom_condition = (
-        group_key[1] in GROOM_CENTRIC_CLASSES[cent_idx]
-        and cluster_context in BRIDE_CENTRIC_CLASSES[cent_idx]
-    )
-
-    return bride_condition or groom_condition
+    return a_then_b or b_then_a
 
 
 def _get_merged_group_bridegroom(to_merge_group: pd.DataFrame, selected_cluster: pd.DataFrame,
@@ -537,7 +569,7 @@ def _get_merged_group_bridegroom(to_merge_group: pd.DataFrame, selected_cluster:
         group_key (Tuple[str, str, int]):
             Key identifying the current group (time_cluster, cluster_context, group_sub_index).
         cent_idx (int):
-            Index pointing to the bride/groom class pairing.
+            Index of the round in `SPECIAL_MERGE_ROUNDS`.
 
     Returns:
         Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
@@ -545,7 +577,7 @@ def _get_merged_group_bridegroom(to_merge_group: pd.DataFrame, selected_cluster:
             - reminder_group: DataFrame containing leftover rows.
             Returns (None, None) if no valid merge is possible.
     """
-    if _is_bride_groom_pair(group_key, selected_cluster, cent_idx):
+    if _is_special_merge_pair(group_key, selected_cluster, cent_idx):
         reminder_group_size = abs(len(to_merge_group) - len(selected_cluster))
         if reminder_group_size >= 2 or reminder_group_size == 0:
             min_len = min(len(to_merge_group), len(selected_cluster))

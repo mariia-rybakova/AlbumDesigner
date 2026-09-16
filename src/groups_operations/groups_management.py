@@ -7,7 +7,7 @@ from utils.album_tools import (get_images_per_groups, get_missing_columns, split
                                assign_special_group_contexts)
 from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_merge_candidates_other,
                                          update_with_merges_bridegroom, update_with_merges_other,
-                                         BRIDE_CENTRIC_CLASSES, GROOM_CENTRIC_CLASSES,
+                                         SPECIAL_MERGE_ROUNDS, SPECIAL_MERGE_CLASSES,
                                          force_merge_portrait_singleton,
                                          merge_illegal_group_by_time, find_reassignment_class,
                                          apply_pair_merge_for_rebalance,
@@ -118,15 +118,19 @@ def handle_wedding_splitting(photos_df: pd.DataFrame, resources: AlbumDesignReso
 
 
 # Merging
-# Bride and groom
+# Special paired merges
 def handle_wedding_bride_groom_merge(photos_df: pd.DataFrame, logger=None) -> pd.DataFrame:
     """
-    Merge complementary bride-centric and groom-centric photo groups.
+    Merge complementary photo groups into deliberate facing pairs.
 
-    For each pairing defined in `BRIDE_CENTRIC_CLASSES` / `GROOM_CENTRIC_CLASSES`,
-    identifies small groups (below `CONFIGS['max_img_split']`) that belong to
-    bride or groom categories, finds the best merge partner by time proximity,
-    and merges them while balancing group sizes.
+    For each round defined in `SPECIAL_MERGE_ROUNDS`, identifies small groups
+    (below `CONFIGS['max_img_split']`) belonging to that round's two sides, finds
+    the best merge partner by time proximity, and merges them while balancing
+    group sizes. Every merge costs one spread from the round's budget pool in
+    `CONFIGS['special_merge_max_spreads']`.
+
+    The name is historical - the rounds started as bride/groom pairings and now
+    also cover the kiss against the send-off.
 
     Args:
         photos_df: DataFrame of photos with columns including 'group_size',
@@ -136,32 +140,30 @@ def handle_wedding_bride_groom_merge(photos_df: pd.DataFrame, logger=None) -> pd
     Returns:
         The updated photos DataFrame with bride/groom groups merged.
     """
-    def flatten(list_of_tuples):
-        return [item for group in list_of_tuples for item in group]
-
     merge_df = photos_df[(photos_df['group_size'] < CONFIGS['max_img_split']) &
-                         ((photos_df['cluster_context'].isin(flatten(BRIDE_CENTRIC_CLASSES))) |
-                          (photos_df['cluster_context'].isin(flatten(GROOM_CENTRIC_CLASSES))))]
+                         (photos_df['cluster_context'].isin(SPECIAL_MERGE_CLASSES))]
     targets_df = photos_df.copy()
 
     merge_groups = merge_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
     general_times_list, _ = get_groups_time(photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index']))
 
-    # One album-wide budget, spent across both rounds rather than per round. Each
-    # of these merges yields a 2-photo facing pair, i.e. exactly one spread, so
-    # the spread ceiling is enforced as a merge count - see the constant's
-    # comment. Round 0 (getting ready) is served first and may use it all up.
-    remaining_spreads = CONFIGS['special_merge_max_spreads']
+    # Album-wide budgets, one pool per key. Rounds sharing a pool compete for it
+    # in order, so the getting-ready round can use up 'bridegroom' before the
+    # party round is reached, while 'send_off' is reserved and cannot be crowded
+    # out. Each of these merges yields a 2-photo facing pair, i.e. exactly one
+    # spread, so a spread ceiling is enforced as a merge count - see the config.
+    remaining = dict(CONFIGS['special_merge_max_spreads'])
 
-    for cent_idx in range(len(BRIDE_CENTRIC_CLASSES)):
-        if remaining_spreads <= 0:
-            break
+    for cent_idx, rnd in enumerate(SPECIAL_MERGE_ROUNDS):
+        # `continue`, not `break`: a later round may draw on a different pool.
+        if remaining.get(rnd.budget, 0) <= 0:
+            continue
 
         merge_candidates = get_merge_candidates_bridegroom(merge_groups, targets_df, general_times_list, cent_idx=cent_idx)
 
-        remaining_spreads -= update_with_merges_bridegroom(
+        remaining[rnd.budget] -= update_with_merges_bridegroom(
             photos_df, merge_groups, merge_candidates, cent_idx,
-            max_merges=remaining_spreads,
+            max_merges=remaining[rnd.budget],
         )
 
     return photos_df

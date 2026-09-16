@@ -14,22 +14,27 @@ CONFIGS = {'DEBUG': True,
            'image_loading_timeout': 30,
            'min_split_score':2,
            'max_img_split':2,
-           # Album-wide ceiling, in spreads, on the bride/groom special merges in
-           # `handle_wedding_bride_groom_merge`. Those merges exist to produce a
-           # facing pair - one bride-side photo opposite one groom-side photo -
-           # and an album wants a couple of those, not a run of them. The budget
-           # is shared across both rounds and spent in candidate order (closest
-           # in time first), so round 0 ('bride'/'getting hair-makeup'/'bride
-           # getting dressed' against 'groom'/'suit') is served before round 1
-           # ('bride party' against 'groom party') and can use it all up on a
-           # gallery rich in getting-ready coverage.
-           # Spreads and merges are the same unit here, which is why the cap is
-           # enforced as a merge count: the source side is filtered to
+           # Album-wide ceilings, in spreads, on the special merges in
+           # `handle_wedding_bride_groom_merge`, one pool per key. Those merges
+           # exist to produce a facing pair - two photos deliberately set against
+           # each other on one spread - and an album wants a few of those, not a
+           # run of them.
+           #   bridegroom: shared by the getting-ready round ('bride' /
+           #     'getting hair-makeup' / 'bride getting dressed' against 'groom' /
+           #     'suit') and the party round ('bride party' against 'groom
+           #     party'), spent in candidate order, closest in time first.
+           #     Getting-ready is served first and can use the pool up on a
+           #     gallery rich in prep coverage.
+           #   send_off: its own reserved pool for the 'may kiss bride' against
+           #     'send off' pairing, so the bookend spread cannot be crowded out
+           #     by however much getting-ready coverage a gallery happens to have.
+           # Spreads and merges are the same unit here, which is why the caps are
+           # enforced as merge counts: the source side is filtered to
            # `group_size < max_img_split`, so every source is a singleton,
            # `_get_merged_group_bridegroom` takes min_len = 1, and the merged
            # group is therefore always exactly 2 photos - one spread for any LUT
            # value of 2 or more. Revisit if 'max_img_split' changes.
-           'special_merge_max_spreads': 2,
+           'special_merge_max_spreads': {'bridegroom': 2, 'send_off': 1},
            'max_total_spreads':20,
            'max_group_spread':3,
            'max_imges_per_spread':24,
