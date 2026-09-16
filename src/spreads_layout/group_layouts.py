@@ -193,7 +193,7 @@ def process_combination_outer(comb: Combination, photos: List[Photo],
 
     Generates multi-spread layouts for the combination via process_combination_inner,
     flattens them into GroupSingleLayout candidates, and appends to the running list.
-    Trims to top 1000 by score if the list exceeds 10000 to bound memory usage.
+    Trims to top 1000 by weight if the list exceeds 10000 to bound memory usage.
 
     Args:
         comb: A partition combination defining how photos are split across spreads.
@@ -212,7 +212,15 @@ def process_combination_outer(comb: Combination, photos: List[Photo],
 
     # filter
     if len(group_single_layouts) > 10000:
-        group_single_layouts = sorted(group_single_layouts, key=lambda layout: layout.score, reverse=True)[:1000]
+        # By weight, not score: `score` is only computed in the evaluate stage
+        # (`get_score`), so here it is still None on every candidate and sorting
+        # raised `'<' not supported between instances of 'NoneType' and
+        # 'NoneType'`. The branch is only reached past 10000 candidates -- which
+        # only large groups produce -- so the biggest group of an album was the
+        # one that died, its photos silently absent from an otherwise successful
+        # album. `weight` is set at construction in `process_group_lists`, which
+        # is the only place these are built, so it is always a float here.
+        group_single_layouts = sorted(group_single_layouts, key=lambda layout: layout.weight, reverse=True)[:1000]
 
     return group_single_layouts
 

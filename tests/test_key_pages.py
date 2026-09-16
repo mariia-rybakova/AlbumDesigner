@@ -793,6 +793,67 @@ def test_no_embeddings_is_not_an_error():
     assert len(_drop_cover_duplicates(body, covers, _QUIET_LOG)) == 2
 
 
+def test_a_manual_selection_never_loses_a_photo_to_the_cover_check():
+    """The user picked these. A duplicate of the cover among them is theirs.
+
+    44573310 asked for 55 chosen photos; three were near-identical to the cover
+    and were dropped without a word.
+    """
+    from src.core.key_pages import _drop_cover_duplicates
+
+    body, covers = _cover_and_body(0.99)
+
+    assert len(_drop_cover_duplicates(body, covers, _QUIET_LOG)) == 1
+    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG, manual_selection=True)
+
+    assert len(kept) == 2
+    assert set(kept[Col.IMAGE_ID]) == {10, 11}
+
+
+def test_a_manual_selection_keeps_photos_identical_to_the_cover():
+    """Not even the cap-filling case: no drop means none at all."""
+    from src.core.key_pages import _drop_cover_duplicates
+    import numpy as _np
+
+    cover = _np.array([1.0, 0.0], dtype=_np.float32)
+    body = pd.DataFrame({
+        Col.IMAGE_ID: list(range(20, 30)),
+        'embedding': [cover.copy() for _ in range(10)],
+    })
+    covers = pd.DataFrame({Col.IMAGE_ID: [1], 'embedding': [cover]})
+
+    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG, manual_selection=True)
+
+    assert len(kept) == 10
+
+
+def test_choose_good_wedding_images_passes_the_manual_flag_down():
+    """The flag has to survive the call the layout stage actually makes."""
+    from src.core import key_pages as kp
+
+    seen = {}
+
+    def _spy(df, cover_rows, logger, manual_selection=False):
+        seen['manual_selection'] = manual_selection
+        return df
+
+    original = kp._drop_cover_duplicates
+    kp._drop_cover_duplicates = _spy
+    try:
+        df = pd.DataFrame({
+            Col.IMAGE_ID: [1, 2, 3, 4],
+            'image_order': [1, 2, 3, 4],
+            'persons_ids': [[1], [1], [1], [1]],
+            'image_orientation': ['landscape'] * 4,
+            'embedding': [None] * 4,
+        })
+        kp.choose_good_wedding_images(df, None, _QUIET_LOG, manual_selection=True)
+    finally:
+        kp._drop_cover_duplicates = original
+
+    assert seen.get('manual_selection') is True
+
+
 def test_the_cover_duplicate_check_can_be_switched_off():
     from src.core.key_pages import _drop_cover_duplicates
 
