@@ -169,3 +169,20 @@ def parse(request: Optional[Dict[str, Any]]
         ))
 
     return tuple(briefs), tuple(declines)
+
+
+def record_failure(lead_content: Dict[str, Any], album_request_id: Optional[str],
+                   detail: str) -> None:
+    """Note that one album of a request was lost, on the reply's own message.
+
+    Recorded against the group's *first* message because that is the one
+    ReportStage builds the reply from; the siblings carry a shallow copy of the
+    body, so a note left on the album that failed would never be read.
+
+    A decline and not a silence: an album that vanishes from `albums` leaves
+    its brief unanswered, and the caller cannot tell a product that failed from
+    one the composer forgot.
+    """
+    refused = list(lead_content.get(UNFULFILLED_KEY) or [])
+    refused.append({ID_KEY: album_request_id, "reason": "error", "detail": detail})
+    lead_content[UNFULFILLED_KEY] = refused

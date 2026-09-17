@@ -32,6 +32,7 @@ from src.core.models import SpreadSearchParams
 from src.predefined.models import PredefinedLayoutInput
 from src.predefined.processing import predefined_layout_processing, build_first_last_pages
 from src.album_response import build_reply, encoded_size
+from src.pipeline.album_requests import UNFULFILLED_KEY, record_failure
 from src.request_processing import read_messages, assembly_output
 from utils.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
@@ -315,6 +316,25 @@ class ProcessStage(Stage):
             raise Exception('shared cropping process not completed.')
         return cropped
 
+    def _album_failed(self, messages, message, detail):
+        """Lose one album of a request, not the request.
+
+        One queue message now carries every album of a gallery, so an
+        exception composing one of them used to take its siblings with it --
+        the failure shape that cost 53009168 two albums for one bad group.
+
+        The brief still gets an answer: a decline recorded on the *group's
+        first* message, which is the one ReportStage builds the reply from.
+        Siblings carry a shallow copy of the body (`sibling_message`), so a
+        note left on the album that failed would never be read.
+        """
+        message.content['error'] = detail
+        record_failure(messages[0].content,
+                       getattr(message, "album_request_id", None), detail)
+        self.logger.error(
+            f"album {getattr(message, 'album_index', 0)} of "
+            f"{len(messages)} failed; the others continue: {detail}")
+
     def process_message(self, msgs: Union[Message, List[Message]]):
         # check if its single message or list
         messages = msgs if isinstance(msgs, list) else [msgs]
@@ -335,9 +355,13 @@ class ProcessStage(Stage):
                 chosen_photos = []
             df = update_photos_ranks(df, chosen_photos)
             if df.empty:
-                self.logger.error(f"Gallery photos info DataFrame is empty for message {message}")
-                message.content['error'] = f"Gallery photos info DataFrame is empty for message {message}"
-                raise Exception(f"Gallery photos info DataFrame is empty for message {message}")
+                detail = f"Gallery photos info DataFrame is empty for message {message}"
+                self.logger.error(detail)
+                if len(messages) == 1:
+                    message.content['error'] = detail
+                    raise Exception(detail)
+                self._album_failed(messages, message, detail)
+                continue
 
             bride_and_groom_df = message.content.get('bride and groom', pd.DataFrame())
             df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
@@ -465,8 +489,25 @@ class ProcessStage(Stage):
             except Exception as ex:
                 tb = traceback.extract_tb(ex.__traceback__)
                 filename, lineno, func, text = tb[-1]
-                self.logger.error(f"Error processing stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
-                raise Exception(f"Error processing stage: {ex}. Exception in function: {func}, line {lineno}, file {filename}.")
+                detail = (f"Error processing stage: {ex}. Exception in function: "
+                          f"{func}, line {lineno}, file {filename}.")
+                self.logger.error(detail)
+                # One album is one album. A request carrying several loses only
+                # the one that failed, and says why; a request carrying one has
+                # nothing left to deliver, so it fails as it always did.
+                if len(messages) == 1:
+                    raise Exception(detail)
+                self._album_failed(messages, message, detail)
+                continue
+
+        # Every album failed. There is nothing to reply with, so this is a
+        # failed request rather than a successful one that happens to be empty
+        # -- the caller can tell those apart and would retry only the first.
+        if len(messages) > 1 and not any(
+                getattr(m, 'album_doc', None) for m in messages):
+            raise Exception(
+                messages[0].content.get('error')
+                or "every album of this request failed")
 
         processing_time = (datetime.now() - whole_messages_start) / max(len(messages), 1)
         processing_time_list.append(processing_time)

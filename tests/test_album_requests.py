@@ -212,3 +212,43 @@ def test_unfulfilled_is_not_albums_omitted():
 
     assert "unfulfilled" in payload
     assert payload.get("albumsOmitted") in (None, 0)
+
+
+# -- one album's failure is one album's --------------------------------------
+#
+# One queue message now carries every album of a gallery, so an exception
+# composing one of them could take its siblings with it -- the failure shape
+# that cost 53009168 two albums for one bad group, scaled up to the whole
+# request.
+
+def test_a_lost_album_is_declined_rather_than_silent():
+    """An album that vanishes from `albums` leaves its brief unanswered, and
+    the caller cannot tell a product that failed from one we forgot."""
+    lead = {}
+
+    album_requests.record_failure(lead, "AACP_1#1", "Error processing stage: boom")
+
+    assert lead[album_requests.UNFULFILLED_KEY] == [
+        {"albumRequestId": "AACP_1#1", "reason": "error",
+         "detail": "Error processing stage: boom"}]
+
+
+def test_a_lost_album_joins_the_briefs_the_gallery_declined():
+    """Both are answers to a brief, and both travel on the same key."""
+    lead = {album_requests.UNFULFILLED_KEY: [
+        {"albumRequestId": "AACP_1#2", "reason": "no_parents_resolved"}]}
+
+    album_requests.record_failure(lead, "AACP_1#1", "boom")
+
+    assert [d["reason"] for d in lead[album_requests.UNFULFILLED_KEY]] == [
+        "no_parents_resolved", "error"]
+
+
+def test_an_album_that_answers_no_brief_still_reports_its_failure():
+    """The legacy path has no `albumRequestId`; the reply is still owed one."""
+    lead = {}
+
+    album_requests.record_failure(lead, None, "boom")
+
+    assert lead[album_requests.UNFULFILLED_KEY][0]["albumRequestId"] is None
+    assert lead[album_requests.UNFULFILLED_KEY][0]["reason"] == "error"
