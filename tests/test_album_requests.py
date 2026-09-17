@@ -338,3 +338,37 @@ def test_the_wedding_limit_is_config_and_moves_with_it():
 
     assert [v.fulfils for v in variants] == ["AACP_1#0", "AACP_1#1"]
     assert declines == ()
+
+
+# -- an unchanged composer must see an unchanged designer --------------------
+#
+# The two halves deploy separately, so the designer has to be indistinguishable
+# from its old self to a caller that has never heard of `albumRequests`.
+
+def test_a_legacy_request_plans_exactly_what_it_always_did():
+    variants, declines = plan({'projectId': 1, 'photos': [1, 2, 3]})
+
+    assert variants == [AS_REQUESTED]
+    assert declines == ()
+
+
+def test_the_wedding_policy_does_not_reach_a_legacy_request():
+    """A per-option caller sends one album per message and each is composed.
+
+    The policy is consulted only on the paths that carry a list, so weddings
+    keep getting whatever was asked for until the composer sends grouped calls.
+    That is what makes deploying this side first a no-op.
+    """
+    variants, declines = plan({'projectId': 1}, facts=wedding())
+
+    assert variants == [AS_REQUESTED]
+    assert declines == ()
+
+
+def test_a_legacy_request_grows_no_new_keys():
+    """`albumsUnfulfilled` on the content is what the reply is built from; a
+    legacy request must not acquire one."""
+    request = {'projectId': 1}
+    plan(request, facts=wedding())
+
+    assert set(request) == {'projectId'}
