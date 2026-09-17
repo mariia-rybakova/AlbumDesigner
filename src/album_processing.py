@@ -15,12 +15,49 @@ from utils.configs import CONFIGS
 from utils.stages_recorder import set_is_artificial_time
 
 
+#: Compositions the reply always carries besides the content spreads: the
+#: cover, the first page and the last page (see `src/request_processing.py`).
+#: A printlab page count converts to a content-spread budget by subtracting
+#: these, which is what the historical `- 3` has always been.
+FIXED_COMPOSITIONS = 3
+
+
 def _json_default(o):
     if hasattr(o, 'item'):
         return o.item()
     if isinstance(o, (set, frozenset)):
         return sorted(o)
     return str(o)
+
+
+def size_album(designs_info, selection_max_total_spreads=None) -> Tuple[int, int]:
+    """The content-spread budget for one album, as (min_total, max_total).
+
+    Content spreads, not compositions: the reply adds `FIXED_COMPOSITIONS` on
+    top, so a caller wanting N compositions asks for N pages and gets
+    N - FIXED_COMPOSITIONS spreads here.
+
+    A design whose ``minPages`` equals its ``maxPages`` is stating an exact
+    album rather than a range, and is taken literally -- neither the `+6`
+    headroom on the floor nor selection's gallery-aware ceiling applies, and
+    the design's own page count is used instead of
+    ``CONFIGS['max_total_spreads']``. Without that last part a design asking
+    for fewer pages than the config default was silently widened to it, because
+    the ceiling takes whichever of the two is *larger*.
+    """
+    min_pages, max_pages = designs_info['minPages'], designs_info['maxPages']
+
+    if min_pages == max_pages:
+        exact = max(1, min_pages - FIXED_COMPOSITIONS)
+        return exact, exact
+
+    # Hard ceiling from the album design - the album can never exceed this.
+    hard_max_total_spreads = max(CONFIGS['max_total_spreads'], max_pages) - FIXED_COMPOSITIONS
+    # Wedding selection proposes a tighter, gallery-aware limit; clamp it to the hard ceiling.
+    # Non-wedding has no selection target and keeps the design limit alone.
+    max_total_spreads = (min(selection_max_total_spreads, hard_max_total_spreads)
+                         if selection_max_total_spreads is not None else hard_max_total_spreads)
+    return min(max_total_spreads, min_pages + 6), max_total_spreads
 
 
 def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
@@ -41,13 +78,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
 
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
 
-    # Hard ceiling from the album design - the album can never exceed this.
-    hard_max_total_spreads = max(CONFIGS['max_total_spreads'], designs_info['maxPages']) - 3
-    # Wedding selection proposes a tighter, gallery-aware limit; clamp it to the hard ceiling.
-    # Non-wedding has no selection target and keeps the design limit alone.
-    max_total_spreads = (min(selection_max_total_spreads, hard_max_total_spreads)
-                         if selection_max_total_spreads is not None else hard_max_total_spreads)
-    min_total_spreads = min(max_total_spreads, designs_info['minPages']+6)
+    min_total_spreads, max_total_spreads = size_album(designs_info, selection_max_total_spreads)
     logger.info(f"Printlab data: minPages={designs_info['minPages']}. Calculated: min_total_spreads={min_total_spreads}")
     logger.info(f"Printlab data: maxPages={designs_info['maxPages']}. Calculated: max_total_spreads={max_total_spreads}")
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
