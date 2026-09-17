@@ -88,10 +88,29 @@ class LookUpTable:
         # spread rebalancing in update_with_limit so a change to one crowded
         # group no longer leaks onto every other group of the same content.
         self._group_table: Dict[Tuple, Tuple[float, float]] = {}
+        # Keys whose photos-per-spread `_apply_table_reduction` pushed *up* to
+        # shorten the album. Such a value describes this one gallery's squeeze,
+        # not a class that is dense by design, so the expansion pass must not
+        # read it back as one and refuse to dilute it. See `update_with_limit`.
+        self._reduction_raised: Set = set()
 
     @property
     def table(self):
         return self._table.copy()
+
+    def _packed_by_design(self, group_key, dense_threshold: int) -> bool:
+        """Whether this group's density is the class's own, not a reduction's.
+
+        `bride and groom` at 4/spread is not a dense class; after a reduction
+        raised it to 15 to fit a 56-photo gallery into 17 spreads it looks like
+        one, and protecting it locks the album's largest class out of the
+        expansion that was supposed to lengthen the album.
+        """
+        if group_key in self._reduction_raised:
+            return False
+        if self._get_content_key(group_key) in self._reduction_raised:
+            return False
+        return self.get_spread_params(group_key)[0] >= dense_threshold
 
     def get_spread_params(self, group_key) -> Tuple[float, float]:
         """Resolve (mean, std) for a group: per-group override -> content default -> fallback."""
@@ -208,6 +227,23 @@ class LookUpTable:
         return spreads_per_group
 
     @staticmethod
+    def _realisable_spreads(number_images: int, min_photos_per_spread: int) -> int:
+        """The most spreads one group can actually end up with.
+
+        `get_current_spread_parameters` re-derives photos-per-spread whenever a
+        group would exceed ``max_group_spread``, so planning past that cap only
+        spends floor the album never gets: on 53739038 the expansion handed
+        `ceremony` 5 spreads and `couple` 4, both were clamped back to 3, and
+        the 17 planned spreads arrived as 15. The clamp itself yields to
+        ``max_imges_per_spread``, so a group too large to fit in the capped
+        number of spreads keeps the count that capacity forces.
+        """
+        by_density = max(1, number_images // min_photos_per_spread)
+        capped = min(by_density, CONFIGS['max_group_spread'])
+        forced_by_capacity = math.ceil(number_images / CONFIGS['max_imges_per_spread'])
+        return max(capped, forced_by_capacity)
+
+    @staticmethod
     def _expand_with_floor(spreads_per_group: Dict, group2images: Dict,
                            min_total_spreads: int, min_photos_per_spread: int,
                            skip_keys: Optional[Set] = None) -> Tuple[Dict, int]:
@@ -228,7 +264,8 @@ class LookUpTable:
                 if key in skip_keys:
                     continue
                 num_images_in_group = group2images[key]
-                max_spreads = max(1, num_images_in_group // min_photos_per_spread)
+                max_spreads = LookUpTable._realisable_spreads(
+                    num_images_in_group, min_photos_per_spread)
                 if current_spreads >= max_spreads:
                     continue
                 ratio = num_images_in_group / current_spreads
@@ -297,17 +334,27 @@ class LookUpTable:
             new_value = min(24, math.ceil(group2images[key] / target_spreads))
             if new_value > current_value:
                 self._write_value(key, new_value, extra_value, per_group)
+                # Remember that this density is ours, not the class's, so a
+                # later expansion does not mistake it for dense by design.
+                self._reduction_raised.add(
+                    key if per_group else self._get_content_key(key))
 
     def _apply_table_expansion(self, spreads_per_group: Dict,
                                group2images: Dict, per_group: bool = False) -> None:
         """Write back LUT after expansion: only decrease values (to produce more spreads).
 
-        For each group, computes int(n_images / target_spreads) and writes it only if it
+        For each group, computes ceil(n_images / target_spreads) and writes it only if it
         is below the group's current effective value.
+
+        `ceil` and not `int`, because the value is read back as
+        ``ceil(n_images / value)`` in `_compute_initial_spreads` and `ceil` is
+        that operation's inverse -- the same one `_apply_table_reduction` uses.
+        Flooring instead overshot: a group of 11 planned for 3 spreads was
+        written as 3 photos per spread and came back asking for 4.
         """
         for key, target_spreads in spreads_per_group.items():
             current_value, extra_value = self.get_spread_params(key)
-            new_value = max(1, int(group2images[key] / target_spreads))
+            new_value = max(1, math.ceil(group2images[key] / target_spreads))
             if new_value < current_value:
                 self._write_value(key, new_value, extra_value, per_group)
 
@@ -344,7 +391,7 @@ class LookUpTable:
             # else can absorb the floor (e.g. a dancing-only gallery).
             dense_threshold = CONFIGS.get('expansion_dense_threshold', 12)
             protected_keys = {key for key in spreads_per_group
-                              if self.get_spread_params(key)[0] >= dense_threshold}
+                              if self._packed_by_design(key, dense_threshold)}
             spreads_per_group = self._expand_spreads(spreads_per_group, group2images,
                                                      min_total_spreads, protected_keys)
             self._apply_table_expansion(spreads_per_group, group2images, per_group=per_group)
