@@ -44,6 +44,7 @@ from src.pipeline.albums import AlbumVariant
 from src.pipeline.contracts import AlbumContext, Col, ctx, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
+from utils.configs import CONFIGS
 
 #: The request flag. Absent or false means one album, as today.
 AUTO_ALBUMS = "autoAlbums"
@@ -107,6 +108,14 @@ class VariantsSubStage(SubStage):
             return [AS_REQUESTED]
 
         plan = [AlbumVariant(name=focus, focus=(focus,)) for focus in AUTO_FOCUS]
+        policy = _policy(context)
+        plan = [variant for variant in plan
+                if not _is_overridden(variant.focus, policy)]
+        limit = policy.get("max_albums")
+        if limit is not None:
+            plan = plan[:limit]
+        if not plan:
+            return [AS_REQUESTED]
         return [VariantsSubStage._seed(variant, context) for variant in plan]
 
     @staticmethod
@@ -125,8 +134,21 @@ class VariantsSubStage(SubStage):
         """
         plan: List[AlbumVariant] = []
         refused = list(declines)
+        policy = _policy(context)
+        limit = policy.get("max_albums")
 
         for brief in briefs:
+            if _is_overridden(brief.focus, policy):
+                refused.append(album_requests.Decline(
+                    brief.album_request_id, "focus_overridden",
+                    f"this gallery type does not compose "
+                    f"{'/'.join(brief.focus or ())} albums"))
+                continue
+            if limit is not None and len(plan) >= limit:
+                refused.append(album_requests.Decline(
+                    brief.album_request_id, "album_limit",
+                    f"this gallery type composes at most {limit} album(s)"))
+                continue
             reason = VariantsSubStage._refuse(brief, context)
             if reason is not None:
                 refused.append(album_requests.Decline(
@@ -227,3 +249,23 @@ def _needs_parents(brief, context: AlbumContext):
 #: cannot define one, because a requirement is a question about the gallery
 #: rather than a value -- which is the whole reason this stays in code.
 REQUIREMENTS = (_needs_parents,)
+
+
+
+def _policy(context: AlbumContext) -> dict:
+    """The album policy for this gallery type.
+
+    Keyed on what the gallery *is*, not on what the request called it: the
+    caller names products, and whether those are worth composing is a fact
+    about the content. `is_wedding` is None on a gallery the classifier has not
+    answered for, which takes the default rather than the wedding rules --
+    refusing an album on a guess is worse than composing one.
+    """
+    policies = CONFIGS.get("album_policy") or {}
+    key = "wedding" if getattr(context.facts, "is_wedding", None) else "default"
+    return policies.get(key) or policies.get("default") or {}
+
+
+def _is_overridden(focus, policy) -> bool:
+    overridden = set(policy.get("overridden_focus") or ())
+    return bool(overridden and set(focus or ()) & overridden)

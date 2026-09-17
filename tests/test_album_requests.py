@@ -252,3 +252,89 @@ def test_an_album_that_answers_no_brief_still_reports_its_failure():
 
     assert lead[album_requests.UNFULFILLED_KEY][0]["albumRequestId"] is None
     assert lead[album_requests.UNFULFILLED_KEY][0]["reason"] == "error"
+
+
+# -- how many albums a wedding is worth --------------------------------------
+#
+# The caller sends a brief per product it would like; how many of those get
+# composed is a product decision, and it lives in `CONFIGS['album_policy']` so
+# that changing it is an edit rather than a change to the planner.
+
+def wedding():
+    facts = GalleryFacts()
+    facts.is_wedding = True
+    return facts
+
+
+def wedding_with_parents():
+    facts = wedding()
+    facts.bride_parents = (11,)
+    facts.groom_parents = (12,)
+    return facts
+
+
+def test_a_wedding_composes_one_album_today():
+    variants, declines = plan({'albumRequests': [
+        brief("AACP_1#0", "wedding_main_album"),
+        brief("AACP_1#1", "wedding_parents_album", focus=["parents"]),
+    ]}, facts=wedding_with_parents())
+
+    assert [v.fulfils for v in variants] == ["AACP_1#0"]
+    assert [(d.album_request_id, d.reason) for d in declines] == [
+        ("AACP_1#1", "focus_overridden")]
+
+
+def test_the_parents_album_is_refused_even_where_it_could_be_composed():
+    """The parents were resolved, so the requirement is met and this is purely
+    the policy talking. Refused and not quietly turned into a couple album:
+    the two are indistinguishable at the caller, and only one was asked for."""
+    variants, declines = plan({'albumRequests': [
+        brief("AACP_1#1", "wedding_parents_album", focus=["parents"])]},
+        facts=wedding_with_parents())
+
+    assert [d.reason for d in declines] == ["focus_overridden"]
+    # Something still comes back -- the album the request itself asked for.
+    assert variants == [AS_REQUESTED]
+
+
+def test_a_third_wedding_album_is_refused_by_the_limit_not_the_focus():
+    """Two reasons the caller can tell apart: we do not make that kind of
+    album, and we are not making that many."""
+    variants, declines = plan({'albumRequests': [
+        brief("AACP_1#0", "wedding_main_album"),
+        brief("AACP_1#1", "wedding_couple_album", focus=["brideAndGroom"]),
+    ]}, facts=wedding())
+
+    assert [v.fulfils for v in variants] == ["AACP_1#0"]
+    assert [(d.album_request_id, d.reason) for d in declines] == [
+        ("AACP_1#1", "album_limit")]
+
+
+def test_the_policy_is_keyed_on_the_gallery_not_the_request():
+    """A non-wedding gallery composes what it was asked for."""
+    variants, declines = plan({'albumRequests': [
+        brief("AACP_1#0", "family_album"),
+        brief("AACP_1#1", "event_album"),
+    ]}, facts=GalleryFacts())
+
+    assert [v.fulfils for v in variants] == ["AACP_1#0", "AACP_1#1"]
+    assert declines == ()
+
+
+def test_the_wedding_limit_is_config_and_moves_with_it():
+    from utils.configs import CONFIGS
+
+    original = CONFIGS['album_policy']
+    CONFIGS['album_policy'] = {**original,
+                               'wedding': {'max_albums': 2,
+                                           'overridden_focus': ()}}
+    try:
+        variants, declines = plan({'albumRequests': [
+            brief("AACP_1#0", "wedding_main_album"),
+            brief("AACP_1#1", "wedding_parents_album", focus=["parents"]),
+        ]}, facts=wedding_with_parents())
+    finally:
+        CONFIGS['album_policy'] = original
+
+    assert [v.fulfils for v in variants] == ["AACP_1#0", "AACP_1#1"]
+    assert declines == ()

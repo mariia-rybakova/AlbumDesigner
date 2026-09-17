@@ -246,6 +246,35 @@ CONFIGS = {'DEBUG': True,
             # family spreads this one exists to fill. False unions instead.
             'replace_user_picks': True,
         },
+        # -- how many albums a gallery type is worth, and of what -----------
+        #
+        # The caller sends a brief per product it would like. This is where
+        # the answer to "and how many of those are we actually making" lives,
+        # keyed by gallery type, so changing the count or the flavour is an
+        # edit here rather than a change to `enrich.variants`.
+        #
+        # `max_albums` caps what a gallery type composes, whatever was asked
+        # for. `overridden_focus` names objectives it will not compose at all:
+        # the brief is answered with a decline rather than quietly turned into
+        # something else, because a parents album that is really a second
+        # couple album is indistinguishable from the real thing at the caller.
+        #
+        # Today weddings get one album, the couple's. The parents album is
+        # refused rather than capped, so the album that survives is the one
+        # asked for first and not whichever brief happened to lead the list.
+        # Both of those are product decisions and both are meant to move: an
+        # entry per gallery type, `None` for no cap.
+        'album_policy': {
+            'wedding': {
+                'max_albums': 1,
+                'overridden_focus': ('parents',),
+            },
+            # Everything else composes what it was asked for.
+            'default': {
+                'max_albums': None,
+                'overridden_focus': (),
+            },
+        },
 
         'density_factors' : {1: 0.5, 2: 0.75, 3: 1, 4: 1.5, 5: 2.0},
         # The ceremony exit: guests showering the couple as they leave
