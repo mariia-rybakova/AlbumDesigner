@@ -83,16 +83,28 @@ def encoded_size(payload: Dict[str, Any]) -> int:
 
 
 def album_entry(index: int, doc: Optional[Dict[str, Any]],
-                variant: Optional[str] = None) -> Dict[str, Any]:
+                variant: Optional[str] = None,
+                album_request_id: Optional[str] = None,
+                derived_from: Optional[str] = None) -> Dict[str, Any]:
     """One element of ``albums``.
 
     ``doc`` is a whole single-album reply as `assembly_output` returns it; only
     its ``composition`` travels, because ``requestId`` is the same for every
     album and ``error`` is carried per album in its own field.
+
+    ``albumRequestId`` is the brief this album answers, echoed exactly as it
+    arrived -- the caller keys its own tracking record on it, and a reply it
+    cannot match is a reply it drops. ``derivedFrom`` is set instead on an
+    album nobody asked for, naming the brief it grew out of, so an extra album
+    is still traceable to a request even though it answers none.
     """
     entry: Dict[str, Any] = {"albumIndex": index}
     if variant:
         entry["variant"] = variant
+    if album_request_id:
+        entry["albumRequestId"] = album_request_id
+    if derived_from:
+        entry["derivedFrom"] = derived_from
     entry["composition"] = (doc or {}).get("composition")
     error = (doc or {}).get("error")
     if error is not None:
@@ -101,26 +113,49 @@ def album_entry(index: int, doc: Optional[Dict[str, Any]],
 
 
 def combine(album_docs: Sequence[Optional[Dict[str, Any]]],
-            variants: Optional[Sequence[Optional[str]]] = None
+            variants: Optional[Sequence[Optional[str]]] = None,
+            album_request_ids: Optional[Sequence[Optional[str]]] = None,
+            derived_from: Optional[Sequence[Optional[str]]] = None,
+            unfulfilled: Optional[Sequence[Dict[str, Any]]] = None
             ) -> Optional[Dict[str, Any]]:
     """One reply for however many albums were composed.
 
     A single album returns its own doc untouched -- no ``albums`` key, nothing
-    renamed -- so the ordinary payload does not change shape at all.
+    renamed -- so the ordinary payload does not change shape at all. The one
+    exception is ``unfulfilled``: a caller that sent a list of briefs is owed
+    an answer for each of them even when only one album came back, and even
+    when none did.
+
+    ``unfulfilled`` is kept separate from ``albumsOmitted`` on purpose. Omitted
+    means the album exists and did not fit the queue message, which is worth
+    retrying; unfulfilled means it was never composed and retrying changes
+    nothing. Collapsing them would tell the caller to retry what cannot
+    succeed.
     """
     docs = [doc for doc in album_docs if doc is not None]
     if not docs:
         return None
-    if len(docs) == 1:
+
+    refused = [dict(item) for item in (unfulfilled or [])]
+
+    if len(docs) == 1 and not refused:
         return docs[0]
 
     names = list(variants or [])
+    ids = list(album_request_ids or [])
+    derived = list(derived_from or [])
     payload = dict(docs[0])
-    payload["albums"] = [
-        album_entry(index, doc,
-                    names[index] if index < len(names) else None)
-        for index, doc in enumerate(docs)
-    ]
+
+    def at(seq, index):
+        return seq[index] if index < len(seq) else None
+
+    if len(docs) > 1 or ids or derived:
+        payload["albums"] = [
+            album_entry(index, doc, at(names, index), at(ids, index), at(derived, index))
+            for index, doc in enumerate(docs)
+        ]
+    if refused:
+        payload["unfulfilled"] = refused
     return payload
 
 
@@ -165,9 +200,12 @@ def fit_to_limit(payload: Dict[str, Any], limit: int = QUEUE_MESSAGE_LIMIT,
 
 def build_reply(album_docs: Sequence[Optional[Dict[str, Any]]],
                 variants: Optional[Sequence[Optional[str]]] = None,
+                album_request_ids: Optional[Sequence[Optional[str]]] = None,
+                derived_from: Optional[Sequence[Optional[str]]] = None,
+                unfulfilled: Optional[Sequence[Dict[str, Any]]] = None,
                 logger=None) -> Optional[Dict[str, Any]]:
     """The reply to send: combined, then trimmed to what the queue accepts."""
-    payload = combine(album_docs, variants)
+    payload = combine(album_docs, variants, album_request_ids, derived_from, unfulfilled)
     if payload is None:
         return None
     payload, _ = fit_to_limit(payload, logger=logger)

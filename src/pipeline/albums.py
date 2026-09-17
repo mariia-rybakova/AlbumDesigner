@@ -69,6 +69,14 @@ class AlbumVariant:
     photo_ids: Optional[Tuple[int, ...]] = None
     person_ids: Optional[Tuple[int, ...]] = None
 
+    #: The brief this album answers, when the caller sent a list. It travels
+    #: back untouched because it is what the caller keys its own record on.
+    fulfils: Optional[str] = None
+    #: Set instead on an album nobody asked for: the brief it grew out of. The
+    #: gallery, not the request, is what says a second album of a flavour is
+    #: worth making, and the caller still needs to know where it came from.
+    derived_from: Optional[str] = None
+
     def apply(self, context: AlbumContext) -> AlbumContext:
         """Overlay this variant onto a fresh album context.
 
@@ -90,6 +98,8 @@ class AlbumVariant:
         if changes:
             context.hints = _replace(context.hints, **changes)
         context.variant_name = self.name
+        context.album_request_id = self.fulfils
+        context.derived_from = self.derived_from
         return context
 
 
@@ -351,6 +361,10 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
         # The report side labels each album from its message, because that is
         # all it has by then -- the contexts do not travel between stages.
         setattr(context.message, "variant_name", context.variant_name)
+        # Same reason as the name: by report time the contexts are gone, and
+        # the reply has to say which brief each album answers.
+        setattr(context.message, "album_request_id", context.album_request_id)
+        setattr(context.message, "derived_from", context.derived_from)
         runs.append(AlbumRun(index=index, context=pipeline.run(context),
                              variant=variant))
     return runs

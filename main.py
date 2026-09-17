@@ -536,7 +536,10 @@ class ReportStage(Stage):
             for group in album_group(msgs):
                 first = group[0]
                 reply = None
-                if len(group) > 1:
+                # Briefs the gallery declined. Owed to the caller even when a
+                # single album came back, so this is not gated on the count.
+                unfulfilled = first.content.get('albumsUnfulfilled') or []
+                if len(group) > 1 or unfulfilled:
                     # One payload for the whole request: `composition` is the
                     # first album, `albums` carries them all, and the size
                     # guard drops any that will not fit rather than letting
@@ -544,6 +547,9 @@ class ReportStage(Stage):
                     reply = build_reply(
                         [getattr(m, 'album_doc', None) for m in group],
                         [getattr(m, 'variant_name', None) for m in group],
+                        [getattr(m, 'album_request_id', None) for m in group],
+                        [getattr(m, 'derived_from', None) for m in group],
+                        unfulfilled,
                         logger=self.logger)
                     self.logger.info(
                         f"Reporting {len(group)} albums for request "

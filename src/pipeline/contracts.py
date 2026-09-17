@@ -325,6 +325,12 @@ class AlbumContext:
     variants: Optional[List[Any]] = None
     #: Which brief produced this album, for logs and for the report.
     variant_name: Optional[str] = None
+    #: Which brief this album answers (`albumRequestId`), or the brief it was
+    #: derived from when nobody asked for it. Both None on the legacy path.
+    album_request_id: Optional[str] = None
+    derived_from: Optional[str] = None
+    #: Briefs that will not be composed, as `album_requests.Decline`.
+    unfulfilled: tuple = ()
 
     # -- selection working state -------------------------------------------
     # Typed as Any to keep this module free of a dependency on the selection
