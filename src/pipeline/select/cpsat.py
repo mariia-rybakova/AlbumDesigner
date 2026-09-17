@@ -78,6 +78,7 @@ own picks, so most of the coverage was decided before the solve.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -102,6 +103,55 @@ def is_enabled() -> bool:
     return bool(settings().get('enabled', False))
 
 
+@dataclass(frozen=True)
+class Relaxation:
+    """Which hard rules a solve is allowed to drop.
+
+    Each flag is "this wall is down", so the default is the strict model and
+    the first solve of every album uses it. A relaxed solve is only ever a
+    *second* one, built when the first came in further under the allowance than
+    the ceiling's normal slack; see `CpSatPicker._relaxation_for`.
+    """
+
+    #: One photo per (people, subquery) in a class with no slack.
+    distinct_shots: bool = False
+    #: Near-identical frames of a class are mutually exclusive.
+    exclusions: bool = False
+    #: A photo of an exclusive class naming the wrong person is blocked.
+    contradictions: bool = False
+    #: The allowance stops being a ceiling with no floor and becomes a target,
+    #: which also drops the per-photo admission cost that enforces it.
+    allowance_is_target: bool = False
+
+    def __bool__(self) -> bool:
+        return any((self.distinct_shots, self.exclusions,
+                    self.contradictions, self.allowance_is_target))
+
+    def describe(self) -> str:
+        dropped = [name for name, on in (
+            ('distinct_shots', self.distinct_shots),
+            ('exclusions', self.exclusions),
+            ('contradictions', self.contradictions),
+            ('allowance_as_target', self.allowance_is_target),
+        ) if on]
+        return ', '.join(dropped) if dropped else 'nothing'
+
+
+#: The model as it has always been built.
+STRICT = Relaxation()
+
+
+@dataclass
+class Attempt:
+    """One solve, kept only long enough to compare it with another."""
+
+    x: Dict
+    solver: Any
+    status: Any
+    shortfall: int
+    relaxation: Relaxation
+
+
 class CpSatPicker:
     """Pick the whole album in one solve.
 
@@ -119,6 +169,9 @@ class CpSatPicker:
 
         self.committed: Dict = dict(self.plan.committed)
         self.per_category: Dict[str, Dict[str, int]] = {}
+        #: What the solve currently being built is allowed to give up. Every
+        #: first solve keeps everything; `run` sets this for a second one.
+        self.relaxation: Relaxation = STRICT
         #: (variables, constraints) of the model actually built, for the log.
         self.model_size: Tuple[int, int] = (0, 0)
         #: Length of the whole day in positions, set by `_pool`. Distinct from
@@ -128,13 +181,82 @@ class CpSatPicker:
     # -- entry point --------------------------------------------------------
 
     def run(self) -> Optional[Tuple[List, Dict[str, Dict[str, int]]]]:
-        """``(chosen, per_category)``, or None when the model cannot answer."""
-        from ortools.sat.python import cp_model
+        """``(chosen, per_category)``, or None when the model cannot answer.
 
+        Two solves at most. The first keeps every rule; if it lands further
+        under the allowance than the ceiling's ordinary slack, a second one
+        gives up the hard walls and is kept when it does better. See
+        `Relaxation` and `pick_cpsat.relaxed_retry`.
+        """
         frame = self._pool()
         if frame.empty:
             self.logger.warning("cp-sat: no photos to pick from")
             return None
+
+        attempt = self._solve(frame, STRICT)
+        if attempt is None:
+            return None
+
+        relaxation = self._relaxation_for(attempt.shortfall)
+        if relaxation:
+            self.logger.info(
+                f"cp-sat: {attempt.shortfall} photos short of the allowance, "
+                f"over the {self._shortfall_trigger()} the ceiling allows -- "
+                f"re-solving without {relaxation.describe()}"
+            )
+            softer = self._solve(frame, relaxation)
+            if softer is None:
+                self.logger.warning("cp-sat: the softer solve found nothing; "
+                                    "keeping the first")
+            elif softer.shortfall < attempt.shortfall:
+                self.logger.info(
+                    f"cp-sat: softer solve is {attempt.shortfall - softer.shortfall} "
+                    f"photos fuller ({attempt.shortfall} -> {softer.shortfall} "
+                    f"short); taking it"
+                )
+                attempt = softer
+            else:
+                self.logger.info(
+                    f"cp-sat: softer solve was no fuller "
+                    f"({softer.shortfall} short); keeping the first"
+                )
+
+        # Only the winning solve is collected, because `_collect` and `_report`
+        # accumulate onto `per_category` and would double-count otherwise.
+        self.relaxation = attempt.relaxation
+        chosen = self._collect(frame, attempt.x, attempt.solver)
+        self._report(frame, attempt.x, attempt.solver, attempt.status)
+        return chosen, self.per_category
+
+    def _shortfall_trigger(self) -> int:
+        return int(self._retry_cfg().get('shortfall_trigger', 3))
+
+    def _retry_cfg(self) -> Dict[str, Any]:
+        return self.cfg.get('relaxed_retry', {}) or {}
+
+    def _relaxation_for(self, shortfall: int) -> Relaxation:
+        """What a second solve should give up, or nothing to leave it at one.
+
+        Coming in a little under the allowance is the ceiling working as
+        designed, so the trigger sits above that slack rather than at zero.
+        """
+        config = self._retry_cfg()
+        if not config.get('enabled', False):
+            return STRICT
+        if shortfall <= self._shortfall_trigger():
+            return STRICT
+        return Relaxation(
+            distinct_shots=bool(config.get('drop_distinct_shots', False)),
+            exclusions=bool(config.get('drop_exclusions', False)),
+            contradictions=bool(config.get('drop_contradictions', False)),
+            allowance_is_target=bool(config.get('allowance_is_target', False)),
+        )
+
+    def _solve(self, frame: pd.DataFrame, relaxation: Relaxation) -> Optional[Attempt]:
+        """Build the model under ``relaxation`` and solve it once."""
+        from ortools.sat.python import cp_model
+
+        self.relaxation = relaxation
 
         model = cp_model.CpModel()
         x = {index: model.NewBoolVar(f"x_{index}") for index in frame.index}
@@ -203,9 +325,26 @@ class CpSatPicker:
             self.logger.error(f"cp-sat: no solution ({solver.StatusName(status)})")
             return None
 
-        chosen = self._collect(frame, x, solver)
-        self._report(frame, x, solver, status)
-        return chosen, self.per_category
+        return Attempt(x=x, solver=solver, status=status,
+                       shortfall=self._shortfall(frame, x, solver),
+                       relaxation=relaxation)
+
+    def _shortfall(self, frame: pd.DataFrame, x, solver) -> int:
+        """Photos this solve is under the allowance, summed over classes.
+
+        Per class and floored at zero, so a class that overshoots cannot hide
+        one that came back empty. Counted with the same `need` and `got` the
+        log reports, so the two always agree.
+        """
+        picked = frame.index[[bool(solver.Value(x[i])) for i in frame.index]]
+        chosen = frame.loc[picked]
+
+        short = 0
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            need = int(self.plan.images.get(category, 0)) + int(group['_committed'].sum())
+            got = int(chosen[Col.CLUSTER_CONTEXT].eq(category).sum())
+            short += max(0, need - got)
+        return short
 
     # -- the pool -----------------------------------------------------------
 
@@ -439,6 +578,11 @@ class CpSatPicker:
                 penalties.append(shortage * weight)
 
     def _ceiling_on(self) -> bool:
+        if self.relaxation.allowance_is_target:
+            # The allowance becomes a target: `_add_quotas` falls through to the
+            # equality-plus-shortage branch and `_admission_costs` charges
+            # nothing, which together are what make the model fill.
+            return False
         return bool(self.cfg.get('quota_ceiling', {}).get('enabled', False))
 
     def _identity_bonus(self, frame: pd.DataFrame) -> pd.Series:
@@ -519,6 +663,8 @@ class CpSatPicker:
         `walking the aisle` outright.
         """
         blocked: List = []
+        if self.relaxation.contradictions:
+            return blocked
         if not self.cfg.get('identity_preference', {}).get(
                 'exclude_contradictions', False):
             return blocked
@@ -792,6 +938,8 @@ class CpSatPicker:
         photos sharing a key would also make the constraint infeasible, since
         neither can be given up.
         """
+        if self.relaxation.distinct_shots:
+            return
         if not self.cfg.get('distinct_shots', {}).get('enabled', False):
             return
         if Col.IMAGE_SUBQUERY_CONTENT not in frame.columns:
@@ -934,6 +1082,8 @@ class CpSatPicker:
         duplicates. Restricted to same-class pairs inside the cohesion window,
         which keeps it O(n) in practice rather than O(n^2) over the gallery.
         """
+        if self.relaxation.exclusions:
+            return
         threshold = float(self.cfg.get('duplicate_similarity', 0.97))
         treatment = float(self.cfg.get('treatment_duplicate_similarity', 1.0))
         if Col.EMBEDDING not in frame.columns:
@@ -1078,7 +1228,8 @@ class CpSatPicker:
             f"objective {solver.ObjectiveValue():.0f}, "
             f"{len(chosen)} of {len(frame)} photos "
             f"({len(self.committed)} committed), "
-            f"model {self.model_size[0]} vars / {self.model_size[1]} constraints",
+            f"model {self.model_size[0]} vars / {self.model_size[1]} constraints"
+            + (f", relaxed: {self.relaxation.describe()}" if self.relaxation else ""),
             f"  {'class':<28} {'need':>4} {'got':>4} {'pool':>5}",
         ]
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):

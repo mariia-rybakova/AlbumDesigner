@@ -1100,6 +1100,37 @@ CONFIGS = {'DEBUG': True,
                 'admission_cost': 0,
             },
 
+            # -- the softer second solve -------------------------------------
+            #
+            # Coming in under the allowance is the intended behaviour: the
+            # ceiling above has no floor outside the `yes` classes, and the
+            # loop it reproduces lands about 11 photos short over 60 classes.
+            # What is *not* intended is an album thin enough to notice, and
+            # `distinct_shots` can do that on its own: it caps a class at one
+            # photo per (people, subquery), and it fires exactly where a class
+            # has no slack, so a class whose whole supply is one pose collapses
+            # to a single photo. On 53739038 that took `bride` from 5 to 1,
+            # `groom` from 8 to 2 and `first dance` from 4 to 2 -- 12 of the 15
+            # photos missing from a 74-photo allowance.
+            #
+            # So the first solve keeps every rule, and only a miss bigger than
+            # the normal slack buys a second one with the hard walls down.
+            # Identity still argues through `identity_preference`'s bonus and
+            # `contradiction_penalty`; it just stops being a wall.
+            'relaxed_retry': {
+                'enabled': True,
+                # Photos short of the allowance before a retry is worth it.
+                # Three is inside the documented slack; twelve is not.
+                'shortfall_trigger': 3,
+                # Which walls come down in the second solve.
+                'drop_distinct_shots': True,
+                'drop_exclusions': True,
+                'drop_contradictions': True,
+                # And the allowance becomes a target rather than a ceiling, so
+                # the classes that merely fell under the admission bar fill too.
+                'allowance_is_target': True,
+            },
+
             # -- coverage: Phase 1 of docs/cpsat_scoring_plan.md ------------
             #
             # Reward reaching a part of the day instead of penalising drift
