@@ -366,12 +366,10 @@ def _score_covers(frame, queries, logger, bride_id=None, groom_id=None):
     always been.
     """
     weights = settings().get('weights', {})
-    preferred = settings().get('preferred_orientation', 'landscape')
     floor = float(settings().get('affection_presence_floor', 1.0))
 
     rank = np.asarray(_minmax_normalize(
         [float(v) if v == v else 0.0 for v in frame['image_order']]), dtype=float)
-    orientation = (frame['image_orientation'] == preferred).astype(float).values
     presence = _presence(frame, bride_id, groom_id)
     # Confidence that the affection on show is *theirs*, never below `floor`.
     affection_gate = floor + (1.0 - floor) * presence
@@ -383,9 +381,28 @@ def _score_covers(frame, queries, logger, bride_id=None, groom_id=None):
         + weights.get('presence', 0.0) * presence
         # `image_order` is a rank where 0 is best, so the *low* end is rewarded.
         + weights.get('rank', 0.0) * (1.0 - rank)
-        + weights.get('orientation', 0.0) * orientation
+        + _orientation_preference(frame)
         - weights.get('crowd', 0.0) * _crowd_penalty(frame)
     )
+
+
+def _orientation_preference(frame):
+    """The cover orientation term, shared by both routes.
+
+    A cover box is a single large box, so a frame that fills it is preferred --
+    a preference, never a filter. Filtering on orientation is what cost 53507032
+    its covers (see `choose_good_wedding_images`), and `_find_single_box_layout`
+    already falls back to any single-box layout, so a portrait that wins on
+    merit still gets a box to sit in.
+
+    Returns zeros rather than raising when the frame has no orientation column,
+    so a caller that never needed one keeps working.
+    """
+    weight = float(settings().get('weights', {}).get('orientation', 0.0))
+    if not weight or 'image_orientation' not in frame.columns:
+        return np.zeros(len(frame), dtype=float)
+    preferred = settings().get('preferred_orientation', 'landscape')
+    return weight * (frame['image_orientation'] == preferred).astype(float).values
 
 
 def _ranked_ids(frame, queries, logger, bride_id=None, groom_id=None):
@@ -667,6 +684,28 @@ def choose_good_wedding_images(df, bride_groom_df, logger, prune_duplicates=True
     return df, first_page_ids, first_cover_image_df, last_page_ids, last_cover_image_df
 
 
+def _rank_non_wedding_covers(frame, number_of_images):
+    """The best cover candidates of a non-wedding gallery, best first.
+
+    Mirrors `_score_covers` on the two terms such a gallery can supply. It is
+    ranked rather than filtered for the same reason the wedding covers are:
+    `image_order` is the content model's rank where **0 is best**, so
+    `nlargest` on it was handing back the worst photographs in the gallery,
+    and orientation is a preference that a better photograph may outweigh.
+    """
+    if frame.empty:
+        return frame
+    scored = frame.copy()
+    rank = np.asarray(_minmax_normalize(
+        [float(v) if v == v else 0.0 for v in scored['image_order']]), dtype=float)
+    weights = settings().get('weights', {})
+    # `image_order` is a rank where 0 is best, so the *low* end is rewarded.
+    scored['__score'] = (weights.get('rank', 0.0) * (1.0 - rank)
+                         + _orientation_preference(scored))
+    scored = scored.sort_values('__score', ascending=False, kind='stable')
+    return scored.drop(columns='__score').head(number_of_images)
+
+
 def choose_good_non_wedding_images(df, number_of_images, logger):
     # Validate input DataFrame
     required_columns = {'persons_ids', 'image_order', 'image_id'}
@@ -695,8 +734,7 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
         # Take top-N by number of faces
         selected_images_df = df.nlargest(number_of_images, 'n_faces')
     else:
-        # Keep your current priority by image_order first
-        selected_images_df = selected_images_df.nlargest(number_of_images, 'image_order')
+        selected_images_df = _rank_non_wedding_covers(selected_images_df, number_of_images)
 
         # If still fewer than required, fill the remaining by highest n_faces from the whole df (excluding already chosen)
         if len(selected_images_df) < number_of_images:
@@ -714,9 +752,13 @@ def choose_good_non_wedding_images(df, number_of_images, logger):
 
     # Extract image IDs
     selected_image_ids = selected_images_df['image_id'].tolist()
-    mid_index = len(selected_image_ids) // 2
-    first_image_id = selected_image_ids[:mid_index]
-    last_image_id = selected_image_ids[mid_index:]
+    # One photo per side, opening first. `len // 2` handed the opening
+    # `ids[:0] == []` whenever a single photo was asked for -- and the caller
+    # drops a cover whose frame is empty -- so every album on this route opened
+    # on an empty box while the closing took the only photo chosen.
+    split = max(1, len(selected_image_ids) // 2)
+    first_image_id = selected_image_ids[:split]
+    last_image_id = selected_image_ids[split:]
 
     first_image_df = df[df['image_id'].isin(first_image_id)]
     last_image_df = df[df['image_id'].isin(last_image_id)]
@@ -744,7 +786,9 @@ def generate_first_last_pages(message, df, logger):
                                                                                                             logger,
                                                                                                             manual_selection=manual_selection)
         else:
-            df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 1,
+            # Two: one for the opening, one for the closing. Asking for one
+            # left the opening with nothing to place.
+            df, first_images_ids, last_images_ids, first_imgs_df, last_imgs_df = choose_good_non_wedding_images(df, 2,
                                                                                                                 logger)
 
         if message.pagesInfo.get("firstPage"):
