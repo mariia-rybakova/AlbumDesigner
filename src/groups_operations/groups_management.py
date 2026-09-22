@@ -188,7 +188,25 @@ def _update_group_spreads(photos_df: pd.DataFrame, look_up_table) -> None:
             return 1
         return look_up_table.compute_spreads_number(row['cluster_context'], row['group_size'])
 
-    photos_df['group_spreads'] = photos_df.apply(compute_spread, axis=1)
+    # A duplicated column makes `row['group_size']` a Series, so every ratio is
+    # a vector and `apply` answers with a frame -- which pandas refuses to set
+    # as one column: "Cannot set a DataFrame with multiple columns to the
+    # single column group_spreads". That is worth naming here. It used to be
+    # swallowed by `process_wedding_illegal_groups`, which returned
+    # `None, None, None`, and the album died eight lines later in
+    # `_compute_initial_spreads` with `'NoneType' object has no attribute
+    # 'items'` -- a function that had done nothing wrong.
+    duplicated = photos_df.columns[photos_df.columns.duplicated()]
+    if len(duplicated):
+        raise ValueError(
+            f"photos_df carries duplicate columns {sorted(set(duplicated))}: "
+            f"row lookups return a Series, so no spread ratio is a number")
+
+    # Built explicitly rather than trusting the shape `apply` infers: a Series
+    # of floats either holds one number per row or refuses to be built.
+    photos_df['group_spreads'] = pd.Series(
+        [compute_spread(row) for _, row in photos_df.iterrows()],
+        index=photos_df.index, dtype='float64')
 
 
 def _filter_merge_candidate_photos(df_chunk: pd.DataFrame, size_limit: int) -> pd.DataFrame:
@@ -703,8 +721,16 @@ def process_wedding_illegal_groups(
         import traceback
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
-        logger.error(f"Groups management error: {str(ex)}. Exception in function: {func}, line {lineno}, file {filename}")
-        return None, None, None
+        detail = (f"Groups management error: {str(ex)}. Exception in function: "
+                  f"{func}, line {lineno}, file {filename}")
+        logger.error(detail)
+        # Raised, not returned as `None, None, None`. The caller hands the
+        # second of those straight to `update_with_limit`, so the album died in
+        # `_compute_initial_spreads` -- reported against a function and line
+        # that had nothing to do with the failure, which is how one bad merge
+        # on 2026-09-18 read as a lookup-table bug. The album is lost either
+        # way; this way the report says where it was lost.
+        raise RuntimeError(detail) from ex
 
     flush_merge_events()
     save_subgroups_snapshot(photos_df, 'subgroups_2.json')

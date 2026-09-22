@@ -186,6 +186,14 @@ class LookUpTable:
         (which may apply a max_group_spread cap) and computes ceil(number_images / param).
         Enforces at least 1 spread and at most 24 photos per spread.
         """
+        if group2images is None:
+            # Nothing here can size an album from nothing, and the attribute
+            # error this used to raise named this function rather than the
+            # caller that swallowed its own failure and passed a placeholder on.
+            raise ValueError(
+                "group2images is None: a caller handed on a placeholder for an "
+                "error it swallowed, instead of failing where it failed")
+
         spreads_per_group = {}
 
         for key, number_images in group2images.items():
