@@ -255,12 +255,63 @@ class SelectionStage(Stage):
         return updated_messages
 
 
+class _CropJob:
+    """One crop subprocess and the queue carrying its result, owned together.
+
+    The queue is created per crop and dies with `close()`. It used to be a
+    single `ProcessStage.q` shared by every message, read at the end of a long
+    `try` block -- so when a stage raised in between (`album_processing` did on
+    2026-09-18, `_compute_initial_spreads` on a `None` lookup table) the
+    worker's frame was left sitting on that queue and every later message read
+    the *previous* gallery's crops.
+
+    Nothing failed loudly. The body tolerates a missing crop -- it left-joins
+    and fills a centred window -- while the covers inner-join and were dropped,
+    so `_fillable_cover_boxes` found no cover photo and left the box empty. Two
+    pods shipped albums with blank first and last pages for four days, from
+    each pod's own exception until the deployment that restarted them.
+    """
+
+    def __init__(self, frame, label='cropping'):
+        self.label = label
+        self.queue = mp.Queue()
+        self.worker = mp.Process(target=process_crop_images, args=(self.queue, frame))
+        self.worker.start()
+
+    def result(self, logger=None, timeout=200):
+        """The cropped frame, or an exception naming this crop."""
+        try:
+            cropped = self.queue.get(timeout=timeout)
+        except Exception as ex:
+            raise Exception('{} process not completed: {}'.format(self.label, ex))
+        self.worker.join(timeout=5)
+        if self.worker.is_alive():
+            if logger is not None:
+                logger.error('{} process not completed'.format(self.label))
+            raise Exception('{} process not completed.'.format(self.label))
+        return cropped
+
+    def close(self):
+        """Release the worker and the queue, however the stage ended.
+
+        Called from `finally`, so an album that raises before reading its
+        result takes its crop with it instead of leaving it for the next one.
+        """
+        try:
+            if self.worker.is_alive():
+                self.worker.terminate()
+            self.worker.join(timeout=5)
+        finally:
+            self.queue.cancel_join_thread()
+            self.queue.close()
+
+
 class ProcessStage(Stage):
     def __init__(self, in_q: MemoryQueue = None, out_q: MemoryQueue = None, err_q: MemoryQueue = None, logger = None):
         super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=1,
         batch_wait_time=5)
         self.logger = logger
-        self.q = mp.Queue()
+        # No queue here on purpose: one per crop, owned by `_CropJob`.
 
     #: What `process_crop_images` needs, and all it needs. Every one of them is
     #: a property of the photo, which is why one crop pass can serve N albums.
@@ -302,19 +353,11 @@ class ProcessStage(Stage):
             f"Cropping once for {len(messages)} albums: {len(union)} distinct "
             f"photos of {wanted} selected ({wanted - len(union)} shared)")
 
-        worker = mp.Process(target=process_crop_images, args=(self.q, union))
-        worker.start()
+        job = _CropJob(union, 'shared cropping')
         try:
-            cropped = self.q.get(timeout=200)
-        except Exception as ex:
-            worker.terminate()
-            raise Exception('shared cropping process not completed: {}'.format(ex))
-        worker.join(timeout=5)
-        if worker.is_alive():
-            worker.terminate()
-            self.logger.error('shared cropping process not completed')
-            raise Exception('shared cropping process not completed.')
-        return cropped
+            return job.result(self.logger)
+        finally:
+            job.close()
 
     def _album_failed(self, messages, message, detail):
         """Lose one album of a request, not the request.
@@ -367,10 +410,9 @@ class ProcessStage(Stage):
             df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
             df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
 
-            p = None
+            crop_job = None
             if shared_cropped is None:
-                p = mp.Process(target=process_crop_images, args=(self.q, df_serializable))
-                p.start()
+                crop_job = _CropJob(df_serializable)
 
             try:
                 stage_start = datetime.now()
@@ -419,20 +461,11 @@ class ProcessStage(Stage):
                                                 is_artificial_time=message.content.get('is_artificial_time', False))
 
                 wait_start = datetime.now()
-                if p is None:
+                if crop_job is None:
                     # Already cropped for every album of this request.
                     cropped_df = shared_cropped
                 else:
-                    try:
-                        cropped_df = self.q.get(timeout=200)
-                    except Exception as e:
-                        p.terminate()
-                        raise Exception('cropping process not completed: {}'.format(e))
-                    p.join(timeout=5)
-                    if p.is_alive():
-                        p.terminate()
-                        self.logger.error('cropping process not completed 2')
-                        raise Exception('cropping process not completed.')
+                    cropped_df = crop_job.result(self.logger)
 
                 df = df.merge(cropped_df, how='left', on='image_id')
 
@@ -499,6 +532,11 @@ class ProcessStage(Stage):
                     raise Exception(detail)
                 self._album_failed(messages, message, detail)
                 continue
+            finally:
+                # The album is done, successfully or not. Its crop goes with
+                # it -- an orphaned result is what the next album used to read.
+                if crop_job is not None:
+                    crop_job.close()
 
         # Every album failed. There is nothing to reply with, so this is a
         # failed request rather than a successful one that happens to be empty
