@@ -46,6 +46,19 @@ class EmbeddingsSubStage(SubStage):
                 for photo_id, data in clip_dict.items()
             ])
             clip_df[Col.MODEL_VERSION] = model_version
+
+            # The request names the photos the album is to be built from; the
+            # vector DB holds whatever has been vectorised so far. When it holds
+            # fewer, the gallery is still being ingested and every count from
+            # here on describes a fragment -- worth one line, because nothing
+            # else in the run says so.
+            requested = (context.request or {}).get('photos') or []
+            if requested and len(clip_df) < len(requested):
+                logger.warning(
+                    f"ingest.embeddings: {len(clip_df)} vectors for the "
+                    f"{len(requested)} photos this request names -- the gallery "
+                    f"is still being vectorised, and the album will be composed "
+                    f"from the part that is ready")
         except Exception as ex:
             if context.message is not None:
                 context.message.error = True

@@ -81,6 +81,52 @@ class RequireClusterDataSubStage(SubStage):
     name = "enrich.require_cluster_data"
     requires = frozenset({photo(Col.RANKING), photo(Col.CLUSTER_LABEL)})
 
+    #: Photos per spread the thinnest album still needs. Below `2 * min_spreads`
+    #: there is not a second photo for every spread the design asks for, and
+    #: what comes out is not an album of this gallery but of the fragment of it
+    #: that happened to be ready.
+    PHOTOS_PER_SPREAD_FLOOR = 2
+
     def execute(self, context: AlbumContext) -> AlbumContext:
-        context.photos = require_cluster_data(context.photos, context.logger)
+        logger = context.logger
+        before = len(context.photos)
+        context.photos = require_cluster_data(context.photos, logger)
+        after = len(context.photos)
+
+        if after < before and logger is not None:
+            # Logged at WARNING, not DEBUG: this is the content model not having
+            # finished, and everything downstream -- the gallery type, the
+            # budget, the groups -- is then decided on a fragment.
+            logger.warning(
+                f"enrich.require_cluster_data: dropped {before - after} of {before} "
+                f"photos with no content data; {after} remain")
+
+        needed = self._minimum_photos(context)
+        if needed is not None and after < needed:
+            raise ValueError(
+                f"Gallery has {after} photos with content data, and the design's "
+                f"smallest album needs {needed} "
+                f"({self.PHOTOS_PER_SPREAD_FLOOR} per spread over "
+                f"{needed // self.PHOTOS_PER_SPREAD_FLOOR} spreads). Too few to "
+                f"compose: the gallery is either still being ingested -- "
+                f"{before - after} of {before} photos had no content data -- or "
+                f"smaller than this design allows")
+
         return context
+
+    def _minimum_photos(self, context: AlbumContext):
+        """`2 * min_spreads` for this design, or None when it does not say.
+
+        Sized through `size_album`, the same function the layout budget uses, so
+        the floor moves with the design rather than with a number kept here.
+        """
+        designs = getattr(context.designs, 'designs', None) or {}
+        if 'minPages' not in designs or 'maxPages' not in designs:
+            return None
+        try:
+            from src.album_processing import size_album
+
+            min_spreads, _ = size_album(designs)
+        except Exception:  # noqa: BLE001 - a missing floor must not lose the album
+            return None
+        return self.PHOTOS_PER_SPREAD_FLOOR * int(min_spreads)

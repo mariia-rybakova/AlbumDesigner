@@ -31,18 +31,34 @@ def generate_dict_key(numbers, n_bodies):
     return key
 
 
+#: Share of *classified* photos that must be unclassified content (-1) before a
+#: gallery counts as non-wedding.
+UNCLASSIFIED_SHARE_FOR_NON_WEDDING = 0.6
+
+
 def check_gallery_type(df):
-    count = 0
-    for idx, row in df.iterrows():  # Unpack the tuple into idx (index) and row (data)
-        content_class = row['image_class']
-        if pd.isna(content_class):
-            continue
-        if content_class == -1:
-            count += 1
+    """Wedding or not, decided over the photos the content model has answered for.
 
-    number_images = len(df)
+    The share is taken over photos with a known `image_class`, not over the
+    whole frame. A NaN there means the content model has not finished that
+    photo, and counting it in the denominator while skipping it in the
+    numerator pushes the ratio toward zero -- and `> 0.6` is the only route to
+    non-wedding, so a gallery that arrived incomplete could only ever come out
+    a *wedding*, the more certainly the less of it had been read.
 
-    if number_images > 0 and count / number_images > 0.6:  # Ensure no division by zero
+    That is not hypothetical: 53753700 reached this with 61 rows of which 8
+    carried content data, was called a wedding on 8/61 = 0.13, and went down
+    the wedding path with 8 photos. Re-read once the gallery was complete, the
+    same 85 photos answer non-wedding, which is what its projectCategory says.
+    """
+    if 'image_class' not in df.columns:
+        return True
+
+    known = df['image_class'].notna()
+    number_images = int(known.sum())
+    count = int((df.loc[known, 'image_class'] == -1).sum())
+
+    if number_images > 0 and count / number_images > UNCLASSIFIED_SHARE_FOR_NON_WEDDING:
         return False
     else:
         return True
