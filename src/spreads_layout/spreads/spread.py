@@ -126,7 +126,11 @@ class SingleSpreadLayout:
         bride_centric_classes = ['bride', 'bride party', 'wedding dress', 'getting hair-makeup','bride getting dressed']
         groom_centric_classes = ['groom','groom party','suit']
 
-        if len(photo_set) == 1:
+        # An empty page -- the far side of a full-bleed spread -- has nothing to
+        # mix. Left to the checks below, `len(set()) == 1` is False and it was
+        # charged color_mix and class_mix, 1e-9 together, so no layout leaving
+        # a page empty was ever chosen.
+        if len(photo_set) <= 1:
             return cls.PageProperties(True, True, False, 1)
 
         # Collect attributes
