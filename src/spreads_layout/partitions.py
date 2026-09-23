@@ -103,29 +103,18 @@ class Partition:
         """
         filtered_parts: List[Partition] = []
         weight_threshold = max(p.weight for p in parts) / params.weight_threshold_divisor
+        # Small groups get the exact check; large ones keep the greedy one, whose
+        # cost -- and the number of partitions it lets through to the
+        # combination search -- the rest of the layout stage is tuned around.
+        exact = n_portraits + n_landscapes <= params.small_group_threshold
 
         for partition in parts:
-            part_landscape = n_landscapes
-            part_portrait = n_portraits
-            part_layout_matched = True
-
-            for spread in partition.spread_sizes:
-                n_layouts = layouts_dict[spread]
-                spread_layout_matched = False
-
-                for _, row in n_layouts.iterrows():
-                    rem_portrait = max(part_portrait - row['max portraits'], 0)
-                    rem_landscape = max(part_landscape - row['max landscapes'], 0)
-
-                    if (part_landscape + part_portrait) - spread >= (rem_portrait + rem_landscape):
-                        spread_layout_matched = True
-                        part_portrait = rem_portrait
-                        part_landscape = rem_landscape
-                        break
-
-                if not spread_layout_matched:
-                    part_layout_matched = False
-                    break
+            if exact:
+                part_layout_matched = Partition._fits_exactly(
+                    partition.spread_sizes, layouts_dict, n_portraits, n_landscapes)
+            else:
+                part_layout_matched = Partition._fits_greedily(
+                    partition.spread_sizes, layouts_dict, n_portraits, n_landscapes)
 
             if part_layout_matched:
                 filtered_parts.append(partition)
@@ -134,6 +123,56 @@ class Partition:
                     break
 
         return filtered_parts
+
+    @staticmethod
+    def _fits_greedily(spread_sizes: List[int], layouts_dict: dict,
+                       n_portraits: int, n_landscapes: int) -> bool:
+        """Take, spread by spread, the first layout row that passes, never backtracking.
+
+        Subtracting a row's caps from both orientations can use up more photos
+        than the spread holds, so this rejects partitions that do fit: on
+        53819935 a 3-portrait, 1-landscape group lost `[2, 2]` because the
+        `(2, 2)` row took three photos for the first spread.
+        """
+        part_portrait, part_landscape = n_portraits, n_landscapes
+        for spread in spread_sizes:
+            for _, row in layouts_dict[spread].iterrows():
+                rem_portrait = max(part_portrait - row['max portraits'], 0)
+                rem_landscape = max(part_landscape - row['max landscapes'], 0)
+
+                if (part_landscape + part_portrait) - spread >= (rem_portrait + rem_landscape):
+                    part_portrait, part_landscape = rem_portrait, rem_landscape
+                    break
+            else:
+                return False
+        return True
+
+    @staticmethod
+    def _fits_exactly(spread_sizes: List[int], layouts_dict: dict,
+                      n_portraits: int, n_landscapes: int) -> bool:
+        """Whether the photos can be dealt into spreads of these sizes, each on some layout.
+
+        A spread of size s holding p portraits fits a row when p <= its max
+        portraits and s - p <= its max landscapes. The search runs over how many
+        portraits each spread takes, with the portraits still undealt as the
+        only state, so it is at most spreads x portraits steps.
+        """
+        if sum(spread_sizes) != n_portraits + n_landscapes:
+            return False
+
+        # Portrait counts each spread size can hold on at least one layout.
+        holds = {}
+        for spread in set(spread_sizes):
+            rows = layouts_dict[spread][['max portraits', 'max landscapes']].values
+            holds[spread] = {p for p in range(spread + 1)
+                             if any(max_p >= p and max_l >= spread - p for max_p, max_l in rows)}
+
+        reachable = {n_portraits}  # portraits still to deal
+        for spread in spread_sizes:
+            reachable = {left - p for left in reachable for p in holds[spread] if p <= left}
+            if not reachable:
+                return False
+        return 0 in reachable
 
     def is_valid(self, min_len: int, n_photos: int) -> bool:
         """

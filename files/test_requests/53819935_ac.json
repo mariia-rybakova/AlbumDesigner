@@ -1,0 +1,66 @@
+{
+  "replyQueueName": "devaiautocomposeresponsedto",
+  "storeId": 32,
+  "accountId": 412600,
+  "projectId": 53819935,
+  "fulfillerId": 0,
+  "userId": 454224519,
+  "userJobId": -1,
+  "base_url": "ptstorage_32://pictures/53/819/53819935/hpkk5wxhiukpwxfz6r",
+  "photos": [
+    12490891909,
+    12490891910,
+    12490891911,
+    12490891912,
+    12490891913,
+    12490891914,
+    12490891915,
+    12490891916,
+    12490891917,
+    12490891918,
+    12490891919,
+    12490891920,
+    12490891921,
+    12490891922,
+    12490891923,
+    12490891924,
+    12490891925,
+    12490891926,
+    12490891927,
+    12490891928,
+    12490891929,
+    12490891930,
+    12490891931,
+    12490891932,
+    12490891933
+  ],
+  "projectCategory": 1,
+  "compositionPackageId": -1,
+  "designInfo": null,
+  "designInfoTempLocation": "pictures/temp/queues/devaiautocomposeproductsdto/924j7m0ikou4f2kchrc6fn8glf.json",
+  "aiMetadata": {
+    "photoIds": [],
+    "subjects": []
+  },
+  "rating": [],
+  "ratingTempLocation": null,
+  "conditionId": "AC.187f011a-149a-4334-8e54-fd1fb23cfcc9.0.1",
+  "timedOut": false,
+  "dependencyDeleted": false,
+  "retryCount": 0,
+  "albumRequests": [
+    {
+      "albumRequestId": "AACP_53819935_D.260923-091615.e9dfea31-cbd2-4183-8b84-1c9960cc5dc6.100.4#0",
+      "logicalName": "wedding_main_album"
+    },
+    {
+      "albumRequestId": "AACP_53819935_D.260923-091615.e9dfea31-cbd2-4183-8b84-1c9960cc5dc6.100.4#1",
+      "logicalName": "wedding_parents_album",
+      "aiMetadata": {
+        "focus": [
+          "parents"
+        ]
+      }
+    }
+  ]
+}
