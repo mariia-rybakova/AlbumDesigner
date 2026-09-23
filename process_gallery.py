@@ -35,8 +35,8 @@ FORCE_NON_WEDDING = False
 #: Every album composed by the last run, for --albums verification.
 ALBUM_RUNS = []
 
-request_name = 'request_cameron_predefined'
-album_name = 'album_predefined'
+request_name = 'request0'
+album_name = 'album1'
 
 
 def _group_placements_by_composition(placements_img):
@@ -90,14 +90,29 @@ def _load_cropped_image(img_path, placement, box_w, box_h):
         return buf
 
 
-def _draw_composition_header(c, comp_id, design_id, page_height, is_artificial_time=False):
+def _draw_composition_header(c, comp_id, design_id, page_height,
+                             is_artificial_time=False, manual_selection=False):
     c.setFont("Helvetica", 10)
     c.drawString(30, page_height - 30, f"Composition ID: {comp_id}, Design ID: {design_id}")
+
+    # Stacked, so a gallery that is both does not draw one banner over the other.
+    banners = []
     if is_artificial_time:
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColorRGB(1, 0, 0)
-        c.drawString(30, page_height - 44, "ARTIFICIAL TIME APPLIED")
-        c.setFillColorRGB(0, 0, 0)
+        # Red, because it invalidates something: the timeline every stage
+        # reasoned about is synthetic, and the per-photo stamps below are
+        # elapsed seconds rather than the wall-clock they look like.
+        banners.append(("ARTIFICIAL TIME APPLIED", (1, 0, 0)))
+    if manual_selection:
+        # Grey rather than red: nothing here is wrong. The photos are the
+        # user's own and the picker never ran, which explains a page the
+        # selection rules would not have produced without implying a fault.
+        banners.append(("MANUAL SELECTION", (0.4, 0.4, 0.4)))
+
+    c.setFont("Helvetica-Bold", 10)
+    for row, (label, (red, green, blue)) in enumerate(banners):
+        c.setFillColorRGB(red, green, blue)
+        c.drawString(30, page_height - 44 - row * 13, label)
+    c.setFillColorRGB(0, 0, 0)
 
 
 def _draw_image_in_box(c, img_io, box_rect, page_height):
@@ -183,10 +198,12 @@ def _render_placement(c, placement, box, image_files, images_path,
 
 
 def _render_composition_page(c, comp, placements, box_id2data, image_files, images_path,
-                             gallery_photos_info, page_width, page_height, is_artificial_time=False):
+                             gallery_photos_info, page_width, page_height, is_artificial_time=False,
+                             manual_selection=False):
     """Render one composition as a single PDF page: header on top, then every placement."""
     design_boxes = _resolve_design_boxes(comp, placements, box_id2data)
-    _draw_composition_header(c, comp['compositionId'], comp['designId'], page_height, is_artificial_time)
+    _draw_composition_header(c, comp['compositionId'], comp['designId'], page_height,
+                             is_artificial_time, manual_selection)
     for placement, box in zip(placements, design_boxes):
         _render_placement(c, placement, box, image_files, images_path,
                           gallery_photos_info, page_width, page_height, is_artificial_time)
@@ -194,7 +211,7 @@ def _render_composition_page(c, comp, placements, box_id2data, image_files, imag
 
 
 def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2data, gallery_photos_info,
-                           is_artificial_time=False):
+                           is_artificial_time=False, manual_selection=False):
     """
     Visualize the album in a PDF file: one composition per landscape A4 page.
 
@@ -207,6 +224,8 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
             time_cluster, cluster_context, group_sub_index, original_context).
         is_artificial_time: bool, whether synthetic time was applied to this gallery (stamped
             as a banner on each page when True).
+        manual_selection: bool, whether the user picked the photos instead of the picker
+            (stamped as a second banner on each page when True).
     """
     composition = final_album['composition']
     compositions = composition['compositions']
@@ -219,7 +238,8 @@ def visualize_album_to_pdf(final_album, images_path, output_pdf_path, box_id2dat
     for comp in compositions:
         placements = placements_by_comp.get(comp['compositionId'], [])
         _render_composition_page(c, comp, placements, box_id2data, image_files, images_path,
-                                 gallery_photos_info, page_width, page_height, is_artificial_time)
+                                 gallery_photos_info, page_width, page_height, is_artificial_time,
+                                 manual_selection)
     c.save()
 
 
@@ -573,6 +593,9 @@ if __name__ == '__main__':
     is_artificial_time = _message.content.get('is_artificial_time', False)
     print('ARTIFICIAL TIME APPLIED:', is_artificial_time)
 
+    manual_selection = _message.content.get('manual_selection', False)
+    print('MANUAL SELECTION:', manual_selection)
+
     if len(ALBUM_RUNS) > 1:
         chosen = [tuple(run.photo_ids) for run in ALBUM_RUNS]
         distinct = len(set(chosen))
@@ -620,7 +643,7 @@ if __name__ == '__main__':
             album_doc, _images_path, _output_pdf_path,
             album_message.designsInfo['anyPagebox_id2data'],
             album_message.content['gallery_photos_info'],
-            is_artificial_time)
+            is_artificial_time, manual_selection)
         print('album saved locally:', _output_pdf_path)
 
     # The PDF is written and closed, so there is nothing left to wait for.
