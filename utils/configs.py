@@ -1736,8 +1736,11 @@ SPECIAL_CONTENT_CLASSES = ('None', 'other')
 # substantial stretch of real time. That makes the rule conservative for tight
 # classes.
 TIME_SPLIT_TIGHT_CLASSES = (
-    # Recurring-subject classes - the original allow-list.
-    'walking the aisle', 'bride', 'groom', 'bride and groom',
+    # Recurring-subject classes - the original allow-list, plus 'couple':
+    # the sibling of 'bride and groom', left out by oversight, and the one
+    # class that spanned a whole day uncut on a gallery where the rest were
+    # cut tight.
+    'walking the aisle', 'bride', 'groom', 'bride and groom', 'couple',
     'groom party', 'bride party', 'portrait', 'ceremony', 'kiss',
     # Single-moment classes: tight by definition, so a hole is evidence of two
     # distinct sub-events rather than classifier noise.
