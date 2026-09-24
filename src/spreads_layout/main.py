@@ -12,6 +12,13 @@ from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
 from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts
 from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
+from utils.stages_recorder import (
+    build_subgroup_record,
+    combinations_recording_enabled,
+    reset_subgroup_records,
+    save_subgroup_record,
+    stash_subgroup_record,
+)
 
 
 def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
@@ -84,14 +91,27 @@ def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFr
     photos_df = pd.DataFrame([photo.__dict__ for photo in photos])
     photos_df = photos_df.sort_values('general_time')
 
+    record_stages = combinations_recording_enabled()
+    partitions_trace = {} if record_stages else None
+    combinations_trace = [] if record_stages else None
+
     # stage 1
-    partitions = get_partitions(photos_df, spread_params, params, layouts_df=layouts_df)
+    partitions = get_partitions(photos_df, spread_params, params, layouts_df=layouts_df,
+                                trace=partitions_trace)
 
     # stage 2
-    combs = get_combinations(partitions, photos, layouts_df, spread_params, params)
+    combs = get_combinations(partitions, photos, layouts_df, spread_params, params,
+                             trace=combinations_trace)
 
     # stage 3
     group_single_layouts = get_group_single_layouts(combs, photos, layouts_df, params, layout_id2data)
+
+    if record_stages:
+        # Stashed rather than returned so the retry/split loop above stays as-is.
+        # Keyed by the sub-group's photos, so a later attempt on the same photos
+        # overwrites the earlier one and only the surviving search is exported.
+        stash_subgroup_record(photos, build_subgroup_record(photos, spread_params,
+                                                            partitions_trace, combinations_trace))
 
     return group_single_layouts
 
@@ -99,7 +119,7 @@ def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFr
 def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.DataFrame,
                                    layout_id2data: Dict[int, Any], spread_params: List[float],
                                    params: SpreadSearchParams, largest_layout_size: int,
-                                   group_name: Tuple, logger) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout]]]]:
+                                   group_name: Tuple, logger) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout], Optional[Dict[str, Any]]]]]:
     """
     Find spread layouts for an entire group, with fallback attempts.
 
@@ -248,6 +268,10 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
 
             if CONFIGS['save_files']['spreads']:
                 export_subgroup(group_id_str, subgroup_layouts, subgroup_photos)
+            # Stage 1-2 trace: why this sub-group was cut into these spreads.
+            # Written here because the group id and the winning layout — the two
+            # things the search itself doesn't know — are only available now.
+            save_subgroup_record(group_id_str, subgroup_photos, best_layout)
 
             local_result[group_id_str] = structured_group
             group_idx += 1
@@ -301,6 +325,7 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
 
     largest_layout_size = max(list(layouts_df['number of boxes'].unique()))
     start = time.time()
+    reset_subgroup_records()
     try:
         group_images_df = group_images_df.sort_values(['image_time'])
 

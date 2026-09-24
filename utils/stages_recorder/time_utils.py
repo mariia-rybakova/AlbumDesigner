@@ -28,6 +28,41 @@ def hhmmss_from_iso(v: Any) -> str:
     return s[:8]
 
 
+def build_general_time_to_image_time(photos_df: pd.DataFrame) -> Dict[float, Any]:
+    """Build a `general_time -> image_time_date` lookup from `photos_df`.
+
+    The ISO-string sibling of `build_general_time_to_clock`, for recorders that
+    work from `Photo` objects instead of the DataFrame. `Photo` carries only
+    `general_time`, so the absolute timestamp album1.pdf prints has to be looked
+    up by the relative one; storing the raw ISO value (rather than a formatted
+    clock) keeps those records the same shape as `photos_to_records`, so the
+    visualizers' `image_time_date` handling applies unchanged.
+
+    Empty dict if either column is missing.
+    """
+    if photos_df is None or len(photos_df) == 0:
+        return {}
+    if 'general_time' not in photos_df.columns or 'image_time_date' not in photos_df.columns:
+        return {}
+    out: Dict[float, Any] = {}
+    for _, row in photos_df[['general_time', 'image_time_date']].iterrows():
+        gt = row['general_time']
+        if hasattr(gt, 'item'):
+            try:
+                gt = gt.item()
+            except Exception:
+                pass
+        try:
+            key = float(gt)
+        except (TypeError, ValueError):
+            continue
+        value = row['image_time_date']
+        if isinstance(value, pd.Timestamp):
+            value = value.isoformat()
+        out.setdefault(key, value)
+    return out
+
+
 def build_general_time_to_clock(photos_df: pd.DataFrame) -> Dict[float, str]:
     """Build a `general_time → "HH:MM:SS"` lookup from `photos_df`.
 

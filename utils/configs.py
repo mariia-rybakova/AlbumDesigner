@@ -4,6 +4,9 @@ CONFIGS = {'DEBUG': True,
            'save_files': {
                'groups': False,
                'spreads': False,
+               # Stage 1-2 trace per sub-group (partitions + combinations),
+               # rendered as combinations.pdf by visualization.py.
+               'combinations': False,
                'top_k': 5
                },
 

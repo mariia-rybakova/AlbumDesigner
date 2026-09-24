@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from itertools import product
 from dataclasses import dataclass
-from typing import List, Tuple, Set, Optional
+from typing import Any, Dict, List, Tuple, Set, Optional
 
 import numpy as np
 import pandas as pd
@@ -27,15 +27,27 @@ class Combination:
         spreads: List of sets, each containing photo indices assigned to that spread.
         score: Raw evaluation score based on temporal/label coherence (None until scored).
         weight: Final weighted score (score * partition weight, None until evaluated).
+        score_breakdown: Per-spread trace of the two divisors `get_score` applies
+            (time spread in minutes, duplicate cluster labels). JSON-safe;
+            consumed by the combinations visualizer to explain score gaps.
     """
     spreads: List[Set[int]]
     score: Optional[float] = None
     weight: Optional[float] = None
+    score_breakdown: Optional[Dict[str, Any]] = None
 
     def __str__(self) -> str:
         return ('Combination. '
                 + ', '.join([f'Photos in {i + 1} spread: {spread}' for i, spread in enumerate(self.spreads)])
                 + f'. Combination weight: {self.weight}' if self.weight is not None else '')
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'spreads': [sorted(int(i) for i in spread) for spread in self.spreads],
+            'score': float(self.score) if self.score is not None else None,
+            'weight': float(self.weight) if self.weight is not None else None,
+            'score_breakdown': self.score_breakdown,
+        }
 
     def get_score(self, photo_times: List[float], cluster_labels: List[int]) -> float:
         """
@@ -44,6 +56,9 @@ class Combination:
         For each spread, penalizes high time variance (photos far apart in time)
         and duplicate cluster labels (mixed contexts within a spread). The final
         score is the product of penalties across all spreads.
+
+        Also populates `self.score_breakdown` with the per-spread divisors so the
+        analysis PDF can show why one photo-to-spread assignment beat another.
 
         Args:
             photo_times: List of general_time values indexed by photo index.
@@ -54,16 +69,36 @@ class Combination:
             coherence within spreads.
         """
         self.score = 1
+        per_spread: List[Dict[str, Any]] = []
         for spread in self.spreads:
 
             spread_times = [photo_times[id] / 60.0 for id in spread]
             spread_labels = [cluster_labels[id] for id in spread]
 
             time_std = np.std(spread_times)
+            time_divisor = float(time_std) if time_std > 0.0001 else 1.0
             if time_std > 0.0001:
                 self.score /= time_std
-            if not np.all(np.array(spread_labels) == None):
-                self.score /= (1 + len(spread_labels) - len(set(spread_labels)))
+
+            label_divisor = 1.0
+            labels_scored = not np.all(np.array(spread_labels) == None)
+            if labels_scored:
+                label_divisor = float(1 + len(spread_labels) - len(set(spread_labels)))
+                self.score /= label_divisor
+
+            per_spread.append({
+                'n_photos': len(spread),
+                'time_std_minutes': float(time_std),
+                'time_divisor': time_divisor,
+                'time_span_minutes': float(max(spread_times) - min(spread_times)) if spread_times else 0.0,
+                'n_labels': len(spread_labels),
+                'n_unique_labels': len(set(spread_labels)),
+                'duplicate_labels': (len(spread_labels) - len(set(spread_labels))) if labels_scored else 0,
+                'label_divisor': label_divisor,
+                'labels_scored': bool(labels_scored),
+            })
+
+        self.score_breakdown = {'per_spread': per_spread, 'final_score': float(self.score)}
         return self.score
 
     def set_weight(self, weight: float) -> None:
@@ -294,7 +329,9 @@ def greedy_combination_search(photos: List[Photo], layout_part: Partition, layou
     return [Combination(comb_list) for comb_list in cleaned_comb_data]
 
 
-def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_df: pd.DataFrame, spread_params: List[float], params: SpreadSearchParams) -> List[Combination]:
+def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_df: pd.DataFrame,
+                     spread_params: List[float], params: SpreadSearchParams,
+                     trace: Optional[List[dict]] = None) -> List[Combination]:
     """
     Generate and evaluate all photo-to-spread combinations across partitions.
 
@@ -310,6 +347,11 @@ def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_d
         layouts_df: DataFrame of available layout designs.
         spread_params: [mean, std] spread size parameters for the context class.
         params: Search parameters controlling combination limits and thresholds.
+        trace: Optional accumulator. When provided, one entry per partition is
+            appended describing which search was used, the per-partition
+            combination budget, how many candidates survived sampling and the
+            scored Combination objects themselves — the input to the
+            combinations analysis PDF. Diagnostic only.
 
     Returns:
         List of scored Combination objects across all partitions.
@@ -325,15 +367,32 @@ def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_d
         max_combs = int(max_combs_param / np.power(2, i))
 
         # sample
-        if len(photos) <= 8 and len(photos) / spread_params[0] <= 2:
+        use_simple = len(photos) <= 8 and len(photos) / spread_params[0] <= 2
+        if use_simple:
             single_combs = simple_combination_search(photos, partition, max_combs)
         else:
             single_combs = greedy_combination_search(photos, partition, layouts_df)
 
+        n_generated = len(single_combs)
         single_combs = limit_sample_size(single_combs, max_combs)
 
         # evaluate
         Combination.evaluate_list(single_combs, partition, photo_times, cluster_labels)
+
+        if trace is not None:
+            trace.append({
+                'partition_idx': i,
+                'spread_sizes': [int(s) for s in partition.spread_sizes],
+                'partition_weight': float(partition.weight) if partition.weight is not None else None,
+                'search': 'simple' if use_simple else 'greedy',
+                'max_combs': int(max_combs),
+                'n_generated': int(n_generated),
+                'n_sampled': len(single_combs),
+                # Live Combination objects, not dicts: a partition can hold up to
+                # `max_spreads_sample` of them and only the top few end up in the
+                # JSON, so the recorder trims first and serializes after.
+                'combinations': single_combs,
+            })
 
         combs += single_combs
 

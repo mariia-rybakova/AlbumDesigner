@@ -16,13 +16,17 @@ Public API (re-exported below) covers the four collection responsibilities:
   * splits         — accumulate per-attempt records and flush `split.json`.
   * merges         — chronological event log (`search` / `merge_skipped` /
     `merge_succeeded`) flushed to `merge.json`.
+  * combinations   — per sub-group trace of *why* it was cut into these
+    spreads with these photos, flushed to `combinations/<group>.json`.
 
-All collection is gated on `CONFIGS['save_files']['groups']`; when off, the
-record/flush calls are cheap no-ops so they can be left in the pipeline.
+Grouping collection is gated on `CONFIGS['save_files']['groups']` and the
+spread-split collection on `CONFIGS['save_files']['combinations']`; when off,
+the record/flush calls are cheap no-ops so they can be left in the pipeline.
 """
 
 from utils.stages_recorder.context import (
     set_is_artificial_time,
+    set_general_time_index,
     get_is_artificial_time,
 )
 from utils.stages_recorder.photo_records import PHOTO_RECORD_COLUMNS, photos_to_records
@@ -47,9 +51,18 @@ from utils.stages_recorder.merges import (
     record_skip,
     record_succeeded,
 )
+from utils.stages_recorder.combinations import (
+    is_enabled as combinations_recording_enabled,
+    reset_output_dir as reset_combinations_dir,
+    build_subgroup_record,
+    reset_subgroup_records,
+    stash_subgroup_record,
+    save_subgroup_record,
+)
 
 __all__ = [
     'set_is_artificial_time',
+    'set_general_time_index',
     'get_is_artificial_time',
     'PHOTO_RECORD_COLUMNS',
     'photos_to_records',
@@ -66,4 +79,10 @@ __all__ = [
     'record_search',
     'record_skip',
     'record_succeeded',
+    'combinations_recording_enabled',
+    'reset_combinations_dir',
+    'build_subgroup_record',
+    'reset_subgroup_records',
+    'stash_subgroup_record',
+    'save_subgroup_record',
 ]

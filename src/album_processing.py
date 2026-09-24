@@ -12,7 +12,7 @@ from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_i
 from utils.time_processing import sort_groups_by_time
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
-from utils.stages_recorder import set_is_artificial_time
+from utils.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
 
 
 #: Compositions the reply always carries besides the content spreads: the
@@ -67,6 +67,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     # split/merge/subgroups JSONs carry it and the visualizers can pick the
     # right time field (mirrors album1.pdf in process_gallery.py).
     set_is_artificial_time(is_artificial_time)
+    # `Photo` carries only `general_time`, so recorders downstream of
+    # `get_photos_from_df` need this to report the wall clock album1.pdf shows.
+    set_general_time_index(df)
     group2images_initial = get_images_per_groups(get_wedding_groups(df, manual_selection, logger) if is_wedding else get_none_wedding_groups(df, logger))
 
     LookUpTable = WeddingLookUpTable if is_wedding else NonWeddingLookUpTable
@@ -117,6 +120,10 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
         os.makedirs('files/stages_info/spreads', exist_ok=True)
         with open('files/stages_info/spreads/_layouts.json', 'w') as f:
             json.dump(resources.printlab_data.to_dict(), f, indent=2, default=_json_default)
+
+    # Same reason as above: stale per-subgroup traces from a previous run would
+    # otherwise mix into combinations.pdf.
+    reset_combinations_dir()
 
     result_list = []
     for group_name in group2images.keys():

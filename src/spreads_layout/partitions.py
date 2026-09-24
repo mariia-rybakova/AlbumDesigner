@@ -83,7 +83,8 @@ class Partition:
 
     @staticmethod
     def filter_by_layout(parts: List[Partition], layouts_dict: dict,
-                                n_portraits: int, n_landscapes: int, params: SpreadSearchParams) -> List[Partition]:
+                                n_portraits: int, n_landscapes: int, params: SpreadSearchParams,
+                                trace: Optional[List[dict]] = None) -> List[Partition]:
         """
         Filter Partition objects by layout feasibility.
 
@@ -97,6 +98,11 @@ class Partition:
             n_portraits: Total number of portrait photos.
             n_landscapes: Total number of landscape photos.
             params: Search parameters containing weight_threshold_divisor.
+            trace: Optional accumulator. When provided, one
+                `{'idx': <index in parts>, 'matched': bool}` entry is appended for
+                every partition actually examined. Indices missing from the trace
+                were never reached because of the early stop — that distinction is
+                what the combinations visualizer shows.
 
         Returns:
             Filtered list of feasible Partition objects.
@@ -108,13 +114,16 @@ class Partition:
         # combination search -- the rest of the layout stage is tuned around.
         exact = n_portraits + n_landscapes <= params.small_group_threshold
 
-        for partition in parts:
+        for part_idx, partition in enumerate(parts):
             if exact:
                 part_layout_matched = Partition._fits_exactly(
                     partition.spread_sizes, layouts_dict, n_portraits, n_landscapes)
             else:
                 part_layout_matched = Partition._fits_greedily(
                     partition.spread_sizes, layouts_dict, n_portraits, n_landscapes)
+
+            if trace is not None:
+                trace.append({'idx': part_idx, 'matched': bool(part_layout_matched)})
 
             if part_layout_matched:
                 filtered_parts.append(partition)
@@ -225,8 +234,51 @@ class Partition:
         return parts
 
 
+def _fill_partitions_trace(trace: dict, sorted_parts: List[Partition],
+                           layout_trace: List[dict], filtered_parts: List[Partition],
+                           valid_parts: List[Partition]) -> None:
+    """Label every scored candidate with the funnel stage that dropped it.
+
+    `sorted_parts` is weight-descending, and `filter_by_layout` walks it in that
+    order, so any index missing from `layout_trace` was cut by the early stop
+    rather than by layout infeasibility. Statuses:
+        kept              -> survived every filter, combinations were built for it
+        length_filtered   -> layout-feasible but rejected by `filter_by_len`
+        layout_infeasible -> no layout can hold its portrait/landscape mix
+        early_stopped     -> never examined (weight already below threshold)
+    """
+    statuses = ['early_stopped'] * len(sorted_parts)
+    for entry in layout_trace:
+        statuses[entry['idx']] = 'layout_ok' if entry['matched'] else 'layout_infeasible'
+
+    kept_ids = {id(p) for p in valid_parts}
+    feasible_ids = {id(p) for p in filtered_parts}
+    for idx, part in enumerate(sorted_parts):
+        if statuses[idx] != 'layout_ok':
+            continue
+        if id(part) in kept_ids:
+            statuses[idx] = 'kept'
+        elif id(part) in feasible_ids:
+            statuses[idx] = 'length_filtered'
+
+    trace['candidates'] = [
+        {
+            'spread_sizes': [int(s) for s in part.spread_sizes],
+            'n_spreads': len(part.spread_sizes),
+            'score': float(part.score) if part.score is not None else None,
+            'weight': float(part.weight) if part.weight is not None else None,
+            'status': statuses[idx],
+        }
+        for idx, part in enumerate(sorted_parts)
+    ]
+    trace['n_examined_by_layout_filter'] = len(layout_trace)
+    trace['n_layout_feasible'] = len(filtered_parts)
+    trace['n_kept'] = len(valid_parts)
+
+
 def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
-                     params: SpreadSearchParams, layouts_df: pd.DataFrame) -> List[Partition]:
+                     params: SpreadSearchParams, layouts_df: pd.DataFrame,
+                     trace: Optional[dict] = None) -> List[Partition]:
     """
     Find all feasible partitions for a group of photos and rank them by fit.
 
@@ -243,6 +295,10 @@ def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
         params: Search parameters controlling weight threshold and other limits.
         layouts_df: DataFrame of available layout designs with a
             'number of boxes' column.
+        trace: Optional dict. When provided, it is filled with the full
+            candidate funnel (every scored partition plus the stage that
+            dropped it) for the combinations analysis PDF. Purely diagnostic —
+            it never affects the returned partitions.
 
     Returns:
         List of valid Partition objects sorted by weight (descending), filtered
@@ -259,13 +315,31 @@ def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
     class_spread_params[1] = max(class_spread_params[1], 0.5)
 
     # sample
-    parts = all_unique_partitions(n_photos)
-    parts = [Partition(part) for part in parts if set(part).issubset(available_n)]
+    all_parts = all_unique_partitions(n_photos)
+    parts = [Partition(part) for part in all_parts if set(part).issubset(available_n)]
     # evaluate
+    params_before_evaluation = list(class_spread_params)
     Partition.evaluate_list(parts, class_spread_params, n_photos)
     # filter
     sorted_parts = sorted(parts, key=lambda p: p.weight, reverse=True)
-    filtered_parts = Partition.filter_by_layout(sorted_parts, layouts_dict, n_portraits, n_landscapes, params)
+    layout_trace = [] if trace is not None else None
+    filtered_parts = Partition.filter_by_layout(sorted_parts, layouts_dict, n_portraits, n_landscapes, params,
+                                                trace=layout_trace)
     valid_parts = Partition.filter_by_len(filtered_parts, n_photos)
+
+    if trace is not None:
+        trace.update({
+            'n_photos': int(n_photos),
+            'n_portraits': int(n_portraits),
+            'n_landscapes': int(n_landscapes),
+            'available_box_counts': sorted(int(n) for n in available_n),
+            'spread_params_used': [float(v) for v in params_before_evaluation],
+            'spread_params_after_evaluation': [float(v) for v in class_spread_params],
+            'std_widened': params_before_evaluation[1] != class_spread_params[1],
+            'weight_threshold_divisor': float(params.weight_threshold_divisor),
+            'n_integer_partitions': len(all_parts),
+            'n_with_available_layout_sizes': len(parts),
+        })
+        _fill_partitions_trace(trace, sorted_parts, layout_trace, filtered_parts, valid_parts)
 
     return valid_parts
