@@ -140,6 +140,8 @@ def build_subgroup_record(photos: Sequence[Photo], spread_params: Sequence[float
             'search': entry['search'],
             'max_combs': entry['max_combs'],
             'n_generated': entry['n_generated'],
+            # None when the chronology-first filter did not run for this group.
+            'n_time_disjoint': entry.get('n_time_disjoint'),
             'n_sampled': entry['n_sampled'],
             'top_combinations': [
                 dict(comb.to_dict(), rank=rank)

@@ -260,8 +260,19 @@ class SingleSpreadLayout:
                             'exponent': int(self.number_of_squares)})
 
         # ---- time-order penalty per pairwise inversion ----
+        # Each page sorted by time before the pages are concatenated. The idx
+        # containers are sets, and set iteration order is not time order --
+        # `list({8, 6})` is `[8, 6]` -- so the raw order charged inversions
+        # between two photos whose real order on the page is settled later by
+        # `set_photos_order`. Cross-page pairs were always counted correctly
+        # (every left photo meets every right photo whatever the order), so only
+        # the within-page noise goes; what the penalty measures is unchanged
+        # wherever it was already measuring something real.
+        def _by_time(idxs):
+            return sorted(idxs, key=lambda photo_id: photos[photo_id].general_time)
+
         photo_order_time = [photos[photo_id].general_time for photo_id in
-                            list(self.left_page_photo_idxs) + list(self.right_page_photo_idxs)]
+                            _by_time(self.left_page_photo_idxs) + _by_time(self.right_page_photo_idxs)]
         time_inversions = 0
         for time_idx1 in range(len(photo_order_time)):
             for time_idx2 in range(time_idx1 + 1, len(photo_order_time)):

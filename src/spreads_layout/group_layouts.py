@@ -187,7 +187,8 @@ def process_group_lists(group_spreads_layouts: GroupLayoutsLists) -> List[GroupS
 
 def process_combination_outer(comb: Combination, photos: List[Photo],
                               layouts_df: pd.DataFrame, params: SpreadSearchParams,
-                              group_single_layouts: List[GroupSingleLayout]) -> List[GroupSingleLayout]:
+                              group_single_layouts: List[GroupSingleLayout],
+                              penalty_overrides: Optional[Dict[str, float]] = None) -> List[GroupSingleLayout]:
     """
     Process a single combination: sample spread layouts and accumulate results.
 
@@ -206,7 +207,8 @@ def process_combination_outer(comb: Combination, photos: List[Photo],
         Updated group_single_layouts list with new candidates appended (and trimmed if needed).
     """
     # sample
-    multispread_layouts = process_combination_inner(comb, photos, layouts_df, params)
+    multispread_layouts = process_combination_inner(comb, photos, layouts_df, params,
+                                                    penalty_overrides)
     if multispread_layouts is not None:
         group_single_layouts += process_group_lists(multispread_layouts)
 
@@ -227,7 +229,8 @@ def process_combination_outer(comb: Combination, photos: List[Photo],
 
 def get_group_single_layouts(combs: List[Combination], photos: List[Photo],
                              layouts_df: pd.DataFrame, params: SpreadSearchParams,
-                             layout_id2data: Dict[int, Any]) -> Optional[List[GroupSingleLayout]]:
+                             layout_id2data: Dict[int, Any],
+                             penalty_overrides: Optional[Dict[str, float]] = None) -> Optional[List[GroupSingleLayout]]:
     """
     Find the best GroupSingleLayout candidates for a photo group.
 
@@ -253,7 +256,8 @@ def get_group_single_layouts(combs: List[Combination], photos: List[Photo],
     # sample
     group_single_layouts = []
     for idx, comb in enumerate(combs):
-        group_single_layouts = process_combination_outer(comb, photos, layouts_df, params, group_single_layouts)
+        group_single_layouts = process_combination_outer(comb, photos, layouts_df, params,
+                                                        group_single_layouts, penalty_overrides)
 
     if len(group_single_layouts) == 0:
         return None

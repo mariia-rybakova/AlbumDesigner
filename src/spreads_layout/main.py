@@ -11,7 +11,8 @@ from src.core.photos import get_photos_from_df, Photo
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
 from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts
-from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
+from utils.configs import (CONFIGS, SPECIAL_GROUP_SEP,
+                           CHRONOLOGY_FIRST_CLASSES, CHRONOLOGY_FIRST_PENALTIES)
 from utils.stages_recorder import (
     build_subgroup_record,
     combinations_recording_enabled,
@@ -65,9 +66,23 @@ def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
     return subgroups
 
 
+def is_chronology_first(group_name: Optional[Tuple]) -> bool:
+    """Whether this group's class must read in the order the day happened.
+
+    Matched on the group's `cluster_context` — the class the group is *of* —
+    not on each photo's `original_context`, which varies inside any group. The
+    match is exact, so a decorated special context ('other|4') never qualifies,
+    the same rule the time-split allow-list uses.
+    """
+    if not group_name or len(group_name) < 2:
+        return False
+    return group_name[1] in CHRONOLOGY_FIRST_CLASSES
+
+
 def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFrame,
                                       layout_id2data: Dict[int, Any], spread_params: List[float],
-                                      params: SpreadSearchParams, logger) -> Optional[List[GroupSingleLayout]]:
+                                      params: SpreadSearchParams, logger,
+                                      chronology_first: bool = False) -> Optional[List[GroupSingleLayout]]:
     """
     Find candidate spread layouts for a single sub-group of photos.
 
@@ -101,10 +116,12 @@ def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFr
 
     # stage 2
     combs = get_combinations(partitions, photos, layouts_df, spread_params, params,
-                             trace=combinations_trace)
+                             trace=combinations_trace, chronology_first=chronology_first)
 
     # stage 3
-    group_single_layouts = get_group_single_layouts(combs, photos, layouts_df, params, layout_id2data)
+    group_single_layouts = get_group_single_layouts(
+        combs, photos, layouts_df, params, layout_id2data,
+        penalty_overrides=CHRONOLOGY_FIRST_PENALTIES if chronology_first else None)
 
     if record_stages:
         # Stashed rather than returned so the retry/split loop above stays as-is.
@@ -150,24 +167,38 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
         for d in [1.0, 0.8, 0.6, 0.4, 0.2]
     ] + [(group_photos + [dummy_photo], spread_params)]
 
-    for cur_photos, cur_spread_params in attempts:
-        cur_subgroups = split_group_if_needed(cur_photos, cur_spread_params, largest_layout_size, logger)
-        group_final_layouts = []
+    # A chronology-first class runs the whole ladder under its policy first, and
+    # only then repeats it without. The policy narrows what stage 2 may emit, so
+    # it can in principle leave a sub-group with nothing the layouts can hold;
+    # an album that loses a ceremony is worse than one that prints it out of
+    # order, and this way the ordering is only given up once every relaxation
+    # has been tried with it.
+    chronology_first = is_chronology_first(group_name)
+    policies = [True, False] if chronology_first else [False]
 
-        for subgroup_photos in cur_subgroups:
-            subgroup_spreads_layouts = find_spreads_layouts_for_subgroup(subgroup_photos, layouts_df, layout_id2data, cur_spread_params, params, logger)
-            if subgroup_spreads_layouts is None:
-                group_final_layouts = None
-                break
-            else:
-                group_final_layouts.append((subgroup_photos, subgroup_spreads_layouts))
+    for use_policy in policies:
+        for cur_photos, cur_spread_params in attempts:
+            cur_subgroups = split_group_if_needed(cur_photos, cur_spread_params, largest_layout_size, logger)
+            group_final_layouts = []
 
-        if group_final_layouts is not None:
-            if cur_photos is not group_photos:
-                logger.info("Spread created using dummy photo for group: {}.".format(group_name))
-            elif cur_spread_params[0] != spread_params[0]:
-                logger.debug("Spreads found with params {}. Group: {}.".format(cur_spread_params, group_name))
-            return group_final_layouts
+            for subgroup_photos in cur_subgroups:
+                subgroup_spreads_layouts = find_spreads_layouts_for_subgroup(subgroup_photos, layouts_df, layout_id2data, cur_spread_params, params, logger,
+                                                                             chronology_first=use_policy)
+                if subgroup_spreads_layouts is None:
+                    group_final_layouts = None
+                    break
+                else:
+                    group_final_layouts.append((subgroup_photos, subgroup_spreads_layouts))
+
+            if group_final_layouts is not None:
+                if cur_photos is not group_photos:
+                    logger.info("Spread created using dummy photo for group: {}.".format(group_name))
+                elif cur_spread_params[0] != spread_params[0]:
+                    logger.debug("Spreads found with params {}. Group: {}.".format(cur_spread_params, group_name))
+                if chronology_first and not use_policy:
+                    logger.warning("Chronology-first policy found no layout for group: {}; "
+                                   "fell back to the unconstrained search.".format(group_name))
+                return group_final_layouts
 
     logger.warning("Could not find spreads. Skipping group: {}.".format(group_name))
     return None

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import random
 from itertools import combinations, product
-from dataclasses import dataclass
-from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
+from dataclasses import dataclass, replace
+from typing import List, Tuple, Set, Dict, Iterable, Callable, Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -101,7 +101,8 @@ def layout_combination(combination: Combination, layouts_df: pd.DataFrame, photo
 
 
 def process_combination_inner(comb: Combination, photos: List[Photo], layouts_df: pd.DataFrame,
-                        params: SpreadSearchParams) -> Optional[GroupLayoutsLists]:
+                        params: SpreadSearchParams,
+                        penalty_overrides: Optional[Dict[str, float]] = None) -> Optional[GroupLayoutsLists]:
     """
     Sample, score, and filter spread layouts for a single combination.
 
@@ -143,5 +144,11 @@ def process_combination_inner(comb: Combination, photos: List[Photo], layouts_df
                 context_mix_penalty=0.00001,
                 time_order_penalty=0.5
             )
+        if penalty_overrides:
+            # A class whose order matters more than the page arrangements the
+            # scorer would otherwise buy. Only the named fields move; everything
+            # left out -- colour, crop, orientation -- keeps the value chosen
+            # just above for this group's size.
+            penalty = replace(penalty, **penalty_overrides)
         multispread_layouts.process(layouts_df, photos, penalty)
     return multispread_layouts

@@ -329,9 +329,43 @@ def greedy_combination_search(photos: List[Photo], layout_part: Partition, layou
     return [Combination(comb_list) for comb_list in cleaned_comb_data]
 
 
+def filter_time_disjoint(combs: List[Combination], photos: List[Photo]) -> List[Combination]:
+    """Keep only assignments whose spreads do not overlap in time.
+
+    An assignment is admissible when sorting its spreads by first photo leaves
+    their time ranges end-to-end: every photo of one spread precedes every photo
+    of the next. For a class in `CHRONOLOGY_FIRST_CLASSES` that is a requirement
+    rather than a preference, so this drops candidates outright.
+
+    It has to be a filter rather than a weight. `Combination.get_score` already
+    rewards tight spreads and it is not enough: stage 3 multiplies the
+    combination weight by layout weights spanning orders of magnitude, so on a
+    real ceremony group the assignment that shipped scored 614x below the best
+    stage-2 candidate and still won. A weight this stage sets can be outvoted
+    downstream; an assignment it never emits cannot.
+
+    Returns the input unchanged when the filter would empty it. A sub-group with
+    no time-disjoint assignment is one where the constraint cannot be met, and
+    losing the photos entirely is worse than losing the ordering.
+    """
+    if not combs:
+        return combs
+
+    kept = []
+    for comb in combs:
+        ranges = sorted((min(photos[i].general_time for i in spread),
+                         max(photos[i].general_time for i in spread))
+                        for spread in comb.spreads if spread)
+        if all(ranges[k][1] < ranges[k + 1][0] for k in range(len(ranges) - 1)):
+            kept.append(comb)
+
+    return kept or combs
+
+
 def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_df: pd.DataFrame,
                      spread_params: List[float], params: SpreadSearchParams,
-                     trace: Optional[List[dict]] = None) -> List[Combination]:
+                     trace: Optional[List[dict]] = None,
+                     chronology_first: bool = False) -> List[Combination]:
     """
     Generate and evaluate all photo-to-spread combinations across partitions.
 
@@ -374,6 +408,10 @@ def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_d
             single_combs = greedy_combination_search(photos, partition, layouts_df)
 
         n_generated = len(single_combs)
+        n_time_disjoint = None
+        if chronology_first:
+            single_combs = filter_time_disjoint(single_combs, photos)
+            n_time_disjoint = len(single_combs)
         single_combs = limit_sample_size(single_combs, max_combs)
 
         # evaluate
@@ -387,6 +425,7 @@ def get_combinations(partitions: List[Partition], photos: List[Photo], layouts_d
                 'search': 'simple' if use_simple else 'greedy',
                 'max_combs': int(max_combs),
                 'n_generated': int(n_generated),
+                'n_time_disjoint': n_time_disjoint,
                 'n_sampled': len(single_combs),
                 # Live Combination objects, not dicts: a partition can hold up to
                 # `max_spreads_sample` of them and only the top few end up in the

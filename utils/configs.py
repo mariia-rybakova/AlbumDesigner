@@ -1761,3 +1761,55 @@ TIME_SPLIT_TIGHT_CLASSES = (
 TIME_SPLIT_WATCH_CLASSES = ('speech',)
 
 TIME_SPLIT_ALLOWED_CLASSES = TIME_SPLIT_TIGHT_CLASSES + TIME_SPLIT_WATCH_CLASSES
+
+
+# Content classes whose album order must read as the day did, ahead of every
+# other layout preference. The layout search is a competition between several
+# of those -- same class on a page, same colour on a page, orientation, crop,
+# chronology -- and for most classes that competition is right. Portraits of
+# the bride taken across the whole day are a set of portraits, and grouping
+# them by look is worth more than dealing them out by the clock.
+#
+# A ceremony is not a set. It is one continuous event whose photos only mean
+# anything in the order they happened, and a reader who sees the vows before
+# the processional reads it as a mistake in a way that no rearranged portrait
+# page ever is. So for these classes chronology stops being one preference
+# among several and becomes a constraint the others work inside.
+#
+# Two mechanisms carry it, because a weight alone cannot (measured on a real
+# ceremony group: the assignment that shipped scored 614x below the best
+# stage-2 candidate and still won, once stage 3 multiplied in layout weights;
+# anything soft would have lost the same way):
+#
+#   stage 2  `combinations.filter_time_disjoint` drops any photo-to-spread
+#            assignment whose spreads overlap in time. A hard admissibility
+#            rule, not a score. On that group it removed the assignment that
+#            shipped and kept 7 candidates across 4 partitions, so the search
+#            keeps plenty of room.
+#   stage 3  `CHRONOLOGY_FIRST_PENALTIES` below, which stops the layout
+#            scorer paying for the page arrangements that fight it.
+CHRONOLOGY_FIRST_CLASSES = ('ceremony',)
+
+# Penalty overrides for those classes, merged over the defaults in
+# `spreads.spread.Penalties`. Only the fields named here change.
+#
+# The two class penalties go because they are what break a ceremony across
+# pages by subject: `context_mix_penalty` is the strong one at 1e-5 *per extra
+# context and exponential*, easily missed next to `class_mix` at 1e-2, and it
+# is what makes a page holding the processional and the vows cost less than a
+# page holding them in the order they happened.
+#
+# `time_order_penalty` drops four orders of magnitude so that a single
+# inversion outweighs anything the relaxed penalties above could have bought.
+#
+# Colour is deliberately untouched. A page mixing black-and-white with colour
+# reads as a printing error rather than an editorial choice, which is true of a
+# ceremony exactly as much as of anything else, so `color_mix` and
+# `double_mix_color` keep their defaults -- as do `crop_penalty` and
+# `orientation_mix`, which are about how a photo sits in its box and have
+# nothing to say about order.
+CHRONOLOGY_FIRST_PENALTIES = {
+    'class_mix': 1.0,
+    'context_mix_penalty': 1.0,
+    'time_order_penalty': 0.000001,
+}
