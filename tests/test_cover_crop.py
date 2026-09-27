@@ -205,3 +205,97 @@ def test_the_crop_matches_what_the_centred_one_would_have_been_in_shape():
 
     assert mine[3] == pytest.approx(centred[3], rel=0.05), "crop height changed"
     assert mine[1] != pytest.approx(centred[1], abs=0.01), "crop did not move"
+
+
+# -- when the faces do not all fit ------------------------------------------
+#
+# The opening cover of 53840120 (2026-09-27T05:40 dev run, photo 12497678983),
+# as `cover_box` received it. The search pinned the window to the top of the
+# frame to keep a 0.1-wide detection in the corner, one the face service had
+# itself marked not-a-face (blurLevel -1), and cut the main face through the
+# mouth: 58% of its height kept.
+
+OPENING_AR = 0.7507692575454712
+OPENING_TARGET_AR = 1.9620315074640127
+
+
+def rated_face(x1, y1, x2, y2, blur):
+    f = face(x1, y1, x2, y2)
+    f.blurLevel = blur
+    return f
+
+
+def opening_photo(faces):
+    return photo(faces, ar=OPENING_AR,
+                 background_centroid=types.SimpleNamespace(x=0.404, y=0.664), diameter=0.780)
+
+
+MAIN = rated_face(0.277, 0.241, 0.490, 0.484, 626.9)
+CORNER = rated_face(0.028, 0.067, 0.139, 0.192, -1.0)
+
+
+def kept(crop, f):
+    """Share of the face's height inside the crop."""
+    _, y, _, h = crop
+    b = f.bbox
+    return max(0.0, min(b.y2, y + h) - max(b.y1, y)) / (b.y2 - b.y1)
+
+
+def test_faces_that_do_not_fit_one_window_give_way_to_the_main_face():
+    crop = face_aware_crop(opening_photo([MAIN, CORNER]), OPENING_TARGET_AR)
+
+    assert kept(crop, MAIN) == pytest.approx(1.0), f"main face kept {kept(crop, MAIN):.0%}"
+    assert crop[3] == pytest.approx(OPENING_AR / OPENING_TARGET_AR, rel=0.01), "crop height changed"
+
+
+def test_the_main_face_is_centred():
+    _, y, _, h = face_aware_crop(opening_photo([MAIN, CORNER]), OPENING_TARGET_AR)
+
+    assert y + h / 2 == pytest.approx((MAIN.bbox.y1 + MAIN.bbox.y2) / 2, abs=0.01)
+
+
+def test_a_large_blurred_face_does_not_lead():
+    """The largest face is out of focus; the sharp one is the subject."""
+    blurred = rated_face(0.05, 0.55, 0.60, 0.95, 8.0)
+    sharp = rated_face(0.40, 0.10, 0.60, 0.30, 400.0)
+
+    crop = face_aware_crop(opening_photo([blurred, sharp]), OPENING_TARGET_AR)
+
+    assert kept(crop, sharp) == pytest.approx(1.0)
+
+
+def test_with_no_sharp_face_the_search_decides():
+    """Nothing worth centring on, so the old behaviour stands."""
+    import src.smart_cropping as sc
+
+    faces = [rated_face(0.277, 0.241, 0.490, 0.484, 5.0), rated_face(0.028, 0.067, 0.139, 0.192, 3.0)]
+    row = opening_photo(faces)
+    searched = sc.process_cropping(OPENING_AR, faces, row['background_centroid'], 0.780, OPENING_TARGET_AR)
+
+    assert face_aware_crop(row, OPENING_TARGET_AR) == pytest.approx(tuple(searched))
+
+
+def test_faces_that_fit_together_are_all_kept():
+    """Two faces side by side fit one window, and both stay in it."""
+    left = rated_face(0.20, 0.30, 0.40, 0.45, 300.0)
+    right = rated_face(0.55, 0.35, 0.75, 0.50, 300.0)
+
+    crop = face_aware_crop(opening_photo([left, right]), OPENING_TARGET_AR)
+
+    assert kept(crop, left) == pytest.approx(1.0) and kept(crop, right) == pytest.approx(1.0)
+
+
+def test_a_detection_marked_not_a_face_is_ignored():
+    """The closing cover of the same run: a sharp face and a -1 detection in the
+    corner. The crop is what the sharp face alone would get."""
+    sharp = rated_face(0.460, 0.432, 0.553, 0.594, 195.6)
+    corner = rated_face(0.876, 0.033, 0.950, 0.179, -1.0)
+    row = lambda faces: photo(faces, ar=1.3319672346115112,
+                              background_centroid=types.SimpleNamespace(x=0.490, y=0.733), diameter=0.624)
+
+    assert face_aware_crop(row([sharp, corner]), OPENING_TARGET_AR) == \
+        face_aware_crop(row([sharp]), OPENING_TARGET_AR)
+
+
+def test_only_non_faces_means_no_opinion():
+    assert face_aware_crop(opening_photo([CORNER]), OPENING_TARGET_AR) is None

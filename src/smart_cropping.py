@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import pandas as pd
+from utils.configs import CONFIGS
 
 
 def cropWeight(tl, imageShape, foregroundMask=None, faceMask=None, aspectRatio=1,
@@ -398,18 +399,24 @@ def face_aware_crop(image_info, target_ar, logger=None):
     faces = image_info['faces_info']
     if not isinstance(faces, list):
         faces = list(faces) if faces is not None else []
+    # blurLevel -1 is what Face-Recognition writes for a detection its own check
+    # judged not a face; on 53840120 both covers had one, in a corner, and the
+    # crop moved to keep it.
+    faces = [f for f in faces if getattr(f, 'blurLevel', 0) >= 0]
     if not faces:
         # No face to aim at; the centred crop is as good a guess as any.
         return None
 
     try:
+        image_ar = float(image_info['image_as'])
         crop = process_cropping(
-            float(image_info['image_as']),
+            image_ar,
             faces,
             image_info['background_centroid'],
             float(image_info['diameter']),
             float(target_ar),
         )
+        crop = _faces_first(crop, faces, image_ar, float(target_ar), logger)
     except Exception as exc:  # noqa: BLE001 - a crop is not worth the album
         if logger:
             logger.warning(f"face-aware crop failed ({type(exc).__name__}: {exc}); "
@@ -422,3 +429,62 @@ def face_aware_crop(image_info, target_ar, logger=None):
     # `np.float64` subclasses `float` -- but nothing here should depend on
     # that, and `customize_box` has always returned plain floats.
     return tuple(float(v) for v in crop)
+
+
+def _window_size(image_ar, target_ar):
+    """The (w, h) of the largest `target_ar` window in the image, normalised."""
+    if image_ar > target_ar:
+        return target_ar / image_ar, 1.0
+    return 1.0, image_ar / target_ar
+
+
+def _holds(crop, box, tol=1e-6):
+    x, y, w, h = crop
+    x1, y1, x2, y2 = box
+    return x - tol <= x1 and y - tol <= y1 and x2 <= x + w + tol and y2 <= y + h + tol
+
+
+def _centred_on(box, w, h):
+    """A w x h window centred on `box`, slid back inside the image."""
+    x1, y1, x2, y2 = box
+    x = min(max((x1 + x2) / 2 - w / 2, 0.0), 1.0 - w)
+    y = min(max((y1 + y2) / 2 - h / 2, 0.0), 1.0 - h)
+    return x, y, w, h
+
+
+def _faces_first(crop, faces, image_ar, target_ar, logger=None):
+    """Make sure the faces decide the cover crop, not `process_cropping`'s penalties.
+
+    `process_cropping` grows every face box by a face on each side before its
+    search, so a large face in a wide box becomes a mask taller than the window
+    and every position misses about as much of it; a small face elsewhere then
+    decides. 53840120 opened on a portrait cut through the bride's mouth to
+    keep a 0.1-wide detection in the corner.
+
+    If one window can hold every face box, the search's crop stands when it
+    does hold them, and otherwise the window is centred on them all. If not,
+    the window is centred on the main face: the largest one at least
+    ``cover_crop_min_face_blur`` sharp, so a large blurred face in the
+    foreground cannot lead. With no face that sharp the search's crop stands.
+    """
+    boxes = [(f.bbox.x1, f.bbox.y1, f.bbox.x2, f.bbox.y2) for f in faces]
+    w, h = _window_size(image_ar, target_ar)
+    union = (min(b[0] for b in boxes), min(b[1] for b in boxes),
+             max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+    if union[2] - union[0] <= w and union[3] - union[1] <= h:
+        if all(_holds(crop, b) for b in boxes):
+            return crop
+        return _centred_on(union, w, h)
+
+    min_blur = CONFIGS['cover_crop_min_face_blur']
+    sharp = [(b, f) for b, f in zip(boxes, faces)
+             if getattr(f, 'blurLevel', min_blur) >= min_blur]
+    if not sharp:
+        return crop
+
+    main, face = max(sharp, key=lambda bf: (bf[0][2] - bf[0][0]) * (bf[0][3] - bf[0][1]))
+    if logger:
+        logger.info(f"cover crop: {len(faces)} faces do not fit one window; centring on the "
+                    f"main face (blurLevel {getattr(face, 'blurLevel', 'n/a')})")
+    return _centred_on(main, w, h)

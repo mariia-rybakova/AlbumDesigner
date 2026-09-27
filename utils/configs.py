@@ -55,6 +55,12 @@ CONFIGS = {'DEBUG': True,
            'min_size_for_normalize': 2,
            'split_homogenous_group_penalty': 0.1,
            'crop_penalty': 0.01,
+           # Sharpest a face must be to lead a cover crop that cannot hold every
+           # face. `blurLevel` is the variance of the Laplacian of the aligned
+           # face (Face-Recognition, face_detection.py), higher is sharper, and
+           # -1 is what that service writes for a detection it judged not a
+           # face. 20 is the "not blurred" cut Face-Recognition uses itself.
+           'cover_crop_min_face_blur': 20,
            'color_mix': 0.0001,
            'double_page_color_mix': 0.00000001,
            'class_mix': 0.00001,
