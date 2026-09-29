@@ -624,6 +624,12 @@ CONFIGS = {'DEBUG': True,
             'presence_grades': {
                 'both': 1.0,        # both identities named
                 'one': 0.6,         # one named, the other unrecognised
+                # One named, and a body in frame with no face and no identity
+                # that is large enough to be a subject: most likely the other
+                # one, face turned away or hidden. Identities the model matched
+                # by body are already in `persons_ids`; this is for the partner
+                # it detected as a person but could not name.
+                'one_and_body': 0.85,
                 'faces_only': 0.35, # faces detected, neither identified
                 'neither': 0.2,     # no face at all -- backs turned, or buried
                 # Somebody *is* recognised here and it is neither of them.
@@ -671,11 +677,26 @@ CONFIGS = {'DEBUG': True,
             # lever, at the value that leaves scoring alone.
             'affection_presence_floor': 1.0,
 
+            # How large a faceless body must be, against the largest body in
+            # the frame, to count as the unnamed partner for `one_and_body`.
+            # Guests in the background are a fraction of the couple's size.
+            'presence_body_min_share': 0.5,
+
             # What makes a cover *special*: a look, a touch, a candid moment
             # that reads as mutual. Combined with `max`, not `mean` -- a frame
             # shows one kind of affection, and averaging across the rest
             # punishes it for being emphatically one thing. All six bins ship
             # for both model versions already, so this needs no blob write.
+            #
+            # Two alternatives were measured on 49994361, 49995684 and 49996919
+            # and rejected. Normalising each concept over the candidates before
+            # the max stretches small differences between weak scores to the
+            # full range, and cost 49995684 and 49996919 their closings. Keeping
+            # only the physical bins (hugging, kissing, holding hands, intimacy)
+            # swapped one misfire for another -- `holdinghands` peaks on a couple
+            # dancing apart -- and cost 49996919 both of its key pages. The
+            # `affection` bin's weakness, reading a moved face as affection, is
+            # answered by the `tears` penalty instead.
             'affection_concepts': ('affection', 'intimacy', 'hugging',
                                    'holdinghands', 'kissing', 'romance'),
 
@@ -741,7 +762,41 @@ CONFIGS = {'DEBUG': True,
                 # Faces that read at cover size. Beyond the couple, more faces
                 # means a crowd, so this is a penalty on excess.
                 'crowd': 0.30,
+                # A frame with no face and no body detected: a detail -- their
+                # hands, the rings, the dress. It can be lovely and still not be
+                # of *them*; 49995684 closed on a close-up of held hands. As
+                # large as the affection weight, so a detail cannot win on it.
+                'detail': 1.20,
+                # Tears, at full strength once `tears_range` is topped. As large
+                # as the affection weight, which is what the `affection` bin
+                # hands a moved face.
+                'tears': 1.20,
+                # How much the couple are the subject rather than small in a
+                # scene; see `significance_range`.
+                'significance': 0.60,
             },
+
+            # Raw `tears` cosine at which the penalty starts, and at which it
+            # is full. Absolute, not normalised over the candidates, so a window
+            # with nobody crying is not penalised at all. Measured over the
+            # 208 candidates of 49994361, 49995684 and 49996919: the clear tears
+            # frames score 0.41-0.43 (the speech closing, a first look) and the
+            # 90th percentile is 0.28. A small, distant couple dabbing their
+            # eyes (0.284) scores the same as a laughing champagne frame
+            # (0.281), so the start sits above both rather than guess.
+            'tears_range': (0.30, 0.42),
+
+            # The couple's two largest body boxes over the foreground blob, at
+            # which `significance` starts to rise and at which it is full. Flat
+            # above the top, so a close-up is not preferred to a frame where the
+            # two of them are simply the subject: 1.2 is about the median of the
+            # 208 candidates of 49994361, 49995684 and 49996919.
+            'significance_range': (0.7, 1.2),
+
+            # Concepts that count as affection only in a frame showing people.
+            # Held hands are a sign between two people in the photo, not a
+            # subject: with nobody detected, the hands *are* the photo.
+            'context_concepts': ('holdinghands',),
 
             # Faces beyond the couple before `crowd` starts to bite.
             'crowd_slack': 1,

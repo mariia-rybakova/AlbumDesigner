@@ -186,6 +186,22 @@ CONCEPTS = {
         "the bride dancing with her father while guests watch",
         "the groom dancing with his mother",
     ],
+    # -- covers ----------------------------------------------------------
+    #
+    # Negative for the opening and closing pages. The `affection` bin reads a
+    # moved face as affection: 49994361 closed on the couple each wiping away
+    # tears at the speeches, apart and not looking at each other, and
+    # 49995684's runner-up was the same moment at their own table. Tears are a
+    # real wedding moment, just not the one a cover is for.
+    "tears": [
+        "a bride wiping away tears",
+        "a groom crying and wiping his eyes",
+        "a person covering their face with their hand, crying",
+        "the bride and groom emotional and teary during the wedding speeches",
+        "a crying woman dabbing her eyes with a tissue",
+        "a man with his hand over his face, moved to tears",
+    ],
+
     # Negative. The bridal party shares almost every structural indicator with
     # the parents, and is far more numerous, so it is the dominant confusion.
     "wedding_party_member": [

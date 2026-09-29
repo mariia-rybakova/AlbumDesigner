@@ -594,19 +594,19 @@ def test_affection_takes_the_max_and_quality_the_mean():
     should be a good photograph on every count at once.
 
     Row 0 is emphatic on one concept and poor on the other (max 0.9, mean
-    0.5); row 1 is evenly good (max 0.6, mean 0.6). Max ranks row 0 first,
-    mean ranks row 1 first.
+    0.5); row 1 is evenly good (max 0.6, mean 0.6). Rows 2 and 3 fill out the
+    candidates. Max ranks row 0 first, mean ranks row 1 first.
     """
     from src.core.key_pages import _concept_score
     import src.pipeline.enrich.timeline as tl
 
     def fake(frame, concept):
-        return {'a': [0.9, 0.6], 'b': [0.1, 0.6]}[concept]
+        return {'a': [0.9, 0.6, 0.0, 0.1], 'b': [0.1, 0.6, 0.0, 0.9]}[concept]
 
     original = tl.concept_scores
     tl.concept_scores = fake
     try:
-        frame = couple_gallery(n=2)
+        frame = couple_gallery(n=4)
         by_max = _concept_score(frame, ('a', 'b'), _QUIET_LOG, 'max', 'x')
         by_mean = _concept_score(frame, ('a', 'b'), _QUIET_LOG, 'mean', 'x')
     finally:
@@ -656,6 +656,8 @@ def _affection_frame(named_first=0.0, faceless=1.0):
     frame[Col.IMAGE_ORDER] = 3.0
     frame.at[frame.index[1], Col.PERSONS_IDS] = []
     frame.loc[frame.index[1], Col.N_FACES] = 0
+    # Faces turned away, but both of them are there: two bodies, not a detail.
+    frame[Col.NUMBER_BODIES] = 2
 
     import src.pipeline.enrich.timeline as tl
     original = tl.concept_scores
@@ -1035,3 +1037,260 @@ def test_the_cover_loop_leaves_extra_boxes_empty_rather_than_failing():
     # and every box is filled when the counts agree
     two = pd.DataFrame({Col.IMAGE_ID: [7, 8]})
     assert _fillable_cover_boxes([101, 102], two, [7, 8], 'firstPage', _QUIET_LOG) == [101, 102]
+
+
+# -- tears and details ---------------------------------------------------------
+#
+# 49994361 closed on the couple each wiping away tears at the dinner speeches,
+# apart and not looking at each other: the `affection` bin reads a moved face as
+# affection. 49995684 closed on a close-up of held hands, carried by the
+# gallery's highest holding-hands score. Neither is a photo *of the two of them*.
+
+
+def _with_tears(values):
+    """Stub `concept_scores` for `tears` alone; every other bin scores zero."""
+    import src.pipeline.enrich.timeline as tl
+
+    original = tl.concept_scores
+
+    def fake(frame, concept):
+        return list(values) if concept == 'tears' else [0.0] * len(frame)
+
+    tl.concept_scores = fake
+    return original
+
+
+def test_tears_are_penalised_on_the_raw_score_not_the_window():
+    """Absolute: a window where nobody cries is not penalised at all."""
+    import src.pipeline.enrich.timeline as tl
+    from src.core.key_pages import _tears_penalty
+
+    low, high = CONFIGS['covers']['tears_range']
+    original = _with_tears([low - 0.05, (low + high) / 2, high + 0.05])
+    try:
+        penalty = _tears_penalty(couple_gallery(n=3), _QUIET_LOG)
+    finally:
+        tl.concept_scores = original
+
+    assert penalty[0] == 0.0
+    assert penalty[1] == pytest.approx(0.5)
+    assert penalty[2] == 1.0
+
+
+def test_a_crying_frame_loses_to_the_same_frame_dry():
+    import src.pipeline.enrich.timeline as tl
+
+    _, high = CONFIGS['covers']['tears_range']
+    frame = couple_gallery(n=2)
+    frame[Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom smiling at each other'
+    frame[Col.IMAGE_ORDER] = 3.0
+    original = _with_tears([high, 0.0])
+    try:
+        scores = _scored(frame)
+    finally:
+        tl.concept_scores = original
+
+    assert scores[1] - scores[0] == pytest.approx(CONFIGS['covers']['weights']['tears'])
+
+
+def test_a_missing_tears_bin_costs_nothing():
+    import src.pipeline.enrich.timeline as tl
+    from src.core.key_pages import _tears_penalty
+
+    original = tl.concept_scores
+
+    def missing(frame, concept):
+        raise FileNotFoundError(concept)
+
+    tl.concept_scores = missing
+    try:
+        penalty = _tears_penalty(couple_gallery(n=2), _QUIET_LOG)
+    finally:
+        tl.concept_scores = original
+
+    assert list(penalty) == [0.0, 0.0]
+
+
+def test_a_frame_with_nobody_in_it_is_a_detail():
+    from src.core.key_pages import _detail_penalty
+
+    frame = couple_gallery(n=3)
+    frame[Col.NUMBER_BODIES] = [2, 1, 0]
+    frame[Col.N_FACES] = [2, 0, 0]
+
+    assert list(_detail_penalty(frame)) == [0.0, 0.0, 1.0],         "a body with its face turned away is still a person"
+
+
+def test_held_hands_count_only_where_there_are_people():
+    """In a close-up of hands, the hands are the subject, not a sign of it."""
+    import src.pipeline.enrich.timeline as tl
+    from src.core.key_pages import _affection
+
+    frame = couple_gallery(n=3)
+    frame[Col.NUMBER_BODIES] = [2, 2, 0]
+    frame[Col.N_FACES] = [2, 2, 0]
+    original = tl.concept_scores
+
+    def fake(frame, concept):
+        return {'holdinghands': [0.10, 0.20, 0.40]}.get(concept, [0.0, 0.0, 0.0])
+
+    tl.concept_scores = fake
+    try:
+        affection = _affection(frame, _QUIET_LOG)
+    finally:
+        tl.concept_scores = original
+
+    assert affection[1] > affection[0], "held hands still count between two people"
+    assert affection[2] <= affection[0], "the detail gets nothing for them"
+
+
+# -- presence: a faceless body beside the one who is named -------------------
+
+
+def _bbox(x1, y1, x2, y2):
+    import types
+    return types.SimpleNamespace(bbox=types.SimpleNamespace(x1=x1, y1=y1, x2=x2, y2=y2))
+
+
+def _rated_face(x1, y1, x2, y2, blur=200.0):
+    f = _bbox(x1, y1, x2, y2)
+    f.blurLevel = blur
+    return f
+
+
+def _one_named(bodies, faces, faceless=()):
+    frame = couple_gallery(n=1)
+    frame.at[frame.index[0], Col.PERSONS_IDS] = [BRIDE]
+    frame[Col.FACES_INFO] = [faces]
+    frame[Col.BODIES_INFO] = [bodies]
+    frame[Col.FACELESS_PERSONS_IDS] = [list(faceless)]
+    return frame
+
+
+BRIDE_FACE = _rated_face(0.28, 0.30, 0.35, 0.45)
+BRIDE_BODY = _bbox(0.23, 0.27, 0.48, 0.85)
+PARTNER_BODY = _bbox(0.52, 0.21, 0.88, 0.88)     # face turned away
+GUEST_BODY = _bbox(0.90, 0.40, 0.98, 0.60)       # small, in the back
+
+
+def _grade(frame):
+    from src.core.key_pages import _presence
+    return _presence(frame, BRIDE, GROOM)[0]
+
+
+def test_a_faceless_body_beside_the_named_one_grades_above_one():
+    grades = CONFIGS['covers']['presence_grades']
+
+    got = _grade(_one_named([BRIDE_BODY, PARTNER_BODY], [BRIDE_FACE]))
+
+    assert got == pytest.approx(grades['one_and_body'])
+    assert grades['one'] < got < grades['both']
+
+
+def test_without_such_a_body_it_is_just_one():
+    grades = CONFIGS['covers']['presence_grades']
+
+    assert _grade(_one_named([BRIDE_BODY], [BRIDE_FACE])) == pytest.approx(grades['one'])
+
+
+def test_a_small_faceless_guest_is_not_the_partner():
+    grades = CONFIGS['covers']['presence_grades']
+
+    assert _grade(_one_named([BRIDE_BODY, GUEST_BODY], [BRIDE_FACE])) == pytest.approx(grades['one'])
+
+
+def test_a_body_with_a_face_on_it_is_not_faceless():
+    grades = CONFIGS['covers']['presence_grades']
+    faces = [BRIDE_FACE, _rated_face(0.65, 0.25, 0.72, 0.40)]
+
+    assert _grade(_one_named([BRIDE_BODY, PARTNER_BODY], faces)) == pytest.approx(grades['one'])
+
+
+def test_the_named_one_recognised_by_body_is_not_also_the_partner():
+    """The bride alone, face hidden, placed from her body: her own faceless body
+    is accounted for by her identity, and nobody else is there."""
+    grades = CONFIGS['covers']['presence_grades']
+
+    got = _grade(_one_named([BRIDE_BODY], [], faceless=[BRIDE]))
+
+    assert got == pytest.approx(grades['one'])
+
+
+def test_no_body_data_changes_nothing():
+    grades = CONFIGS['covers']['presence_grades']
+    frame = couple_gallery(n=1)
+    frame.at[frame.index[0], Col.PERSONS_IDS] = [BRIDE]
+
+    assert _grade(frame) == pytest.approx(grades['one'])
+
+
+def test_without_body_data_nothing_is_a_detail():
+    """No body detections to consult: a faceless frame may be an embrace."""
+    from src.core.key_pages import _detail_penalty
+
+    frame = couple_gallery(n=2)
+    frame[Col.N_FACES] = [0, 0]
+
+    assert list(_detail_penalty(frame)) == [0.0, 0.0]
+
+
+# -- significance: the couple as the subject, not small in a scene -----------
+#
+# 49995684's closing, once the tears bin had passed it, was the couple far off
+# at their own table dabbing their eyes: their bodies 0.78 of the foreground
+# blob, where the frames worth keeping on three galleries sat at 1.23-1.36.
+
+
+def _significance_of(body_areas, diameter):
+    """One frame whose bodies are squares of the given areas, and a blob."""
+    from src.core.key_pages import _significance
+
+    bodies = [_bbox(0.0, 0.0, a ** 0.5, a ** 0.5) for a in body_areas]
+    frame = couple_gallery(n=1)
+    frame[Col.BODIES_INFO] = [bodies]
+    frame[Col.DIAMETER] = diameter
+    return _significance(frame)[0]
+
+
+def _diameter_for(fg_share):
+    """The blob diameter whose square-mask area is `fg_share` of the frame."""
+    return 2 * (fg_share / np.pi) ** 0.5
+
+
+def test_a_couple_small_in_their_foreground_is_not_significant():
+    low, _ = CONFIGS['covers']['significance_range']
+
+    assert _significance_of([0.12, 0.12], _diameter_for(0.24 / (low - 0.1))) == 0.0
+
+
+def test_significance_saturates_so_a_close_up_gains_nothing():
+    _, high = CONFIGS['covers']['significance_range']
+
+    subject = _significance_of([0.2, 0.2], _diameter_for(0.4 / high))
+    close_up = _significance_of([0.45, 0.45], _diameter_for(0.4 / high))
+
+    assert subject == pytest.approx(1.0) and close_up == pytest.approx(1.0)
+
+
+def test_significance_rises_in_between():
+    low, high = CONFIGS['covers']['significance_range']
+    middle = (low + high) / 2
+
+    assert _significance_of([0.1, 0.1], _diameter_for(0.2 / middle)) == pytest.approx(0.5)
+
+
+def test_only_the_two_largest_bodies_are_the_couple():
+    _, high = CONFIGS['covers']['significance_range']
+    d = _diameter_for(0.4 / high)
+
+    assert _significance_of([0.2, 0.2, 0.3], d) == _significance_of([0.3, 0.2], d)
+
+
+def test_nothing_to_measure_is_not_evidence_against_a_frame():
+    from src.core.key_pages import _significance
+
+    frame = couple_gallery(n=2)
+    frame[Col.BODIES_INFO] = [[], [_bbox(0.1, 0.1, 0.5, 0.9)]]
+    frame[Col.DIAMETER] = [0.6, None]
+
+    assert list(_significance(frame)) == [1.0, 1.0]

@@ -209,7 +209,7 @@ def settings() -> dict:
     return CONFIGS['covers']
 
 
-def _concept_score(frame, concepts, logger, aggregate, label):
+def _concept_score(frame, concepts, logger, aggregate, label, discounted=None):
     """Cosine against a bank of concepts, combined and normalised over `frame`.
 
     ``aggregate`` is the whole difference between the two terms that use this.
@@ -223,6 +223,10 @@ def _concept_score(frame, concepts, logger, aggregate, label):
     `model_version`, a bin missing for this model version. A gallery that
     cannot be projected loses the term and is decided by subquery and rank,
     which is what the rule did before these terms existed.
+
+    ``discounted`` maps a concept to a boolean row mask: on those rows the
+    concept is held at its lowest score over `frame`, so it neither lifts nor
+    sinks them.
     """
     if frame.empty or not concepts:
         return np.zeros(len(frame), dtype=float)
@@ -231,13 +235,19 @@ def _concept_score(frame, concepts, logger, aggregate, label):
     # a hard dependency on the pipeline package for an optional score term.
     from src.pipeline.enrich.timeline import concept_scores
 
+    discounted = discounted or {}
     scored = []
     for concept in concepts:
         try:
-            scored.append(np.asarray(concept_scores(frame, concept), dtype=float))
+            values = np.asarray(concept_scores(frame, concept), dtype=float)
         except Exception as exc:  # noqa: BLE001 - an absent bin costs a term, not the covers
             logger.info(f"cover {label}: {concept} unavailable "
                         f"({type(exc).__name__}: {exc})")
+            continue
+        mask = discounted.get(concept)
+        if mask is not None and np.any(mask):
+            values = np.where(mask, values.min(), values)
+        scored.append(values)
     if not scored:
         return np.zeros(len(frame), dtype=float)
 
@@ -259,9 +269,111 @@ def _affection(frame, logger):
     that: `affection` and `romance` were two of six concepts averaged into
     `quality`, so a frame that was emphatically affectionate and unremarkable
     on the rest scored no better than a well-lit posed portrait.
+
+    The `affection` bin also scores a moved face: 49994361 closed on the two
+    of them each wiping away tears at the speeches, not touching and not
+    looking at each other. `_tears_penalty` answers that, not this term.
+
+    Held hands are a sign of affection between two people in the frame, not a
+    subject of their own. In a frame with no person detected -- a close-up of
+    their hands -- `context_concepts` do not count: 49995684 closed on exactly
+    that, carried by the gallery's highest holding-hands score.
     """
+    context_only = tuple(settings().get('context_concepts', ()))
+    empty = ~_shows_people(frame)
     return _concept_score(frame, tuple(settings().get('affection_concepts', ())),
-                          logger, 'max', 'affection')
+                          logger, 'max', 'affection',
+                          discounted={concept: empty for concept in context_only})
+
+
+def _shows_people(frame):
+    """Rows with at least one detected face or body.
+
+    A frame with neither is a detail -- hands, rings, the dress -- whatever its
+    tags say. Without body detections nothing can be called a detail: an
+    embrace with the faces turned away has no face either, and it is the frame
+    `_presence` exists to protect.
+    """
+    if 'number_bodies' not in frame.columns:
+        return np.ones(len(frame), dtype=bool)
+
+    def count(column):
+        if column not in frame.columns:
+            return np.zeros(len(frame), dtype=float)
+        return pd.to_numeric(frame[column], errors='coerce').fillna(0).values
+
+    return (count('n_faces') > 0) | (count('number_bodies') > 0)
+
+
+def _detail_penalty(frame):
+    """1 for a frame that shows no person at all, else 0."""
+    return (~_shows_people(frame)).astype(float)
+
+
+def _significance(frame):
+    """0-1: how much of the photo's subject the couple is.
+
+    The couple's two largest body boxes against the foreground blob -- the
+    largest salient region BgSegmentation found. Below 1 the foreground runs
+    well past the people: a table, flowers, a room, with the two of them small
+    in it. On 49995684 the closing that survived the tears bin was the couple
+    far off at their own table dabbing their eyes, 0.78 of its foreground; the
+    frames worth keeping on three galleries sat at 1.23 to 1.36.
+
+    Saturating on purpose, so a close-up gains nothing over a frame where they
+    are simply the subject: rises linearly across `significance_range` and is
+    flat above it. `blobDiameter` is measured on BgSegmentation's square mask,
+    so the foreground's share of the frame is pi*(d/2)^2 whatever the
+    orientation. Frames with no body boxes or no blob read 1 -- nothing to
+    measure is not evidence against them, and a detail is `_detail_penalty`'s.
+    """
+    low, high = settings().get('significance_range', (0.7, 1.2))
+
+    def ratio(row):
+        bodies = _listed(row.get('bodies_info'))
+        diameter = row.get('diameter')
+        try:
+            diameter = float(diameter)
+        except (TypeError, ValueError):
+            return None
+        if not bodies or not diameter > 0:
+            return None
+        areas = sorted((max(0.0, b.bbox.x2 - b.bbox.x1) * max(0.0, b.bbox.y2 - b.bbox.y1)
+                        for b in bodies), reverse=True)
+        return sum(areas[:2]) / (np.pi * (diameter / 2) ** 2)
+
+    def grade(row):
+        r = ratio(row)
+        if r is None:
+            return 1.0
+        return float(np.clip((r - low) / max(high - low, 1e-6), 0.0, 1.0))
+
+    if frame.empty:
+        return np.zeros(0, dtype=float)
+    return frame.apply(grade, axis=1).astype(float).values
+
+
+def _tears_penalty(frame, logger):
+    """0-1: how surely someone in the frame is crying.
+
+    Tears are a real moment of the day and the wrong one for a cover, and the
+    `affection` bin cannot tell them from affection: 49994361 closed on the
+    couple each wiping away tears at the speeches. Graded on the raw cosine
+    between the two ends of `tears_range`, so the penalty means the same in
+    every window rather than always biting on somebody. Zeros when the bin is
+    missing.
+    """
+    from src.pipeline.enrich.timeline import concept_scores
+
+    if frame.empty:
+        return np.zeros(0, dtype=float)
+    try:
+        raw = np.asarray(concept_scores(frame, 'tears'), dtype=float)
+    except Exception as exc:  # noqa: BLE001 - a missing bin costs the term, not the covers
+        logger.info(f"cover tears: unavailable ({type(exc).__name__}: {exc})")
+        return np.zeros(len(frame), dtype=float)
+    low, high = settings().get('tears_range', (0.30, 0.42))
+    return np.clip((raw - low) / max(high - low, 1e-6), 0.0, 1.0)
 
 
 def _presence(frame, bride_id, groom_id):
@@ -300,6 +412,7 @@ def _presence(frame, bride_id, groom_id):
     grades = settings().get('presence_grades', {})
     both = float(grades.get('both', 1.0))
     one = float(grades.get('one', 0.6))
+    one_and_body = float(grades.get('one_and_body', one))
     faces_only = float(grades.get('faces_only', 0.35))
     neither = float(grades.get('neither', 0.2))
     others = float(grades.get('others', 0.05))
@@ -311,7 +424,7 @@ def _presence(frame, bride_id, groom_id):
         if named >= 2:
             return both
         if named == 1:
-            return one
+            return one_and_body if _faceless_subject_body(row) else one
         # Neither of them named. Recognising *somebody* here is positive
         # evidence against the frame, not the absence of evidence `faces_only`
         # stands for.
@@ -321,6 +434,47 @@ def _presence(frame, bride_id, groom_id):
         return faces_only if faces is not None and faces == faces and faces > 0 else neither
 
     return frame.apply(grade, axis=1).astype(float).values
+
+
+def _listed(value):
+    """`value` as a list, or [] -- protobuf containers included, which list fine
+    but have no `__iter__` attribute."""
+    if value is None or isinstance(value, (str, float)):
+        return []
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def _faceless_subject_body(row):
+    """Whether the frame holds a subject-sized body with no face on it.
+
+    That body is a person the detector saw but could not name: in a frame
+    naming one of the couple, most likely the other one, face turned away or
+    hidden. Subject-sized means at least `presence_body_min_share` of the
+    largest body in the frame, so a guest in the background does not count.
+
+    Identities placed by body (`faceless_persons_ids`) occupy faceless bodies
+    of their own, so only the faceless bodies beyond them are unnamed: a frame
+    of the bride alone, recognised from her body, is not also the groom.
+    """
+    bodies = _listed(row.get('bodies_info'))
+    if not bodies:
+        return False
+    faces = [f for f in _listed(row.get('faces_info')) if getattr(f, 'blurLevel', 0) >= 0]
+
+    def area(b):
+        return max(0.0, b.bbox.x2 - b.bbox.x1) * max(0.0, b.bbox.y2 - b.bbox.y1)
+
+    def holds_face(b):
+        return any(b.bbox.x1 <= (f.bbox.x1 + f.bbox.x2) / 2 <= b.bbox.x2
+                   and b.bbox.y1 <= (f.bbox.y1 + f.bbox.y2) / 2 <= b.bbox.y2 for f in faces)
+
+    largest = max(area(b) for b in bodies)
+    share = float(settings().get('presence_body_min_share', 0.5))
+    unnamed = sum(1 for b in bodies if not holds_face(b) and area(b) >= share * largest)
+    return unnamed > len(_listed(row.get('faceless_persons_ids')))
 
 
 def _subquery_affinity(frame, queries):
@@ -379,10 +533,13 @@ def _score_covers(frame, queries, logger, bride_id=None, groom_id=None):
         + weights.get('quality', 0.0) * _quality(frame, logger)
         + weights.get('subquery', 0.0) * _subquery_affinity(frame, queries)
         + weights.get('presence', 0.0) * presence
+        + weights.get('significance', 0.0) * _significance(frame)
         # `image_order` is a rank where 0 is best, so the *low* end is rewarded.
         + weights.get('rank', 0.0) * (1.0 - rank)
         + _orientation_preference(frame)
         - weights.get('crowd', 0.0) * _crowd_penalty(frame)
+        - weights.get('detail', 0.0) * _detail_penalty(frame)
+        - weights.get('tears', 0.0) * _tears_penalty(frame, logger)
     )
 
 
