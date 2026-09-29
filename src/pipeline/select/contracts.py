@@ -67,6 +67,11 @@ class SelectionPlan:
     #: downstream re-reads the profile or re-decides what `yes` means.
     yes_categories: tuple = ()
 
+    #: {category: share of the profile}, over the percentage categories the
+    #: gallery has. What the cp-sat retry prefers when it moves a slot a
+    #: class can only fill with a repeat.
+    shares: Dict[str, float] = field(default_factory=dict)
+
     #: {image_id: why} -- photos `select.preselect` committed before any
     #: ranking. `select.pick` starts from these and does not re-pick them.
     committed: Dict[Any, str] = field(default_factory=dict)

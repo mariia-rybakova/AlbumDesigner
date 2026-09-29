@@ -93,6 +93,8 @@ from utils.configs import CONFIGS
 
 #: Objective coefficients must be integers, so every score is scaled by this.
 SCORE_SCALE = 1000
+#: Album length in the retry's substitution is counted in thousandths of a spread.
+SPREAD_SCALE = 1000
 
 
 def settings() -> Dict[str, Any]:
@@ -122,10 +124,14 @@ class Relaxation:
     #: The allowance stops being a ceiling with no floor and becomes a target,
     #: which also drops the per-photo admission cost that enforces it.
     allowance_is_target: bool = False
+    #: A class may give a slot it can only fill with a repeat to another class
+    #: that has a distinct photo for it. See `CpSatPicker._add_soft_quotas`.
+    substitution: bool = False
 
     def __bool__(self) -> bool:
         return any((self.distinct_shots, self.exclusions,
-                    self.contradictions, self.allowance_is_target))
+                    self.contradictions, self.allowance_is_target,
+                    self.substitution))
 
     def describe(self) -> str:
         dropped = [name for name, on in (
@@ -133,6 +139,7 @@ class Relaxation:
             ('exclusions', self.exclusions),
             ('contradictions', self.contradictions),
             ('allowance_as_target', self.allowance_is_target),
+            ('fixed_class_quotas', self.substitution),
         ) if on]
         return ', '.join(dropped) if dropped else 'nothing'
 
@@ -150,6 +157,21 @@ class Attempt:
     status: Any
     shortfall: int
     relaxation: Relaxation
+    #: The rows this solve was built over. The retry may see more than the
+    #: first solve: a receiving class's reserve candidates.
+    frame: Any = None
+
+
+@dataclass(frozen=True)
+class Receiver:
+    """A class the retry may give extra slots to, and how much it wants them."""
+
+    #: At most this many photos above its allowance.
+    cap: int
+    #: Taken off the price of each photo it receives, in objective units.
+    preference: int
+    #: The importance the preference was scaled from, for the log.
+    importance: float = 0.0
 
 
 class CpSatPicker:
@@ -177,6 +199,14 @@ class CpSatPicker:
         #: Length of the whole day in positions, set by `_pool`. Distinct from
         #: `len(frame)` once the gate has removed rows.
         self.positions: int = 0
+        #: {class: Receiver} -- who the retry may move slots to. Empty unless
+        #: substitution is on, which keeps every other solve as it was.
+        self.receivers: Dict[str, Receiver] = {}
+        #: {class: slots it may give away} -- its allowance less the distinct
+        #: shots it holds. Set by the retry's `_add_soft_quotas`.
+        self.donor_caps: Dict[str, int] = {}
+        #: {(giver, receiver): move variable}, for the log.
+        self.flows: Dict[Tuple[str, str], Any] = {}
 
     # -- entry point --------------------------------------------------------
 
@@ -188,10 +218,14 @@ class CpSatPicker:
         gives up the hard walls and is kept when it does better. See
         `Relaxation` and `pick_cpsat.relaxed_retry`.
         """
-        frame = self._pool()
-        if frame.empty:
+        full = self._pool()
+        if full.empty:
             self.logger.warning("cp-sat: no photos to pick from")
             return None
+        # The reserve is what a receiving class could take on top of its
+        # allowance. Only a solve that may move slots gets to see it, so the
+        # first solve is built over exactly the rows it always was.
+        frame = full[~full['_reserve']]
 
         attempt = self._solve(frame, STRICT)
         if attempt is None:
@@ -204,7 +238,7 @@ class CpSatPicker:
                 f"over the {self._shortfall_trigger()} the ceiling allows -- "
                 f"re-solving without {relaxation.describe()}"
             )
-            softer = self._solve(frame, relaxation)
+            softer = self._solve(full if relaxation.substitution else frame, relaxation)
             if softer is None:
                 self.logger.warning("cp-sat: the softer solve found nothing; "
                                     "keeping the first")
@@ -224,8 +258,8 @@ class CpSatPicker:
         # Only the winning solve is collected, because `_collect` and `_report`
         # accumulate onto `per_category` and would double-count otherwise.
         self.relaxation = attempt.relaxation
-        chosen = self._collect(frame, attempt.x, attempt.solver)
-        self._report(frame, attempt.x, attempt.solver, attempt.status)
+        chosen = self._collect(attempt.frame, attempt.x, attempt.solver)
+        self._report(attempt.frame, attempt.x, attempt.solver, attempt.status)
         return chosen, self.per_category
 
     def _shortfall_trigger(self) -> int:
@@ -250,7 +284,22 @@ class CpSatPicker:
             exclusions=bool(config.get('drop_exclusions', False)),
             contradictions=bool(config.get('drop_contradictions', False)),
             allowance_is_target=bool(config.get('allowance_is_target', False)),
+            substitution=self._substitution_on(),
         )
+
+    def _substitution_on(self) -> bool:
+        """Whether the retry may move slots between classes.
+
+        Retry only: the first solve's quotas are ceilings, and a ceiling has no
+        slot to give away.
+        """
+        config = self._retry_cfg()
+        return (bool(config.get('enabled', False))
+                and bool(config.get('substitution', False))
+                and bool(self._substitution_cfg().get('enabled', True)))
+
+    def _substitution_cfg(self) -> Dict[str, Any]:
+        return self.cfg.get('substitution', {}) or {}
 
     def _solve(self, frame: pd.DataFrame, relaxation: Relaxation) -> Optional[Attempt]:
         """Build the model under ``relaxation`` and solve it once."""
@@ -327,7 +376,7 @@ class CpSatPicker:
 
         return Attempt(x=x, solver=solver, status=status,
                        shortfall=self._shortfall(frame, x, solver),
-                       relaxation=relaxation)
+                       relaxation=relaxation, frame=frame)
 
     def _shortfall(self, frame: pd.DataFrame, x, solver) -> int:
         """Photos this solve is under the allowance, summed over classes.
@@ -335,16 +384,25 @@ class CpSatPicker:
         Per class and floored at zero, so a class that overshoots cannot hide
         one that came back empty. Counted with the same `need` and `got` the
         log reports, so the two always agree.
+
+        **Less what was moved.** Only a solve with `substitution` can put a
+        class over its allowance, and every photo it puts there is a slot some
+        other class gave up -- the album is no shorter for it. Counting the
+        giver short and not the receiver over would make a solve that replaced
+        a repeat look emptier than one that kept it, and the retry would be
+        thrown away for doing its job. The first solve cannot overshoot, so for
+        it this is the per-class sum it always was.
         """
         picked = frame.index[[bool(solver.Value(x[i])) for i in frame.index]]
         chosen = frame.loc[picked]
 
-        short = 0
+        short = over = 0
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             need = int(self.plan.images.get(category, 0)) + int(group['_committed'].sum())
             got = int(chosen[Col.CLUSTER_CONTEXT].eq(category).sum())
             short += max(0, need - got)
-        return short
+            over += max(0, got - need)
+        return max(0, short - over)
 
     # -- the pool -----------------------------------------------------------
 
@@ -392,6 +450,20 @@ class CpSatPicker:
 
         frame['_score'] = 0.0
         frame['_eligible'] = False
+        frame['_reserve'] = False
+
+        # Who may take in a slot another class gives up, and the wider shortlist
+        # each of them needs: the gate caps a class at three times its
+        # allowance, so without widening a receiver could only take photos
+        # already ranked for the slots it has.
+        self.receivers = self._receivers(frame) if self._substitution_on() else {}
+        wide_gate = None
+        if self.receivers:
+            widened = dict(self.plan.images)
+            for category, receiver in self.receivers.items():
+                widened[category] = int(widened.get(category, 0)) + receiver.cap
+            wide_gate = CandidateGate(scorer, self.inputs.unscored, widened, self.logger,
+                                      prefer_subject=False)
 
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             # `actual` is what the gallery holds, before any of this narrowing.
@@ -424,10 +496,112 @@ class CpSatPicker:
             shortlist = self._shortlist(gate, free, category)
             shortlist = self._not_orphans(free.loc[shortlist], category)
             frame.loc[shortlist, '_eligible'] = True
+            if wide_gate is not None and category in self.receivers and len(shortlist):
+                wider = self._shortlist(wide_gate, free, category)
+                wider = self._not_orphans(free.loc[wider], category)
+                reserve = wider.difference(shortlist)
+                frame.loc[reserve, '_eligible'] = True
+                frame.loc[reserve, '_reserve'] = True
             self.per_category[category]['bound_by'] = (
                 'solver' if len(shortlist) else 'gate_declined')
 
         return frame[frame['_eligible']].copy()
+
+    def _receivers(self, frame: pd.DataFrame) -> Dict[str, "Receiver"]:
+        """The classes a slot may move to, each with a cap and a preference.
+
+        **Importance is the profile's share, scaled by abundance.** The share
+        says how much of the album the relationship wants the class to be; how
+        much of it the photographer shot says how much it mattered on the day.
+        A class with many photos, or one that runs across a long stretch of the
+        day, was important to *this* wedding whatever the profile assumed.
+
+            importance = share * (1 + abundance)
+            abundance  = max(photos / most photos, span / longest span)
+
+        Both are normalised over the candidate receivers, so the most abundant
+        class scores 1 on each. Either one is enough -- a long span of few
+        photos is the bride all day, a short span of many is the dancing -- so
+        they are combined by `max` unless `abundance` says otherwise. The
+        preference is then `preference_weight` scaled by importance over the
+        largest, so the most important receiver gets all of it.
+
+        The span is `general_time` between its 5th and 95th percentile, so one
+        stray frame cannot stretch a class across the day. `general_time` is
+        EXIF seconds or the synthetic sequence, whichever the gallery has.
+
+        **Who can never receive:** a class with no allowance (it is not in the
+        album), a `yes` class (one photo is what it is promised), a class with
+        no share in the profile, and whatever `never_receive` names -- the
+        single moments, where a second cake cutting is not a better album.
+        """
+        config = self._substitution_cfg()
+        never = set(config.get('never_receive', ()) or ())
+        yes = set(getattr(self.plan, 'yes_categories', ()) or ())
+        shares = dict(getattr(self.plan, 'shares', {}) or {})
+        lut = self._lut()
+        spreads = float(config.get('max_in_spreads', 1.0))
+
+        candidates = [
+            category for category in frame[Col.CLUSTER_CONTEXT].dropna().unique()
+            if int(self.plan.images.get(category, 0)) > 0
+            and category not in yes and category not in never
+            # No shares at all (a plan built by hand): every class is equal
+            # and abundance alone decides.
+            and (not shares or shares.get(category, 0) > 0)
+        ]
+        if not candidates:
+            return {}
+
+        classes = frame[Col.CLUSTER_CONTEXT]
+        counts = {c: int((classes == c).sum()) for c in candidates}
+        time = pd.to_numeric(frame[Col.GENERAL_TIME], errors='coerce')
+        if time.isna().all():
+            time = frame[tl.POSITION].astype(float)
+        spans = {}
+        for category in candidates:
+            values = time[classes == category].dropna()
+            spans[category] = (float(values.quantile(0.95) - values.quantile(0.05))
+                               if len(values) > 1 else 0.0)
+
+        top_count = max(counts.values()) or 1
+        top_span = max(spans.values()) or 1.0
+        mode = str(config.get('abundance', 'max'))
+        importance = {}
+        for category in candidates:
+            by_photos = counts[category] / top_count
+            by_span = spans[category] / top_span
+            abundance = {'photos': by_photos, 'span': by_span,
+                         'mean': (by_photos + by_span) / 2}.get(mode, max(by_photos, by_span))
+            importance[category] = shares.get(category, 1.0) * (1.0 + abundance)
+
+        top = max(importance.values()) or 1.0
+        weight = int(config.get('preference_weight', 300))
+        receivers = {}
+        for category in candidates:
+            cap = max(1, int(round(self._photos_per_spread(lut, category) * spreads)))
+            receivers[category] = Receiver(
+                cap=cap,
+                preference=int(round(weight * importance[category] / top)),
+                importance=importance[category])
+        return receivers
+
+    def _lut(self) -> Dict[str, tuple]:
+        """Photos per spread, density-scaled when the plan carries it."""
+        table = getattr(self.plan, 'lookup_table', None)
+        if table:
+            return table
+        from utils.lookup_table_tools import wedding_lookup_table
+        return wedding_lookup_table
+
+    @staticmethod
+    def _photos_per_spread(lut: Dict[str, tuple], category) -> float:
+        entry = lut.get(category)
+        value = entry[0] if isinstance(entry, (tuple, list)) else entry
+        try:
+            return max(float(value), 1.0)
+        except (TypeError, ValueError):
+            return 4.0
 
     def _shortlist(self, gate: CandidateGate, free: pd.DataFrame, category: str):
         """The rows of ``free`` the loop would have shown this class's strategy.
@@ -544,6 +718,10 @@ class CpSatPicker:
         photos is always better and the solve fills to the ceiling regardless.
         The admission cost in `run()` is the other half.
         """
+        if self.relaxation.substitution and not self._ceiling_on():
+            self._add_soft_quotas(model, frame, x, penalties)
+            return
+
         weight = int(self.cfg.get('shortage_weight', 4000))
         floors = set(getattr(self.plan, 'yes_categories', ()) or ())
 
@@ -576,6 +754,172 @@ class CpSatPicker:
                 shortage = model.NewIntVar(0, need, f"shortage_{_slug(category)}")
                 model.Add(picked + shortage >= need)
                 penalties.append(shortage * weight)
+
+    def _add_soft_quotas(self, model, frame, x, penalties) -> None:
+        """The retry's quotas when a slot may move to another class.
+
+        Without this the retry fills every class to its allowance on its own:
+        a shortage costs 4000 and the dearest repeat 1200, so a class with
+        nothing left but copies of one shot takes the copies. Here the *album*
+        stays full and a class may hand the slots it can only fill with a
+        repeat to a class that has a distinct photo for them:
+
+            picked_c + give_c + lack_c - over_c == Q_c
+            0 <= give_c <= Q_c - distinct_c       only the repeat-bound slots
+            0 <= over_c <= cap_c                  only receivers
+            give_d == sum_r move[d, r]            every slot goes somewhere...
+            over_r == sum_d move[d, r]            ...and comes from somewhere
+            lack_c                                priced as the old shortage
+
+        A move is priced per (giver, receiver): `over_weight` less the
+        receiver's preference and less the pair's `affinity` -- so where a
+        slot comes from decides where it goes. The groom's repeats go to his
+        party before they go to the couple.
+
+        **A class gives only what it cannot fill with a distinct shot.**
+        `distinct_c` is how many different shots its candidates hold (see
+        `_distinct_shots`), so a class with enough of them gives nothing
+        whatever another class could offer. Without that limit a slot moved on
+        rank alone: on 49994361 dancing, portrait, speech and entertainment
+        gave up photos with no near neighbour at all, and groom went from three
+        photos to one, because a better-scored photo elsewhere outbid them.
+
+        Giving costs `short_weight`, taking costs `over_weight` less the
+        receiver's preference, and the move changes the album's length in
+        spreads -- a dancing photo is a twenty-fourth of a spread, a bride
+        photo a quarter -- which costs `drift_weight` per spread it grows and may never
+        grow it by more than `max_growth_spreads`. A slot the class simply
+        cannot fill is `lack`, not a move, and changes nothing but the
+        shortage it has always cost.
+        """
+        config = self._substitution_cfg()
+        shortage = int(self.cfg.get('shortage_weight', 4000))
+        give_cost = int(config.get('short_weight', 300))
+        take_cost = int(config.get('over_weight', 400))
+        lut = self._lut()
+
+        gives, overs, lacks = {}, {}, []
+        per_photo = {}
+        self.donor_caps = {}
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            need = int(self.plan.images.get(category, 0))
+            free = group.index[~group['_committed']]
+            if need <= 0:
+                for index in free:
+                    model.Add(x[index] == 0)
+                continue
+            if len(free) == 0:
+                continue
+
+            slug = _slug(category)
+            picked = sum(x[index] for index in free)
+
+            donor_cap = max(0, need - self._distinct_shots(group))
+            self.donor_caps[category] = donor_cap
+            give = model.NewIntVar(0, donor_cap, f"give_{slug}")
+            lack = model.NewIntVar(0, need, f"lack_{slug}")
+            receiver = self.receivers.get(category)
+            cap = min(receiver.cap, max(0, len(free) - need)) if receiver else 0
+            over = model.NewIntVar(0, cap, f"over_{slug}")
+            model.Add(picked + give + lack - over == need)
+
+            penalties.append(give * give_cost)
+            penalties.append(lack * shortage)
+
+            # A photo of this class, in thousandths of a spread.
+            per_photo[category] = int(round(
+                SPREAD_SCALE / self._photos_per_spread(lut, category)))
+            if donor_cap:
+                gives[category] = give
+            else:
+                model.Add(give == 0)
+            if cap:
+                overs[category] = over
+            else:
+                model.Add(over == 0)
+            lacks.append(lack)
+
+        if not gives or not overs:
+            for give in gives.values():
+                model.Add(give == 0)
+            for over in overs.values():
+                model.Add(over == 0)
+            return
+
+        # One flow per (giver, receiver), so a move can be priced by *where*
+        # the slot goes from as well as where it goes to: the groom's repeats
+        # belong with his party before they belong with the couple.
+        affinity = config.get('affinity', {}) or {}
+        flows_out: Dict[str, List] = {c: [] for c in gives}
+        flows_in: Dict[str, List] = {c: [] for c in overs}
+        change = []
+        self.flows = {}
+        for donor in gives:
+            bonus = affinity.get(donor, {}) or {}
+            for target in overs:
+                if target == donor:
+                    continue
+                bound = min(self.donor_caps[donor], self.receivers[target].cap)
+                flow = model.NewIntVar(0, bound, f"move_{_slug(donor)}_{_slug(target)}")
+                flows_out[donor].append(flow)
+                flows_in[target].append(flow)
+                self.flows[(donor, target)] = flow
+                price = take_cost - self.receivers[target].preference - int(bonus.get(target, 0))
+                if price > 0:
+                    penalties.append(flow * price)
+                change.append(flow * (per_photo[target] - per_photo[donor]))
+
+        for donor, flows in flows_out.items():
+            model.Add(gives[donor] == sum(flows))
+        for target, flows in flows_in.items():
+            model.Add(overs[target] == sum(flows))
+
+        # How far the moves take the album past the length the layout plans.
+        # Only growth is priced: a move into a class with more photos to the
+        # spread shortens the album by a fraction of a page, which the layout
+        # absorbs, and charging it worked against exactly the moves into the
+        # party classes.
+        growth_cap = int(round(float(config.get('max_growth_spreads', 0.5)) * SPREAD_SCALE))
+        total = sum(change)
+        model.Add(total <= growth_cap)
+        growth = model.NewIntVar(0, growth_cap, "growth")
+        model.Add(total <= growth)
+        per_unit = max(1, int(round(float(config.get('drift_weight', 2000)) / SPREAD_SCALE)))
+        penalties.append(growth * per_unit)
+
+    def _distinct_shots(self, group: pd.DataFrame) -> int:
+        """How many different shots a class's free candidates hold.
+
+        Leader clustering at `donor_similarity` (the soft threshold of the
+        near-duplicate ramp by default): best-scored first, each photo either
+        joins the first shot it is that close to or starts a new one. Leaders
+        rather than connected components, because a chain of frames each a
+        little different from the last is a series, not one shot.
+
+        The committed photos of the class are seeded as shots first but not
+        counted. A candidate that repeats one of them is not a new shot, and
+        they are not free slots either -- `Q_c` is only what is left to pick.
+        A photo without an embedding is its own shot.
+        """
+        threshold = float(self._substitution_cfg().get(
+            'donor_similarity', self.cfg.get('similar_soft_threshold', 0.88)))
+        if Col.EMBEDDING not in group.columns:
+            return int((~group['_committed']).sum())
+
+        leaders = [v for v in (_unit(e) for e in group.loc[group['_committed'], Col.EMBEDDING])
+                   if v is not None]
+        free = group[~group['_committed']].sort_values('_score', ascending=False)
+        shots = 0
+        for value in free[Col.EMBEDDING]:
+            vector = _unit(value)
+            if vector is None:
+                shots += 1
+                continue
+            if any(float(vector @ leader) >= threshold for leader in leaders):
+                continue
+            leaders.append(vector)
+            shots += 1
+        return shots
 
     def _ceiling_on(self) -> bool:
         if self.relaxation.allowance_is_target:
@@ -1037,6 +1381,18 @@ class CpSatPicker:
         span = hard - soft
         charged = 0
 
+        # With the wall down -- the retry's `drop_exclusions` -- the pairs it
+        # forbade would be the only ones charged nothing: the ramp stops at the
+        # wall because the wall used to take over there. So they are charged,
+        # above the top of the ramp, and so are the colour/greyscale twins the
+        # treatment rule excluded on an artificial-time gallery.
+        wall_down = bool(self.relaxation.exclusions)
+        above_wall = int(round(weight * float(self.cfg.get('relaxed_duplicate_factor', 2.0))))
+        treatment = float(self.cfg.get('treatment_duplicate_similarity', 1.0))
+        if not bool(getattr(self.context.facts, 'is_artificial_time', False)):
+            treatment = 1.0
+        has_colour = Col.IMAGE_COLOR in frame.columns
+
         for _category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             index = list(group.index)
             vectors = {i: _unit(group.at[i, Col.EMBEDDING]) for i in index}
@@ -1053,13 +1409,21 @@ class CpSatPicker:
                     if vectors[second] is None:
                         continue
                     similarity = float(vectors[first] @ vectors[second])
+                    twins = (wall_down and has_colour and similarity >= treatment
+                             and group.at[first, Col.IMAGE_COLOR]
+                             != group.at[second, Col.IMAGE_COLOR])
                     # At or above `hard` the pair is already forbidden outright,
-                    # so charging it as well would be double counting.
-                    if similarity < soft or similarity >= hard:
+                    # so charging it as well would be double counting -- unless
+                    # the wall is down.
+                    if similarity >= hard or twins:
+                        if not wall_down:
+                            continue
+                    elif similarity < soft:
                         continue
                     if frame.at[first, '_committed'] and frame.at[second, '_committed']:
                         continue
-                    charge = int(round(weight * (similarity - soft) / span))
+                    charge = (above_wall if similarity >= hard or twins
+                              else int(round(weight * (similarity - soft) / span)))
                     if charge <= 0:
                         continue
                     # Only the lower bound is needed: this is a cost, so the
@@ -1216,6 +1580,24 @@ class CpSatPicker:
 
         return chosen
 
+    def _moves(self, frame, chosen) -> str:
+        """Which classes gave slots and which took them, and record it."""
+        gave: Dict[str, int] = {}
+        took: Dict[str, int] = {}
+        for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
+            need = int(self.plan.images.get(category, 0)) + int(group['_committed'].sum())
+            got = int(chosen[Col.CLUSTER_CONTEXT].eq(category).sum())
+            entry = self.per_category.setdefault(category, {})
+            if got > need:
+                took[category] = got - need
+                entry['moved_in'] = got - need
+            elif got < need:
+                gave[category] = need - got
+        if took:
+            for category, count in gave.items():
+                self.per_category[category]['moved_out'] = count
+        return _moves_summary(gave, took)
+
     def _report(self, frame, x, solver, status) -> None:
         """Log what the solve decided, per class and per window."""
         from ortools.sat.python import cp_model
@@ -1241,9 +1623,26 @@ class CpSatPicker:
             spread = chosen['_window'].value_counts().sort_index().to_dict()
             lines.append(f"  per window: {spread}")
 
+        if self.relaxation.substitution:
+            lines.append(f"  substitution: {self._moves(frame, chosen)}")
+            moved = {pair: int(solver.Value(flow)) for pair, flow in self.flows.items()}
+            moved = {pair: n for pair, n in moved.items() if n}
+            if moved:
+                lines.append("  moves: " + ", ".join(
+                    f"{giver} -> {target} {n}" for (giver, target), n in sorted(moved.items())))
+
+
         self.logger.info("\n".join(lines))
         if status == cp_model.FEASIBLE:
             self.logger.info("cp-sat: time limit hit before proving optimality")
+
+
+def _moves_summary(gave: Dict[str, int], took: Dict[str, int]) -> str:
+    if not took:
+        return "no slot moved"
+    out = ", ".join(f"{c} -{n}" for c, n in sorted(gave.items()))
+    into = ", ".join(f"{c} +{n}" for c, n in sorted(took.items()))
+    return f"{out} -> {into}"
 
 
 def _slug(value: Any) -> str:

@@ -93,6 +93,9 @@ class Allocation:
     charged_to_ceremony: int = 0
     #: Every category budgeted as `yes` on this gallery, ceremony or otherwise.
     yes_categories: List[str] = field(default_factory=list)
+    #: {category: its share of the profile}, over the percentage categories
+    #: this gallery has -- the normalisation `budget_each` divides by.
+    shares: Dict[str, float] = field(default_factory=dict)
 
     def summary(self) -> str:
         if not self.ceremony_yes:
@@ -374,6 +377,26 @@ def redistribute(focus_table: dict, lut: Dict[str, tuple], shortfall: int) -> in
     return shortfall
 
 
+def profile_shares(focus_table: dict, available: Dict[str, int]) -> Dict[str, float]:
+    """What share of the album the profile gives each category the gallery has.
+
+    Over the percentage categories present, so the shares sum to one -- the
+    same normalisation `budget_each` sizes the album with. A `yes` category has
+    no share: it is one photo, not a part of the album.
+    """
+    weights = {
+        event: float(config['value'])
+        for event, config in focus_table.items()
+        if isinstance(config, dict)
+        and isinstance(config.get('value'), (int, float))
+        and not isinstance(config.get('value'), bool)
+        and config['value'] > 0
+        and available.get(event, 0) > 0
+    }
+    total = sum(weights.values())
+    return {event: value / total for event, value in weights.items()} if total else {}
+
+
 # --------------------------------------------------------------------------
 # The whole thing
 # --------------------------------------------------------------------------
@@ -413,6 +436,7 @@ def allocate(available: Dict[str, int], focus_table: dict, lookup_table: Dict[st
         yes_categories=yes_categories(focus_table, available),
         ceremony_page_granted=bool(settled.pages),
         charged_to_ceremony=settled.photos_charged,
+        shares=profile_shares(focus_table, available),
     )
 
     if logger and unfilled > 1:

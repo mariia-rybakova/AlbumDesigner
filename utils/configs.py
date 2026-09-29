@@ -1210,7 +1210,85 @@ CONFIGS = {'DEBUG': True,
                 # And the allowance becomes a target rather than a ceiling, so
                 # the classes that merely fell under the admission bar fill too.
                 'allowance_is_target': True,
+                # And a class whose last slots could only be filled with
+                # repeats may give them to another class instead. See
+                # `substitution` below.
+                'substitution': True,
             },
+
+            # -- the retry's slot substitution ------------------------------
+            #
+            # With the walls down the retry fills every class to its own
+            # allowance, so a class with nothing left but copies of one shot
+            # takes the copies: its shortage costs 4000 and the dearest repeat
+            # 1200. Here the album stays full but a class's share of it is
+            # soft -- a slot moves to another class when the repeat it avoids
+            # costs more than the move. `CpSatPicker._add_soft_quotas`.
+            #
+            # A move from class A to class B costs
+            #     short_weight + (over_weight - preference_B) + drift
+            # against the repeat's charge in A -- the ramp up to 600, or
+            # `relaxed_duplicate_factor` x 600 at or above the wall. With these
+            # values a move costs 400-700 before drift, so it happens for a
+            # frame above about 0.94 to its twin and not for ordinary variety.
+            'substitution': {
+                'enabled': True,
+                # A class gives away only the slots it cannot fill with a
+                # distinct shot: its allowance less the shots its candidates
+                # hold, clustered at this cosine. Without the limit a slot moved
+                # on rank alone -- on 49994361 dancing, portrait, speech and the
+                # groom gave up photos with no near neighbour at all. 0.92
+                # rather than the ramp's 0.88: at 0.88 `full party` and
+                # `walking the aisle` on 49996919 gave a slot for pairs at
+                # 0.90-0.92, which are different frames of a group.
+                'donor_similarity': 0.92,
+                'short_weight': 300,
+                'over_weight': 400,
+                # The most important receiver's discount on the above.
+                # importance = profile share * (1 + abundance), where abundance
+                # is the class's photo count or its time span, each over the
+                # largest of the receivers: 'max' (either is enough), 'photos',
+                # 'span' or 'mean'.
+                'preference_weight': 300,
+                'abundance': 'max',
+                # At most one spread's worth of photos into any one class.
+                'max_in_spreads': 1.0,
+                # A move changes the album's length -- a dancing photo is a
+                # twenty-fourth of a spread, a bride photo a quarter -- and the
+                # layout is planned to the length selection chose. Per spread
+                # it grows, and never more than this much longer. Shrinking is
+                # free: a move into a party class shortens the album by a
+                # fraction of a page, which the layout absorbs.
+                'drift_weight': 2000,
+                'max_growth_spreads': 0.5,
+                # Where a slot goes depends on where it comes from: taken off
+                # the price of a move from the class on the left to each class
+                # on the right, on top of the receiver's own preference. A
+                # move costs `over_weight` (400) less both, floored at 0.
+                #
+                # These add places for a slot to go; they do not replace the
+                # couple and the bride, whose profile share alone gives them a
+                # preference of ~300 (a price of ~100). The groom's party is a
+                # little cheaper than that (~40), so it is preferred when its
+                # photos are as good; full party, bride party and ceremony come
+                # after the couple (~110-210) and are taken when their photos
+                # are better. At 400/250 the party classes displaced the couple
+                # outright: on 49996919 both groom slots went to bride party.
+                # The bride mirrors the groom.
+                'affinity': {
+                    'groom': {'groom party': 300, 'full party': 150,
+                              'bride party': 150, 'ceremony': 150},
+                    'bride': {'bride party': 300, 'full party': 150,
+                              'groom party': 150, 'ceremony': 150},
+                },
+                # A second of these is not a better album, whatever it scores.
+                'never_receive': ('first dance', 'cake cutting', 'kiss',
+                                  'may kiss bride', 'send off', 'other', 'None'),
+            },
+            # With `drop_exclusions` the pairs the wall forbade are charged
+            # this many times `similar_penalty_weight`, rather than the nothing
+            # the ramp charges at and above the wall.
+            'relaxed_duplicate_factor': 2.0,
 
             # -- coverage: Phase 1 of docs/cpsat_scoring_plan.md ------------
             #
