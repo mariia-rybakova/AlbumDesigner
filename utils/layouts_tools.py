@@ -1,5 +1,6 @@
 import ast
 import csv
+import math
 import pickle
 import numpy as np
 import pandas as pd
@@ -13,6 +14,21 @@ def read_pkl_file(file):
 
 
 
+def is_square(adjusted_width, adjusted_height, tolerance):
+    """Whether a box's real width:height is within ``tolerance`` of 1:1, as a ratio.
+
+    Relative, not absolute. The test used to be ``|w - h| <= tolerance`` in page
+    units, so how far from square a box could be depended on its size: a
+    full-page box passed within 5%, a 0.175-tall one within 29%. 49995684's
+    twelve-box design 1997004 is 1.26:1 throughout -- nearer a 3:2 landscape
+    photo than a square -- and every box was called square, so portraits filled
+    it freely and each kept 53% of its height.
+    """
+    if adjusted_width <= 0 or adjusted_height <= 0:
+        return False
+    return abs(math.log(adjusted_width / adjusted_height)) <= math.log(1 + tolerance)
+
+
 def classify_box(box, tolerance, album_ar=2):
     # Adjust width and height based on 1:2 aspect ratio
     adjusted_width = float(box['width'] * album_ar)
@@ -22,7 +38,7 @@ def classify_box(box, tolerance, album_ar=2):
 
     if adjusted_width == 1 and adjusted_height == 1:
         return 'full page square', area
-    elif abs(adjusted_width - adjusted_height) <= tolerance:
+    elif is_square(adjusted_width, adjusted_height, tolerance):
         if area >= 0.5:  # Arbitrary threshold to differentiate small and large squares
             return 'large square', area
         else:
@@ -217,7 +233,14 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,alb
     }
 
 
-def generate_layouts_df(data, id_list, tolerance=0.05, album_ar=2,do_mirror=False):
+#: How far from 1:1 a box may be and still count as square, as a ratio. Designs
+#: carry near-squares at 0.94-0.95:1 (78 boxes on 49995684's design) that are
+#: plainly meant as squares; the boxes that were wrongly squares sat at
+#: 1.23-1.37:1. Ten percent keeps the first and releases the second.
+SQUARE_TOLERANCE = 0.10
+
+
+def generate_layouts_df(data, id_list, tolerance=SQUARE_TOLERANCE, album_ar=2,do_mirror=False):
 
 
     # Initialize lists to hold areas for all portrait and landscape boxes
