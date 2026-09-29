@@ -155,9 +155,11 @@ def test_a_square_box_with_no_faces_keeps_the_frames_crop():
 
 
 def test_the_rest_of_the_album_is_untouched():
-    """Covers only. `customize_box` still centres, because changing it would
-    move the crops on every spread of every album."""
-    faces = [face(0.20, 0.12, 0.45, 0.30)]
+    """The face-aware search is for the covers. On a spread, a photo of more
+    than one person is still centred, because changing that would move the
+    crops on every spread of every album. (One person is framed by the
+    single-subject rule wherever the photo goes.)"""
+    faces = [face(0.20, 0.12, 0.45, 0.30), face(0.50, 0.15, 0.75, 0.33)]
 
     _, y, _, h = customize_box(photo(faces), COVER_BOX, album_ar=2)
 
@@ -207,7 +209,7 @@ def test_the_crop_has_the_box_aspect_ratio():
 def test_the_crop_matches_what_the_centred_one_would_have_been_in_shape():
     """Same shape, different position -- the height was never the problem."""
     target = box_target_ar(COVER_BOX, album_ar=2)
-    faces = [face(0.20, 0.12, 0.45, 0.30)]
+    faces = [face(0.20, 0.12, 0.45, 0.30), face(0.50, 0.15, 0.75, 0.33)]
 
     mine = face_aware_crop(photo(faces), target)
     centred = customize_box(photo(faces), COVER_BOX, album_ar=2)

@@ -255,6 +255,24 @@ class SelectionStage(Stage):
         return updated_messages
 
 
+def _crop_frame(frame):
+    """The columns the crop subprocess reads, ready to cross into it.
+
+    `bodies_info` is kept as protobuf's repeated container, which is not a plain
+    list; each is turned into a list of its messages, which pickle like the
+    faces already do. A frame without body detections gets empty lists, and the
+    single-subject rule then works from the face alone.
+    """
+    columns = [c for c in ProcessStage.CROP_COLUMNS if c in frame.columns]
+    out = frame[columns].copy()
+    if 'bodies_info' in out.columns:
+        out['bodies_info'] = [list(v) if v is not None and not isinstance(v, float) else []
+                              for v in out['bodies_info']]
+    else:
+        out['bodies_info'] = [[] for _ in range(len(out))]
+    return out
+
+
 class _CropJob:
     """One crop subprocess and the queue carrying its result, owned together.
 
@@ -316,7 +334,7 @@ class ProcessStage(Stage):
     #: What `process_crop_images` needs, and all it needs. Every one of them is
     #: a property of the photo, which is why one crop pass can serve N albums.
     CROP_COLUMNS = ['image_id', 'faces_info', 'background_centroid', 'diameter',
-                    'image_as']
+                    'image_as', 'bodies_info']
 
     def _crop_once(self, messages):
         """Crop every photo any album needs, in one subprocess.
@@ -338,12 +356,15 @@ class ProcessStage(Stage):
                 part = message.content.get(key)
                 if part is None or getattr(part, 'empty', True):
                     continue
-                if not set(self.CROP_COLUMNS).issubset(part.columns):
+                # Bodies are optional: without them the single-subject rule
+                # works from the face alone.
+                required = set(self.CROP_COLUMNS) - {'bodies_info'}
+                if not required.issubset(part.columns):
                     self.logger.warning(
                         f"Cannot share crops: {key} lacks "
-                        f"{sorted(set(self.CROP_COLUMNS) - set(part.columns))}")
+                        f"{sorted(required - set(part.columns))}")
                     return None
-                frames.append(part[self.CROP_COLUMNS])
+                frames.append(_crop_frame(part))
         if not frames:
             return None
 
@@ -408,7 +429,7 @@ class ProcessStage(Stage):
 
             bride_and_groom_df = message.content.get('bride and groom', pd.DataFrame())
             df_serializable = pd.concat([df.copy(), bride_and_groom_df])  # Make a copy to avoid modifying original
-            df_serializable = df_serializable[['image_id', 'faces_info', 'background_centroid', 'diameter', 'image_as']]
+            df_serializable = _crop_frame(df_serializable)
 
             crop_job = None
             if shared_cropped is None:

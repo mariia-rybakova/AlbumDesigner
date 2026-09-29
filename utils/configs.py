@@ -61,6 +61,18 @@ CONFIGS = {'DEBUG': True,
            # -1 is what that service writes for a detection it judged not a
            # face. 20 is the "not blurred" cut Face-Recognition uses itself.
            'cover_crop_min_face_blur': 20,
+           # A photo of one person is framed by the head and the body, not
+           # centred on the face (`smart_cropping.single_subject_window`).
+           # `headroom_faces` is the space left above the top of the face, in
+           # face-heights: the human crops of 49995684's seated bride left 0.9
+           # and 1.0 where the face-centred crop left 1.9. A second body at
+           # least `other_body_max_share` the size of the subject's makes it a
+           # group, and the rule stands aside.
+           'single_subject_crop': {
+               'enabled': True,
+               'headroom_faces': 1.0,
+               'other_body_max_share': 0.5,
+           },
            'color_mix': 0.0001,
            'double_page_color_mix': 0.00000001,
            'class_mix': 0.00001,

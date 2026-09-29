@@ -14,7 +14,7 @@ import json
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from src.core.models import GroupProcessingResult
-from src.smart_cropping import face_aware_crop
+from src.smart_cropping import face_aware_crop, single_subject_window
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -502,6 +502,12 @@ def customize_box(image_info, box_info, album_ar=2):
         return crop_x, crop_y, crop_w, crop_h
     else:
         image_ar = float(image_info['image_as'])
+        # One person: framed by the head and body rather than centred blind --
+        # the same rule the pre-computed square crop and the covers apply.
+        window = single_subject_window(image_info.get('faces_info'), image_info.get('bodies_info'),
+                                       image_ar, target_ar)
+        if window is not None:
+            return window
         if image_ar > target_ar:
             # Image is too wide, crop horizontally
             new_width_ratio = target_ar / image_ar

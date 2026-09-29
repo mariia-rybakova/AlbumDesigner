@@ -120,8 +120,14 @@ def crop_find(foregroundMask, faceMask=None, aspectRatio=1, steps=10):
 
     return s_min, [s_min[0] + w, s_min[1] + h], int(w), int(h)
 
-def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000, face_extension=2):
+def process_cropping(ar, faces, centroid, diameter, box_aspect_ratio, min_dim=1000, face_extension=2,
+                     bodies=None):
     #print("ar",ar, faces, centroid, diameter, box_aspect_ratio, min_dim, face_extension)
+
+    # One person: frame the person, not the face. See `single_subject_window`.
+    window = single_subject_window(faces, bodies, ar, box_aspect_ratio)
+    if window is not None:
+        return window
 
     min_face_x = 1
     min_face_y = 1
@@ -253,7 +259,8 @@ def process_crop_images(q,df):
             row['faces_info'],
             row['background_centroid'],
             float(row['diameter']),
-            1
+            1,
+            bodies=row.get('bodies_info'),
         )
         # Store the results in a dictionary to update the DataFrame later
         results.append({
@@ -421,12 +428,17 @@ def face_aware_crop(image_info, target_ar, logger=None):
 
     try:
         image_ar = float(image_info['image_as'])
+        try:
+            bodies = image_info['bodies_info']
+        except (KeyError, IndexError):
+            bodies = None
         crop = process_cropping(
             image_ar,
             faces,
             image_info['background_centroid'],
             float(image_info['diameter']),
             float(target_ar),
+            bodies=bodies,
         )
         crop = _faces_first(crop, faces, image_ar, float(target_ar), logger,
                             centre_on_union=bool(stand_ins))
@@ -558,6 +570,78 @@ def _hidden_couple_faces(image_info, faces, image_ar, logger=None):
         logger.info(f"face-aware crop: couple member(s) {sorted(hidden)} in frame without a face; "
                     f"keeping {len(stand_ins)} stand-in from the {source}")
     return stand_ins
+
+
+def _as_list(value):
+    """`value` as a list, or [] -- protobuf containers included, which list fine
+    but have no `__iter__` attribute, and pandas' NaN for a missing cell."""
+    if value is None or isinstance(value, (str, float)):
+        return []
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def single_subject_window(faces, bodies, image_ar, target_ar):
+    """The window for a photo of one person, or None when it is not one.
+
+    Every face rule here centres on the face, which for one person is the wrong
+    thing to aim at: a seated bride in a 1:1 box on 49995684 got a band of wall
+    above her head nearly twice her face's height and was cut at the chest. The
+    human crop of the same photo left about one face-height above her head and
+    ran down over her body to her hands.
+
+    So for one person the window is placed by the head, not the face's centre:
+    its top sits `headroom_faces` face-heights above the top of the face, and
+    the rest runs down the body. Across, it is centred on the body the face
+    belongs to, and moved only as far as it must to keep the face. Both are
+    clamped to the image, so a face at the top edge keeps the top edge.
+
+    One person means exactly one real face (Face-Recognition's -1 not-a-face
+    detections do not count), and no other body at least `other_body_max_share`
+    of the size of the one holding it -- a small figure in the background does
+    not make it a group. Stand-in faces from `_hidden_couple_faces` are faces
+    here, so a couple with a hidden partner is never one person.
+    """
+    settings = CONFIGS.get('single_subject_crop', {})
+    if not settings.get('enabled', True):
+        return None
+
+    real = [f for f in _as_list(faces) if getattr(f, 'blurLevel', 0) >= 0]
+    if len(real) != 1:
+        return None
+    face = real[0].bbox
+    face_h = face.y2 - face.y1
+    if face_h <= 0:
+        return None
+
+    def area(b):
+        return max(0.0, b.bbox.x2 - b.bbox.x1) * max(0.0, b.bbox.y2 - b.bbox.y1)
+
+    cx, cy = (face.x1 + face.x2) / 2, (face.y1 + face.y2) / 2
+    body_list = _as_list(bodies)
+    own = [b for b in body_list if b.bbox.x1 <= cx <= b.bbox.x2 and b.bbox.y1 <= cy <= b.bbox.y2]
+    body = max(own, key=area) if own else None
+    if body is not None:
+        share = float(settings.get('other_body_max_share', 0.5))
+        if any(b is not body and area(b) >= share * area(body) for b in body_list):
+            return None
+
+    w, h = _window_size(float(image_ar), float(target_ar))
+
+    top = face.y1 - float(settings.get('headroom_faces', 1.0)) * face_h
+    y = min(max(top, 0.0), 1.0 - h)
+
+    centre = (body.bbox.x1 + body.bbox.x2) / 2 if body is not None else cx
+    x = min(max(centre - w / 2, 0.0), 1.0 - w)
+    # Keep the face whole when the window is narrower than the body.
+    if face.x1 < x:
+        x = max(face.x1, 0.0)
+    elif face.x2 > x + w:
+        x = min(face.x2 - w, 1.0 - w)
+
+    return float(x), float(y), float(w), float(h)
 
 
 def _window_size(image_ar, target_ar):
