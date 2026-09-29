@@ -60,9 +60,23 @@ def size_album(designs_info, selection_max_total_spreads=None) -> Tuple[int, int
     return min(max_total_spreads, min_pages + 6), max_total_spreads
 
 
+def layout_target(selection_target_spreads, min_total_spreads, max_total_spreads):
+    """The spread total the layout plan reduces toward, or None for "the ceiling".
+
+    Selection sizes its photos for a number of spreads -- the sum of its
+    per-category plan -- and the layout used to see only the range around it.
+    Rounded to whole spreads and held inside the album's own [min, max], so a
+    design that demands more pages still gets them.
+    """
+    if selection_target_spreads is None or not selection_target_spreads > 0:
+        return None
+    return int(min(max(round(selection_target_spreads), min_total_spreads), max_total_spreads))
+
+
 def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
                      manual_selection=False, all_gallery_df=None, selection_min_total_spreads=None,
-                     selection_max_total_spreads=None, is_artificial_time=False):
+                     selection_max_total_spreads=None, is_artificial_time=False,
+                     selection_target_spreads=None):
     # Make the artificial-time flag available to the stage recorders so the
     # split/merge/subgroups JSONs carry it and the visualizers can pick the
     # right time field (mirrors album1.pdf in process_gallery.py).
@@ -84,8 +98,13 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     min_total_spreads, max_total_spreads = size_album(designs_info, selection_max_total_spreads)
     logger.info(f"Printlab data: minPages={designs_info['minPages']}. Calculated: min_total_spreads={min_total_spreads}")
     logger.info(f"Printlab data: maxPages={designs_info['maxPages']}. Calculated: max_total_spreads={max_total_spreads}")
+    target_total_spreads = layout_target(selection_target_spreads, min_total_spreads, max_total_spreads)
+    if target_total_spreads is not None:
+        logger.info(f"Layout target: {target_total_spreads} spreads "
+                    f"(selection planned {selection_target_spreads:.2f})")
     look_up_table.update_with_limit(group2images_initial, max_total_spreads=max_total_spreads,
-                                    min_total_spreads=min_total_spreads,logger = logger)
+                                    min_total_spreads=min_total_spreads,logger = logger,
+                                    target_total_spreads=target_total_spreads)
 
     resources = AlbumDesignResources.from_dict(designs_info, look_up_table)
     
@@ -110,7 +129,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
 
     resources.look_up_table.update_with_limit(group2images, max_total_spreads=max_total_spreads,
                                               min_total_spreads=min_total_spreads,logger = logger,
-                                              per_group=True)
+                                              per_group=True, target_total_spreads=target_total_spreads)
 
     if CONFIGS['save_files']['spreads']:
         # Wipe stale per-group jsons from any previous run. Without this, files

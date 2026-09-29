@@ -367,7 +367,7 @@ class LookUpTable:
                 self._write_value(key, new_value, extra_value, per_group)
 
     def update_with_limit(self, group2images, max_total_spreads, min_total_spreads=None, logger=None,
-                          per_group: bool = False):
+                          per_group: bool = False, target_total_spreads=None):
         """Adjust LUT values so total spreads across all groups stays within [min, max].
 
         1. Computes initial spread count per group from current LUT.
@@ -375,20 +375,32 @@ class LookUpTable:
         3. If total < min: expands spreads (most crowded groups first), then decreases LUT values.
         4. If within range: no changes to LUT.
 
+        ``target_total_spreads``, when given, is what a reduction aims for instead of
+        ``max_total_spreads``: the album selection sized its photos for. Reducing only to the
+        ceiling planned the album *at* its limit -- 49994361 picked photos for 18.8 spreads and was
+        laid out to 22 -- so the one extra spread the layout search may add to a small group took
+        it over, and there was no slack left anywhere. The ceiling stays the hard limit; the target
+        only decides where a reduction stops, and it never triggers an expansion.
+
         per_group=False (default) shifts the content prior, so the budget decision carries into
         the split/merge phase (which reads content-keyed values). per_group=True writes per-group
         overrides instead, used on the final groups to refine individual groups for the layout.
         """
         spreads_per_group = self._compute_initial_spreads(group2images)
         total_spreads = sum(spreads_per_group.values())
+        ceiling = max_total_spreads
+        if target_total_spreads is not None:
+            ceiling = min(max_total_spreads, target_total_spreads)
         if logger:
             logger.debug(f'LuT update. Spreads per group: {spreads_per_group}')
-            logger.info(f'LuT update. Estimated total spreads: {total_spreads}')
+            logger.info(f'LuT update. Estimated total spreads: {total_spreads}'
+                        + (f' (target {ceiling}, max {max_total_spreads})'
+                           if target_total_spreads is not None else ''))
 
-        if total_spreads > max_total_spreads:
+        if total_spreads > ceiling:
             if logger:
                 logger.info('LuT update. Reduction applied')
-            spreads_per_group = self._reduce_spreads(spreads_per_group, group2images, max_total_spreads)
+            spreads_per_group = self._reduce_spreads(spreads_per_group, group2images, ceiling)
             self._apply_table_reduction(spreads_per_group, group2images, per_group=per_group)
         elif min_total_spreads is not None and total_spreads < min_total_spreads:
             if logger:

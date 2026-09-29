@@ -447,6 +447,12 @@ class ProcessStage(Stage):
                 all_gallery_df = message.content.get('gallery_all_photos_info', None)
                 selection_min_total_spreads = message.content.get('min_total_spreads', None)
                 selection_max_total_spreads = message.content.get('max_total_spreads', None)
+                # The spreads selection sized its photos for; the layout plan aims
+                # for it rather than for the ceiling. None on the manual route,
+                # where selection made no plan and the user's photos decide.
+                spreads_dict = message.content.get('spreads_dict') or {}
+                selection_target_spreads = (sum(spreads_dict.values())
+                                            if spreads_dict and not manual_selection else None)
                 if predefined is not None:
                     # Stages 1+2 (partitions/combinations) are given by the input;
                     # only stage 3 (layout + page split + box assignment) runs.
@@ -458,7 +464,8 @@ class ProcessStage(Stage):
                                                 all_gallery_df=all_gallery_df,
                                                 selection_min_total_spreads=selection_min_total_spreads,
                                                 selection_max_total_spreads=selection_max_total_spreads,
-                                                is_artificial_time=message.content.get('is_artificial_time', False))
+                                                is_artificial_time=message.content.get('is_artificial_time', False),
+                                                selection_target_spreads=selection_target_spreads)
 
                 wait_start = datetime.now()
                 if crop_job is None:
