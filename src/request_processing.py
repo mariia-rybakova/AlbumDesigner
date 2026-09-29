@@ -476,10 +476,15 @@ def cover_box(image_info, box_info, album_ar=2, logger=None):
     the one photo the album opens on and the box is 1.96:1 -- a portrait keeps
     34% of its height there, so a centred band lands below the faces and takes
     chins. Every other placement keeps the existing behaviour.
-    """
-    if box_info['orientation'] == 'square':
-        return customize_box(image_info, box_info, album_ar)
 
+    Square boxes too. A full-page box on a 1.96:1 album is 0.98:1, which
+    `classify_box` calls square, and square boxes used to take the frame's
+    pre-computed 1:1 crop -- the one `process_crop_images` makes with a
+    shortcut that centres on the detected faces and looks at nothing else. On
+    49994361 that put the closing photo's window on the bride alone and cut the
+    groom, whose face was hidden, in half. The box's real ratio is passed, not
+    1, so the crop is the shape the box is.
+    """
     crop = face_aware_crop(image_info, box_target_ar(box_info, album_ar), logger)
     if crop is None:
         return customize_box(image_info, box_info, album_ar)

@@ -148,6 +148,7 @@ def get_persons_ids(persons_file, logger):
         # Prepare lists for DataFrame columns
         photo_ids = []
         persons_ids_list = []
+        faceless_list = []
         id_to_gender = {}
         person_rows = []
 
@@ -174,6 +175,13 @@ def get_persons_ids(persons_file, logger):
             for im in infos.imagesInfo:
                 photo_ids.append(im.photoId)
                 persons_ids_list.append(id)
+                # An identity can be placed in a photo with no face box at all --
+                # recognised from the body when the face is hidden. On 49994361's
+                # closing photo the groom's hand covered his face: identity 13 was
+                # there with an empty `faceBbox`, and the face file had only the
+                # bride. The crop needs to know someone is in frame it cannot see.
+                bbox = im.faceBbox
+                faceless_list.append(not (bbox.x2 > bbox.x1 and bbox.y2 > bbox.y1))
 
         if persons_ids_list:  # Check if anyone was identified at all
             id_counts = Counter(persons_ids_list)
@@ -189,15 +197,21 @@ def get_persons_ids(persons_file, logger):
         temp_df = pd.DataFrame({
             'image_id': photo_ids,
             'persons_ids': persons_ids_list,
+            'faceless': faceless_list,
         })
 
         if not temp_df.empty:
             persons_info_df = temp_df.groupby('image_id')['persons_ids'].apply(list).reset_index()
+            faceless_df = (temp_df[temp_df['faceless']].groupby('image_id')['persons_ids']
+                           .apply(list).rename('faceless_persons_ids').reset_index())
+            persons_info_df = persons_info_df.merge(faceless_df, on='image_id', how='left')
         else:
-            persons_info_df = pd.DataFrame(columns=['image_id', 'persons_ids'])
+            persons_info_df = pd.DataFrame(columns=['image_id', 'persons_ids', 'faceless_persons_ids'])
 
         persons_info_df['main_persons'] = [top_person_ids for _ in range(len(persons_info_df))]
         persons_info_df['persons_ids'] = persons_info_df['persons_ids'].apply(lambda x: x if isinstance(x, list) else [])
+        persons_info_df['faceless_persons_ids'] = persons_info_df['faceless_persons_ids'].apply(
+            lambda x: x if isinstance(x, list) else [])
 
         # add social dataframe to person dataframe
         person_df = pd.DataFrame(person_rows)
@@ -388,6 +402,9 @@ def load_gallery_assets(project_base_url, logger, clip_df=None):
         gallery_info_df = gallery_info_df.dropna(subset=['embedding'])
 
         gallery_info_df["persons_ids"] = gallery_info_df["persons_ids"].apply(
+            lambda x: [] if not isinstance(x, list) else x
+        )
+        gallery_info_df["faceless_persons_ids"] = gallery_info_df["faceless_persons_ids"].apply(
             lambda x: [] if not isinstance(x, list) else x
         )
 

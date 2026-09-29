@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import cv2
 import numpy as np
 import pandas as pd
@@ -403,6 +405,16 @@ def face_aware_crop(image_info, target_ar, logger=None):
     # judged not a face; on 53840120 both covers had one, in a corner, and the
     # crop moved to keep it.
     faces = [f for f in faces if getattr(f, 'blurLevel', 0) >= 0]
+
+    stand_ins = []
+    try:
+        stand_ins = _hidden_couple_faces(image_info, faces, float(image_info['image_as']), logger)
+    except Exception as exc:  # noqa: BLE001 - same rule as the crop below
+        if logger:
+            logger.warning(f"face-aware crop: could not place a hidden face "
+                           f"({type(exc).__name__}: {exc})")
+    faces = faces + stand_ins
+
     if not faces:
         # No face to aim at; the centred crop is as good a guess as any.
         return None
@@ -416,7 +428,8 @@ def face_aware_crop(image_info, target_ar, logger=None):
             float(image_info['diameter']),
             float(target_ar),
         )
-        crop = _faces_first(crop, faces, image_ar, float(target_ar), logger)
+        crop = _faces_first(crop, faces, image_ar, float(target_ar), logger,
+                            centre_on_union=bool(stand_ins))
     except Exception as exc:  # noqa: BLE001 - a crop is not worth the album
         if logger:
             logger.warning(f"face-aware crop failed ({type(exc).__name__}: {exc}); "
@@ -429,6 +442,122 @@ def face_aware_crop(image_info, target_ar, logger=None):
     # `np.float64` subclasses `float` -- but nothing here should depend on
     # that, and `customize_box` has always returned plain floats.
     return tuple(float(v) for v in crop)
+
+
+#: COCO keypoint indices of the head: nose, eyes, ears.
+_HEAD_KEYPOINTS = range(5)
+_MIN_KEYPOINT_SCORE = 0.3
+#: A head box's side, as a multiple of the spread of its keypoints. Eyes and
+#: ears span about half a head, and the face box the crop is used to is
+#: roughly a head.
+_HEAD_FROM_KEYPOINTS = 1.6
+#: Share of a body box taken as its head when the keypoints are too weak.
+_HEAD_SHARE_OF_BODY = 0.25
+#: Half-size of the stand-in box put on the saliency centre when no body is
+#: found either -- a point the window must contain, not a region to fill.
+_BLOB_POINT_HALF = 0.02
+
+
+def _box(x1, y1, x2, y2):
+    """A stand-in face the crop code reads like a detection.
+
+    blurLevel 0 is below ``cover_crop_min_face_blur``, so a stand-in never
+    becomes the main face `_faces_first` centres on -- a detected face leads.
+    """
+    clamp = lambda v: min(max(v, 0.0), 1.0)
+    bbox = SimpleNamespace(x1=clamp(x1), y1=clamp(y1), x2=clamp(x2), y2=clamp(y2))
+    return SimpleNamespace(bbox=bbox, blurLevel=0.0)
+
+
+def _couple_ids(image_info):
+    ids = set()
+    for column in ('bride_id', 'groom_id'):
+        try:
+            value = image_info[column]
+        except (KeyError, IndexError):
+            continue
+        if value is not None and not pd.isna(value):
+            ids.add(value)
+    return ids
+
+
+def _listed(image_info, column):
+    try:
+        value = image_info[column]
+    except (KeyError, IndexError):
+        return []
+    if value is None or isinstance(value, (str, float)):
+        return []
+    # Not `hasattr(value, '__iter__')`: the upb protobuf container that
+    # `bodies_info` holds lists fine but has no such attribute.
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def _contains_face(body, faces):
+    b = body.bbox
+    for f in faces:
+        cx, cy = (f.bbox.x1 + f.bbox.x2) / 2, (f.bbox.y1 + f.bbox.y2) / 2
+        if b.x1 <= cx <= b.x2 and b.y1 <= cy <= b.y2:
+            return True
+    return False
+
+
+def _head_of(body, image_ar):
+    """The head of a body detection, from its keypoints or its top."""
+    points = [kp for i, kp in enumerate(getattr(body, 'keypoints', []))
+              if i in _HEAD_KEYPOINTS and kp.score >= _MIN_KEYPOINT_SCORE
+              and 0.0 <= kp.x <= 1.0 and 0.0 <= kp.y <= 1.0]
+    if len(points) >= 2:
+        xs, ys = [p.x for p in points], [p.y for p in points]
+        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+        # Square in pixels: x is a fraction of the width, y of the height.
+        side = _HEAD_FROM_KEYPOINTS * max((max(xs) - min(xs)) * image_ar, max(ys) - min(ys))
+        half_x, half_y = side / 2 / image_ar, side / 2
+        return _box(cx - half_x, cy - half_y, cx + half_x, cy + half_y)
+
+    b = body.bbox
+    return _box(b.x1, b.y1, b.x2, b.y1 + (b.y2 - b.y1) * _HEAD_SHARE_OF_BODY)
+
+
+def _hidden_couple_faces(image_info, faces, image_ar, logger=None):
+    """Stand-in faces for the couple members this photo holds without a face.
+
+    Weddings only -- `bride_id` / `groom_id` are resolved for nothing else. An
+    identity can be recognised in a photo whose face the detector missed: on
+    49994361's closing photo the groom's hand covered his face, identity 13 was
+    placed there with no face box, and the crop centred on the bride alone and
+    cut him in half. Every face-led rule here then reads "all faces fit" as
+    "the bride fits".
+
+    Each hidden member gets the head of a body that holds no detected face,
+    largest first -- a guest cut by the frame edge is smaller than the partner
+    beside the one who was found. With no such body, the saliency centre stands
+    in: it at least pulls the window towards the subject instead of away.
+    """
+    hidden = _couple_ids(image_info) & set(_listed(image_info, 'faceless_persons_ids'))
+    if not hidden:
+        return []
+
+    bodies = [b for b in _listed(image_info, 'bodies_info') if not _contains_face(b, faces)]
+    bodies.sort(key=lambda b: (b.bbox.x2 - b.bbox.x1) * (b.bbox.y2 - b.bbox.y1), reverse=True)
+
+    stand_ins = [_head_of(body, image_ar) for body in bodies[:len(hidden)]]
+    source = 'body'
+    if not stand_ins:
+        centroid = image_info['background_centroid']
+        if centroid is None:
+            return []
+        stand_ins = [_box(centroid.x - _BLOB_POINT_HALF, centroid.y - _BLOB_POINT_HALF,
+                          centroid.x + _BLOB_POINT_HALF, centroid.y + _BLOB_POINT_HALF)]
+        source = 'saliency centre'
+
+    if logger:
+        logger.info(f"face-aware crop: couple member(s) {sorted(hidden)} in frame without a face; "
+                    f"keeping {len(stand_ins)} stand-in from the {source}")
+    return stand_ins
 
 
 def _window_size(image_ar, target_ar):
@@ -452,7 +581,7 @@ def _centred_on(box, w, h):
     return x, y, w, h
 
 
-def _faces_first(crop, faces, image_ar, target_ar, logger=None):
+def _faces_first(crop, faces, image_ar, target_ar, logger=None, centre_on_union=False):
     """Make sure the faces decide the cover crop, not `process_cropping`'s penalties.
 
     `process_cropping` grows every face box by a face on each side before its
@@ -466,6 +595,12 @@ def _faces_first(crop, faces, image_ar, target_ar, logger=None):
     the window is centred on the main face: the largest one at least
     ``cover_crop_min_face_blur`` sharp, so a large blurred face in the
     foreground cannot lead. With no face that sharp the search's crop stands.
+
+    ``centre_on_union`` centres on the faces even when the search's crop
+    already holds them. It is set when a stand-in for a hidden face is among
+    them: the search does keep that head in, but on 49994361's closing photo it
+    did so by sliding as far towards it as it could and cut the bride's hair at
+    the other edge.
     """
     boxes = [(f.bbox.x1, f.bbox.y1, f.bbox.x2, f.bbox.y2) for f in faces]
     w, h = _window_size(image_ar, target_ar)
@@ -473,7 +608,7 @@ def _faces_first(crop, faces, image_ar, target_ar, logger=None):
              max(b[2] for b in boxes), max(b[3] for b in boxes))
 
     if union[2] - union[0] <= w and union[3] - union[1] <= h:
-        if all(_holds(crop, b) for b in boxes):
+        if not centre_on_union and all(_holds(crop, b) for b in boxes):
             return crop
         return _centred_on(union, w, h)
 

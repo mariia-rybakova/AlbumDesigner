@@ -137,10 +137,19 @@ def test_cover_box_falls_back_when_there_are_no_faces():
     assert cover_box(row, COVER_BOX, album_ar=2) == customize_box(row, COVER_BOX, album_ar=2)
 
 
-def test_a_square_box_is_left_to_the_existing_crop():
-    """Square boxes already use the frame's `cropped_*`, which is a face-aware
-    square crop -- `process_crop_images` computes it with box_aspect_ratio=1."""
-    row = photo([face(0.2, 0.1, 0.4, 0.3)])
+def test_a_square_box_takes_the_face_aware_crop_too():
+    """The frame's `cropped_*` is a 1:1 crop that centres on the detected faces
+    and nothing else; the opening and closing pages no longer settle for it."""
+    faces = [face(0.2, 0.1, 0.4, 0.3)]
+    row = photo(faces)
+
+    assert cover_box(row, SQUARE_BOX, album_ar=2) == face_aware_crop(
+        row, box_target_ar(SQUARE_BOX, album_ar=2))
+    assert cover_box(row, SQUARE_BOX, album_ar=2) != (0.0, 0.1, 1.0, 0.66)
+
+
+def test_a_square_box_with_no_faces_keeps_the_frames_crop():
+    row = photo([])
 
     assert cover_box(row, SQUARE_BOX, album_ar=2) == (0.0, 0.1, 1.0, 0.66)
 
@@ -299,3 +308,127 @@ def test_a_detection_marked_not_a_face_is_ignored():
 
 def test_only_non_faces_means_no_opinion():
     assert face_aware_crop(opening_photo([CORNER]), OPENING_TARGET_AR) is None
+
+
+# -- a couple member in frame without a face --------------------------------
+#
+# The closing page of 49994361 (2026-09-28T14:26 dev run, photo 11547662146):
+# bride and groom side by side, his hand over his face. persons_info placed
+# identity 13 (the groom) with an empty face box; the face file had the bride
+# alone; the body file had three bodies. The 1:1 crop centred on the bride and
+# cut the groom in half. Numbers below are that photo's, rounded.
+
+CLOSING_AR = 1.5011547803878784
+BRIDE, GROOM = 1.0, 13.0
+
+
+def keypoint(x, y, score):
+    return types.SimpleNamespace(x=x, y=y, score=score)
+
+
+def body(x1, y1, x2, y2, head=()):
+    kps = list(head) + [keypoint(0.5, 0.5, 0.0)] * (17 - len(head))
+    return types.SimpleNamespace(bbox=types.SimpleNamespace(x1=x1, y1=y1, x2=x2, y2=y2), keypoints=kps)
+
+
+BRIDE_FACE = rated_face(0.282, 0.321, 0.354, 0.484, 289.9)
+GROOM_BODY = body(0.522, 0.210, 0.882, 0.876, head=[
+    keypoint(0.692, 0.406, 0.88), keypoint(0.716, 0.392, 0.93), keypoint(0.687, 0.371, 0.50),
+    keypoint(0.766, 0.390, 0.93), keypoint(0.684, 0.335, 0.21)])
+BRIDE_BODY = body(0.234, 0.273, 0.480, 0.852)
+GUEST_BODY = body(0.000, 0.047, 0.139, 0.893)   # cut by the frame edge
+GROOM_HEAD = (0.687, 0.371, 0.766, 0.406)       # his confident head keypoints
+
+
+def closing_photo(faceless=(GROOM,), bodies=(GROOM_BODY, BRIDE_BODY, GUEST_BODY), **extra):
+    row = dict(bride_id=BRIDE, groom_id=GROOM, persons_ids=[1, 13],
+               faceless_persons_ids=list(faceless), bodies_info=list(bodies))
+    row.update(extra)
+    return photo([BRIDE_FACE], ar=CLOSING_AR,
+                 background_centroid=types.SimpleNamespace(x=0.566, y=0.680), diameter=0.822, **row)
+
+
+def holds_x(crop, x1, x2):
+    x, _, w, _ = crop
+    return x <= x1 and x2 <= x + w
+
+
+def test_the_square_crop_used_to_cut_the_hidden_groom():
+    """The fault, reproduced: a 1:1 window centred on the one detected face."""
+    crop = face_aware_crop(closing_photo(faceless=()), 1.0)
+
+    assert crop[0] == pytest.approx(0.0)
+    assert not holds_x(crop, GROOM_HEAD[0], GROOM_HEAD[2])
+
+
+def test_the_hidden_groom_is_kept_by_his_body():
+    crop = face_aware_crop(closing_photo(), 1.0)
+
+    assert holds_x(crop, GROOM_HEAD[0], GROOM_HEAD[2]), crop
+    assert holds_x(crop, BRIDE_FACE.bbox.x1, BRIDE_FACE.bbox.x2), crop
+
+
+def test_the_couple_is_centred_rather_than_pushed_to_an_edge():
+    """The search alone kept his head by sliding right until her hair was cut."""
+    x, _, w, _ = face_aware_crop(closing_photo(), 1.0)
+    left_margin = BRIDE_FACE.bbox.x1 - x
+    right_margin = (x + w) - GROOM_HEAD[2]
+
+    assert left_margin > 0.05 and right_margin > 0.05, (left_margin, right_margin)
+
+
+def test_the_closing_page_box_keeps_both():
+    """The real box: a full left page on a 1.96:1 album, which is 'square'."""
+    box = {'width': 0.5, 'height': 1.0, 'orientation': 'square'}
+
+    crop = cover_box(closing_photo(), box, album_ar=OPENING_TARGET_AR)
+
+    assert holds_x(crop, GROOM_HEAD[0], GROOM_HEAD[2]) and holds_x(crop, 0.282, 0.354), crop
+
+
+def test_a_guest_cut_by_the_edge_is_not_taken_for_the_groom():
+    """Two faceless bodies; the larger one is his."""
+    from src.smart_cropping import _hidden_couple_faces
+
+    stand_in, = _hidden_couple_faces(closing_photo(), [BRIDE_FACE], CLOSING_AR)
+
+    assert stand_in.bbox.x1 > 0.5
+
+
+def test_with_no_body_the_saliency_centre_leads():
+    crop = face_aware_crop(closing_photo(bodies=()), 1.0)
+    without = face_aware_crop(closing_photo(faceless=(), bodies=()), 1.0)
+
+    assert crop[0] > without[0]
+    assert holds_x(crop, 0.546, 0.586)
+
+
+def test_weak_head_keypoints_fall_back_to_the_top_of_the_body():
+    from src.smart_cropping import _hidden_couple_faces
+
+    blind = body(0.522, 0.210, 0.882, 0.876)
+    stand_in, = _hidden_couple_faces(closing_photo(bodies=(blind,)), [BRIDE_FACE], CLOSING_AR)
+
+    assert (stand_in.bbox.x1, stand_in.bbox.x2) == pytest.approx((0.522, 0.882))
+    assert stand_in.bbox.y2 == pytest.approx(0.210 + 0.25 * 0.666, abs=0.01)
+
+
+def test_a_hidden_guest_is_not_the_crops_business():
+    """Only the couple: a faceless identity who is neither is left alone."""
+    assert face_aware_crop(closing_photo(faceless=(42,)), 1.0) == \
+        face_aware_crop(closing_photo(faceless=()), 1.0)
+
+
+def test_outside_a_wedding_nothing_changes():
+    """No bride or groom resolved -- the photo is read as before."""
+    nan = float('nan')
+    assert face_aware_crop(closing_photo(bride_id=nan, groom_id=nan), 1.0) == \
+        face_aware_crop(closing_photo(faceless=()), 1.0)
+
+
+def test_a_stand_in_never_leads_over_a_detected_face():
+    """When the faces cannot share a window, the detected one is centred on."""
+    far = body(0.90, 0.05, 1.00, 0.95)
+    crop = face_aware_crop(closing_photo(bodies=(far,)), 0.5)
+
+    assert holds_x(crop, BRIDE_FACE.bbox.x1, BRIDE_FACE.bbox.x2)

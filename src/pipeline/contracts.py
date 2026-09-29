@@ -55,6 +55,8 @@ class Col:
     RANKING = "ranking"
     IMAGE_ORDER = "image_order"
     PERSONS_IDS = "persons_ids"
+    #: The identities in `persons_ids` placed with no face box (face hidden).
+    FACELESS_PERSONS_IDS = "faceless_persons_ids"
     MAIN_PERSONS = "main_persons"
     N_FACES = "n_faces"
     FACES_INFO = "faces_info"
