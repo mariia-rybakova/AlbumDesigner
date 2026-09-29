@@ -361,6 +361,40 @@ def test_a_yes_category_falls_back_when_nobody_qualifies():
         "a category with no subject-bearing photo is still filled")
 
 
+@pytest.mark.parametrize('category', ['may kiss bride', 'send off'])
+def test_the_kiss_and_the_confetti_prefer_colour(category):
+    photos = _rows([(1, category, [BRIDE, GROOM], 0), (2, category, [BRIDE, GROOM], 5)])
+    photos[Col.IMAGE_COLOR] = [0, 1]            # the best-ranked is black and white
+
+    with only(yes_categories=True):
+        context = run(photos, images={category: 1}, yes_categories=(category,),
+                      bride_id=BRIDE, groom_id=GROOM)
+
+    assert set(context.selection_plan.committed) == {2}
+
+
+def test_the_kiss_is_still_filled_when_it_has_no_colour_frame():
+    photos = _rows([(1, 'may kiss bride', [BRIDE, GROOM], 0),
+                    (2, 'may kiss bride', [BRIDE, GROOM], 5)])
+    photos[Col.IMAGE_COLOR] = [0, 0]
+
+    with only(yes_categories=True):
+        context = run(photos, images={'may kiss bride': 1},
+                      yes_categories=('may kiss bride',), bride_id=BRIDE, groom_id=GROOM)
+
+    assert set(context.selection_plan.committed) == {1}
+
+
+def test_other_yes_categories_keep_their_black_and_white_best():
+    photos = _rows([(1, 'rings', [], 0), (2, 'rings', [], 5)])
+    photos[Col.IMAGE_COLOR] = [0, 1]
+
+    with only(yes_categories=True):
+        context = run(photos, images={'rings': 1}, yes_categories=('rings',))
+
+    assert set(context.selection_plan.committed) == {1}
+
+
 def test_covering_an_identity_avoids_the_zero_budget_classes():
     """`other` is budgeted 0% because it carries nothing worth a spread, yet two
     of 49995684's `other` photos are in the album purely to cover identities 58

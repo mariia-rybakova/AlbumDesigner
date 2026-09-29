@@ -949,6 +949,11 @@ CONFIGS = {'DEBUG': True,
             # with them: one photo is coverage, and coverage is what selecting a
             # person asks for.
             'photos_per_identity': 1,
+            # `yes` categories whose one photo should be in colour when the
+            # gallery has a colour frame of it: the kiss and the confetti
+            # (`send off`) are remembered in colour, however a black and white
+            # frame of them ranks.
+            'prefer_color': ('may kiss bride', 'send off'),
         },
 
         # -- select.pick: the CP-SAT alternative ----------------------------

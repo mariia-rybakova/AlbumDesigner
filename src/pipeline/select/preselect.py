@@ -240,6 +240,8 @@ class Preselector:
             # frames with no faces in it.
             frame = subject.prefer_subject(frame, category, self._bride_id, self._groom_id,
                                            self.logger)
+            if category in self._settings.get('prefer_color', ()):
+                frame = _prefer_color(frame)
             for image_id in self._best_of(frame, need - self._committed_in(category)):
                 self._commit(image_id, f"yes:{category}")
 
@@ -322,3 +324,17 @@ class Preselector:
             frame.sort_values(Col.IMAGE_ORDER, ascending=True)[Col.IMAGE_ID]
             .tolist()[:count]
         )
+
+
+def _prefer_color(frame: pd.DataFrame) -> pd.DataFrame:
+    """The colour frames of a category, or all of it when it has none.
+
+    For the moments that are one photo and no second chance, where a black and
+    white frame is a worse answer however it ranks: the kiss and the confetti
+    are remembered in colour. A preference and not a filter, so a gallery shot
+    entirely in black and white still gets its photo.
+    """
+    if frame.empty or Col.IMAGE_COLOR not in frame.columns:
+        return frame
+    colour = frame[frame[Col.IMAGE_COLOR] != 0]
+    return colour if not colour.empty else frame
