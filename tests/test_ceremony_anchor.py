@@ -981,8 +981,11 @@ def test_matches_the_reference_when_no_highlight_is_present():
     """
     original = CONFIGS.get('budget_normalise_present_only', True)
     original_min = CONFIGS.get('ceremony_yes_min_classes', 2)
+    original_key_pages = CONFIGS.get('selection_range_key_pages', 2)
     CONFIGS['budget_normalise_present_only'] = False
     CONFIGS['ceremony_yes_min_classes'] = 99
+    # The reference budgets for the whole album, opening and closing included.
+    CONFIGS['selection_range_key_pages'] = 0
     try:
         # `may kiss bride` used to be stocked here as an extra ordinary
         # category. It is a `yes` class now, so stocking it puts a third
@@ -998,6 +1001,7 @@ def test_matches_the_reference_when_no_highlight_is_present():
     finally:
         CONFIGS['budget_normalise_present_only'] = original
         CONFIGS['ceremony_yes_min_classes'] = original_min
+        CONFIGS['selection_range_key_pages'] = original_key_pages
 
 
 def test_totals_match_the_reference_too():
@@ -1039,8 +1043,10 @@ def _allocate_full(actual_counts):
     from utils.lookup_table_tools import wedding_lookup_table
 
     log = _quiet()
+    # `key_page_spreads=0`: the reference sizes the whole album and budgets for
+    # it, before the opening and closing pages were taken off the range.
     return allocate(actual_counts, _profile(log), wedding_lookup_table, 3,
-                    pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log)
+                    pd.DataFrame({'persons_ids': [[1, 2]] * 60}), log, key_page_spreads=0)
 
 
 def _allocate_reference(actual_counts):

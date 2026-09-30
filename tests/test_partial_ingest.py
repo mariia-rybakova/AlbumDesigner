@@ -91,7 +91,7 @@ def test_a_fragment_is_refused_rather_than_composed():
 
     assert context.failed
     assert '8 photos with content data' in context.error
-    assert 'smallest album needs 34' in context.error
+    assert 'smallest album needs 28' in context.error
     assert '53 of 61 photos had no content data' in context.error
 
 

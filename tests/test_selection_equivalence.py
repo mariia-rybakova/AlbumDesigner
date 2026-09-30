@@ -55,6 +55,8 @@ def as_the_monolith():
       the categories the gallery has rather than over the whole profile
     * `bride_prep_by_identity` -- the getting-ready subject chosen by `bride_id`
       rather than by a substring match on the subquery text
+    * `selection_range_key_pages` -- the opening and closing pages taken off
+      selection's range before budgeting
     * `pick_cpsat` -- the whole per-category loop replaced by one constrained
       solve. Off by default, but pinned here too: it is a different algorithm,
       not a change to this one, so the comparison has to run the loop.
@@ -63,6 +65,8 @@ def as_the_monolith():
     normalisation = CONFIGS.get('budget_normalise_present_only', True)
     prep = CONFIGS.get('bride_prep_by_identity', True)
     cpsat = CONFIGS.get('pick_cpsat', {})
+    key_pages = CONFIGS.get('selection_range_key_pages', 2)
+    CONFIGS['selection_range_key_pages'] = 0
     CONFIGS['preselect'] = {**original, **NO_CONSTRAINTS}
     CONFIGS['budget_normalise_present_only'] = False
     CONFIGS['bride_prep_by_identity'] = False
@@ -71,6 +75,7 @@ def as_the_monolith():
         yield
     finally:
         CONFIGS['preselect'] = original
+        CONFIGS['selection_range_key_pages'] = key_pages
         CONFIGS['budget_normalise_present_only'] = normalisation
         CONFIGS['bride_prep_by_identity'] = prep
         CONFIGS['pick_cpsat'] = cpsat

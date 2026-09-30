@@ -51,6 +51,7 @@ class BudgetSubStage(SubStage):
             inputs.density,
             context.photos,
             logger,
+            key_page_spreads=_key_page_spreads(context),
         )
 
         if not allocation.images:
@@ -69,6 +70,18 @@ class BudgetSubStage(SubStage):
             shares=dict(allocation.shares),
         )
         return context
+
+
+def _key_page_spreads(context: AlbumContext):
+    """How many of selection's spreads are the opening and closing pages.
+
+    From the design's own flags; None, meaning the configured default, when
+    there are none to read -- an offline run or a test.
+    """
+    pages = getattr(getattr(context, 'designs', None), 'pages', None) or {}
+    if not pages:
+        return None
+    return int(bool(pages.get('firstPage'))) + int(bool(pages.get('lastPage')))
 
 
 def _profile_for(focus, logger):

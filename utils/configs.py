@@ -39,6 +39,14 @@ CONFIGS = {'DEBUG': True,
            # value of 2 or more. Revisit if 'max_img_split' changes.
            'special_merge_max_spreads': {'bridegroom': 2, 'send_off': 1},
            'max_total_spreads':20,
+           # The content-spread floor sits this far above a design's
+           # `minPages` (`album_processing.size_album`). Was 6.
+           'min_pages_headroom': 3,
+           # `define_min_max_spreads` sizes the whole album, opening and
+           # closing pages included; this many come off both ends of its range
+           # before photos are budgeted, when the design does not say. See
+           # `allocation.allocate`.
+           'selection_range_key_pages': 2,
            'max_group_spread':3,
            'max_imges_per_spread':24,
            # Photos-per-spread at/above which a class counts as "densely packed"

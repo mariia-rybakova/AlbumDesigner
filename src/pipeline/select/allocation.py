@@ -403,16 +403,34 @@ def profile_shares(focus_table: dict, available: Dict[str, int]) -> Dict[str, fl
 
 
 def allocate(available: Dict[str, int], focus_table: dict, lookup_table: Dict[str, tuple],
-             density: int, photos: pd.DataFrame, logger=None) -> Allocation:
+             density: int, photos: pd.DataFrame, logger=None,
+             key_page_spreads: Optional[int] = None) -> Allocation:
     """The per-category budget for one request.
 
     ``focus_table`` is mutated -- it is the working state, as it was in the
     original. `load_event_mapping` reads a fresh copy per request, so nothing
     leaks between galleries.
+
+    **The range counts the opening and closing pages.** `define_min_max_spreads`
+    sizes the whole album -- 19-22 is an album of 19 to 22 -- but everything
+    downstream counts *content* spreads, and the reply adds the first and last
+    pages on top. Budgeting 19 content spreads therefore aimed at 21, high in
+    its own range. ``key_page_spreads`` of them are taken off both ends here,
+    so the photo budget, the layout target and the reported min/max all speak
+    in content spreads. None reads `CONFIGS['selection_range_key_pages']`.
     """
     min_total, max_total = define_min_max_spreads(photos, focus_table, available, logger)
     if min_total is None:
         raise ValueError("define_min_max_spreads could not size the album")
+    if key_page_spreads is None:
+        key_page_spreads = int(CONFIGS.get('selection_range_key_pages', 2))
+    if key_page_spreads:
+        album = (min_total, max_total)
+        min_total = max(1, min_total - key_page_spreads)
+        max_total = max(min_total, max_total - key_page_spreads)
+        if logger:
+            logger.info(f"Album of {album[0]}-{album[1]} spreads is {min_total}-{max_total} "
+                        f"content spreads besides {key_page_spreads} key page(s)")
 
     lut = density_scaled(lookup_table, density)
     budget_each(focus_table, available, lut, target=min_total)

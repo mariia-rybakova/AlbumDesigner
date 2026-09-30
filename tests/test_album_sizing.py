@@ -68,11 +68,11 @@ def test_exact_design_round_trips_for_any_page_count(pages):
 # --------------------------------------------------------------------------
 
 def test_a_range_still_takes_the_margins_and_the_selection_clamp():
-    """Guards the untouched path: `-3` on the ceiling, `+6` on the floor, and
-    selection clamped to the hard ceiling."""
+    """Guards the untouched path: `-3` on the ceiling, `min_pages_headroom` (3)
+    on the floor, and selection clamped to the hard ceiling."""
     low, high = size_album(design(10, 30), selection_max_total_spreads=22)
     assert high == 22                      # min(22, max(20, 30) - 3) == 22
-    assert low == 16                       # min(22, 10 + 6)
+    assert low == 13                       # min(22, 10 + 3)
 
 
 def test_a_range_without_a_selection_target_keeps_the_design_limit():
@@ -82,6 +82,26 @@ def test_a_range_without_a_selection_target_keeps_the_design_limit():
 
 
 def test_a_range_floor_is_clamped_to_its_ceiling():
-    """`minPages + 6` must never exceed the ceiling it is clamped against."""
+    """`minPages + headroom` must never exceed the ceiling it is clamped against."""
     low, high = size_album(design(40, 41), selection_max_total_spreads=22)
     assert low == high == 22
+
+
+def test_the_budget_counts_content_spreads_not_the_album():
+    """`define_min_max_spreads` sizes the whole album; the opening and closing
+    pages come off both ends before photos are budgeted, so aiming at 19 no
+    longer lands on 21."""
+    import pandas as pd
+    from src.pipeline.select.allocation import allocate
+    from utils.lookup_table_tools import wedding_lookup_table
+    profile = {'bride and groom': {'type': 'percentage', 'value': 100.0}}
+    photos = pd.DataFrame({'persons_ids': [[1, 2]] * 60})
+
+    album = allocate({'bride and groom': 400}, {k: dict(v) for k, v in profile.items()},
+                     wedding_lookup_table, 3, photos, key_page_spreads=0)
+    content = allocate({'bride and groom': 400}, {k: dict(v) for k, v in profile.items()},
+                       wedding_lookup_table, 3, photos, key_page_spreads=2)
+
+    assert (content.min_total_spreads, content.max_total_spreads) == (
+        album.min_total_spreads - 2, album.max_total_spreads - 2)
+    assert sum(content.spreads.values()) < sum(album.spreads.values())

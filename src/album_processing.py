@@ -38,8 +38,9 @@ def size_album(designs_info, selection_max_total_spreads=None) -> Tuple[int, int
     N - FIXED_COMPOSITIONS spreads here.
 
     A design whose ``minPages`` equals its ``maxPages`` is stating an exact
-    album rather than a range, and is taken literally -- neither the `+6`
-    headroom on the floor nor selection's gallery-aware ceiling applies, and
+    album rather than a range, and is taken literally -- neither the
+    `min_pages_headroom` on the floor nor selection's gallery-aware ceiling
+    applies, and
     the design's own page count is used instead of
     ``CONFIGS['max_total_spreads']``. Without that last part a design asking
     for fewer pages than the config default was silently widened to it, because
@@ -57,7 +58,12 @@ def size_album(designs_info, selection_max_total_spreads=None) -> Tuple[int, int
     # Non-wedding has no selection target and keeps the design limit alone.
     max_total_spreads = (min(selection_max_total_spreads, hard_max_total_spreads)
                          if selection_max_total_spreads is not None else hard_max_total_spreads)
-    return min(max_total_spreads, min_pages + 6), max_total_spreads
+    # The floor sits `min_pages_headroom` above the design's minimum. It was 6,
+    # and once selection's range stopped counting the opening and closing pages
+    # that floor sat above its target: 49994361's design (minPages 12) floored
+    # the album at 18 content spreads against a plan of 17.
+    headroom = int(CONFIGS.get('min_pages_headroom', 3))
+    return min(max_total_spreads, min_pages + headroom), max_total_spreads
 
 
 def layout_target(selection_target_spreads, min_total_spreads, max_total_spreads):
