@@ -68,7 +68,13 @@ CONFIGS = {'DEBUG': True,
            # and 1.0 where the face-centred crop left 1.9. A second body at
            # least `other_body_max_share` the size of the subject's makes it a
            # group, and the rule stands aside.
-           'single_subject_crop': {
+           # The opening and closing crops of a wedding frame the couple: the
+        # guests' faces around them are background. With one of the two found,
+        # faces at least this share of that one's size stay in, since the other
+        # may just be unrecognised. See `smart_cropping._couple_first`.
+        'cover_crop_couple_only': True,
+        'cover_crop_partner_face_share': 0.6,
+        'single_subject_crop': {
                'enabled': True,
                'headroom_faces': 1.0,
                'other_body_max_share': 0.5,
@@ -620,6 +626,17 @@ CONFIGS = {'DEBUG': True,
             # `bride and groom` alone.
             'cover_classes': ('bride and groom', 'couple', 'kiss'),
 
+            # The closing's own classes: a day ends on the cake, the toasts, a
+            # kiss, and the opening does not start on them. `speech` only for
+            # its toasts -- a guest at the microphone is not a closing.
+            'closing_cover_classes': ('bride and groom', 'couple', 'kiss',
+                                      'cake cutting', 'speech'),
+            'closing_class_subqueries': {
+                'speech': ('guests and bride and groom making toasts for the speech',
+                           'everyone holding cups or glasses for toasts',
+                           'person cheering for toasts with wine'),
+            },
+
             # The old gate: both identities required, everything else dropped
             # before scoring. Off, because `persons_ids` is built from face
             # clusters -- a frame with no detected face carries no identity, so
@@ -786,7 +803,15 @@ CONFIGS = {'DEBUG': True,
                 # How much the couple are the subject rather than small in a
                 # scene; see `significance_range`.
                 'significance': 0.60,
+                # As heavy as a detail or tears: a cover with one of them cut
+                # in half by the frame is not a cover.
+                'cut_subject': 1.20,
+                # The couple seated at a table. Inert until the
+                # `seated_at_table` bin exists; `table_range` is a placeholder
+                # to be calibrated against it.
+                'table': 0.80,
             },
+            'table_range': (0.30, 0.42),
 
             # Raw `tears` cosine at which the penalty starts, and at which it
             # is full. Absolute, not normalised over the candidates, so a window
@@ -840,6 +865,16 @@ CONFIGS = {'DEBUG': True,
             # continuous session, and `_pick_cover_subset` counts for the same
             # reason. Distinctness holds even at zero.
             'min_separation': 0.25,
+
+            # ProcessStage keeps the covers `enrich.key_pages` chose over the
+            # whole gallery whenever they are still in the selected pool,
+            # rather than choosing again over the few selected couple frames.
+            'reuse_key_pages': True,
+
+            # A face running off the side or bottom of the photo: the reader
+            # sees half a person. See `_cut_subject_penalty`.
+            'cut_edge_margin': 0.01,
+            'cut_face_min_share': 0.5,
         },
 
         # How many albums one gallery produces. A temporary lever: Phase 3 of

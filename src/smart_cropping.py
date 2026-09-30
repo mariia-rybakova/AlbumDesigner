@@ -420,6 +420,12 @@ def face_aware_crop(image_info, target_ar, logger=None):
         if logger:
             logger.warning(f"face-aware crop: could not place a hidden face "
                            f"({type(exc).__name__}: {exc})")
+    try:
+        faces = _couple_first(image_info, faces, stand_ins, logger)
+    except Exception as exc:  # noqa: BLE001 - same rule as the crop below
+        if logger:
+            logger.warning(f"face-aware crop: could not tell the couple from the guests "
+                           f"({type(exc).__name__}: {exc})")
     faces = faces + stand_ins
 
     if not faces:
@@ -532,6 +538,90 @@ def _head_of(body, image_ar):
 
     b = body.bbox
     return _box(b.x1, b.y1, b.x2, b.y1 + (b.y2 - b.y1) * _HEAD_SHARE_OF_BODY)
+
+
+def _couple_faces(image_info, faces):
+    """The detected faces that are the bride's or the groom's.
+
+    `persons_face_bboxes` holds each identity's face box in the photo, a little
+    larger than the detector's; a face is theirs when its centre falls inside.
+    """
+    couple = _couple_ids(image_info)
+    try:
+        boxes = image_info['persons_face_bboxes']
+    except (KeyError, IndexError):
+        return []
+    if not couple or not isinstance(boxes, dict):
+        return []
+    theirs = [box for identity, box in boxes.items() if identity in couple and box]
+    found = []
+    for face in faces:
+        cx, cy = (face.bbox.x1 + face.bbox.x2) / 2, (face.bbox.y1 + face.bbox.y2) / 2
+        if any(x1 <= cx <= x2 and y1 <= cy <= y2 for x1, y1, x2, y2 in theirs):
+            found.append(face)
+    return found
+
+
+def _centre_in(face, box):
+    x1, y1, x2, y2 = box
+    cx, cy = (face.bbox.x1 + face.bbox.x2) / 2, (face.bbox.y1 + face.bbox.y2) / 2
+    return x1 <= cx <= x2 and y1 <= cy <= y2
+
+
+def _couple_first(image_info, faces, stand_ins, logger=None):
+    """The faces a wedding cover crop should keep: the couple's.
+
+    A cover is of the two of them, and the guests around them are background.
+    Aiming at every face made the crop chase the crowd: 49994361 closed on the
+    couple embracing in front of five guests, and with no face of theirs
+    detected -- the bride's flagged not-a-face, the groom's turned away -- the
+    crop centred on the largest guest and cut the groom's back off.
+
+    The couple is whoever `_couple_faces` matches plus the stand-ins for a
+    partner placed without a face. With only one of them located, faces at
+    least `cover_crop_partner_face_share` of that one's size are kept too: the
+    other half of the couple may simply be unrecognised, and a guest in the
+    background is smaller. With neither located the faces are returned as they
+    were -- nothing then says which of them is the couple.
+    """
+    if not CONFIGS.get('cover_crop_couple_only', True):
+        return faces
+    try:
+        boxes = image_info['persons_face_bboxes']
+    except (KeyError, IndexError):
+        boxes = None
+    if not isinstance(boxes, dict):
+        # No identity face boxes (an older read, a test photo): nothing says
+        # which face is theirs, so none is taken away.
+        return faces
+    located = _couple_faces(image_info, faces)
+    anchors = located + list(stand_ins)
+    if not anchors:
+        return faces
+
+    # Only when every partner the photo names is accounted for -- by a matched
+    # face or a stand-in. One named by face whose face was not matched is still
+    # among `faces`, and dropping the unmatched would drop them.
+    named = _couple_ids(image_info) & set(_listed(image_info, 'persons_ids'))
+    matched = {identity for identity, box in boxes.items() if identity in named and box
+               and any(_centre_in(f, box) for f in located)}
+    placed = named & set(_listed(image_info, 'faceless_persons_ids'))
+    if named - matched - placed:
+        return faces
+
+    kept = list(located)
+    if len(anchors) == 1:
+        anchor = anchors[0].bbox
+        size = (anchor.x2 - anchor.x1) * (anchor.y2 - anchor.y1)
+        share = float(CONFIGS.get('cover_crop_partner_face_share', 0.6))
+        kept += [f for f in faces if f not in located
+                 and (f.bbox.x2 - f.bbox.x1) * (f.bbox.y2 - f.bbox.y1) >= share * size]
+
+    if logger and len(kept) < len(faces):
+        logger.info(f"cover crop: framing the couple -- {len(located)} of their faces "
+                    f"and {len(stand_ins)} stand-in(s); {len(faces) - len(kept)} other "
+                    f"face(s) left out")
+    return kept
 
 
 def _hidden_couple_faces(image_info, faces, image_ar, logger=None):

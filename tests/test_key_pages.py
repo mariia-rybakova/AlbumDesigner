@@ -1294,3 +1294,101 @@ def test_nothing_to_measure_is_not_evidence_against_a_frame():
     frame[Col.DIAMETER] = [0.6, None]
 
     assert list(_significance(frame)) == [1.0, 1.0]
+
+
+# -- a subject cut by the frame, reusing the key pages, closing classes ------
+
+
+def _face(x1, y1, x2, y2, blur=1.0):
+    from types import SimpleNamespace
+    return SimpleNamespace(bbox=SimpleNamespace(x1=x1, y1=y1, x2=x2, y2=y2), blurLevel=blur)
+
+
+def test_a_face_cut_by_the_side_of_the_photo_is_penalised():
+    """49994361 closed on the bride laughing with the groom half out of the
+    picture, his face cut by the right border of the original."""
+    from src.core.key_pages import _cut_subject_penalty
+    frame = pd.DataFrame({'faces_info': [
+        [_face(0.3, 0.3, 0.5, 0.5), _face(0.85, 0.3, 1.0, 0.5)],   # groom off the right
+        [_face(0.3, 0.3, 0.5, 0.5), _face(0.6, 0.3, 0.8, 0.5)],    # both inside
+        [_face(0.3, 0.0, 0.5, 0.2), _face(0.6, 0.0, 0.8, 0.2)],    # cropped at the forehead
+        [_face(0.3, 0.3, 0.5, 0.5), _face(0.97, 0.3, 1.0, 0.33)],  # a small guest at the edge
+        [],
+    ]})
+
+    assert list(_cut_subject_penalty(frame)) == [1.0, 0.0, 0.0, 0.0, 0.0]
+
+
+def test_the_cut_frame_loses_the_closing():
+    gallery = couple_gallery(n=24)
+    gallery['faces_info'] = [[_face(0.3, 0.3, 0.45, 0.5), _face(0.55, 0.3, 0.7, 0.5)]] * len(gallery)
+    context = run(gallery.copy())
+    winner = context.key_pages.closing[0]
+
+    cut = gallery.copy()
+    cut['faces_info'] = [
+        [_face(0.3, 0.3, 0.45, 0.5), _face(0.85, 0.3, 1.0, 0.5)] if i == winner
+        else [_face(0.3, 0.3, 0.45, 0.5), _face(0.55, 0.3, 0.7, 0.5)]
+        for i in cut[Col.IMAGE_ID]]
+
+    assert run(cut).key_pages.closing[0] != winner
+
+
+def test_processing_keeps_the_key_pages_it_was_handed():
+    """ProcessStage chose again over the few selected couple frames and closed
+    on a different photo from the one chosen over the whole gallery."""
+    from src.core.key_pages import choose_good_wedding_images
+    gallery = couple_gallery(n=24)
+    couple = gallery[gallery[Col.CLUSTER_CONTEXT] == 'bride and groom']
+    preferred = KeyPages(opening=[1003], closing=[1020])
+
+    _, first, _, last, _ = choose_good_wedding_images(
+        gallery, couple, _QUIET_LOG, prune_duplicates=False, preferred=preferred)
+
+    assert (first, last) == ([1003], [1020])
+
+
+def test_a_key_page_missing_from_the_pool_is_chosen_again():
+    from src.core.key_pages import choose_good_wedding_images
+    gallery = couple_gallery(n=24)
+    couple = gallery[gallery[Col.CLUSTER_CONTEXT] == 'bride and groom']
+    preferred = KeyPages(opening=[1003], closing=[99999])
+
+    _, first, _, last, _ = choose_good_wedding_images(
+        gallery, couple, _QUIET_LOG, prune_duplicates=False, preferred=preferred)
+
+    assert first == [1003]
+    assert last and last[0] in set(gallery[Col.IMAGE_ID]) and last[0] != 1003
+
+
+def test_the_closing_can_be_the_cake_or_a_toast_and_the_opening_cannot():
+    gallery = couple_gallery(n=24)
+    late = gallery[Col.GENERAL_TIME] >= gallery[Col.GENERAL_TIME].quantile(0.8)
+    gallery.loc[late, Col.CLUSTER_CONTEXT] = 'cake cutting'
+    gallery.loc[late, Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom cutting cake'
+    early = gallery[Col.GENERAL_TIME] <= gallery[Col.GENERAL_TIME].quantile(0.2)
+    gallery.loc[early, Col.CLUSTER_CONTEXT] = 'cake cutting'
+
+    context = run(gallery)
+    classes = gallery.set_index(Col.IMAGE_ID)[Col.CLUSTER_CONTEXT]
+
+    assert classes[context.key_pages.closing[0]] == 'cake cutting'
+    assert classes[context.key_pages.opening[0]] != 'cake cutting'
+
+
+def test_a_speech_closes_only_when_it_is_a_toast():
+    from src.core.key_pages import _candidate_base
+    frame = pd.DataFrame({
+        Col.CLUSTER_CONTEXT: ['speech', 'speech', 'bride and groom'],
+        Col.IMAGE_SUBQUERY_CONTENT: ['person standing giving a speech',
+                                     'guests and bride and groom making toasts for the speech',
+                                     'bride and groom dancing'],
+        Col.IMAGE_ID: [1, 2, 3],
+    })
+    covers = CONFIGS['covers']
+
+    base = _candidate_base(frame, BRIDE, GROOM, _QUIET_LOG,
+                           classes=covers['closing_cover_classes'],
+                           subqueries=covers['closing_class_subqueries'])
+
+    assert list(base[Col.IMAGE_ID]) == [2, 3]

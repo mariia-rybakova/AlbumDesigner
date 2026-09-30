@@ -434,3 +434,54 @@ def test_a_stand_in_never_leads_over_a_detected_face():
     crop = face_aware_crop(closing_photo(bodies=(far,)), 0.5)
 
     assert holds_x(crop, BRIDE_FACE.bbox.x1, BRIDE_FACE.bbox.x2)
+
+
+# -- the couple, not the crowd ---------------------------------------------
+#
+# The closing page of 49994361 (2026-09-30 replay, photo 11547662336): the
+# couple embracing in front of five guests. The bride is placed by body (her
+# face was flagged not-a-face), the groom is not recognised, and the couple is
+# one merged body box. Every detected face is a guest's. Numbers are that
+# photo's, rounded.
+
+CROWD_FACES = [rated_face(0.744, 0.383, 0.784, 0.465, 24.6), rated_face(0.171, 0.313, 0.213, 0.404, 63.3),
+               rated_face(0.887, 0.396, 0.935, 0.485, 62.4), rated_face(0.024, 0.349, 0.061, 0.414, 9.1),
+               rated_face(0.821, 0.402, 0.859, 0.467, 16.3), rated_face(0.288, 0.424, 0.314, 0.475, -1.0)]
+COUPLE_BODY = body(0.244, 0.211, 0.674, 0.995)
+CROWD_BODIES = [COUPLE_BODY, body(0.812, 0.381, 0.981, 0.997), body(0.105, 0.303, 0.265, 0.995),
+                body(0.679, 0.362, 0.821, 0.998), body(0.012, 0.331, 0.129, 0.962)]
+GUEST_FACE_BOXES = {9: (0.160, 0.290, 0.223, 0.427), 24: (0.876, 0.373, 0.947, 0.508),
+                    92: (0.734, 0.363, 0.794, 0.485)}
+
+
+def crowd_photo(**extra):
+    row = dict(bride_id=BRIDE, groom_id=GROOM, persons_ids=[1, 9, 24, 92],
+               faceless_persons_ids=[1], bodies_info=list(CROWD_BODIES),
+               persons_face_bboxes=dict(GUEST_FACE_BOXES))
+    row.update(extra)
+    return photo(list(CROWD_FACES), ar=CLOSING_AR,
+                 background_centroid=types.SimpleNamespace(x=0.5, y=0.6), diameter=0.8, **row)
+
+
+def test_the_crop_frames_the_couple_not_the_guests():
+    """It used to centre on the largest guest and cut the groom's back off."""
+    crop = face_aware_crop(crowd_photo(), 0.981)
+
+    assert holds_x(crop, 0.26, 0.66), crop
+
+
+def test_without_identity_face_boxes_every_face_still_counts():
+    """Nothing then says which face is theirs, so the crop is what it was."""
+    crop = face_aware_crop(crowd_photo(persons_face_bboxes=None), 0.981)
+
+    assert not holds_x(crop, 0.26, 0.66), crop
+
+
+def test_a_partner_named_by_an_unmatched_face_keeps_every_face():
+    """The bride named by face, but no detected face inside her box: dropping
+    the unmatched faces could drop hers."""
+    boxes = {**GUEST_FACE_BOXES, 1: (0.40, 0.10, 0.45, 0.15)}
+    crop_all = face_aware_crop(crowd_photo(faceless_persons_ids=[], persons_face_bboxes=boxes), 0.981)
+    crop_none = face_aware_crop(crowd_photo(faceless_persons_ids=[], persons_face_bboxes=None), 0.981)
+
+    assert crop_all == crop_none

@@ -202,6 +202,22 @@ CONCEPTS = {
         "a man with his hand over his face, moved to tears",
     ],
 
+    # Covers, negative. The couple seated at a table, the moment a reception is
+    # mostly made of and the wrong one to open or close an album on: 49994361
+    # closed on the bride laughing at the head table, the groom beside her and
+    # half out of the picture, and toasts -- which the closing now draws on --
+    # are usually made sitting down. The table styling bins (`bridal_table`,
+    # `table_setting`) score the table, not people at it, and do not separate
+    # that frame from the couple dancing in a field.
+    "seated_at_table": [
+        "the bride and groom sitting at their table at the reception",
+        "a couple seated at a dinner table with glasses and plates in front of them",
+        "people sitting at a wedding reception table",
+        "the newlyweds seated at the head table during dinner",
+        "a bride sitting at a table laughing, with wine glasses on the table",
+        "guests seated around a table at a wedding dinner",
+    ],
+
     # Negative. The bridal party shares almost every structural indicator with
     # the parents, and is far more numerous, so it is the dominant confusion.
     "wedding_party_member": [

@@ -195,8 +195,16 @@ FIRST_COVER_QUERIES = (
 LAST_COVER_QUERIES = (
     'bride and groom kissing romantically',
     'bride and groom kissing',
+    # The `kiss` class's own tags, beside the couple class's.
+    'groom and bride kissing each other in a romantic way',
+    ' bride and groom kissing in a romantic way',
     'bride and groom hugging or kissing',
     'bride and groom dancing',
+    # The evening's moments, which close a day and do not open one.
+    'bride and groom feed each other piece of cake',
+    'bride and groom cutting cake',
+    'guests and bride and groom making toasts for the speech',
+    'everyone holding cups or glasses for toasts',
     'bride and groom smiling at each other',
     'bride and groom not formal pose',
     'bride and groom walking together',
@@ -376,6 +384,34 @@ def _tears_penalty(frame, logger):
     return np.clip((raw - low) / max(high - low, 1e-6), 0.0, 1.0)
 
 
+def _table_penalty(frame, logger):
+    """0-1: how surely the frame is people seated at a table.
+
+    The reception is mostly dinner, and a cover of the two of them sitting
+    behind glasses and plates is the album's least particular frame: 49994361
+    closed on the bride laughing at the head table, the groom beside her and
+    half out of the picture. It matters more now the closing draws on the
+    toasts, which are usually drunk sitting down -- `speech` is admitted only
+    for its toast subqueries, and this is what keeps a seated toast from
+    winning on those alone.
+
+    Graded on the raw cosine across `table_range`, like `_tears_penalty`, so it
+    means the same in every window. Zeros when the `seated_at_table` bin is
+    missing, which is how it ships until the bin is built and uploaded.
+    """
+    from src.pipeline.enrich.timeline import concept_scores
+
+    if frame.empty:
+        return np.zeros(0, dtype=float)
+    try:
+        raw = np.asarray(concept_scores(frame, 'seated_at_table'), dtype=float)
+    except Exception as exc:  # noqa: BLE001 - a missing bin costs the term, not the covers
+        logger.info(f"cover table: unavailable ({type(exc).__name__}: {exc})")
+        return np.zeros(len(frame), dtype=float)
+    low, high = settings().get('table_range', (0.30, 0.42))
+    return np.clip((raw - low) / max(high - low, 1e-6), 0.0, 1.0)
+
+
 def _presence(frame, bride_id, groom_id):
     """How surely both of them are in the frame, graded rather than required.
 
@@ -477,6 +513,44 @@ def _faceless_subject_body(row):
     return unnamed > len(_listed(row.get('faceless_persons_ids')))
 
 
+def _cut_subject_penalty(frame):
+    """1 for a frame where one of its main faces runs off the side of the photo.
+
+    The photographer's framing, not the crop: on 49994361 the album closed on
+    the bride laughing at the table with the groom half out of the picture, his
+    face cut by the right border of the original. No crop brings that back, and
+    nothing else in the score saw it -- he is named and his face is detected, so
+    presence grades the frame as both of them.
+
+    Only faces count. A body running off the frame is ordinary framing -- a
+    half-length portrait cuts both of them at the waist -- while a face at the
+    border is a person the reader sees half of. Only the sides and the bottom:
+    a face touching the top edge is a close-up cropped at the forehead, which
+    is a style. And only faces of subject size, at least `cut_face_min_share`
+    of the largest face, so a guest at the edge of a wide shot does not count.
+    """
+    margin = float(settings().get('cut_edge_margin', 0.01))
+    share = float(settings().get('cut_face_min_share', 0.5))
+
+    def grade(row):
+        faces = [f for f in _listed(row.get('faces_info')) if getattr(f, 'blurLevel', 0) >= 0]
+        if not faces:
+            return 0.0
+        area = [max(0.0, f.bbox.x2 - f.bbox.x1) * max(0.0, f.bbox.y2 - f.bbox.y1) for f in faces]
+        largest = max(area) or 1.0
+        for face, size in zip(faces, area):
+            if size < share * largest:
+                continue
+            b = face.bbox
+            if b.x1 <= margin or b.x2 >= 1.0 - margin or b.y2 >= 1.0 - margin:
+                return 1.0
+        return 0.0
+
+    if frame.empty:
+        return np.zeros(0, dtype=float)
+    return frame.apply(grade, axis=1).astype(float).values
+
+
 def _subquery_affinity(frame, queries):
     """1.0 for the first listed subquery, falling to 0 for anything unlisted."""
     order = {name: i for i, name in enumerate(queries)}
@@ -540,6 +614,8 @@ def _score_covers(frame, queries, logger, bride_id=None, groom_id=None):
         - weights.get('crowd', 0.0) * _crowd_penalty(frame)
         - weights.get('detail', 0.0) * _detail_penalty(frame)
         - weights.get('tears', 0.0) * _tears_penalty(frame, logger)
+        - weights.get('cut_subject', 0.0) * _cut_subject_penalty(frame)
+        - weights.get('table', 0.0) * _table_penalty(frame, logger)
     )
 
 
@@ -572,7 +648,7 @@ def _ranked_ids(frame, queries, logger, bride_id=None, groom_id=None):
     return scored['image_id'].tolist()
 
 
-def _candidate_base(chosen_df, bride_id, groom_id, logger):
+def _candidate_base(chosen_df, bride_id, groom_id, logger, classes=None, subqueries=None):
     """Every couple frame, with presence left to the scoring.
 
     The class is the gate and nothing else is. This used to require both
@@ -587,8 +663,16 @@ def _candidate_base(chosen_df, bride_id, groom_id, logger):
     handicapped rather than absent and has to be a better photograph to win.
     Set `require_identities` to restore the old gate.
     """
-    classes = tuple(settings().get('cover_classes', ('bride and groom',)))
+    if classes is None:
+        classes = tuple(settings().get('cover_classes', ('bride and groom',)))
     couple = chosen_df[chosen_df["cluster_context"].isin(classes)].copy()
+    # A class that holds the moment only in some of its shots -- `speech`, whose
+    # toasts are a closing and whose speeches are not -- is narrowed to them.
+    for category, allowed in (subqueries or {}).items():
+        if allowed and 'image_subquery_content' in couple.columns:
+            wrong = (couple["cluster_context"] == category) & \
+                    ~couple["image_subquery_content"].isin(tuple(allowed))
+            couple = couple[~wrong]
 
     if not settings().get('require_identities', False):
         return couple
@@ -653,13 +737,25 @@ def get_important_imgs(data_df, bride_groom_df, logger):
         bride_id = chosen_df["bride_id"].values[0]
         groom_id = chosen_df["groom_id"].values[0]
 
-        base = _candidate_base(chosen_df, bride_id, groom_id, logger)
+        # Candidates by class from the whole pool. `bride_groom_df` holds the
+        # `bride and groom` class alone, so drawing on it made every other
+        # entry of `cover_classes` unreachable -- `couple` and `kiss` were
+        # listed and never once a candidate.
+        source = data_df if "cluster_context" in data_df.columns else chosen_df
+        base = _candidate_base(source, bride_id, groom_id, logger)
+        # The closing has moments of its own: the day ends on the cake, the
+        # toasts, a kiss. The opening does not open on them.
+        closing_base = _candidate_base(
+            source, bride_id, groom_id, logger,
+            classes=tuple(settings().get('closing_cover_classes',
+                                         settings().get('cover_classes', ('bride and groom',)))),
+            subqueries=settings().get('closing_class_subqueries', {}))
 
         subset_first = _pick_cover_subset(base, position="first", window_size=10)
         first_page_ids = _ranked_ids(subset_first, FIRST_COVER_QUERIES, logger,
                                      bride_id, groom_id)
 
-        subset_last = _pick_cover_subset(base, position="last", window_size=10)
+        subset_last = _pick_cover_subset(closing_base, position="last", window_size=10)
         last_page_ids = _ranked_ids(subset_last, LAST_COVER_QUERIES, logger,
                                     bride_id, groom_id)
 
@@ -707,8 +803,21 @@ def _minmax_normalize(values):
     return [(v - lo) / (hi - lo) for v in values]
 
 
-def _select_cover_image_ids(pool_df, pool_bg, logger):
+def _kept(preferred, pool_ids, taken=()):
+    """The first of `preferred` still in the pool and not already taken."""
+    return next((i for i in preferred or () if i in pool_ids and i not in taken), None)
+
+
+def _select_cover_image_ids(pool_df, pool_bg, logger, preferred=None):
     """Return (first_page_ids, last_page_ids), one photo each and never the same.
+
+    **`preferred` wins where it can.** It is what `enrich.key_pages` chose over
+    the whole gallery, and `select.preselect` commits it, so it is normally in
+    the pool. Choosing again here, over the few selected couple frames, judged
+    a different field: the latest quarter of ~15 photos rather than of ~130, so
+    on 49994361 the album closed on a frame the whole-gallery rule had not
+    picked -- one with the groom half out of the picture. Each side falls back
+    to the rule below only when its preferred photo is gone.
 
     Both lists arrive score-ordered from `get_important_imgs`, so the opening
     is simply its best candidate. The closing takes the best candidate of its
@@ -717,6 +826,22 @@ def _select_cover_image_ids(pool_df, pool_bg, logger):
     with rank and never looked at whether the frame was any good.
     """
     first_candidates, last_candidates = get_important_imgs(pool_df, pool_bg, logger)
+
+    if preferred is not None and settings().get('reuse_key_pages', True):
+        pool_ids = set(pool_df['image_id'])
+        opening = _kept(preferred.opening, pool_ids)
+        closing = _kept(preferred.closing, pool_ids, taken={opening})
+        if opening is not None or closing is not None:
+            if opening is None:
+                opening = next((i for i in first_candidates or () if i != closing), None)
+            if closing is None and opening is not None:
+                closing = _separated(opening, last_candidates or [], pool_df)
+            logger.info(f"covers: key pages kept -- opening {opening}"
+                        f"{'' if opening in (preferred.opening or ()) else ' (re-chosen)'}, "
+                        f"closing {closing}"
+                        f"{'' if closing in (preferred.closing or ()) else ' (re-chosen)'}")
+            return ([opening] if opening is not None else [],
+                    [closing] if closing is not None else [])
 
     # Degenerate case: at least one candidate list is missing/empty.
     # Forward whatever we got, normalizing None to [] so the caller always gets (list, list).
@@ -809,12 +934,13 @@ def _drop_cover_duplicates(df, cover_rows, logger, manual_selection=False):
 
 
 def choose_good_wedding_images(df, bride_groom_df, logger, prune_duplicates=True,
-                               manual_selection=False):
+                               manual_selection=False, preferred=None):
     # Orientation is a score term, not a pre-filter. Filtering on it first cost
     # 53507032 its covers: the gallery had 42 landscapes and 48 couple frames
     # showing both faces, but only *one* frame in both sets, so the candidate
     # base collapsed to that single photo and it opened and closed the album.
-    first_page_ids, last_page_ids = _select_cover_image_ids(df, bride_groom_df, logger)
+    first_page_ids, last_page_ids = _select_cover_image_ids(df, bride_groom_df, logger,
+                                                            preferred=preferred)
 
     if bride_groom_df is not None:
         if not bride_groom_df.empty and bride_groom_df['image_id'].isin(first_page_ids).any() and bride_groom_df['image_id'].isin(last_page_ids).any():
@@ -937,11 +1063,17 @@ def generate_first_last_pages(message, df, logger):
             # route the chosen photos are the user's, and none of them is the
             # pipeline's to discard.
             manual_selection = message.content.get('manual_selection', False)
+            # What `enrich.key_pages` chose over the whole gallery. Imported
+            # here for the same reason `_concept_score` imports: `src.core` must
+            # not depend on the pipeline package at load time.
+            from src.pipeline.contracts import KeyPages
+            preferred = KeyPages.from_content(message.content.get('key_pages'))
             df, first_images_ids, first_imgs_df, last_images_ids, last_imgs_df = choose_good_wedding_images(df,
                                                                                                             message.content.get(
                                                                                                                 'bride and groom'),
                                                                                                             logger,
-                                                                                                            manual_selection=manual_selection)
+                                                                                                            manual_selection=manual_selection,
+                                                                                                            preferred=preferred)
         else:
             # Two: one for the opening, one for the closing. Asking for one
             # left the opening with nothing to place.
