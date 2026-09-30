@@ -1392,3 +1392,30 @@ def test_a_speech_closes_only_when_it_is_a_toast():
                            subqueries=covers['closing_class_subqueries'])
 
     assert list(base[Col.IMAGE_ID]) == [2, 3]
+
+
+def test_the_table_penalty_spares_standing_at_the_cake(monkeypatch):
+    """Raw `seated_at_table` scores: seated frames read 0.45 and up, the couple
+    standing at the cake table 0.28-0.35. Only the first is charged."""
+    import src.pipeline.enrich.timeline as timeline
+    from src.core.key_pages import _table_penalty
+    frame = pd.DataFrame({Col.IMAGE_ID: [1, 2, 3, 4]})
+    monkeypatch.setattr(timeline, 'concept_scores',
+                        lambda f, concept: np.array([0.53, 0.42, 0.31, 0.01]))
+
+    penalty = _table_penalty(frame, _QUIET_LOG)
+
+    assert penalty[0] == 1.0, "seated at the head table"
+    assert 0.0 < penalty[1] < 1.0, "a seated toast, part way"
+    assert list(penalty[2:]) == [0.0, 0.0], "standing at the cake, and the field"
+
+
+def test_the_table_penalty_is_inert_without_its_bin(monkeypatch):
+    import src.pipeline.enrich.timeline as timeline
+    from src.core.key_pages import _table_penalty
+
+    def missing(frame, concept):
+        raise FileNotFoundError(concept)
+    monkeypatch.setattr(timeline, 'concept_scores', missing)
+
+    assert list(_table_penalty(pd.DataFrame({Col.IMAGE_ID: [1, 2]}), _QUIET_LOG)) == [0.0, 0.0]

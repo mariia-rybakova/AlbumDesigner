@@ -806,12 +806,17 @@ CONFIGS = {'DEBUG': True,
                 # As heavy as a detail or tears: a cover with one of them cut
                 # in half by the frame is not a cover.
                 'cut_subject': 1.20,
-                # The couple seated at a table. Inert until the
-                # `seated_at_table` bin exists; `table_range` is a placeholder
-                # to be calibrated against it.
+                # The couple seated at a table. See `_table_penalty`.
                 'table': 0.80,
             },
-            'table_range': (0.30, 0.42),
+            # Raw cosine to `seated_at_table`, from no penalty to the full one.
+            # Read off samples per band on 49994361, 49995684 and 49996919:
+            # every frame from 0.45 up is people seated at a table, 0.35-0.45
+            # mostly seated speeches and toasts, and 0.28-0.35 the couple
+            # *standing* at the cake table -- a closing now, so left alone. The
+            # head-table closing of 49994361 reads 0.53; the field and the
+            # embrace 0.01 and 0.12.
+            'table_range': (0.35, 0.48),
 
             # Raw `tears` cosine at which the penalty starts, and at which it
             # is full. Absolute, not normalised over the candidates, so a window
