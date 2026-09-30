@@ -111,7 +111,8 @@ class GalleryBase:
 
     *Per-album* — everything selection writes to. Copied for each album, so one
     album cannot see another's work: the photo frame, and the small mutable
-    sidecars (`facts`, `hints`, `available_photo_ids`, `key_pages`).
+    sidecars (`facts`, `hints`, `available_photo_ids`, `key_pages`,
+    `treatment_twins`).
 
     *Shared* — reference data selection only ever reads. Handed over by
     reference on purpose: `designs` carries the product's layout frames, and
@@ -134,6 +135,9 @@ class GalleryBase:
     hints: AiHints
     available_photo_ids: Tuple[int, ...]
     key_pages: Any
+    #: The dropped copies `enrich.duplicate_shots` kept aside for a later swap
+    #: of treatment. Read-only after ENRICH, so shared rather than copied.
+    treatment_twins: Any = None
 
     #: The album briefs `enrich.variants` planned for this gallery. Empty means
     #: nobody planned any, and one album with no overrides is composed.
@@ -169,6 +173,7 @@ class GalleryBase:
             hints=source.hints,
             available_photo_ids=tuple(source.available_photo_ids or ()),
             key_pages=source.key_pages,
+            treatment_twins=getattr(source, "treatment_twins", None) or {},
             variants=tuple(getattr(source, "variants", None) or ()),
             designs=source.designs,
             clip_embeddings=source.clip_embeddings,
@@ -210,6 +215,7 @@ class GalleryBase:
             is_in_vector_db=self.is_in_vector_db,
             facts=copy.copy(self.facts),
             key_pages=copy.copy(self.key_pages),
+            treatment_twins=self.treatment_twins or {},
         )
 
 

@@ -175,6 +175,33 @@ def shot_groups(photos: pd.DataFrame, logger=None) -> Dict[Tuple, List[Any]]:
     return recoloured
 
 
+def treatment_twins(photos: pd.DataFrame, groups: Dict[Tuple, List[Any]]) -> Dict[Any, Tuple[Any, int]]:
+    """``{image_id: (twin id, twin colour)}`` for every photo of a mixed-treatment shot.
+
+    Only groups holding both a colour and a greyscale frame: that is the shot in
+    two treatments, the pair this map exists for. The twin is the best-ranked
+    member of the *other* treatment -- `image_order` is a rank, 0 best -- so a
+    shot uploaded in colour and twice in black and white pairs its colour frame
+    with the better of the two.
+    """
+    if Col.IMAGE_COLOR not in photos.columns:
+        return {}
+    twins: Dict[Any, Tuple[Any, int]] = {}
+    for members in groups.values():
+        rows = photos.loc[photos[Col.IMAGE_ID].isin(members)]
+        colour = rows[Col.IMAGE_COLOR].apply(lambda v: 0 if v == 0 else 1)
+        if colour.nunique() < 2:
+            continue
+        if Col.IMAGE_ORDER in rows.columns:
+            rows = rows.assign(_colour=colour).sort_values(Col.IMAGE_ORDER, ascending=True)
+        else:
+            rows = rows.assign(_colour=colour)
+        best = {flag: rows.loc[rows['_colour'] == flag, Col.IMAGE_ID].iloc[0] for flag in (0, 1)}
+        for image_id, flag in zip(rows[Col.IMAGE_ID], rows['_colour']):
+            twins[image_id] = (best[1 - flag], 1 - flag)
+    return twins
+
+
 def _mixed_treatment(photos: pd.DataFrame, members: List[Any]) -> bool:
     """Whether one same-second group holds both a colour and a greyscale frame.
 

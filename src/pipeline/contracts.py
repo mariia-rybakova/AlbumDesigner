@@ -101,6 +101,14 @@ class Col:
     # -- enrich.key_pages --------------------------------------------------
     KEY_PAGE = "key_page"
 
+    # -- enrich.treatment_twins ---------------------------------------------
+    #: The image id of the same shot in the other treatment -- the black and
+    #: white copy of a colour photo, or the colour copy of a black and white
+    #: one -- or None. The best-ranked such copy when there are several.
+    TREATMENT_TWIN = "treatment_twin"
+    #: That copy's `image_color` (0 greyscale, 1 colour), or None.
+    TWIN_COLOR = "twin_color"
+
     # -- select.* (scoring columns, per category) --------------------------
     TOTAL_SCORE = "total_score"
     CLASS_SCORE = "class_score"
@@ -313,6 +321,11 @@ class AlbumContext:
     # -- derived ------------------------------------------------------------
     facts: GalleryFacts = field(default_factory=GalleryFacts)
     key_pages: Optional[KeyPages] = None
+    #: {image_id: photo row} of the copies `enrich.duplicate_shots` dropped that
+    #: are some kept photo's `treatment_twin`. The same shot in the other
+    #: treatment, kept whole so a later stage can swap one version for the other
+    #: -- to spare a page the colour-mix penalty -- without re-reading the gallery.
+    treatment_twins: Dict[Any, Any] = field(default_factory=dict)
     selection: Optional[SelectionOutcome] = None
     #: A fixed page grouping, when something composed one instead of merely
     #: choosing photos -- `select.narrator` is the only producer today. Carried
@@ -425,6 +438,7 @@ class AlbumContext:
         context.available_photo_ids = content.get("photos", []) or []
         context.hints = AiHints.from_request(content)
         context.key_pages = KeyPages.from_content(content.get("key_pages"))
+        context.treatment_twins = dict(content.get("treatment_twins") or {})
         context.facts = GalleryFacts(
             is_wedding=content.get("is_wedding"),
             is_artificial_time=content.get("is_artificial_time", False),
@@ -459,6 +473,8 @@ class AlbumContext:
 
         if self.key_pages is not None:
             content["key_pages"] = self.key_pages.as_content()
+        if self.treatment_twins:
+            content["treatment_twins"] = self.treatment_twins
 
         if self.selection is not None:
             content["photos"] = self.selection.photo_ids

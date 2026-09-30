@@ -2,11 +2,57 @@
 
 from __future__ import annotations
 
+import pandas as pd
+
 from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
-from src.pipeline.enrich.dedupe import shot_groups
+from src.pipeline.enrich.dedupe import shot_groups, treatment_twins
 from src.pipeline.substage import SubStage
 from utils.read_protos_files import require_cluster_data
+
+
+@register
+class TreatmentTwinsSubStage(SubStage):
+    """Flag the photos whose shot is also in the gallery in the other treatment.
+
+    Before `enrich.duplicate_shots` drops the second copy, so the pairing
+    survives it: every photo of a shot uploaded in colour and in black and white
+    records the other version's id and colour flag in `treatment_twin` and
+    `twin_color`. Nothing about the photo changes -- it is the same shot, the
+    same people, the same moment -- so selection, scoring and grouping read it
+    as before. What the flag makes possible is a later swap of one version for
+    the other where only colour matters: a black and white frame among colour
+    ones costs its page 1e-9 in the layout, and on 49994361 that is what still
+    splits `ceremony`, `kiss` and `speech` into two spreads each.
+
+    The same detection as `enrich.duplicate_shots`, restricted to the groups
+    that mix treatments -- a gallery uploaded twice in the *same* treatment has
+    no other version to swap to.
+    """
+
+    name = "enrich.treatment_twins"
+    requires = frozenset({photo(Col.IMAGE_TIME), photo(Col.IMAGE_AS),
+                          photo(Col.IMAGE_ORDER)})
+
+    def execute(self, context: AlbumContext) -> AlbumContext:
+        photos = context.photos
+        photos[Col.TREATMENT_TWIN] = pd.Series([None] * len(photos), index=photos.index, dtype=object)
+        photos[Col.TWIN_COLOR] = pd.Series([None] * len(photos), index=photos.index, dtype=object)
+        twins = treatment_twins(photos, shot_groups(photos, None))
+        if not twins:
+            return context
+
+        ids = photos[Col.IMAGE_ID]
+        # Object dtype, or pandas turns an id column with gaps into floats --
+        # 5000.0, and NaN rather than None where there is no twin.
+        photos[Col.TREATMENT_TWIN] = pd.Series(
+            [twins[i][0] if i in twins else None for i in ids], index=photos.index, dtype=object)
+        photos[Col.TWIN_COLOR] = pd.Series(
+            [twins[i][1] if i in twins else None for i in ids], index=photos.index, dtype=object)
+        if context.logger:
+            context.logger.info(f"Treatment twins: {len(twins)} photos have a version of their "
+                                f"shot in the other treatment")
+        return context
 
 
 @register
@@ -58,9 +104,15 @@ class DuplicateShotsSubStage(SubStage):
             return context
 
         spoken_for = {i for members in groups.values() for i in members}
-        context.photos = photos[
-            ~photos[Col.IMAGE_ID].isin(spoken_for - keep)
-        ]
+        dropping = photos[Col.IMAGE_ID].isin(spoken_for - keep)
+        # A dropped copy that a kept photo names as its other treatment is kept
+        # aside whole, for the swap `treatment_twin` exists for.
+        if Col.TREATMENT_TWIN in photos.columns:
+            wanted = set(photos.loc[~dropping, Col.TREATMENT_TWIN].dropna())
+            aside = photos[dropping & photos[Col.IMAGE_ID].isin(wanted)]
+            context.treatment_twins.update(
+                {row[Col.IMAGE_ID]: row for _, row in aside.iterrows()})
+        context.photos = photos[~dropping]
         if context.logger:
             context.logger.info(
                 f"Duplicate shots: {len(photos)} photos are {len(photos) - dropped} "

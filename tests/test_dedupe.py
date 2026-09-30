@@ -87,8 +87,11 @@ def kept(context):
 
 def test_runs_before_anything_counts_the_gallery():
     """Left until selection, the budget sizes the album against a supply twice
-    as large as it really is and every category then runs out."""
-    assert list(ENRICH)[0] == "enrich.duplicate_shots"
+    as large as it really is and every category then runs out.
+
+    `enrich.treatment_twins` goes first, because it records the pairing the
+    drop would lose; it counts nothing and changes no photo."""
+    assert list(ENRICH)[:2] == ["enrich.treatment_twins", "enrich.duplicate_shots"]
 
 
 # -- a gallery uploaded twice ----------------------------------------------
@@ -223,3 +226,63 @@ def test_shot_groups_tolerates_a_frame_with_no_columns_to_judge():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# -- the other treatment of a shot, flagged before the drop ------------------
+
+
+def run_both(photos):
+    context = AlbumContext(logger=quiet(), photos=photos,
+                           facts=GalleryFacts(is_wedding=True))
+    context = get("enrich.treatment_twins")()(context)
+    return get("enrich.duplicate_shots")()(context)
+
+
+def a_few_black_and_white_copies():
+    """An ordinary gallery with three shots re-exported in black and white."""
+    rows = [(1000 + i, FIRST_SECOND + i * 30, 1.5, i, 1) for i in range(20)]
+    rows += [(5000 + i, FIRST_SECOND + i * 30, 1.5, 100 + i, 0) for i in range(3)]
+    return gallery(rows)
+
+
+def test_the_kept_photo_names_its_other_treatment():
+    context = run_both(a_few_black_and_white_copies())
+    photos = context.photos.set_index(Col.IMAGE_ID)
+
+    assert photos.loc[1000, Col.TREATMENT_TWIN] == 5000
+    assert photos.loc[1000, Col.TWIN_COLOR] == 0
+    assert photos.loc[1010, Col.TREATMENT_TWIN] is None
+
+
+def test_the_dropped_copy_is_kept_aside_whole():
+    context = run_both(a_few_black_and_white_copies())
+
+    assert 5000 not in set(context.photos[Col.IMAGE_ID]), "still dropped from the photos"
+    assert set(context.treatment_twins) == {5000, 5001, 5002}
+    assert context.treatment_twins[5000][Col.IMAGE_COLOR] == 0
+
+
+def test_a_black_and_white_keeper_names_its_colour_copy():
+    """The best-ranked copy is kept whichever treatment it is."""
+    rows = [(1000 + i, FIRST_SECOND + i * 30, 1.5, 10 + i, 1) for i in range(20)]
+    rows += [(5000, FIRST_SECOND, 1.5, 0, 0)]       # the greyscale copy ranks first
+    context = run_both(gallery(rows))
+    photos = context.photos.set_index(Col.IMAGE_ID)
+
+    assert 1000 not in photos.index and 5000 in photos.index
+    assert photos.loc[5000, Col.TREATMENT_TWIN] == 1000
+    assert photos.loc[5000, Col.TWIN_COLOR] == 1
+
+
+def test_a_burst_has_no_other_treatment():
+    context = run_both(bursts())
+
+    assert context.photos[Col.TREATMENT_TWIN].isna().all()
+    assert context.treatment_twins == {}
+
+
+def test_nothing_about_the_selection_changes():
+    """Only flags: the photos that survive are the ones that did without it."""
+    photos = a_few_black_and_white_copies()
+
+    assert kept(run_both(photos.copy())) == kept(run(photos.copy()))
