@@ -324,6 +324,18 @@ class _CropJob:
             self.queue.close()
 
 
+def _neutral_contexts(message, logger):
+    """The request's `yes`/`no` and 0% categories, which do not make a page mixed."""
+    try:
+        from src.pipeline.select.budget import neutral_contexts
+        focus = (message.content.get('aiMetadata') or {}).get('focus') or []
+        return neutral_contexts(focus, logger)
+    except Exception as exc:  # noqa: BLE001 - a layout preference is not worth the album
+        if logger:
+            logger.warning(f"neutral contexts unavailable ({type(exc).__name__}: {exc})")
+        return frozenset()
+
+
 class ProcessStage(Stage):
     def __init__(self, in_q: MemoryQueue = None, out_q: MemoryQueue = None, err_q: MemoryQueue = None, logger = None):
         super().__init__('ProcessingStage', self.process_message, in_q, out_q, err_q, batch_size=1, max_threads=1,
@@ -486,7 +498,8 @@ class ProcessStage(Stage):
                                                 selection_min_total_spreads=selection_min_total_spreads,
                                                 selection_max_total_spreads=selection_max_total_spreads,
                                                 is_artificial_time=message.content.get('is_artificial_time', False),
-                                                selection_target_spreads=selection_target_spreads)
+                                                selection_target_spreads=selection_target_spreads,
+                                                neutral_contexts=_neutral_contexts(message, self.logger))
 
                 wait_start = datetime.now()
                 if crop_job is None:

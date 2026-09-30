@@ -72,6 +72,20 @@ class BudgetSubStage(SubStage):
         return context
 
 
+def neutral_contexts(focus, logger=None) -> frozenset:
+    """The categories the focus profile budgets as `yes`/`no` or at 0%.
+
+    They are what a moment's group is padded with -- a shoe, the settings,
+    `other` -- and the layout does not count them as a context of their own
+    when it asks whether a page mixes moments.
+    """
+    profile = _profile_for(list(focus or []), logger)
+    return frozenset(
+        event for event, config in profile.items()
+        if isinstance(config, dict) and 'value' in config
+        and (isinstance(config['value'], str) or float(config['value']) <= 0))
+
+
 def _key_page_spreads(context: AlbumContext):
     """How many of selection's spreads are the opening and closing pages.
 

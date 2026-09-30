@@ -13,6 +13,7 @@ from utils.time_processing import sort_groups_by_time
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
 from utils.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
+from src.spreads_layout.spreads.spread import set_neutral_contexts
 
 
 #: Compositions the reply always carries besides the content spreads: the
@@ -82,7 +83,7 @@ def layout_target(selection_target_spreads, min_total_spreads, max_total_spreads
 def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadSearchParams, logger, density=3,
                      manual_selection=False, all_gallery_df=None, selection_min_total_spreads=None,
                      selection_max_total_spreads=None, is_artificial_time=False,
-                     selection_target_spreads=None):
+                     selection_target_spreads=None, neutral_contexts=None):
     # Make the artificial-time flag available to the stage recorders so the
     # split/merge/subgroups JSONs carry it and the visualizers can pick the
     # right time field (mirrors album1.pdf in process_gallery.py).
@@ -100,6 +101,9 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
         look_up_table.get_table(group2images_initial, logger, density)
 
     look_up_table.update_with_layouts_size(designs_info['anyPagelayouts_df'])
+
+    # Wedding contexts only: a non-wedding group key is not a content class.
+    set_neutral_contexts(neutral_contexts if is_wedding else None)
 
     min_total_spreads, max_total_spreads = size_album(designs_info, selection_max_total_spreads)
     logger.info(f"Printlab data: minPages={designs_info['minPages']}. Calculated: min_total_spreads={min_total_spreads}")

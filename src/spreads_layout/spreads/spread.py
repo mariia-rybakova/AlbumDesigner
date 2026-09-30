@@ -16,6 +16,21 @@ from src.core.models import SpreadSearchParams
 from src.core.photos import Photo, group_photos, get_portraits_landscapes
 
 
+#: Contexts that do not make a page mixed: the categories the focus profile
+#: budgets as `yes`/`no` or at 0% -- the dress, the shoes, the settings, `other`.
+#: They are merged into a moment because they are too small to stand alone, and
+#: counted as a context of their own they cost a page 1e-5 each: on 49994361 a
+#: single `accessories` or `settings` photo split four groups into two spreads
+#: apiece. Set per album by `set_neutral_contexts`.
+_NEUTRAL_CONTEXTS: frozenset = frozenset()
+
+
+def set_neutral_contexts(contexts) -> None:
+    """Which contexts `check_page_properties` leaves out of its count."""
+    global _NEUTRAL_CONTEXTS
+    _NEUTRAL_CONTEXTS = frozenset(contexts or ())
+
+
 @dataclass
 class Penalties:
     """
@@ -141,7 +156,9 @@ class SingleSpreadLayout:
         # Uniqueness checks
         is_same_color = len(set(colors)) == 1
         is_same_class = len(set(photo_classes)) == 1
-        number_of_unique_contexts = len(set(contexts))
+        # A neutral context rides along with the moment it was merged into; a
+        # page of only neutral photos is still one context.
+        number_of_unique_contexts = max(1, len(set(contexts) - _NEUTRAL_CONTEXTS))
 
         def calculate_bride_groom_mix():
             bride_centric = any(cls_name in bride_centric_classes for cls_name in photo_classes)
