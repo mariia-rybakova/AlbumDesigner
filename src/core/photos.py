@@ -19,6 +19,14 @@ class Photo:
     cluster_label: int
     general_time: float
     original_context: Optional[str] = None
+    #: The same shot in the other treatment (`enrich.treatment_twins`), and its
+    #: colour. A photo with a twin can be placed in either colour, so the layout
+    #: does not count it when it asks whether a page mixes colours.
+    twin_id: Any = None
+    twin_color: Optional[bool] = None
+    #: The id the reply places, when `spreads_layout.twins` swapped this photo
+    #: for its twin to match its page. None places `id`.
+    output_id: Any = None
 
     @classmethod
     def from_array(cls, array):
@@ -44,10 +52,21 @@ def get_photos_from_df(data_df, is_wedding):
         aspect_ratio = row['image_as']
         rank_score = row['image_order']
         original_context = row['original_context'] if 'original_context' in row else None
+        twin_id = row['treatment_twin'] if 'treatment_twin' in row else None
+        twin_color = row['twin_color'] if 'twin_color' in row else None
+        if twin_id is None or twin_id != twin_id or twin_color is None or twin_color != twin_color:
+            twin_id, twin_color = None, None
+        else:
+            # An id column with gaps can come back from a merge as floats, and
+            # this id is placed in the reply as it stands: 11547936405.0, not
+            # 11547936405. The ids are integers, so make it one.
+            twin_id = int(twin_id)
+            twin_color = bool(twin_color)
 
         photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
                             photo_class=class_contex, cluster_label=cluster_label,
-                            general_time=row['general_time'], original_context=original_context))
+                            general_time=row['general_time'], original_context=original_context,
+                            twin_id=twin_id, twin_color=twin_color))
 
 
     # photos = sorted(photos, key=lambda photo: photo.id)

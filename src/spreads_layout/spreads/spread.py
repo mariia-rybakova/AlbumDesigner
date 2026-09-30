@@ -154,7 +154,12 @@ class SingleSpreadLayout:
         contexts = [photos[pid].original_context for pid in photo_set]
 
         # Uniqueness checks
-        is_same_color = len(set(colors)) == 1
+        # A photo with a twin in the other treatment is placed in whichever
+        # colour its page needs once the layout is set (`spreads_layout.twins`),
+        # so it cannot make a page mixed.
+        fixed_colors = [photos[pid].color for pid in photo_set
+                        if getattr(photos[pid], 'twin_id', None) is None]
+        is_same_color = len(set(fixed_colors)) <= 1
         is_same_class = len(set(photo_classes)) == 1
         # A neutral context rides along with the moment it was merged into; a
         # page of only neutral photos is still one context.

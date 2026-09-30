@@ -14,6 +14,7 @@ from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
 from utils.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
 from src.spreads_layout.spreads.spread import set_neutral_contexts
+from src.spreads_layout.twins import apply_twin_colors
 
 
 #: Compositions the reply always carries besides the content spreads: the
@@ -171,6 +172,11 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
             result_list.append(cur_result)
 
     logger.info(f'General groups processing time: {time.time() - start_time:.2f} seconds')
+
+    # The layout scored every twin as colour-neutral; now that the pages are
+    # fixed, each one's twins take the colour it needs.
+    if CONFIGS.get('twin_colors', True):
+        apply_twin_colors(result_list, logger)
 
     if is_wedding:
         return sort_groups_by_time(result_list, logger), updated_photos_df

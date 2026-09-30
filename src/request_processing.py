@@ -707,7 +707,10 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                                     "compositionId" : counter_comp_id,
                                                     "compositionPackageId": message.content['compositionPackageId'],
                                                     "boxId" : box_id,
-                                                    "photoId" : image_id,
+                                                    # The twin in the other treatment
+                                                    # when `spreads_layout.twins` swapped
+                                                    # it in; same shot, same crop.
+                                                    "photoId" : getattr(cur_photo, 'output_id', None) or image_id,
                                                     "cropX" : x,
                                                     "cropY" : y,
                                                     "cropWidth" : w,

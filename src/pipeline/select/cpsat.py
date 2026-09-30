@@ -342,6 +342,13 @@ class CpSatPicker:
         # them at zero.
         costs = self._admission_costs(frame)
         bonus = self._identity_bonus(frame)
+        # A minor preference for a shot the gallery holds in both treatments:
+        # the layout can place it in whichever colour its page needs, so it
+        # never costs a page the colour-mix penalty.
+        if Col.TREATMENT_TWIN in frame.columns:
+            twin_bonus = int(self.cfg.get('twin_bonus', 0))
+            if twin_bonus:
+                bonus = bonus + frame[Col.TREATMENT_TWIN].notna().astype(int) * twin_bonus
         ranks = [
             x[index] * (int(round(score * SCORE_SCALE))
                         - int(costs.at[index]) + int(bonus.at[index]))

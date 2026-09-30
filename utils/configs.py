@@ -42,6 +42,9 @@ CONFIGS = {'DEBUG': True,
            # The content-spread floor sits this far above a design's
            # `minPages` (`album_processing.size_album`). Was 6.
            'min_pages_headroom': 3,
+           # After the layout, set each page's treatment twins to the colour its
+           # other photos share (`spreads_layout.twins`).
+           'twin_colors': True,
            # `define_min_max_spreads` sizes the whole album, opening and
            # closing pages included; this many come off both ends of its range
            # before photos are budgeted, when the design does not say. See
@@ -1337,6 +1340,10 @@ CONFIGS = {'DEBUG': True,
             # this many times `similar_penalty_weight`, rather than the nothing
             # the ramp charges at and above the wall.
             'relaxed_duplicate_factor': 2.0,
+            # A minor preference for a photo with a twin in the other treatment
+            # (`enrich.treatment_twins`): against a rank of up to 1000, enough to
+            # break a near-tie, never to take a clearly weaker photo.
+            'twin_bonus': 40,
 
             # -- coverage: Phase 1 of docs/cpsat_scoring_plan.md ------------
             #
