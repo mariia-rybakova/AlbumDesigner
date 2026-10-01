@@ -9,7 +9,7 @@ from src.groups_operations.groups_management import process_wedding_illegal_grou
 from src.core.models import AlbumDesignResources, SpreadSearchParams
 from utils.lookup_table_tools import WeddingLookUpTable, NonWeddingLookUpTable
 from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
-from utils.time_processing import sort_groups_by_time
+from utils.time_processing import sort_groups_by_time, reorder_disjoint_spreads
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
 from utils.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
@@ -179,6 +179,10 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
         apply_twin_colors(result_list, logger)
 
     if is_wedding:
-        return sort_groups_by_time(result_list, logger), updated_photos_df
+        # Group order first, then the one relaxation of it the clock can settle
+        # on its own: a spread that is wholly earlier than the one in front of
+        # it moves ahead, whatever group each belongs to.
+        ordered = sort_groups_by_time(result_list, logger)
+        return reorder_disjoint_spreads(ordered, logger), updated_photos_df
     else:
         return result_list, updated_photos_df
