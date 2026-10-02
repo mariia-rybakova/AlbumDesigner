@@ -113,6 +113,15 @@ CONFIGS = {'DEBUG': True,
 
            'merge_limit_times': 3,
            'none_limit_times': 5,
+           # How far apart, in seconds of adjusted distance, two groups may be merged
+           # when the long-distance fallback is all that is left to them
+           # (`merge.merge_illegal_group_by_time`). The fallback waives the
+           # `images_in_between` guard outright and nothing measures elapsed time, so a
+           # group took whatever its last candidate was: a lone photo landed among
+           # photos of 51 minutes earlier. Adjusted, not raw, so the affinity table
+           # still buys reach -- two subgroups of one class at 21 raw minutes score 4.
+           # None disables the rule.
+           'merge_singleton_gap_limit': 20 * 60,
 
             #Qdrant
             "QDRANT_HOST": "10.0.44.13",

@@ -225,6 +225,7 @@ def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: 
                                 general_times_list: List[float],
                                 max_images_per_spread: int = 24,
                                 details: Optional[List[dict]] = None,
+                                gap_limit: Optional[float] = None,
                                 ) -> Tuple[Optional[pd.DataFrame], Optional[float]]:
     """
     Find the closest group by time that can be merged without exceeding size limits.
@@ -242,6 +243,12 @@ def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: 
             candidate (partner_key, n_photos, time_diff_raw, time_diff_adjusted,
             images_in_between, long_distance, within_size_limit, was_selected).
             Used by the merge-events recorder.
+        gap_limit: Adjusted-distance ceiling, in seconds, on a *fallback* partner. The
+            fallback below waives the `images_in_between` guard outright, and nothing
+            else here measures elapsed time, so a group left with one far candidate
+            merged into it however distant it was -- a lone portrait landing among
+            photos of 51 minutes earlier. Beyond the ceiling the group is declined
+            instead and stays unmerged for this round. None disables it.
 
     Returns:
         A tuple of:
@@ -312,6 +319,31 @@ def merge_illegal_group_by_time(main_groups: List[pd.DataFrame], illegal_group: 
         time_differences = long_time_differences
         detail_index_valid = detail_index_long
         used_long_fallback = True
+        # No group is worth a partner an hour away. The ceiling is on the adjusted
+        # distance, so a class the affinity table discounts keeps its reach: two
+        # subgroups of one class re-merging at 21 raw minutes score 4.
+        #
+        # It deliberately does not care which side is the small one. Gating only on
+        # `len(illegal_group) == 1` left the pair free to merge the other way round: a
+        # declined lone portrait was promptly taken as a *partner* by the four-photo
+        # group it had just been kept away from, rebuilding the same page from the far
+        # side. A distance is a property of the pair.
+        #
+        # A declined singleton is picked up by `_resolve_singletons` afterwards, from a
+        # pool no context limit has narrowed. A declined larger group has no such rescue
+        # and simply keeps its own spread, which is what a group of its size was going
+        # to get anyway.
+        if gap_limit is not None:
+            kept = [i for i, diff in enumerate(time_differences) if diff <= gap_limit]
+            if details is not None:
+                for i, det_idx in enumerate(detail_index_valid):
+                    if i not in kept and det_idx is not None and 0 <= det_idx < len(details):
+                        details[det_idx]['gap_declined'] = True
+            if not kept:
+                return None, None
+            valid_groups = [valid_groups[i] for i in kept]
+            time_differences = [time_differences[i] for i in kept]
+            detail_index_valid = [detail_index_valid[i] for i in kept]
     elif not valid_groups and not long_distance_groups:
         return None, None
 
@@ -506,6 +538,11 @@ def _get_merge_candidates(
             main_groups, group, general_times_list,
             max_images_per_spread=CONFIGS['max_imges_per_spread'],
             details=details,
+            # The ordinary pass only. The bride/groom rounds pair the kiss with the
+            # send-off across the evening on purpose, and the singleton rescue is the
+            # last resort this ceiling defers to -- neither may decline.
+            gap_limit=(CONFIGS.get('merge_singleton_gap_limit') if merge_type == 'other'
+                       else None),
         )
 
         record_search(merge_type, group_key, group, details,
