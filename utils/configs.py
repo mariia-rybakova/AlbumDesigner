@@ -646,15 +646,31 @@ CONFIGS = {'DEBUG': True,
             # `bride and groom` alone.
             'cover_classes': ('bride and groom', 'couple', 'kiss'),
 
+            # The opening is drawn from the earliest share of the couple
+            # frames: `small`'s share for a gallery of up to that many photos,
+            # `large`'s from that many up, linear in between. A small gallery's
+            # quarter was a handful of frames from the first minutes of the
+            # shoot. See `key_pages._opening_fraction`. The closing keeps a
+            # quarter (`COVER_FRACTION`).
+            # At 0.35, 53951381 (199 photos) stopped three frames short of the
+            # kiss the photographer wanted, 26th of 66.
+            'opening_window': {'small': (200, 0.40), 'large': (500, 0.25)},
+
+            # Softmax temperature turning a frame's cosines to the cover
+            # subqueries into weights (`key_pages._subquery_affinity`). 0.01 is
+            # CLIP's own logit scale: a 0.02 cosine lead is a 7x weight.
+            'subquery_temperature': 0.01,
+
             # The closing's own classes: a day ends on the cake, the toasts, a
             # kiss, and the opening does not start on them. `speech` only for
             # its toasts -- a guest at the microphone is not a closing.
             'closing_cover_classes': ('bride and groom', 'couple', 'kiss',
                                       'cake cutting', 'speech'),
+            # Spelled as the query bank spells it. The three phrases this held
+            # are in no bank, so every `speech` frame failed the filter and the
+            # closing never saw a toast.
             'closing_class_subqueries': {
-                'speech': ('guests and bride and groom making toasts for the speech',
-                           'everyone holding cups or glasses for toasts',
-                           'person cheering for toasts with wine'),
+                'speech': ('guests raising glasses for toast',),
             },
 
             # The old gate: both identities required, everything else dropped
@@ -726,9 +742,10 @@ CONFIGS = {'DEBUG': True,
             # lever, at the value that leaves scoring alone.
             'affection_presence_floor': 1.0,
 
-            # How large a faceless body must be, against the largest body in
+            # How tall a faceless body must be, against the tallest body in
             # the frame, to count as the unnamed partner for `one_and_body`.
-            # Guests in the background are a fraction of the couple's size.
+            # Guests in the background are a fraction of the couple's height;
+            # a partner half hidden behind the other is not.
             'presence_body_min_share': 0.5,
 
             # What makes a cover *special*: a look, a touch, a candid moment
@@ -749,37 +766,21 @@ CONFIGS = {'DEBUG': True,
             'affection_concepts': ('affection', 'intimacy', 'hugging',
                                    'holdinghands', 'kissing', 'romance'),
 
-            # Quality, from concepts already published for both model versions
-            # -- no new bin, so this needs no blob write. `portrait` and
-            # `softlight` speak to the photograph, the rest to the moment.
-            # Their mean ranked the frame the album actually opened on 32nd of
-            # its own 48 candidates, which is the judgement the ladder had no
-            # way to make.
+            # Quality as a *photograph*: the positive concepts less the
+            # negative, each standardised over the candidates
+            # (`key_pages._quality`). Built by `tools/build_concept_bin.py`,
+            # whose comments say which of twelve drafts survived reading their
+            # top and bottom photos, and why the rest did not.
             #
-            # `affection` and `romance` appear here *and* in
-            # `affection_concepts`, so affection is counted twice: once at
-            # weight 1.20 through its own term, and again as two sixths of a
-            # mean at weight 1.00, for an effective 1.53 against presence at
-            # 0.75. That looks like an oversight left behind when the dedicated
-            # `affection` term landed, and it was removed on those grounds --
-            # then measured, and put back.
-            #
-            # The overlap is doing real work. Taking the two out drops the
-            # quality score of exactly the photographs that carry a cover
-            # without showing a face: on 49995684 the album stopped closing on
-            # an intimate black-and-white detail of their hands -- no faces, so
-            # no identity, `persons_ids == []` -- and closed instead on the
-            # couple applauding at the dinner table. A correct pair of
-            # identities and a much weaker back cover.
-            #
-            # It also buys nothing. The gallery the removal was aimed at,
-            # 49996919, is fixed by `enrich.couple_scenes` taking the misread
-            # first-look scene out of the couple classes, and with that rule in
-            # place both banks pick the same correct opening. So the double
-            # count stays, documented, and 1.53 is the affection weight this
-            # module actually means.
-            'quality_concepts': ('portrait', 'smiling', 'affection',
-                                 'romance', 'softlight', 'happiness'),
+            # This was `portrait`, `smiling`, `affection`, `romance`,
+            # `softlight`, `happiness` -- five of six about faces and feeling,
+            # so it scored "close and smiling" and counted affection twice, and
+            # four of the six read from blob copies in the wrong space. Every
+            # photo in a delivered gallery has passed the photographer's edit;
+            # what is left to tell apart is the background, the light, the
+            # frame.
+            'quality_concepts': ('clean_background', 'composition', 'soft_light'),
+            'quality_negative_concepts': ('background_people', 'blurry'),
 
             'weights': {
                 # The leading term. `quality` says whether it is a good
@@ -864,6 +865,11 @@ CONFIGS = {'DEBUG': True,
             'crowd_slack': 1,
             # The orientation a single-box cover fills best.
             'preferred_orientation': 'landscape',
+            # The best frame in that orientation becomes the cover when it
+            # scores at least this share of the best frame overall
+            # (`key_pages._preferred_orientation_first`). 0 turns the rule off
+            # and leaves the `orientation` weight alone to argue for it.
+            'orientation_floor': 0.60,
 
             # A body photo this close to a cover is the same shot, and the
             # album should not close on a photograph the reader has already

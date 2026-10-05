@@ -195,6 +195,18 @@ def test_each_cover_comes_from_a_quarter_of_the_candidates():
     assert list(last[Col.IMAGE_ID]) == [10, 11, 12]
 
 
+@pytest.mark.parametrize("photos, share", [
+    (120, 0.40), (200, 0.40), (350, 0.325), (500, 0.25), (1200, 0.25),
+])
+def test_the_opening_window_widens_as_the_gallery_shrinks(photos, share):
+    """40% of the couple frames at 200 photos or fewer, a quarter from 500 up,
+    linear in between. 53951381 (199 photos) closed a quarter-window ten frames
+    before the kiss the photographer wanted."""
+    from src.core.key_pages import _opening_fraction
+
+    assert _opening_fraction(photos) == pytest.approx(share)
+
+
 def test_a_gap_in_the_gallery_does_not_widen_the_window():
     """Counting rather than measuring elapsed time. Gallery 52894932 holds two
     shoots five days apart -- one 114.7-hour gap between consecutive photos --
@@ -671,6 +683,42 @@ def _affection_frame(named_first=0.0, faceless=1.0):
     tl.concept_scores = lambda f, concept: (
         [named_first, faceless] if concept in exclusive else [0.5] * len(f))
     return frame, original, tl
+
+
+def test_quality_rewards_the_photograph_and_charges_its_faults(monkeypatch):
+    """A clean, well-composed frame beats one with guests behind and blur,
+    whatever the cosines' own scale: each concept is standardised first."""
+    import src.pipeline.enrich.timeline as tl
+    from src.core.key_pages import _quality
+    covers = CONFIGS['covers']
+    monkeypatch.setitem(covers, 'quality_concepts', ('clean_background',))
+    monkeypatch.setitem(covers, 'quality_negative_concepts', ('background_people', 'blurry'))
+    raw = {
+        # tiny spread, tiny values: still a full vote once standardised
+        'clean_background': [0.031, 0.030, 0.029],
+        'background_people': [0.10, 0.30, 0.20],
+        'blurry': [0.10, 0.20, 0.40],
+    }
+    monkeypatch.setattr(tl, 'concept_scores', lambda f, concept: raw[concept])
+    frame = pd.DataFrame({Col.IMAGE_ID: [1, 2, 3]})
+
+    got = _quality(frame, _QUIET_LOG)
+
+    assert got[0] == pytest.approx(1.0), "clean, nobody behind, sharp"
+    assert got[0] > got[1] and got[0] > got[2]
+
+
+def test_quality_without_its_bins_is_no_term(monkeypatch):
+    import src.pipeline.enrich.timeline as tl
+    from src.core.key_pages import _quality
+
+    def missing(f, concept):
+        raise FileNotFoundError(concept)
+
+    monkeypatch.setattr(tl, 'concept_scores', missing)
+    got = _quality(pd.DataFrame({Col.IMAGE_ID: [1, 2]}), _QUIET_LOG)
+
+    assert list(got) == [0.0, 0.0]
 
 
 def test_all_else_equal_the_frame_naming_both_wins():
@@ -1206,6 +1254,31 @@ def test_a_body_with_a_face_on_it_is_not_faceless():
     assert _grade(_one_named([BRIDE_BODY, PARTNER_BODY], faces)) == pytest.approx(grades['one'])
 
 
+def test_an_embrace_whose_one_face_falls_in_both_bodies_still_has_a_faceless_partner():
+    """53951381's kiss at the garden gate, boxes as detected: the groom's face is
+    the only one, and it sits inside his own narrow box *and* the bride's, who
+    has her back to the camera. Counted per body, that face made both bodies
+    "faced" and the frame graded `one`."""
+    grades = CONFIGS['covers']['presence_grades']
+    groom_face = _rated_face(0.493, 0.500, 0.510, 0.536)
+    bride_from_behind = _bbox(0.466, 0.510, 0.690, 0.942)
+    groom_half_hidden = _bbox(0.452, 0.483, 0.510, 0.846)
+
+    got = _grade(_one_named([bride_from_behind, groom_half_hidden], [groom_face]))
+
+    assert got == pytest.approx(grades['one_and_body'])
+
+
+def test_a_partner_half_hidden_behind_the_other_is_subject_sized_by_height():
+    """A fifth of the other's area, most of their height: still the partner."""
+    grades = CONFIGS['covers']['presence_grades']
+    narrow_partner = _bbox(0.50, 0.30, 0.56, 0.84)     # 0.06 wide, 0.54 tall
+
+    got = _grade(_one_named([BRIDE_BODY, narrow_partner], [BRIDE_FACE]))
+
+    assert got == pytest.approx(grades['one_and_body'])
+
+
 def test_the_named_one_recognised_by_body_is_not_also_the_partner():
     """The bride alone, face hidden, placed from her body: her own faceless body
     is accounted for by her identity, and nobody else is there."""
@@ -1365,7 +1438,7 @@ def test_the_closing_can_be_the_cake_or_a_toast_and_the_opening_cannot():
     gallery = couple_gallery(n=24)
     late = gallery[Col.GENERAL_TIME] >= gallery[Col.GENERAL_TIME].quantile(0.8)
     gallery.loc[late, Col.CLUSTER_CONTEXT] = 'cake cutting'
-    gallery.loc[late, Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom cutting cake'
+    gallery.loc[late, Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom cutting cake together'
     early = gallery[Col.GENERAL_TIME] <= gallery[Col.GENERAL_TIME].quantile(0.2)
     gallery.loc[early, Col.CLUSTER_CONTEXT] = 'cake cutting'
 
@@ -1376,12 +1449,72 @@ def test_the_closing_can_be_the_cake_or_a_toast_and_the_opening_cannot():
     assert classes[context.key_pages.opening[0]] != 'cake cutting'
 
 
+def _ranked_by(scores, orientations, monkeypatch, floor=0.6):
+    import src.core.key_pages as kp
+    monkeypatch.setitem(CONFIGS['covers'], 'orientation_floor', floor)
+    monkeypatch.setattr(kp, '_score_covers', lambda f, *a, **k: np.array(scores, dtype=float))
+    frame = pd.DataFrame({Col.IMAGE_ID: list(range(1, len(scores) + 1)),
+                          'image_orientation': orientations})
+    return kp._ranked_ids(frame, (), _QUIET_LOG)
+
+
+def test_a_good_enough_landscape_leads_over_a_better_portrait(monkeypatch):
+    """53951381: the portrait scored 4.28, the landscape kiss 3.26 (76%)."""
+    got = _ranked_by([4.28, 3.26, 3.0], ['portrait', 'landscape', 'portrait'], monkeypatch)
+
+    assert got == [2, 1, 3]
+
+
+def test_a_weak_landscape_does_not_take_the_cover(monkeypatch):
+    got = _ranked_by([4.28, 2.0, 3.0], ['portrait', 'landscape', 'portrait'], monkeypatch)
+
+    assert got == [1, 3, 2]
+
+
+def test_the_floor_at_zero_leaves_the_ranking_alone(monkeypatch):
+    got = _ranked_by([4.28, 3.26], ['portrait', 'landscape'], monkeypatch, floor=0.0)
+
+    assert got == [1, 2]
+
+
+def test_a_near_tie_with_a_kiss_scores_nearly_as_a_kiss(monkeypatch):
+    """53951381's garden-gate kiss: labelled the last-listed "posing" by 0.005
+    over "kissing". Scored by its label it got the posing grade; scored softly
+    it sits between the two, much nearer a kiss than the label said."""
+    import src.core.key_pages as kp
+    queries = ('kissing', 'smiling', 'posing')
+    kiss, pose, smile = np.eye(3, 4, dtype=np.float32)
+    monkeypatch.setattr(kp, '_subquery_vectors',
+                        lambda q, mv: (list(queries), np.vstack([kiss, smile, pose])))
+    near_tie = 0.271 * kiss + 0.276 * pose + 0.9 * np.eye(1, 4, 3, dtype=np.float32)[0]
+    frame = pd.DataFrame({'embedding': [kiss, near_tie, pose], 'model_version': [2, 2, 2],
+                          'image_subquery_content': ['kissing', 'posing', 'posing']})
+
+    got = kp._subquery_affinity(frame, queries)
+    grades = kp._subquery_grades(queries)
+
+    assert got[0] == pytest.approx(grades['kissing'], abs=0.01)
+    assert got[2] == pytest.approx(grades['posing'], abs=0.01)
+    assert grades['posing'] + 0.25 < got[1] < grades['kissing']
+
+
+def test_without_embeddings_the_label_still_decides():
+    from src.core.key_pages import _subquery_affinity, _subquery_grades
+    queries = ('kissing', 'posing')
+    frame = pd.DataFrame({'image_subquery_content': ['kissing', 'posing', 'other']})
+
+    got = _subquery_affinity(frame, queries)
+
+    grades = _subquery_grades(queries)
+    assert list(got) == [grades['kissing'], grades['posing'], 0.0]
+
+
 def test_a_speech_closes_only_when_it_is_a_toast():
     from src.core.key_pages import _candidate_base
     frame = pd.DataFrame({
         Col.CLUSTER_CONTEXT: ['speech', 'speech', 'bride and groom'],
         Col.IMAGE_SUBQUERY_CONTENT: ['person standing giving a speech',
-                                     'guests and bride and groom making toasts for the speech',
+                                     'guests raising glasses for toast',
                                      'bride and groom dancing'],
         Col.IMAGE_ID: [1, 2, 3],
     })

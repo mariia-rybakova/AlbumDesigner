@@ -76,6 +76,27 @@ _TIME_AXES = ("general_time", "image_time")
 COVER_FRACTION = 0.25
 
 
+def _opening_fraction(gallery_size):
+    """The opening's window as a share of the candidates, by gallery size.
+
+    A small gallery has few couple frames, and a quarter of them is a handful
+    from the first minutes of the shoot: on 53951381 (199 photos) the window
+    held 16 of 66 couple frames and closed ten frames before the landscape kiss
+    at the garden gate the photographer wanted, in the same session. So the
+    window widens as the gallery shrinks -- `opening_window`'s `small` share at
+    or below its photo count, `large` at or above its, linear in between.
+    """
+    config = settings().get('opening_window') or {}
+    small_at, small = config.get('small', (200, COVER_FRACTION))
+    large_at, large = config.get('large', (500, COVER_FRACTION))
+    if not gallery_size or gallery_size <= small_at:
+        return float(small)
+    if gallery_size >= large_at:
+        return float(large)
+    share = (gallery_size - small_at) / float(large_at - small_at)
+    return float(small) + share * (float(large) - float(small))
+
+
 def _pick_cover_subset(df, position="first", window_size=10, fraction=COVER_FRACTION):
     """Candidates for one cover: the earliest or latest `fraction` of them.
 
@@ -195,16 +216,17 @@ FIRST_COVER_QUERIES = (
 LAST_COVER_QUERIES = (
     'bride and groom kissing romantically',
     'bride and groom kissing',
-    # The `kiss` class's own tags, beside the couple class's.
-    'groom and bride kissing each other in a romantic way',
-    ' bride and groom kissing in a romantic way',
     'bride and groom hugging or kissing',
+    'romantic couple moment',
     'bride and groom dancing',
-    # The evening's moments, which close a day and do not open one.
-    'bride and groom feed each other piece of cake',
-    'bride and groom cutting cake',
-    'guests and bride and groom making toasts for the speech',
-    'everyone holding cups or glasses for toasts',
+    # The evening's moments, which close a day and do not open one. Spelled as
+    # the query bank spells them: four entries here named phrases the bank does
+    # not hold ('bride and groom cutting cake', '... making toasts for the
+    # speech', ...), so no photo could ever carry them and the closing gave
+    # the cake and the toasts no credit at all.
+    'bride and groom feeding each other cake',
+    'bride and groom cutting cake together',
+    'guests raising glasses for toast',
     'bride and groom smiling at each other',
     'bride and groom not formal pose',
     'bride and groom walking together',
@@ -264,9 +286,44 @@ def _concept_score(frame, concepts, logger, aggregate, label, discounted=None):
 
 
 def _quality(frame, logger):
-    """How good a photograph it is, averaged over the quality concepts."""
-    return _concept_score(frame, tuple(settings().get('quality_concepts', ())),
-                          logger, 'mean', 'quality')
+    """How good a *photograph* it is, as against what it is of.
+
+    The positive concepts (`quality_concepts`) less the negative ones
+    (`quality_negative_concepts`), each standardised over the candidates first
+    so that no concept leads on the scale of its cosines alone, then
+    normalised 0-1 like every other term.
+
+    This used to average `portrait`, `smiling`, `affection`, `romance`,
+    `softlight` and `happiness` -- five of six about faces and feeling, so it
+    measured "close and smiling" and counted affection a second time. On
+    53951381 it put the photographer's chosen opening, a wide kiss at a garden
+    gate, at 0.35 of the close portraits around it. Every photo in a delivered
+    gallery already passed the photographer's edit; what is left to tell apart
+    is the background, the light, the frame.
+    """
+    positive = tuple(settings().get('quality_concepts', ()))
+    negative = tuple(settings().get('quality_negative_concepts', ()))
+    if frame.empty or not (positive or negative):
+        return np.zeros(len(frame), dtype=float)
+
+    from src.pipeline.enrich.timeline import concept_scores
+
+    total, counted = np.zeros(len(frame), dtype=float), 0
+    for concepts, sign in ((positive, 1.0), (negative, -1.0)):
+        for concept in concepts:
+            try:
+                values = np.asarray(concept_scores(frame, concept), dtype=float)
+            except Exception as exc:  # noqa: BLE001 - an absent bin costs a concept, not the covers
+                logger.info(f"cover quality: {concept} unavailable "
+                            f"({type(exc).__name__}: {exc})")
+                continue
+            spread = values.std()
+            if spread > 0:
+                total += sign * (values - values.mean()) / spread
+            counted += 1
+    if not counted:
+        return np.zeros(len(frame), dtype=float)
+    return np.asarray(_minmax_normalize(list(total / counted)), dtype=float)
 
 
 def _affection(frame, logger):
@@ -489,7 +546,17 @@ def _faceless_subject_body(row):
     That body is a person the detector saw but could not name: in a frame
     naming one of the couple, most likely the other one, face turned away or
     hidden. Subject-sized means at least `presence_body_min_share` of the
-    largest body in the frame, so a guest in the background does not count.
+    tallest body in the frame, so a guest in the background does not count.
+
+    **Height, not area.** A partner half hidden behind the other keeps their
+    height and loses their width: in 53951381's kiss at the garden gate the
+    groom's box is 0.21 of the bride's area and 0.84 of her height.
+
+    **A face accounts for one body, not every body it falls in.** The couple
+    overlap whenever they embrace, so the visible face sits inside both boxes,
+    and testing each body for "holds a face" found no faceless body in the very
+    frames this exists for -- the same kiss, with the bride's back to the
+    camera, graded `one`. So the bodies are counted against the faces on them.
 
     Identities placed by body (`faceless_persons_ids`) occupy faceless bodies
     of their own, so only the faceless bodies beyond them are unnamed: a frame
@@ -500,16 +567,18 @@ def _faceless_subject_body(row):
         return False
     faces = [f for f in _listed(row.get('faces_info')) if getattr(f, 'blurLevel', 0) >= 0]
 
-    def area(b):
-        return max(0.0, b.bbox.x2 - b.bbox.x1) * max(0.0, b.bbox.y2 - b.bbox.y1)
+    def height(b):
+        return max(0.0, b.bbox.y2 - b.bbox.y1)
 
-    def holds_face(b):
-        return any(b.bbox.x1 <= (f.bbox.x1 + f.bbox.x2) / 2 <= b.bbox.x2
-                   and b.bbox.y1 <= (f.bbox.y1 + f.bbox.y2) / 2 <= b.bbox.y2 for f in faces)
+    def inside(f, b):
+        return (b.bbox.x1 <= (f.bbox.x1 + f.bbox.x2) / 2 <= b.bbox.x2
+                and b.bbox.y1 <= (f.bbox.y1 + f.bbox.y2) / 2 <= b.bbox.y2)
 
-    largest = max(area(b) for b in bodies)
+    tallest = max(height(b) for b in bodies)
     share = float(settings().get('presence_body_min_share', 0.5))
-    unnamed = sum(1 for b in bodies if not holds_face(b) and area(b) >= share * largest)
+    subjects = [b for b in bodies if height(b) >= share * tallest]
+    faced = sum(1 for f in faces if any(inside(f, b) for b in subjects))
+    unnamed = len(subjects) - min(faced, len(subjects))
     return unnamed > len(_listed(row.get('faceless_persons_ids')))
 
 
@@ -551,13 +620,78 @@ def _cut_subject_penalty(frame):
     return frame.apply(grade, axis=1).astype(float).values
 
 
-def _subquery_affinity(frame, queries):
-    """1.0 for the first listed subquery, falling to 0 for anything unlisted."""
-    order = {name: i for i, name in enumerate(queries)}
+def _subquery_grades(queries):
+    """Each listed subquery's grade: 1.0 for the first, falling by position."""
     span = max(1, len(queries))
+    return {name: (span - i) / span for i, name in enumerate(queries)}
+
+
+def _subquery_affinity(frame, queries):
+    """How well the frame matches the cover's subqueries, graded by their order.
+
+    **Soft, not the label.** The label is one argmax over the photo's class's
+    phrases, and it can turn on nothing: 53951381's kiss at the garden gate
+    read "posing for a portrait" at 0.276 against "kissing" at 0.271, and
+    since posing is listed last that 0.005 cost it 0.45 of the cover score.
+    So the frame's similarity to every listed phrase is turned into a softmax
+    at CLIP's own temperature (`subquery_temperature`), and the affinity is the
+    expected grade under it: a frame that is nearly as much a kiss as a pose
+    scores nearly as a kiss does.
+
+    The phrase vectors are the tagger's own (`queries_file_v2/_v3`), so this
+    scores against exactly what the label was argmax'd over. Falls back to the
+    label when the frame has no embeddings or no listed phrase has a vector.
+    """
+    grades = _subquery_grades(queries)
+    soft = _soft_subquery_affinity(frame, queries, grades)
+    if soft is not None:
+        return soft
     return frame['image_subquery_content'].map(
-        lambda name: (span - order[name]) / span if name in order else 0.0
-    ).astype(float).values
+        lambda name: grades.get(name, 0.0)).astype(float).values
+
+
+def _soft_subquery_affinity(frame, queries, grades):
+    if frame.empty or 'embedding' not in frame.columns or 'model_version' not in frame.columns:
+        return None
+    try:
+        names, vectors = _subquery_vectors(tuple(queries), int(frame['model_version'].iloc[0]))
+        if not names:
+            return None
+        matrix = np.vstack([np.asarray(e, dtype=np.float32).ravel() for e in frame['embedding']])
+        if matrix.shape[1] != vectors.shape[1]:
+            return None
+        matrix /= np.linalg.norm(matrix, axis=1, keepdims=True)
+    except Exception:  # noqa: BLE001 - the label is still there to fall back on
+        return None
+    temperature = float(settings().get('subquery_temperature', 0.01))
+    logits = (matrix @ vectors.T) / temperature
+    logits -= logits.max(axis=1, keepdims=True)
+    weights = np.exp(logits)
+    weights /= weights.sum(axis=1, keepdims=True)
+    return weights @ np.array([grades[name] for name in names], dtype=float)
+
+
+_SUBQUERY_VECTORS = {}
+
+
+def _subquery_vectors(queries, model_version):
+    """(names, unit vectors) of the listed subqueries the tagger's bank holds."""
+    key = (queries, model_version)
+    if key not in _SUBQUERY_VECTORS:
+        from utils import read_pkl_file
+        bank = read_pkl_file(CONFIGS['queries_file_v2' if model_version == 1 else 'queries_file_v3'])
+        found = {}
+        for phrases in bank.values():
+            for name, vector in phrases.items():
+                if name in queries and name not in found:
+                    found[name] = np.atleast_2d(np.asarray(vector, dtype=np.float32))[0]
+        names = [name for name in queries if name in found]
+        vectors = (np.vstack([found[name] for name in names]) if names
+                   else np.zeros((0, 1), dtype=np.float32))
+        if names:
+            vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+        _SUBQUERY_VECTORS[key] = (names, vectors)
+    return _SUBQUERY_VECTORS[key]
 
 
 def _crowd_penalty(frame):
@@ -645,7 +779,45 @@ def _ranked_ids(frame, queries, logger, bride_id=None, groom_id=None):
     scored = frame.copy()
     scored['__score'] = _score_covers(scored, queries, logger, bride_id, groom_id)
     scored = scored.sort_values('__score', ascending=False, kind='stable')
-    return scored['image_id'].tolist()
+    ids = scored['image_id'].tolist()
+    return _preferred_orientation_first(scored, ids, logger)
+
+
+def _preferred_orientation_first(scored, ids, logger):
+    """The best frame in `preferred_orientation` first, when it is good enough.
+
+    A cover is one large box, and photographers do not want a portrait there
+    when the session has a landscape that will do: 53951381 opened on a close
+    portrait over the landscape kiss its photographer chose. The orientation
+    term could not say this -- the scores favour close frames over wide ones,
+    and in a gallery whose wide shots are its landscapes that gap was 1.27,
+    more than the affection weight. A bigger orientation weight would just
+    override good portraits on galleries without the gap.
+
+    So it is a rule with a floor: the best landscape leads when it scores at
+    least `orientation_floor` of the best frame. A weak landscape still loses
+    to a strong portrait, which keeps the failure of the old hard filter away
+    -- 53507032, where the only landscape opened and closed the album.
+    """
+    floor = float(settings().get('orientation_floor', 0.0))
+    if not floor or 'image_orientation' not in scored.columns or len(ids) < 2:
+        return ids
+    preferred = settings().get('preferred_orientation', 'landscape')
+    best = scored.iloc[0]
+    if best['image_orientation'] == preferred or best['__score'] <= 0:
+        return ids
+    fitting = scored[scored['image_orientation'] == preferred]
+    if fitting.empty:
+        return ids
+    challenger = fitting.iloc[0]
+    if challenger['__score'] < floor * best['__score']:
+        return ids
+    logger.info(f"covers: {preferred} {challenger['image_id']} leads over "
+                f"{best['image_orientation']} {best['image_id']} "
+                f"({challenger['__score']:.2f} of {best['__score']:.2f}, "
+                f"floor {floor:.0%})")
+    lead = challenger['image_id']
+    return [lead] + [i for i in ids if i != lead]
 
 
 def _candidate_base(chosen_df, bride_id, groom_id, logger, classes=None, subqueries=None):
@@ -751,7 +923,8 @@ def get_important_imgs(data_df, bride_groom_df, logger):
                                          settings().get('cover_classes', ('bride and groom',)))),
             subqueries=settings().get('closing_class_subqueries', {}))
 
-        subset_first = _pick_cover_subset(base, position="first", window_size=10)
+        subset_first = _pick_cover_subset(base, position="first", window_size=10,
+                                          fraction=_opening_fraction(len(data_df)))
         first_page_ids = _ranked_ids(subset_first, FIRST_COVER_QUERIES, logger,
                                      bride_id, groom_id)
 
