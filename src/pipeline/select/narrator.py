@@ -370,6 +370,7 @@ class NarratorSubStage(SubStage):
 
             from src.narrator import export
             from src.narrator.env import hero
+            from src.pipeline.select import narrator_covers
 
             sample_k = int(settings().get('sample_k', 1))
             packed, pages, score = export.compose(
@@ -378,6 +379,12 @@ class NarratorSubStage(SubStage):
             first, last = (hero.pick_hero_photos(packed)
                            if cfg.reward.hero_pages else (-1, -1))
             block = export.album_to_predefined_block(packed, pages, first, last)
+            # Our covers swapped in *after* composing: the policy, given other
+            # heroes to withhold, composes a shorter album. See the module.
+            if settings().get('our_covers', True) and first >= 0:
+                covers = narrator_covers.choose_covers(packed, context.photos, logger)
+                if covers is not None:
+                    block = narrator_covers.apply_covers(block, covers, context.photos, logger)
         except Exception as exc:  # noqa: BLE001 - fall through, never lose the album
             if logger:
                 logger.warning(f"narrator: declined ({type(exc).__name__}: {exc}); "

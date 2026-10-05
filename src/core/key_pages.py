@@ -783,6 +783,41 @@ def _ranked_ids(frame, queries, logger, bride_id=None, groom_id=None):
     return _preferred_orientation_first(scored, ids, logger)
 
 
+def rank_general_covers(frame, logger, presence=None):
+    """Cover candidates of a gallery that is not a wedding, best first.
+
+    The wedding score's terms that are about the *photograph* and not about
+    the bride and groom: quality (`_quality`, background, light, frame),
+    the content model's rank, how much of the frame its people are
+    (`significance`), and the penalties for a frame with nobody in it and for
+    a subject cut off by the border. Orientation is the same preference, and
+    the same floor (`_preferred_orientation_first`) puts a good-enough
+    landscape on the cover.
+
+    ``presence`` is the caller's 0-1 answer to "are these the people this
+    album is about" -- the narrator's dominant-group overlap. Without one the
+    term is left out rather than guessed.
+    """
+    if frame.empty:
+        return []
+    weights = settings().get('weights', {})
+    scored = frame.copy()
+    rank = np.asarray(_minmax_normalize(
+        [float(v) if v == v else 0.0 for v in scored['image_order']]), dtype=float) \
+        if 'image_order' in scored.columns else np.zeros(len(scored))
+    score = (weights.get('quality', 0.0) * _quality(scored, logger)
+             + weights.get('rank', 0.0) * (1.0 - rank)
+             + weights.get('significance', 0.0) * _significance(scored)
+             + _orientation_preference(scored)
+             - weights.get('detail', 0.0) * _detail_penalty(scored)
+             - weights.get('cut_subject', 0.0) * _cut_subject_penalty(scored))
+    if presence is not None:
+        score = score + weights.get('presence', 0.0) * np.asarray(presence, dtype=float)
+    scored['__score'] = score
+    scored = scored.sort_values('__score', ascending=False, kind='stable')
+    return _preferred_orientation_first(scored, scored['image_id'].tolist(), logger)
+
+
 def _preferred_orientation_first(scored, ids, logger):
     """The best frame in `preferred_orientation` first, when it is good enough.
 

@@ -935,6 +935,12 @@ CONFIGS = {'DEBUG': True,
             # path, a v1 gallery cannot be read at 768-d, and any decline falls
             # through to `smart_non_wedding_selection` exactly as before.
             'enabled': True,
+            # Choose the opening and closing with `key_pages.
+            # rank_general_covers` (quality, rank, orientation and its floor,
+            # the people the album is about) instead of the narrator's own
+            # dominant-group-then-content-score rule, and prune body photos
+            # that repeat a cover. See `select.narrator_covers`.
+            'our_covers': True,
 
             # The trained policy. 46 MB, and loaded once per process. Read with
             # `weights_only=False` because the checkpoint carries the training
