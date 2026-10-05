@@ -21,27 +21,34 @@ def load_pre_queries_embeddings(pre_queries_name, version):
     within a single gallery. The bins are immutable build artefacts, so caching
     for the life of the process is safe; the returned array is shared, so
     callers must not mutate it in place.
+
+    **The repo's copy first, blob storage only for a concept it lacks.** The
+    v2 blob copies were rewritten on 2026-05-24 in a space the image embeddings
+    are not in: 75 of 83 differ from the repo's, and against a fresh text
+    embedding of their own name they score ~0.0 where the repo's score 1.0.
+    Read first, they were what production scored with. Telling a class's photos
+    from the rest of the gallery (AUC, 0.5 is chance) on 49994361 and
+    53951381: `cake` 0.99 local / 0.63 blob, `kissing` 0.99 / 0.37,
+    `centerpiece` 0.92 / 0.16, `dancing` 0.75 / 0.29 -- and on the cover side
+    `kissing` scored a laughing couple above every kiss. v1 is identical in
+    both places.
     """
 
     pre_query_file_name = CONFIGS['bin_name_dictionary'].get(pre_queries_name,pre_queries_name)
 
-    try:
+    local_dir = 'files/pre_queries/v1' if version == 1 else 'files/pre_queries/v2'
+    file_path = os.path.join(local_dir, f'{pre_query_file_name}.bin')
+    if os.path.exists(file_path):
+        with open(file_path, 'rb') as f:
+            b_obs = f.read()
+    else:
         if version == 1:
             file = os.path.join('pictures/photostore/4/pre_queries', f'{pre_query_file_name}.bin')
         else:
             file = os.path.join('pictures/photostore/32/pre_queries/v2', f'{pre_query_file_name}.bin')
-
-        pai_file_bytes = PTFile(file)  # load file
-        fileBytes = pai_file_bytes.read_blob()
-        fb = BytesIO(fileBytes)
-        b_obs = fb.read()
-    except Exception as ex:
-        if version == 1:
-            file_path = os.path.join(r'files/pre_queries/v1/', f'{pre_query_file_name}.bin')
-        else:
-            file_path = os.path.join(r'files/pre_queries/v2/', f'{pre_query_file_name}.bin')
-        with open(file_path, 'rb') as f:
-            b_obs = f.read()
+        # Forward slashes: `os.path.join` on Windows would ask for a key the
+        # service never wrote.
+        b_obs = BytesIO(PTFile(file.replace('\\', '/')).read_blob()).read()
 
     emb_size = struct.unpack_from('<2i', b_obs)  # [512, num_of_embeddings]
     obs = struct.unpack_from(f'<{emb_size[0] * emb_size[1]}f', b_obs[8:])

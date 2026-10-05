@@ -218,6 +218,51 @@ CONCEPTS = {
         "guests seated around a table at a wedding dinner",
     ],
 
+    # -- photographic quality (covers) -------------------------------------
+    #
+    # What makes a frame a good *photograph*, as against what it is of. Kept
+    # from twelve drafts by reading each one's top and bottom photos on
+    # 53951381 and 49994361. Dropped because whole-image CLIP read them as a
+    # scene type, not a fault: `glare` and `even_light` (bright and
+    # black-and-white frames), `harsh_shadows` (any outdoor daylight),
+    # `dark_underexposed` (night and black-and-white), `sharp_focus` (detail
+    # flat-lays), `shallow_depth` (foliage and landscapes), and
+    # `cluttered_background` (flat-lays; `clean_background` inverted already
+    # says the rest).
+    "clean_background": [
+        "a portrait against a clean, uncluttered background",
+        "the subject isolated against a simple plain backdrop",
+        "minimalist composition with nothing distracting behind the subject",
+        "the couple framed against open sky or a smooth wall",
+    ],
+    "composition": [
+        "a beautifully composed fine art wedding photograph",
+        "editorial wedding photography with strong composition",
+        "an elegant, well-framed photograph with leading lines",
+    ],
+    # Reads soft window light high and midday sun low -- a lean against bright
+    # outdoor frames, which is why it is one of five and not the term.
+    "soft_light": [
+        "soft, diffused natural light",
+        "flattering soft light on the faces",
+        "gentle window light with soft shadows",
+        "warm golden hour glow",
+    ],
+    # Negative.
+    "background_people": [
+        "random people in the background of the photo",
+        "guests standing and walking behind the subject",
+        "a crowd of bystanders in the background",
+        "strangers distracting from the subject in the background",
+    ],
+    # Negative. Catches motion-blurred dance-floor frames cleanly on both
+    # galleries -- right for a cover, whatever they are worth elsewhere.
+    "blurry": [
+        "a blurry, out-of-focus photo",
+        "motion blur and camera shake",
+        "a soft, unsharp, poorly focused image",
+    ],
+
     # Negative. The bridal party shares almost every structural indicator with
     # the parents, and is far more numerous, so it is the dominant confusion.
     "wedding_party_member": [
