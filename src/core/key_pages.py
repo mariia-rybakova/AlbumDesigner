@@ -851,7 +851,9 @@ def _preferred_orientation_first(scored, ids, logger):
                 f"{best['image_orientation']} {best['image_id']} "
                 f"({challenger['__score']:.2f} of {best['__score']:.2f}, "
                 f"floor {floor:.0%})")
-    lead = challenger['image_id']
+    # The list's own element, not the row's: a row hands back a numpy scalar,
+    # and the ids leave this module as plain values.
+    lead = next(i for i in ids if i == challenger['image_id'])
     return [lead] + [i for i in ids if i != lead]
 
 
