@@ -12,7 +12,7 @@ photograph, and the centre of a full-spread photograph is where two people
 standing together are. The rest divide into families that put the fold near one
 edge of the box: a photo covering a page and a lip of the other.
 
-Two levers, because one is not enough:
+Three levers, because no one of them reaches every case:
 
 **Choosing the layout.** The crop for a full-spread box is the whole width of
 the photo -- nearly every photo is narrower than the 2:1 that box asks for, so
@@ -21,6 +21,15 @@ room to move. Nothing about the placement can save that; only a different
 layout, or a different split of the photos across spreads, can. So the layout
 search re-ranks its own candidates: it keeps the best-scoring one unless a
 close-enough rival puts the fold somewhere harmless. See `choose_cleaner_fold`.
+
+**Re-housing the spread.** The candidate list reaches less far than it looks:
+`process_group_lists` builds it with `itertools.product`, which varies the last
+spread fastest, so the leading candidates all repeat one layout for the first
+spread. A damaged photo there is unreachable however many candidates are
+walked. So each spread still carrying a face on the fold is moved into another
+layout of the same shape -- the same orientations in the same places, which
+scores identically and differs only in where the boxes sit on the paper. See
+`repair_spreads`.
 
 **Sliding the crop.** Where the photo *is* wider than the box, the crop window
 has slack to either side, and the fold can be walked out of a face without
@@ -42,6 +51,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from src.smart_cropping import (_as_list, centered_window, placement_window,
                                 single_subject_window)
+from src.spreads_layout.spreads.spread import SingleSpreadLayout
 from utils.configs import CONFIGS
 
 #: Where the fold is, in spread coordinates.
@@ -321,6 +331,30 @@ def _spread_pairs(spread, layout_id2data: Dict[int, Any]):
                 yield (layout_id, box_id), photo
 
 
+def spread_fold_cost(spread, layout_id2data: Dict[int, Any],
+                     box_id2data: Dict[Tuple[int, int], Any],
+                     photo_info: Dict[Any, Dict[str, Any]],
+                     album_ar: float = 2.0,
+                     face_margin: Optional[float] = None) -> float:
+    """How much face one spread puts on the fold; its photos must be resolved."""
+    tolerance = float(settings().get('edge_tolerance', 0.005))
+    total = 0.0
+    for key, photo in _spread_pairs(spread, layout_id2data):
+        box = box_id2data.get(key)
+        if not box:
+            continue
+        fraction = fold_fraction(box, tolerance)
+        if fraction is None:
+            continue
+        info = photo_info.get(photo.id)
+        if info is None:
+            continue
+        window = estimate_window(info['ar'], box, album_ar,
+                                 info['faces'], info['bodies'], info['centroid'])
+        total += fold_cost(info['spans'], fold_image_x(window, fraction), face_margin)
+    return total
+
+
 def group_layout_fold_cost(group_layout, layout_id2data: Dict[int, Any],
                            box_id2data: Dict[Tuple[int, int], Any],
                            photo_info: Dict[Any, Dict[str, Any]],
@@ -331,23 +365,113 @@ def group_layout_fold_cost(group_layout, layout_id2data: Dict[int, Any],
     Zero for a layout with no cross-fold box, which is most of them, and the
     photos must already be resolved onto their boxes.
     """
-    tolerance = float(settings().get('edge_tolerance', 0.005))
-    total = 0.0
+    return sum(spread_fold_cost(spread, layout_id2data, box_id2data, photo_info,
+                                album_ar, face_margin)
+               for spread in group_layout.spreads_layouts)
+
+
+def _page_shape(ids, layout_id, box_id2data) -> Tuple[int, int, int]:
+    """How many portrait / landscape / square boxes a page holds."""
+    counts = {'portrait': 0, 'landscape': 0, 'square': 0}
+    for box_id in ids or ():
+        orientation = (box_id2data.get((layout_id, box_id)) or {}).get('orientation')
+        if orientation in counts:
+            counts[orientation] += 1
+    return counts['portrait'], counts['landscape'], counts['square']
+
+
+def layout_shape(layout_idx: int, layout_id2data: Dict[int, Any],
+                 box_id2data: Dict[Tuple[int, int], Any]) -> Optional[Tuple[int, ...]]:
+    """The per-page box orientations of a layout, as one comparable key.
+
+    Two layouts with the same shape hold the same photos the same way round:
+    the same count of each orientation on each page. Everything
+    `SingleSpreadLayout.get_score` measures is then identical between them --
+    the colour, class, context and time terms read the photos, which do not
+    move, and `left_mixed` / `right_mixed` and the square count follow from
+    these counts. So one can be swapped for the other at no cost to the score,
+    and the only thing that differs is where the boxes sit on the paper.
+    """
+    layout = layout_id2data.get(layout_idx)
+    if layout is None:
+        return None
+    layout_id = layout['layout_id']
+    return (_page_shape(layout['left_box_ids'], layout_id, box_id2data)
+            + _page_shape(layout['right_box_ids'], layout_id, box_id2data))
+
+
+def _shape_index(layout_id2data, box_id2data) -> Dict[Tuple[int, ...], List[int]]:
+    index: Dict[Tuple[int, ...], List[int]] = {}
+    for layout_idx in layout_id2data:
+        shape = layout_shape(layout_idx, layout_id2data, box_id2data)
+        if shape is not None:
+            index.setdefault(shape, []).append(layout_idx)
+    return index
+
+
+def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, Any],
+                   box_id2data: Dict[Tuple[int, int], Any],
+                   photo_info: Dict[Any, Dict[str, Any]],
+                   album_ar: float = 2.0, logger=None) -> Tuple[float, float]:
+    """Re-house each damaged spread in an interchangeable layout that is clean.
+
+    `choose_cleaner_fold` can only offer what the candidate list holds, and for
+    a group of several spreads that is less than it looks: `process_group_lists`
+    builds candidates with `itertools.product`, which varies the *last* spread
+    fastest, so the leading candidates all share one layout for the first
+    spread. On 53316807 the two one-photo spreads of group `1_other` had the
+    damaged photo in the first, and every candidate within reach repeated the
+    same design for it.
+
+    This does not search candidates at all. It takes the spread as the search
+    settled it -- the same photos, the same page split -- and looks for another
+    layout of the same shape (`layout_shape`), which by construction scores the
+    same. Among those it takes the one whose fold falls clearest of the faces.
+
+    Returns (cost before, cost after) over the whole group layout.
+    """
+    shapes = None
+    before_total = after_total = 0.0
+
     for spread in group_layout.spreads_layouts:
-        for key, photo in _spread_pairs(spread, layout_id2data):
-            box = box_id2data.get(key)
-            if not box:
+        before = spread_fold_cost(spread, layout_id2data, box_id2data, photo_info, album_ar)
+        before_total += before
+        if before <= 0:
+            after_total += before
+            continue
+
+        if shapes is None:
+            shapes = _shape_index(layout_id2data, box_id2data)
+        shape = layout_shape(spread.layout_idx, layout_id2data, box_id2data)
+
+        best_idx, best_cost = spread.layout_idx, before
+        for layout_idx in shapes.get(shape, ()):
+            if layout_idx == spread.layout_idx:
                 continue
-            fraction = fold_fraction(box, tolerance)
-            if fraction is None:
-                continue
-            info = photo_info.get(photo.id)
-            if info is None:
-                continue
-            window = estimate_window(info['ar'], box, album_ar,
-                                     info['faces'], info['bodies'], info['centroid'])
-            total += fold_cost(info['spans'], fold_image_x(window, fraction), face_margin)
-    return total
+            trial = SingleSpreadLayout(layout_idx=layout_idx,
+                                       left_page_photo_idxs=set(spread.left_page_photo_idxs),
+                                       right_page_photo_idxs=set(spread.right_page_photo_idxs),
+                                       number_of_squares=spread.number_of_squares)
+            trial.resolve_photos(photos)
+            trial.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
+            cost = spread_fold_cost(trial, layout_id2data, box_id2data, photo_info, album_ar)
+            if cost < best_cost - 1e-9:
+                best_idx, best_cost = layout_idx, cost
+                if cost <= 0:
+                    break
+
+        if best_idx != spread.layout_idx:
+            if logger:
+                logger.info(
+                    f"fold: spread moved from layout {layout_id2data[spread.layout_idx]['layout_id']} "
+                    f"to {layout_id2data[best_idx]['layout_id']} (same shape), "
+                    f"faces on the fold {before:.2f} -> {best_cost:.2f}")
+            spread.layout_idx = best_idx
+            spread.resolve_photos(photos)
+            spread.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
+        after_total += best_cost
+
+    return before_total, after_total
 
 
 def choose_cleaner_fold(candidates: List[Any], best: Any, photos: List[Any],

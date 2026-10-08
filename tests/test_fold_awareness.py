@@ -433,3 +433,59 @@ def test_a_real_design_carries_its_fold_through_to_the_box_data():
     assert original[14976] == pytest.approx(0.884, abs=0.001)
     assert mirrored[14976] == pytest.approx(1 - original[14976])
     assert original[14977] is None and original[14978] is None, "the other boxes stay on their page"
+
+
+# ------------------------------------------- re-housing a spread in the same shape
+
+def test_two_layouts_holding_the_same_photos_the_same_way_share_a_shape():
+    """CROSSING and CLEAN both hold one landscape per page, so they are
+    interchangeable: everything `get_score` measures is identical between them."""
+    assert (fold.layout_shape(0, LAYOUT_ID2DATA, BOX_ID2DATA)
+            == fold.layout_shape(1, LAYOUT_ID2DATA, BOX_ID2DATA) == (0, 1, 0, 0, 1, 0))
+
+
+def test_a_damaged_spread_is_rehoused_even_when_no_candidate_offers_it():
+    """The gap `choose_cleaner_fold` cannot close: `process_group_lists` builds
+    candidates with `itertools.product`, so the leading ones all repeat one
+    layout for the first spread. 53316807's group `1_other` had the damaged
+    photo there and no reachable candidate ever moved it."""
+    only = resolved(candidate(0, 1.0))
+
+    before, after = fold.repair_spreads(only, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA, PHOTO_INFO)
+
+    assert before > 0 and after == 0
+    assert only.spreads_layouts[0].layout_idx == 1, "moved to the layout of the same shape"
+
+
+def test_rehousing_keeps_the_photos_where_they_were():
+    only = resolved(candidate(0, 1.0))
+    before_ids = ([p.id for p in only.spreads_layouts[0].left_page_photos],
+                  [p.id for p in only.spreads_layouts[0].right_page_photos])
+
+    fold.repair_spreads(only, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA, PHOTO_INFO)
+    after_ids = ([p.id for p in only.spreads_layouts[0].left_page_photos],
+                 [p.id for p in only.spreads_layouts[0].right_page_photos])
+
+    assert before_ids == after_ids
+
+
+def test_a_spread_that_clears_the_fold_is_left_where_it_is():
+    clean = resolved(candidate(1, 1.0))
+
+    before, after = fold.repair_spreads(clean, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA, PHOTO_INFO)
+
+    assert (before, after) == (0.0, 0.0)
+    assert clean.spreads_layouts[0].layout_idx == 1
+
+
+def test_selection_rehouses_what_the_candidates_could_not(monkeypatch):
+    """End to end through the function `process_group` calls, with a candidate
+    list that offers no rival at all."""
+    frame = pd.DataFrame([a_row(1, [ON_THE_FOLD]), a_row(2, [face(0.05, 0.15)])])
+    only = [candidate(0, 1.0)]
+
+    chosen = select_best_layout_for_subgroup(only, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA,
+                                             fold.photo_fold_info(frame), album_ar=2.0)
+
+    assert fold.group_layout_fold_cost(chosen, LAYOUT_ID2DATA, BOX_ID2DATA,
+                                       fold.photo_fold_info(frame)) == 0

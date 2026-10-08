@@ -249,8 +249,15 @@ def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], s
     cleaner = fold.choose_cleaner_fold(subgroup_layouts, best_layout, subgroup_photos,
                                        layout_id2data, design_box_id2data,
                                        photo_fold_info or {}, album_ar, logger)
+    chosen = cleaner if cleaner is not None else best_layout
 
-    return cleaner if cleaner is not None else best_layout
+    # Whatever the candidate list could offer, each spread it still leaves with
+    # a face on the fold is re-housed in a layout of the same shape.
+    if fold.enabled() and photo_fold_info:
+        fold.repair_spreads(chosen, subgroup_photos, layout_id2data, design_box_id2data,
+                            photo_fold_info, album_ar, logger)
+
+    return chosen
 
 
 def structure_layout(best_layout: GroupSingleLayout, group_name: Tuple,
