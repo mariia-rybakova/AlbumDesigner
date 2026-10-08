@@ -14,7 +14,8 @@ import json
 from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from src.core.models import GroupProcessingResult
-from src.smart_cropping import face_aware_crop, single_subject_window
+from src.smart_cropping import face_aware_crop, placement_window, single_subject_window
+from src.spreads_layout import fold
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -82,8 +83,13 @@ def read_layouts_data(message, json_content, logger=None):
     message.designsInfo['maxPages'] = json_content['designInfo']['maxPages'] if 'maxPages' in json_content[
         'designInfo'] else CONFIGS['max_total_spreads']
 
+    # The spread ratio the any-page boxes were measured against. Kept on
+    # designsInfo because the layout needs it too -- it is what tells a box's
+    # width:height what shape of crop it will hold (`spreads_layout.fold`).
+    message.designsInfo['albumAr'] = message.content.get('album_ar', {'anyPage': 2})['anyPage']
+
     any_page_layouts_df = generate_layouts_df(json_content['designInfo']['designs'], message.designsInfo['anyPageIds'],
-                                             album_ar=message.content.get('album_ar', {'anyPage': 2})['anyPage'],
+                                             album_ar=message.designsInfo['albumAr'],
                                              do_mirror=True)
 
     # Add dummy firstPage/lastPage from single-box anyPage layouts when missing
@@ -491,39 +497,49 @@ def cover_box(image_info, box_info, album_ar=2, logger=None):
     return crop
 
 
-def customize_box(image_info, box_info, album_ar=2):
+def _keep_fold_off_faces(window, box, image_info):
+    """`window` slid so the album's fold does not run down a face.
+
+    Only for a box that straddles the fold, and only as far as the window has
+    room to move inside the photo -- a full-spread box shows the whole width
+    and nothing moves. The layout has already preferred a candidate that keeps
+    the fold clear (`spreads_layout.fold`); this is the part of the job that
+    can only be done once the crop is known.
+    """
+    if not fold.enabled() or not fold.settings().get('slide_crop', True):
+        return window
+    fraction = fold.fold_fraction(box)
+    if fraction is None:
+        return window
+    spans = fold.face_spans(image_info.get('faces_info'))
+    if not spans:
+        return window
+    return fold.clear_fold(window, fraction, spans)
+
+
+def customize_box(image_info, box_info, album_ar=2, spread_box=None):
+    """The crop for one placement, as (x, y, w, h) normalised to the photo.
+
+    `spread_box` is the box as it is actually printed, which is the same thing
+    as `box_info` except on a mirrored layout: `box_id2data` is keyed by the
+    design's positive id and so carries the unmirrored geometry. The two differ
+    only in `x`, which does not change a crop's shape but does decide where the
+    fold falls -- so the fold check wants the mirrored one. It defaults to
+    `box_info` for callers with nothing to mirror.
+    """
     target_ar = box_target_ar(box_info, album_ar)
     if box_info['orientation'] == 'square':
-        crop_x = image_info['cropped_x']
-        crop_y = image_info['cropped_y']
-        crop_w = image_info['cropped_w']
-        crop_h = image_info['cropped_h']
-
-        return crop_x, crop_y, crop_w, crop_h
+        window = (image_info['cropped_x'], image_info['cropped_y'],
+                  image_info['cropped_w'], image_info['cropped_h'])
     else:
         image_ar = float(image_info['image_as'])
         # One person: framed by the head and body rather than centred blind --
         # the same rule the pre-computed square crop and the covers apply.
-        window = single_subject_window(image_info.get('faces_info'), image_info.get('bodies_info'),
-                                       image_ar, target_ar)
-        if window is not None:
-            return window
-        if image_ar > target_ar:
-            # Image is too wide, crop horizontally
-            new_width_ratio = target_ar / image_ar
-            x = (1 - new_width_ratio) / 2
-            y = 0.0
-            w = new_width_ratio
-            h = 1.0
-        else:
-            # Image is too tall, crop vertically
-            new_height_ratio = image_ar / target_ar
-            x = 0.0
-            y = (1 - new_height_ratio) / 2
-            w = 1.0
-            h = new_height_ratio
+        # Otherwise the largest window of the box's shape, in the middle.
+        window = placement_window(image_info.get('faces_info'), image_info.get('bodies_info'),
+                                  image_ar, target_ar)
 
-        return x, y, w, h
+    return _keep_fold_off_faces(window, spread_box if spread_box is not None else box_info, image_info)
 
 
 def sort_boxes(boxes):
@@ -702,7 +718,8 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                     if image_info is None or image_info.empty:
                         continue
                     else:
-                        x, y, w, h = customize_box(image_info.iloc[0], box_id2data[(design_id,box_id)],album_ar)
+                        x, y, w, h = customize_box(image_info.iloc[0], box_id2data[(design_id, box_id)],
+                                                   album_ar, spread_box=box)
                     result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
                                                     "compositionId" : counter_comp_id,
                                                     "compositionPackageId": message.content['compositionPackageId'],

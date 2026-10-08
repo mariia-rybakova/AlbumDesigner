@@ -741,6 +741,30 @@ def _window_size(image_ar, target_ar):
     return 1.0, image_ar / target_ar
 
 
+def centered_window(image_ar, target_ar):
+    """The largest `target_ar` window in the image, sitting in the middle of it.
+
+    What `request_processing.customize_box` has always fallen back to when no
+    face rule places the window. Lifted out of it so the layout can ask where a
+    photo's crop will sit before the placement computes it -- see
+    `spreads_layout.fold`.
+    """
+    w, h = _window_size(float(image_ar), float(target_ar))
+    return (1.0 - w) / 2, (1.0 - h) / 2, w, h
+
+
+def placement_window(faces, bodies, image_ar, target_ar):
+    """Where a photo's `target_ar` crop sits: by the subject, else centred.
+
+    The whole of `customize_box`'s non-square branch, so the layout and the
+    placement answer this question with one piece of code.
+    """
+    window = single_subject_window(faces, bodies, image_ar, target_ar)
+    if window is not None:
+        return window
+    return centered_window(image_ar, target_ar)
+
+
 def _holds(crop, box, tol=1e-6):
     x, y, w, h = crop
     x1, y1, x2, y2 = box

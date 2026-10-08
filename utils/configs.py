@@ -90,6 +90,40 @@ CONFIGS = {'DEBUG': True,
                'headroom_faces': 1.0,
                'other_body_max_share': 0.5,
            },
+           # A box whose x-range straddles 0.5 is printed across the album's
+           # fold, and the gutter runs down the middle of the photo. Of the
+           # 13826 such boxes in `files/designs.json`, 8986 are a full-spread
+           # landscape with the fold dead centre -- exactly where a couple
+           # standing together is. `fold_awareness` keeps that line off the
+           # faces: the layout search prefers a candidate whose fold falls in a
+           # face-free column, and the placement slides the crop when the box
+           # leaves it room to move. See `src/spreads_layout/fold.py`.
+           'fold_awareness': {
+               'enabled': True,
+               # How far past the fold a box must reach to count as crossing
+               # it, in spread widths. A box that merely ends at the fold is
+               # flush with it, and design data carries such edges a hair over.
+               'edge_tolerance': 0.005,
+               # How far outside a face the fold still damages it, in face
+               # half-widths: the gutter swallows a band, not a line.
+               'face_margin': 0.15,
+               # Candidates the re-ranking looks at, in weight order, and the
+               # least weight one may have -- as a share of the best
+               # candidate's -- and still be preferred for its cleaner fold.
+               # The layout the search liked best is never given up for more
+               # than this.
+               'candidates': 30,
+               'min_weight_ratio': 0.5,
+               # Slide the crop inside a cross-fold box that has slack. Only
+               # helps where the photo is wider than the box; a full-spread box
+               # shows the whole width and has none.
+               'slide_crop': True,
+               # Mirror a design whose cross-fold box sits off-centre, so the
+               # search has the other side to choose from. `generate_layouts_df`
+               # already mirrors designs with unequal per-page box counts, which
+               # covers 3140 of the 3430 designs this would apply to.
+               'mirror_offcentre': True,
+           },
            'color_mix': 0.0001,
            'double_page_color_mix': 0.00000001,
            'class_mix': 0.00001,
