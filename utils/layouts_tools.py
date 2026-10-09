@@ -5,8 +5,6 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from utils.configs import CONFIGS
-
 
 def read_pkl_file(file):
     # Load the dictionary from the binary file
@@ -235,37 +233,6 @@ def boxes2dict(boxes, item, tolerance, avg_portrait_area, avg_landscape_area,alb
     }
 
 
-#: How far past the fold at x=0.5 a box must reach to count as crossing it,
-#: and how far from the middle of such a box the fold must fall for mirroring
-#: the design to move it anywhere useful. Kept here rather than imported so
-#: `utils` does not reach into `src`; the rule they state is
-#: `src/spreads_layout/fold.py`'s, which owns everything else about the fold.
-FOLD_X = 0.5
-FOLD_EDGE_TOLERANCE = 0.005
-FOLD_OFFCENTRE_MIN = 0.08
-
-
-def has_offcentre_fold_box(boxes):
-    """Whether any box crosses the fold with the fold nearer one of its edges.
-
-    Mirroring a design sends a cross-fold box's fold fraction f to 1-f, which
-    moves the fold to the opposite side of the photo -- a real alternative for
-    the layout to choose between. For a box centred on the fold, f is 0.5 and
-    the mirror lands in the same place, so there is nothing to gain.
-    """
-    for box in boxes:
-        try:
-            x, width = float(box['x']), float(box['width'])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if width <= 0:
-            continue
-        if x < FOLD_X - FOLD_EDGE_TOLERANCE and x + width > FOLD_X + FOLD_EDGE_TOLERANCE:
-            if abs((FOLD_X - x) / width - 0.5) > FOLD_OFFCENTRE_MIN:
-                return True
-    return False
-
-
 #: How far from 1:1 a box may be and still count as square, as a ratio. Designs
 #: carry near-squares at 0.94-0.95:1 (78 boxes on 49995684's design) that are
 #: plainly meant as squares; the boxes that were wrongly squares sat at
@@ -308,15 +275,7 @@ def generate_layouts_df(data, id_list, tolerance=SQUARE_TOLERANCE, album_ar=2,do
             else:
                 design_dict['is_mirrored'] = False
                 result.append(design_dict)
-                # A design is worth mirroring when the two pages hold different
-                # numbers of boxes, and -- `fold_awareness.mirror_offcentre` --
-                # when a box crosses the fold off-centre, since the mirror is
-                # then the only way to offer the layout the same design with
-                # the fold on the other side of the photo.
-                wants_mirror = len(design_dict['left_box_ids']) != len(design_dict['right_box_ids'])
-                if not wants_mirror and CONFIGS.get('fold_awareness', {}).get('mirror_offcentre', True):
-                    wants_mirror = has_offcentre_fold_box(boxes)
-                if wants_mirror and do_mirror:
+                if len(design_dict['left_box_ids']) != len(design_dict['right_box_ids']) and do_mirror:
                     mirrored_boxes = [box.copy() for box in boxes]
                     for mirrored_box in mirrored_boxes:
                         mirrored_box['x'] = 1 - mirrored_box['x'] - mirrored_box['width']

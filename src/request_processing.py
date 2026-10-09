@@ -15,7 +15,6 @@ from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from src.core.models import GroupProcessingResult
 from src.smart_cropping import face_aware_crop, placement_window, single_subject_window
-from src.spreads_layout import fold
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -497,49 +496,19 @@ def cover_box(image_info, box_info, album_ar=2, logger=None):
     return crop
 
 
-def _keep_fold_off_faces(window, box, image_info):
-    """`window` slid so the album's fold does not run down a face.
-
-    Only for a box that straddles the fold, and only as far as the window has
-    room to move inside the photo -- a full-spread box shows the whole width
-    and nothing moves. The layout has already preferred a candidate that keeps
-    the fold clear (`spreads_layout.fold`); this is the part of the job that
-    can only be done once the crop is known.
-    """
-    if not fold.enabled() or not fold.settings().get('slide_crop', True):
-        return window
-    fraction = fold.fold_fraction(box)
-    if fraction is None:
-        return window
-    spans = fold.face_spans(image_info.get('faces_info'))
-    if not spans:
-        return window
-    return fold.clear_fold(window, fraction, spans)
-
-
-def customize_box(image_info, box_info, album_ar=2, spread_box=None):
-    """The crop for one placement, as (x, y, w, h) normalised to the photo.
-
-    `spread_box` is the box as it is actually printed, which is the same thing
-    as `box_info` except on a mirrored layout: `box_id2data` is keyed by the
-    design's positive id and so carries the unmirrored geometry. The two differ
-    only in `x`, which does not change a crop's shape but does decide where the
-    fold falls -- so the fold check wants the mirrored one. It defaults to
-    `box_info` for callers with nothing to mirror.
-    """
+def customize_box(image_info, box_info, album_ar=2):
+    """The crop for one placement, as (x, y, w, h) normalised to the photo."""
     target_ar = box_target_ar(box_info, album_ar)
     if box_info['orientation'] == 'square':
-        window = (image_info['cropped_x'], image_info['cropped_y'],
-                  image_info['cropped_w'], image_info['cropped_h'])
-    else:
-        image_ar = float(image_info['image_as'])
-        # One person: framed by the head and body rather than centred blind --
-        # the same rule the pre-computed square crop and the covers apply.
-        # Otherwise the largest window of the box's shape, in the middle.
-        window = placement_window(image_info.get('faces_info'), image_info.get('bodies_info'),
-                                  image_ar, target_ar)
+        return (image_info['cropped_x'], image_info['cropped_y'],
+                image_info['cropped_w'], image_info['cropped_h'])
 
-    return _keep_fold_off_faces(window, spread_box if spread_box is not None else box_info, image_info)
+    image_ar = float(image_info['image_as'])
+    # One person: framed by the head and body rather than centred blind --
+    # the same rule the pre-computed square crop and the covers apply.
+    # Otherwise the largest window of the box's shape, in the middle.
+    return placement_window(image_info.get('faces_info'), image_info.get('bodies_info'),
+                            image_ar, target_ar)
 
 
 def sort_boxes(boxes):
@@ -718,8 +687,8 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                     if image_info is None or image_info.empty:
                         continue
                     else:
-                        x, y, w, h = customize_box(image_info.iloc[0], box_id2data[(design_id, box_id)],
-                                                   album_ar, spread_box=box)
+                        x, y, w, h = customize_box(image_info.iloc[0],
+                                                   box_id2data[(design_id, box_id)], album_ar)
                     result_dict['placementsImg'].append({"placementImgId" : counter_image_id,
                                                     "compositionId" : counter_comp_id,
                                                     "compositionPackageId": message.content['compositionPackageId'],

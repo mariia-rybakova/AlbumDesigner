@@ -2,6 +2,7 @@ import random
 import numpy as np
 import pandas as pd
 from utils.configs import CONFIGS
+from src.spreads_layout import fold
 
 
 def _find_single_box_layout(layouts_df, orientation):
@@ -1295,6 +1296,14 @@ def generate_first_last_pages(message, df, logger):
             if not first_imgs_df.empty:
                 cover_layouts = _find_single_box_layout(layouts_df, first_imgs_df["image_orientation"].values[0])
                 if cover_layouts:
+                    # The opening and closing pages are placed by `cover_box`,
+                    # which the layout search never sees, so the fold is chosen
+                    # here or not at all.
+                    cover_layouts = [fold.pick_cover_layout(
+                        cover_layouts, layouts_df,
+                        message.designsInfo.get('anyPagebox_id2data') or {},
+                        first_imgs_df.iloc[0],
+                        float(message.designsInfo.get('albumAr', 2.0)), logger)]
                     first_last_pages_data_dict["firstPage"] = {
                         'design_id': cover_layouts[0],
                         'first_images_ids': first_images_ids,
@@ -1310,6 +1319,14 @@ def generate_first_last_pages(message, df, logger):
             if not last_imgs_df.empty:
                 cover_layouts = _find_single_box_layout(layouts_df, last_imgs_df["image_orientation"].values[0])
                 if cover_layouts:
+                    # The opening and closing pages are placed by `cover_box`,
+                    # which the layout search never sees, so the fold is chosen
+                    # here or not at all.
+                    cover_layouts = [fold.pick_cover_layout(
+                        cover_layouts, layouts_df,
+                        message.designsInfo.get('anyPagebox_id2data') or {},
+                        last_imgs_df.iloc[0],
+                        float(message.designsInfo.get('albumAr', 2.0)), logger)]
                     first_last_pages_data_dict['lastPage'] = {
                         'design_id': cover_layouts[0],
                         'last_images_ids': last_images_ids,
