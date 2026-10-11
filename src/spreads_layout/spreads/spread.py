@@ -151,7 +151,9 @@ class SingleSpreadLayout:
         # Collect attributes
         colors = [photos[pid].color for pid in photo_set]
         photo_classes = [photos[pid].photo_class for pid in photo_set]
-        contexts = [photos[pid].original_context for pid in photo_set]
+        # A force-merged singleton rides along like a neutral context does.
+        contexts = [photos[pid].original_context for pid in photo_set
+                    if not getattr(photos[pid], 'force_merged', False)]
 
         # Uniqueness checks
         # A photo with a twin in the other treatment is placed in whichever

@@ -82,7 +82,8 @@ def is_chronology_first(group_name: Optional[Tuple]) -> bool:
 def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFrame,
                                       layout_id2data: Dict[int, Any], spread_params: List[float],
                                       params: SpreadSearchParams, logger,
-                                      chronology_first: bool = False) -> Optional[List[GroupSingleLayout]]:
+                                      chronology_first: bool = False,
+                                      n_spreads: Optional[int] = None) -> Optional[List[GroupSingleLayout]]:
     """
     Find candidate spread layouts for a single sub-group of photos.
 
@@ -112,7 +113,9 @@ def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFr
 
     # stage 1
     partitions = get_partitions(photos_df, spread_params, params, layouts_df=layouts_df,
-                                trace=partitions_trace)
+                                trace=partitions_trace, n_spreads=n_spreads)
+    if not partitions:
+        return None
 
     # stage 2
     combs = get_combinations(partitions, photos, layouts_df, spread_params, params,
@@ -136,7 +139,8 @@ def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFr
 def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.DataFrame,
                                    layout_id2data: Dict[int, Any], spread_params: List[float],
                                    params: SpreadSearchParams, largest_layout_size: int,
-                                   group_name: Tuple, logger) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout], Optional[Dict[str, Any]]]]]:
+                                   group_name: Tuple, logger,
+                                   pinned_spreads: Optional[int] = None) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout], Optional[Dict[str, Any]]]]]:
     """
     Find spread layouts for an entire group, with fallback attempts.
 
@@ -176,14 +180,24 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
     chronology_first = is_chronology_first(group_name)
     policies = [True, False] if chronology_first else [False]
 
-    for use_policy in policies:
+    # A group whose count a merge pinned is searched at that count first,
+    # through the whole ladder, and freely only if nothing fits: the pin is
+    # there so a merge does not buy a spread, and a missing group is worse.
+    pins = [pinned_spreads, None] if pinned_spreads is not None else [None]
+
+    for pin, use_policy in [(p, u) for p in pins for u in policies]:
         for cur_photos, cur_spread_params in attempts:
             cur_subgroups = split_group_if_needed(cur_photos, cur_spread_params, largest_layout_size, logger)
             group_final_layouts = []
+            # The count is the whole group's; a split has already decided otherwise.
+            n_spreads = pin if pin is not None and len(cur_subgroups) == 1 else None
+            if pin is not None and n_spreads is None:
+                continue
 
             for subgroup_photos in cur_subgroups:
                 subgroup_spreads_layouts = find_spreads_layouts_for_subgroup(subgroup_photos, layouts_df, layout_id2data, cur_spread_params, params, logger,
-                                                                             chronology_first=use_policy)
+                                                                             chronology_first=use_policy,
+                                                                             n_spreads=n_spreads)
                 if subgroup_spreads_layouts is None:
                     group_final_layouts = None
                     break
@@ -198,6 +212,13 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
                 if chronology_first and not use_policy:
                     logger.warning("Chronology-first policy found no layout for group: {}; "
                                    "fell back to the unconstrained search.".format(group_name))
+                if pinned_spreads is not None:
+                    if pin is None:
+                        logger.warning(f"No layout at the pinned {pinned_spreads} spread(s) for "
+                                       f"group: {group_name}; fell back to the free search.")
+                    else:
+                        logger.info(f"Group {group_name} laid out at its pinned "
+                                    f"{pinned_spreads} spread(s).")
                 return group_final_layouts
 
     logger.warning("Could not find spreads. Skipping group: {}.".format(group_name))
@@ -327,7 +348,7 @@ def export_subgroup(group_id_str, subgroup_layouts, subgroup_photos):
 
 def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_params: List[float],
                   resources: AlbumDesignResources, is_wedding: bool, params: SpreadSearchParams,
-                  logger) -> Optional[Dict[str, GroupProcessingResult]]:
+                  logger, pinned_spreads: Optional[int] = None) -> Optional[Dict[str, GroupProcessingResult]]:
     """
     Top-level entry point: process a single photo group into album spreads.
 
@@ -345,6 +366,7 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
         is_wedding: Whether this is a wedding album.
         params: Search parameters controlling sampling limits.
         logger: Logger instance.
+        pinned_spreads: The spread count a merge pinned this group at, if any.
 
     Returns:
         Dict mapping group_id_str to GroupProcessingResult, or None on error.
@@ -363,7 +385,8 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
         group_photos = get_photos_from_df(group_images_df, is_wedding)
 
         final_groups_and_layouts = find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params,
-                                                                  params, largest_layout_size, group_name, logger)
+                                                                  params, largest_layout_size, group_name, logger,
+                                                                  pinned_spreads=pinned_spreads)
 
         local_result = select_best_layout_for_group(final_groups_and_layouts, layout_id2data, design_box_id2data, group_name, is_wedding)
 

@@ -390,11 +390,20 @@ def _process_singleton(photos_df, group_key, singleton_group, resources, manual_
     singleton_group = current_group  # use fresh reference
 
     # Prefer force-merge (keeps original selection intact) over adding an unused photo
-    merged = force_merge_portrait_singleton(
+    look_up_table = getattr(resources, 'look_up_table', None)
+    target_key = force_merge_portrait_singleton(
         photos_df, group_key, singleton_group, possible_boxes_numbers, logger
     )
-    if merged:
+    if target_key is not None:
         logger.info(f"Resolved singleton {group_key} by force-merge")
+        if look_up_table is not None and hasattr(look_up_table, 'pin_spreads'):
+            # The merge places a photo; it does not buy the group a spread.
+            size = int(((photos_df['time_cluster'] == target_key[0]) &
+                        (photos_df['cluster_context'] == target_key[1]) &
+                        (photos_df['group_sub_index'] == target_key[2])).sum())
+            before = look_up_table.spreads_for(target_key, max(1, size - 1))
+            look_up_table.pin_spreads(target_key, size, before)
+            logger.info(f"Pinned {target_key} at {before} spread(s) for its {size} photos")
         return
 
     # Fallback for non-manual: add an unused photo from the gallery

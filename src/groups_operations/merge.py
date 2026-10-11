@@ -876,7 +876,7 @@ def force_merge_portrait_singleton(
         singleton_group: pd.DataFrame,
         possible_boxes_numbers: List[int],
         logger
-    ) -> bool:
+    ) -> Optional[Tuple[str, str, int]]:
     """
     Force-merge a portrait singleton group into the closest available group.
 
@@ -892,7 +892,9 @@ def force_merge_portrait_singleton(
         logger: Logger instance.
 
     Returns:
-        True if the singleton was successfully merged, False otherwise.
+        The key of the group it went into, or None when it was not merged.
+        The singleton's row is marked `force_merged`, so the layout does not
+        count its content as a context of its own.
     """
     all_groups = photos_df.groupby(['time_cluster', 'cluster_context', 'group_sub_index'])
 
@@ -901,7 +903,7 @@ def force_merge_portrait_singleton(
     if not candidate_groups:
         logger.warning(f"force_merge_singleton: no candidates for {singleton_key}")
         record_skip('singleton', singleton_key, None, None, 'singleton_no_candidates')
-        return False
+        return None
 
     logger.info(f"force_merge_singleton: {len(candidate_groups)} candidates for {singleton_key}"
                 f"{' (cross-cluster)' if cross_cluster_merge else ''}")
@@ -920,7 +922,7 @@ def force_merge_portrait_singleton(
     if selected_cluster is None:
         logger.warning(f"force_merge_singleton: merge_illegal_group_by_time returned None for {singleton_key}")
         record_skip('singleton', singleton_key, None, None, 'singleton_no_time_match')
-        return False
+        return None
 
     # Apply metadata updates (same pattern as _update_merged_photos_other)
     merged_group = pd.concat([singleton_group, selected_cluster])
@@ -930,8 +932,11 @@ def force_merge_portrait_singleton(
     record_succeeded('singleton', singleton_key, partner_key,
                      selected_time_diff, merged_group, reminder_group=None)
     _update_merged_photos_singleton(photos_df, selected_cluster, merged_group, cross_cluster_merge)
+    if 'force_merged' not in photos_df.columns:
+        photos_df['force_merged'] = False
+    photos_df.loc[singleton_group.index, 'force_merged'] = True
 
-    return True
+    return partner_key
 
 
 # Spread-rebalancing pair merge

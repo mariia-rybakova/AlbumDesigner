@@ -93,6 +93,9 @@ class LookUpTable:
         # not a class that is dense by design, so the expansion pass must not
         # read it back as one and refuse to dilute it. See `update_with_limit`.
         self._reduction_raised: Set = set()
+        # Groups whose spread count was fixed by a merge rather than by their
+        # content (`pin_spreads`). The layout searches these at that count.
+        self._pinned: Set = set()
 
     @property
     def table(self):
@@ -111,6 +114,35 @@ class LookUpTable:
         if self._get_content_key(group_key) in self._reduction_raised:
             return False
         return self.get_spread_params(group_key)[0] >= dense_threshold
+
+    def spreads_for(self, group_key, number_of_images: int) -> int:
+        """How many spreads this group is planned at, as `update_with_limit` counts them."""
+        return self._compute_initial_spreads({group_key: number_of_images})[group_key]
+
+    def pin_spreads(self, group_key, number_of_images: int, spreads: int) -> None:
+        """Hold a group at ``spreads`` whatever its photo count now says.
+
+        A singleton force-merged into a group is there so it is not left alone,
+        not because the group grew a spread's worth of content: on 49996919 a
+        lone `settings` photo went into a two-photo `food` group planned at one
+        spread, the class value made the three of them two, and the food photo
+        got a spread to itself. Writing the group's own value as photos per
+        spread keeps the count it had before the merge.
+        """
+        _, std = self.get_spread_params(group_key)
+        self._group_table[group_key] = (
+            max(1, math.ceil(number_of_images / max(1, spreads))), std)
+        self._pinned.add(group_key)
+
+    def pinned_spreads(self, group_key, number_of_images: int) -> Optional[int]:
+        """The spread count a pinned group is held at, or None if it is not pinned.
+
+        Read from the group's value at the time of asking, so a later
+        reduction or expansion of the album moves it with the value.
+        """
+        if group_key not in self._pinned:
+            return None
+        return self.spreads_for(group_key, number_of_images)
 
     def get_spread_params(self, group_key) -> Tuple[float, float]:
         """Resolve (mean, std) for a group: per-group override -> content default -> fallback."""

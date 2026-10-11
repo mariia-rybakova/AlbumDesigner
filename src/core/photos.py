@@ -27,6 +27,10 @@ class Photo:
     #: The id the reply places, when `spreads_layout.twins` swapped this photo
     #: for its twin to match its page. None places `id`.
     output_id: Any = None
+    #: A singleton force-merged into this group (`force_merge_portrait_singleton`).
+    #: It is here so it is not alone, so its content is not a context of the
+    #: group's own: a page it shares is not charged as mixing moments.
+    force_merged: bool = False
 
     @classmethod
     def from_array(cls, array):
@@ -63,10 +67,12 @@ def get_photos_from_df(data_df, is_wedding):
             twin_id = int(twin_id)
             twin_color = bool(twin_color)
 
+        force_merged = row['force_merged'] if 'force_merged' in row else False
         photos.append(Photo(id=image_id, ar=aspect_ratio, color=color, rank=rank_score,
                             photo_class=class_contex, cluster_label=cluster_label,
                             general_time=row['general_time'], original_context=original_context,
-                            twin_id=twin_id, twin_color=twin_color))
+                            twin_id=twin_id, twin_color=twin_color,
+                            force_merged=force_merged is True or force_merged == 1))
 
 
     # photos = sorted(photos, key=lambda photo: photo.id)
