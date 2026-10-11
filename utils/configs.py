@@ -276,7 +276,14 @@ CONFIGS = {'DEBUG': True,
         'family_album': {
             'enabled': True,
 
+            # A parents brief is composed as one album per resolved side, each
+            # seeded from that side's parents alone (`family.side_seed`). The
+            # first answers the brief; the second carries `derivedFrom` it.
+            # False composes the one album of both families, balanced.
+            'one_album_per_side': True,
+
             # How many photos the pseudo selection commits, over both sides.
+            # A per-side album takes the whole allowance for its own side.
             # `select.preselect` honours these unconditionally, so this is a
             # floor on the album's family content and not a target: eight of
             # roughly a hundred is a visible spine without spending the album.

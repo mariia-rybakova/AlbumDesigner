@@ -206,24 +206,93 @@ def test_without_parents_the_plan_is_what_it_always_was():
     assert all(v.photo_ids is None and v.person_ids is None for v in variants)
 
 
-def test_with_parents_only_the_second_album_is_seeded():
+def test_with_parents_only_the_parents_albums_are_seeded():
     variants = planned(symmetric_gallery(),
                        dict(bride_id=BRIDE, groom_id=GROOM,
                             bride_parents=(BM, BF), groom_parents=(GM, GF)))
 
-    couple, parents = variants
+    couple, *parents = variants
     assert couple.photo_ids is None, "the couple's album is left alone"
     assert couple.person_ids is None
-    assert parents.photo_ids, "the parents album carries a pseudo selection"
-    assert {BM, BF, GM, GF} <= set(parents.person_ids)
+    assert parents and all(v.photo_ids for v in parents),         "the parents albums carry a pseudo selection"
 
 
-def test_one_side_resolved_still_seeds():
+def test_a_parents_album_is_one_album_per_side():
+    """Each side's album prefers only its own parents: their photos, their
+    people, and none of the other family's."""
+    photos = symmetric_gallery()
+    variants = planned(photos,
+                       dict(bride_id=BRIDE, groom_id=GROOM,
+                            bride_parents=(BM, BF), groom_parents=(GM, GF)))
+
+    _, bride_side, groom_side = variants
+    assert [bride_side.name, groom_side.name] == ["parents (bride)", "parents (groom)"]
+    people = photos.set_index(Col.IMAGE_ID)[Col.PERSONS_IDS]
+    for album, mine, theirs in ((bride_side, {BM, BF}, {GM, GF}),
+                                (groom_side, {GM, GF}, {BM, BF})):
+        assert all(set(people[i]) & mine for i in album.photo_ids)
+        assert not any(set(people[i]) & theirs for i in album.photo_ids)
+        assert mine <= set(album.person_ids)
+        assert not (theirs & set(album.person_ids))
+
+
+def test_a_frame_of_both_families_is_used_only_when_a_side_has_nothing_else():
+    photos = gallery([
+        (1, [BM, GM], "parents portrait", 0),
+        (2, [BM], "parents portrait", 1),
+        (3, [GF, BF], "first dance", 2),
+    ])
+
+    bride_picks, _ = family.side_seed(photos, (BM,), (GM, GF), BRIDE, GROOM)
+    groom_picks, _ = family.side_seed(photos, (GM, GF), (BM, BF), BRIDE, GROOM)
+
+    assert bride_picks == (2,)
+    assert set(groom_picks) == {1, 3}, "nothing of the groom's side is alone"
+
+
+def test_one_side_resolved_is_one_parents_album():
     variants = planned(symmetric_gallery(),
                        dict(bride_id=BRIDE, groom_id=GROOM,
                             bride_parents=(BM, BF)))
 
+    assert [v.name for v in variants] == ["brideAndGroom", "parents (bride)"]
     assert variants[1].photo_ids
+
+
+def test_the_first_side_answers_the_brief_and_the_second_derives_from_it():
+    """The caller asked for one album and keys its record on the id."""
+    from src.pipeline.contracts import AlbumContext, GalleryFacts
+    from src.pipeline.enrich.variants import VariantsSubStage
+
+    context = AlbumContext(
+        photos=symmetric_gallery(),
+        request={'albumRequests': [
+            {'albumRequestId': 'A#0', 'logicalName': 'wedding_main_album'},
+            {'albumRequestId': 'A#1', 'logicalName': 'wedding_parents_album',
+             'aiMetadata': {'focus': ['parents']}}]},
+        facts=GalleryFacts(bride_id=BRIDE, groom_id=GROOM,
+                           bride_parents=(BM, BF), groom_parents=(GM, GF)))
+    VariantsSubStage()(context)
+
+    assert [(v.name, v.fulfils, v.derived_from) for v in context.variants] == [
+        ("wedding_main_album", "A#0", None),
+        ("wedding_parents_album (bride)", "A#1", None),
+        ("wedding_parents_album (groom)", None, "A#1"),
+    ]
+
+
+def test_one_album_of_both_families_is_config():
+    original = CONFIGS['family_album']['one_album_per_side']
+    CONFIGS['family_album']['one_album_per_side'] = False
+    try:
+        variants = planned(symmetric_gallery(),
+                           dict(bride_id=BRIDE, groom_id=GROOM,
+                                bride_parents=(BM, BF), groom_parents=(GM, GF)))
+    finally:
+        CONFIGS['family_album']['one_album_per_side'] = original
+
+    couple, parents = variants
+    assert {BM, BF, GM, GF} <= set(parents.person_ids)
 
 
 def test_the_single_album_default_is_never_seeded():
