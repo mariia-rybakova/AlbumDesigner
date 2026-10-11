@@ -160,6 +160,19 @@ CONFIGS = {'DEBUG': True,
            'grays_scale_limit': 2,
            'person_count_percentage': 0.20,
            'small_gallery_number': 15,
+           # A small wedding gallery goes into the album nearly whole, by a
+           # weight that is 1 up to `full_up_to` photos and falls linearly to
+           # 0 at `none_from` (`select.small_gallery`): it moves each class's
+           # budget toward everything the class holds, and scales CP-SAT's
+           # penalties by 1 - weight. Nothing switches at a threshold.
+           # 53812098 (109 photos) came back with 36 without it. The budget
+           # stays under the design's spreads x `max_photos_per_spread`.
+           'small_gallery_album': {
+               'enabled': True,
+               'full_up_to': 100,
+               'none_from': 200,
+               'max_photos_per_spread': 6,
+           },
            'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
                                                'dancing',
                                                'wedding dress', 'kiss'],
