@@ -105,6 +105,9 @@ class VariantsSubStage(SubStage):
 
         context.unfulfilled = tuple(declines)
         if not request.get(AUTO_ALBUMS):
+            refusal = _single_album_refusal(context)
+            if refusal is not None:
+                context.fail(refusal)
             return [AS_REQUESTED]
 
         plan = [AlbumVariant(name=focus, focus=(focus,)) for focus in AUTO_FOCUS]
@@ -243,6 +246,29 @@ def _needs_parents(brief, context: AlbumContext):
         return None
     return ("no_parents_resolved",
             "enrich.parents resolved nobody, so there is no family to build around")
+
+
+def _single_album_refusal(context: AlbumContext):
+    """Why a request for one album cannot be composed as asked, or None.
+
+    The same requirements a brief is held to, applied to the request's own
+    `aiMetadata.focus`. Without this a parents album skipped them whenever it
+    arrived alone: on 53812098 the grouped call declined its parents brief,
+    the caller re-sent it on its own, and it came back a second couple album
+    -- the class table within two photos of the main album's.
+
+    A brief can be declined and the rest of the call still answered. A request
+    for one album has nothing else to answer with, so this fails it, and the
+    reason names the requirement so the caller can tell it from a crash.
+    """
+    focus = tuple(getattr(context.hints, "focus", None) or ())
+    brief = album_requests.AlbumRequest(album_request_id="", focus=focus)
+    for requirement in REQUIREMENTS:
+        answer = requirement(brief, context)
+        if answer is not None:
+            reason, detail = answer
+            return f"album not composed ({reason}): {detail}"
+    return None
 
 
 #: The known set a brief can be refused by. Config may select from these; it

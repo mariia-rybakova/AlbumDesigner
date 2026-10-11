@@ -365,6 +365,39 @@ def test_the_wedding_policy_does_not_reach_a_legacy_request():
     assert declines == ()
 
 
+def _single(focus, facts=None):
+    """A one-album request carrying its own focus; the context it leaves."""
+    from src.pipeline.contracts import AiHints
+    request = {'projectId': 1, 'aiMetadata': {'photoIds': [], 'focus': list(focus)}}
+    context = AlbumContext(photos=pd.DataFrame({Col.IMAGE_ID: [1, 2, 3]}),
+                           request=request, logger=_QUIET,
+                           hints=AiHints.from_request(request))
+    if facts is not None:
+        context.facts = facts
+    VariantsSubStage()(context)
+    return context
+
+
+def test_a_parents_album_asked_for_alone_fails_when_no_parents_were_found():
+    """53812098: the grouped call declined its parents brief, the caller sent
+    it again on its own, and it came back a second couple album."""
+    context = _single(['parents'])
+
+    assert context.failed
+    assert 'no_parents_resolved' in context.error
+
+
+def test_a_parents_album_asked_for_alone_is_composed_when_parents_were_found():
+    context = _single(['parents'], facts=with_parents())
+
+    assert not context.failed
+    assert context.variants == [AS_REQUESTED]
+
+
+def test_a_single_album_with_another_focus_is_untouched():
+    assert not _single(['brideAndGroom']).failed
+
+
 def test_a_legacy_request_grows_no_new_keys():
     """`albumsUnfulfilled` on the content is what the reply is built from; a
     legacy request must not acquire one."""
