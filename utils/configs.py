@@ -319,17 +319,12 @@ CONFIGS = {'DEBUG': True,
         # something else, because a parents album that is really a second
         # couple album is indistinguishable from the real thing at the caller.
         #
-        # Today weddings get one album, the couple's. The parents album is
-        # refused rather than capped, so the album that survives is the one
-        # asked for first and not whichever brief happened to lead the list.
-        # Both of those are product decisions and both are meant to move: an
-        # entry per gallery type, `None` for no cap.
+        # Every gallery type composes what it was asked for today, weddings
+        # included: a parents brief is still declined where `enrich.parents`
+        # resolved nobody, by the requirement in `enrich.variants`, not by
+        # policy. Both are product decisions and meant to move: an entry per
+        # gallery type ('wedding' or 'default'), `None` for no cap.
         'album_policy': {
-            'wedding': {
-                'max_albums': 1,
-                'overridden_focus': ('parents',),
-            },
-            # Everything else composes what it was asked for.
             'default': {
                 'max_albums': None,
                 'overridden_focus': (),
