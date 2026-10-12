@@ -94,10 +94,11 @@ CONFIGS = {'DEBUG': True,
            # fold, and the gutter runs down the middle of the photo. Of the
            # 13826 such boxes in `files/designs.json`, 8986 are a full-spread
            # landscape with the fold dead centre -- exactly where a couple
-           # standing together is. The opening and closing pages are the only
-           # ones this applies to: a box crosses the fold only in a design
-           # holding one photo, and a content spread with one photo is a bug of
-           # its own. See `src/spreads_layout/fold.py`.
+           # standing together is. Such a spread is moved into another layout
+           # of the same shape, keeping its photos exactly where the search put
+           # them; the opening and closing pages, which the layout search never
+           # sees, choose among their own candidates.
+           # See `src/spreads_layout/fold.py`.
            'fold_awareness': {
                'enabled': True,
                # How far past the fold a box must reach to count as crossing

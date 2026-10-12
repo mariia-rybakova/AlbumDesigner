@@ -43,6 +43,9 @@ class LayoutsResources:
     layout_id2data: Dict[int, Any]
     box_id2data: Dict[Tuple[int, int], Any]
     max_pages: int
+    #: The spread's width:height, which turns a box's own ratio into the
+    #: ratio its crop is fitted to (`src/spreads_layout/fold.py`).
+    album_ar: float = 2.0
 
     @classmethod
     def from_dict(cls, designs_info: Dict[str, Any]) -> 'LayoutsResources':
@@ -51,6 +54,7 @@ class LayoutsResources:
             layout_id2data=designs_info['anyPagelayout_id2data'],
             box_id2data=designs_info['anyPagebox_id2data'],
             max_pages=designs_info['maxPages'],
+            album_ar=float(designs_info.get('albumAr', 2.0)),
         )
 
     def to_dict(self) -> Dict[str, Any]:

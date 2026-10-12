@@ -4,9 +4,10 @@ A box whose x-range straddles 0.5 prints across the fold. `files/designs.json`
 carries 13826 of them over 10813 designs; 8986 are a full-spread landscape with
 the fold dead centre, which is where two people standing together are.
 
-Only the opening and closing pages need this: a box crosses the fold only in a
-design holding one photo, and a content spread with one photo is a bug of its
-own. See `src/spreads_layout/fold.py`.
+Two places: the content spreads, re-housed in a layout of the same shape with
+the photos left where they are, and the opening and closing pages, which
+`cover_box` places and the layout search never sees. See
+`src/spreads_layout/fold.py`.
 
     python -m pytest tests/test_fold_awareness.py -v
 """
@@ -16,9 +17,13 @@ import types
 import pandas as pd
 import pytest
 
+from src.core.photos import Photo
 from src.request_processing import customize_box
 from src.smart_cropping import placement_window
 from src.spreads_layout import fold
+from src.spreads_layout.group_layouts import GroupSingleLayout
+from src.spreads_layout.main import select_best_layout_for_subgroup
+from src.spreads_layout.spreads.spread import SingleSpreadLayout
 from utils.configs import CONFIGS
 from utils.layouts_tools import generate_layouts_df, get_layouts_data
 
@@ -235,3 +240,124 @@ def test_a_real_design_carries_its_fold_through_to_the_box_data():
     assert original[14976] == pytest.approx(0.884, abs=0.001)
     assert mirrored[14976] == pytest.approx(1 - original[14976])
     assert original[14977] is None and original[14978] is None, "the others stay on their page"
+
+
+# ------------------------------------------------- re-housing a content spread
+
+#: Two layouts holding the same two photos. CROSSING puts its big box over the
+#: fold; CLEAN gives each photo its own page. Same shape, so interchangeable.
+CROSSING_ID, CLEAN_ID = 100, 200
+
+LAYOUT_ID2DATA = {
+    0: {'layout_id': CROSSING_ID, 'left_box_ids': [1], 'right_box_ids': [2],
+        'boxes_areas': [{'id': 1, 'area': 0.7}, {'id': 2, 'area': 0.5}]},
+    1: {'layout_id': CLEAN_ID, 'left_box_ids': [1], 'right_box_ids': [2],
+        'boxes_areas': [{'id': 1, 'area': 1.0}, {'id': 2, 'area': 1.0}]},
+}
+BOX_ID2DATA = {
+    (CROSSING_ID, 1): dict(box(0.0, 0.7, 0.5), area=0.7),
+    (CROSSING_ID, 2): dict(box(0.5, 0.5, 0.5), area=0.5),
+    (CLEAN_ID, 1): dict(box(0.0, 0.5, 1.0), area=1.0),
+    (CLEAN_ID, 2): dict(box(0.5, 0.5, 1.0), area=1.0),
+}
+
+#: The fold cuts CROSSING's big box at 0.5/0.7 of its width, and the photo is
+#: shown full-width there, so it lands on image column 0.714.
+ON_THE_FOLD = face(0.66, 0.77)
+
+
+def a_photo(photo_id, rank):
+    return Photo(id=photo_id, ar=1.5, color=True, rank=rank, photo_class='bride and groom',
+                 cluster_label=1, general_time=float(photo_id))
+
+
+PHOTOS = [a_photo(1, 0.0), a_photo(2, 1.0)]
+
+
+def a_row(image_id, faces):
+    return {'image_id': image_id, 'image_as': 1.5, 'faces_info': faces, 'bodies_info': []}
+
+
+FRAME = pd.DataFrame([a_row(1, [ON_THE_FOLD]), a_row(2, [face(0.05, 0.15)])])
+
+
+def candidate(layout_idx):
+    spread = SingleSpreadLayout(layout_idx=layout_idx, left_page_photo_idxs={0},
+                                right_page_photo_idxs={1}, number_of_squares=0)
+    group = GroupSingleLayout(spreads_layouts=[spread], weight=1.0)
+    group.resolve_and_order(PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA, merge_pages=False)
+    return group
+
+
+def test_the_group_frame_is_read_into_fold_info():
+    info = fold.photo_fold_info(FRAME)
+
+    assert set(info) == {1, 2}
+    assert info[1]['ar'] == 1.5 and info[1]['spans']
+
+
+def test_a_photo_with_no_face_is_left_out_of_fold_info():
+    """Nothing about it can be damaged by a fold, and its absence is the early
+    exit for the albums that need none of this."""
+    frame = pd.DataFrame([a_row(1, []), a_row(2, [face(0.4, 0.6, blur=-1.0)])])
+
+    assert fold.photo_fold_info(frame) == {}
+
+
+def test_a_frame_missing_the_columns_is_handled():
+    assert fold.photo_fold_info(pd.DataFrame([{'image_id': 1, 'image_as': 1.5}])) == {}
+    assert fold.photo_fold_info(None) == {}
+
+
+def test_two_layouts_holding_the_same_photos_the_same_way_share_a_shape():
+    assert (fold.layout_shape(0, LAYOUT_ID2DATA, BOX_ID2DATA)
+            == fold.layout_shape(1, LAYOUT_ID2DATA, BOX_ID2DATA) == (0, 1, 0, 0, 1, 0))
+
+
+def test_a_damaged_spread_is_rehoused_in_the_same_shape():
+    group = candidate(0)
+
+    before, after = fold.repair_spreads(group, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA,
+                                        fold.photo_fold_info(FRAME))
+
+    assert before > 0 and after == 0
+    assert group.spreads_layouts[0].layout_idx == 1
+
+
+def test_rehousing_keeps_the_photos_where_they_were():
+    group = candidate(0)
+    before_ids = ([p.id for p in group.spreads_layouts[0].left_page_photos],
+                  [p.id for p in group.spreads_layouts[0].right_page_photos])
+
+    fold.repair_spreads(group, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA,
+                        fold.photo_fold_info(FRAME))
+
+    assert ([p.id for p in group.spreads_layouts[0].left_page_photos],
+            [p.id for p in group.spreads_layouts[0].right_page_photos]) == before_ids
+
+
+def test_a_spread_that_clears_the_fold_is_left_where_it_is():
+    group = candidate(1)
+
+    assert fold.repair_spreads(group, PHOTOS, LAYOUT_ID2DATA, BOX_ID2DATA,
+                               fold.photo_fold_info(FRAME)) == (0.0, 0.0)
+    assert group.spreads_layouts[0].layout_idx == 1
+
+
+def test_selection_rehouses_the_spread_it_was_given():
+    """The path `process_group` actually takes."""
+    chosen = select_best_layout_for_subgroup([candidate(0)], PHOTOS, LAYOUT_ID2DATA,
+                                             BOX_ID2DATA, fold.photo_fold_info(FRAME),
+                                             album_ar=2.0)
+
+    assert fold.spread_fold_cost(chosen.spreads_layouts[0], LAYOUT_ID2DATA, BOX_ID2DATA,
+                                 fold.photo_fold_info(FRAME)) == 0
+
+
+def test_selection_without_fold_info_keeps_the_search_result():
+    """Every caller that passes nothing -- `predefined`, and the old signature."""
+    chosen = select_best_layout_for_subgroup([candidate(0)], PHOTOS, LAYOUT_ID2DATA,
+                                             BOX_ID2DATA)
+
+    assert chosen.spreads_layouts[0].layout_idx == 0
+    assert chosen.spreads_layouts[0].left_page_photos, "still resolved onto its boxes"

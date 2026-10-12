@@ -11,6 +11,7 @@ from src.core.photos import get_photos_from_df, Photo
 from src.spreads_layout.partitions import get_partitions
 from src.spreads_layout.combinations import get_combinations
 from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single_layouts
+from src.spreads_layout import fold
 from utils.configs import (CONFIGS, SPECIAL_GROUP_SEP,
                            CHRONOLOGY_FIRST_CLASSES, CHRONOLOGY_FIRST_PENALTIES)
 from utils.stages_recorder import (
@@ -206,7 +207,10 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
 
 def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], subgroup_photos: List[Photo],
                                     layout_id2data: Dict[int, Any],
-                                    design_box_id2data: Dict[Tuple[int, int], Any]) -> Optional[GroupSingleLayout]:
+                                    design_box_id2data: Dict[Tuple[int, int], Any],
+                                    photo_fold_info: Optional[Dict[Any, Any]] = None,
+                                    album_ar: float = 2.0,
+                                    logger=None) -> Optional[GroupSingleLayout]:
     """
     Select the top-ranked layout for a sub-group and resolve photo assignments.
 
@@ -219,6 +223,10 @@ def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], s
         subgroup_photos: Photos in this sub-group.
         layout_id2data: Mapping from layout index to layout metadata.
         design_box_id2data: Mapping from (layout_id, box_id) to box properties.
+        photo_fold_info: image id -> face data, from `fold.photo_fold_info`.
+            None or empty turns the fold check off.
+        album_ar: The album's width:height.
+        logger: Logger instance.
 
     Returns:
         The best GroupSingleLayout with photos resolved and ordered, or None
@@ -229,6 +237,12 @@ def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], s
 
     best_layout = subgroup_layouts[0]
     best_layout.resolve_and_order(subgroup_photos, layout_id2data, design_box_id2data, merge_pages=False)
+
+    # A spread with a face on the fold is re-housed in a layout of the same
+    # shape. The photos stay exactly where the search put them.
+    if fold.enabled() and photo_fold_info:
+        fold.repair_spreads(best_layout, subgroup_photos, layout_id2data, design_box_id2data,
+                            photo_fold_info, album_ar, logger)
 
     return best_layout
 
@@ -267,7 +281,10 @@ def structure_layout(best_layout: GroupSingleLayout, group_name: Tuple,
 def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[List[Photo], List[GroupSingleLayout]]]],
                                  layout_id2data: Dict[int, Any],
                                  design_box_id2data: Dict[Tuple[int, int], Any],
-                                 group_name: Tuple, is_wedding: bool) -> Dict[str, GroupProcessingResult]:
+                                 group_name: Tuple, is_wedding: bool,
+                                 photo_fold_info: Optional[Dict[Any, Any]] = None,
+                                 album_ar: float = 2.0,
+                                 logger=None) -> Dict[str, GroupProcessingResult]:
     """
     Select the best layout for each sub-group and structure the results.
 
@@ -291,7 +308,8 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
     group_idx = 0
     if final_groups_and_layouts is not None:
         for subgroup_photos, subgroup_layouts in final_groups_and_layouts:
-            best_layout = select_best_layout_for_subgroup(subgroup_layouts, subgroup_photos, layout_id2data, design_box_id2data)
+            best_layout = select_best_layout_for_subgroup(subgroup_layouts, subgroup_photos, layout_id2data,
+                                                          design_box_id2data, photo_fold_info, album_ar, logger)
             if best_layout is None:
                 continue
 
@@ -365,7 +383,10 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
         final_groups_and_layouts = find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params,
                                                                   params, largest_layout_size, group_name, logger)
 
-        local_result = select_best_layout_for_group(final_groups_and_layouts, layout_id2data, design_box_id2data, group_name, is_wedding)
+        local_result = select_best_layout_for_group(final_groups_and_layouts, layout_id2data, design_box_id2data,
+                                                    group_name, is_wedding,
+                                                    fold.photo_fold_info(group_images_df),
+                                                    resources.printlab_data.album_ar, logger)
 
         collect()
         end = time.time()
