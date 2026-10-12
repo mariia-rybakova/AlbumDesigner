@@ -15,6 +15,7 @@ from utils.configs import CONFIGS
 from utils.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
 from src.spreads_layout.spreads.spread import set_neutral_contexts
 from src.spreads_layout.twins import apply_twin_colors
+from src.spreads_layout import fold
 
 
 #: Compositions the reply always carries besides the content spreads: the
@@ -155,6 +156,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     # otherwise mix into combinations.pdf.
     reset_combinations_dir()
 
+    fold.reset_tally()
     result_list = []
     for group_name in group2images.keys():
         spread_params = resources.look_up_table.get_current_spread_parameters(group_name, group2images[group_name])
@@ -172,6 +174,11 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
             result_list.append(cur_result)
 
     logger.info(f'General groups processing time: {time.time() - start_time:.2f} seconds')
+
+    moved, fold_before, fold_after = fold.tally()
+    if moved:
+        logger.info(f'fold: {moved} spread(s) moved off the fold '
+                    f'({fold_before:.2f} -> {fold_after:.2f} faces on the fold)')
 
     # The layout scored every twin as colour-neutral; now that the pages are
     # fixed, each one's twins take the colour it needs.

@@ -47,6 +47,20 @@ FOLD_X = 0.5
 #: Below this a cost is floating-point noise, not a face on the fold.
 _EPSILON = 1e-9
 
+#: What this album has moved so far, as (spreads, cost before, cost after).
+#: `repair_spreads` runs once per sub-group and a quarter of albums have a
+#: spread to move, so a line apiece would be a line on most albums that need
+#: this at all. `album_processing` resets the tally and writes the one line.
+_TALLY = [0, 0.0, 0.0]
+
+
+def reset_tally() -> None:
+    _TALLY[:] = [0, 0.0, 0.0]
+
+
+def tally() -> Tuple[int, float, float]:
+    return _TALLY[0], _TALLY[1], _TALLY[2]
+
 #: One face as the fold sees it: its left and right edge in image coordinates,
 #: and how much it counts -- 1.0 for the widest face in the photo, less for the
 #: smaller ones, so a guest in the background does not outvote the subject.
@@ -372,9 +386,13 @@ def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, An
             spread.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
         after_total += best_cost
 
-    if moved and logger:
-        logger.info(f"fold: {moved} spread(s) moved off the fold "
-                    f"({before_total:.2f} -> {after_total:.2f})")
+    if moved:
+        _TALLY[0] += moved
+        _TALLY[1] += before_total
+        _TALLY[2] += after_total
+        if logger:
+            logger.debug(f"fold: {moved} spread(s) moved off the fold "
+                         f"({before_total:.2f} -> {after_total:.2f})")
     return before_total, after_total
 
 
@@ -439,8 +457,8 @@ def pick_cover_layout(candidates: List[int], layouts_df, box_id2data: Dict[Tuple
                 break
 
     if logger and best_idx != candidates[0]:
-        logger.info(f"fold: cover layout {layouts_df.loc[best_idx]['id']} "
-                    f"replaces {layouts_df.loc[candidates[0]]['id']}")
+        logger.debug(f"fold: cover layout {layouts_df.loc[best_idx]['id']} "
+                     f"replaces {layouts_df.loc[candidates[0]]['id']}")
     return best_idx
 
 
