@@ -7,6 +7,7 @@ import gzip
 import traceback
 from typing import List, Union
 from datetime import datetime
+from types import SimpleNamespace
 import multiprocessing as mp
 
 import numpy as np
@@ -262,9 +263,21 @@ def _crop_frame(frame):
     list; each is turned into a list of its messages, which pickle like the
     faces already do. A frame without body detections gets empty lists, and the
     single-subject rule then works from the face alone.
+
+    A photo the face or saliency reader had nothing for comes out of the left
+    join with NaN there. NaN faces become no faces, and a NaN blob the photo's
+    centre, so the worker crops it instead of dying on it and leaving the album
+    to wait out its timeout (2026-10-13).
     """
     columns = [c for c in ProcessStage.CROP_COLUMNS if c in frame.columns]
     out = frame[columns].copy()
+    if 'faces_info' in out.columns:
+        out['faces_info'] = [list(v) if v is not None and not isinstance(v, (float, str)) else []
+                             for v in out['faces_info']]
+    if 'background_centroid' in out.columns:
+        out['background_centroid'] = [v if hasattr(v, 'x') and hasattr(v, 'y')
+                                      else SimpleNamespace(x=0.5, y=0.5)
+                                      for v in out['background_centroid']]
     if 'bodies_info' in out.columns:
         out['bodies_info'] = [list(v) if v is not None and not isinstance(v, float) else []
                               for v in out['bodies_info']]

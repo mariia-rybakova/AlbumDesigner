@@ -21,7 +21,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from main import _CROP_CONTEXT, _CropJob
+from main import _CROP_CONTEXT, _CropJob, _crop_frame
 
 
 def frame(ids):
@@ -123,3 +123,19 @@ def test_close_is_safe_after_a_result_was_read():
     cropped = job.result(timeout=30)
     job.close()
     assert list(cropped['image_id']) == [7]
+
+
+def test_a_photo_with_no_face_or_blob_data_is_still_cropped():
+    """A photo the face or saliency reader had nothing for arrives with NaN
+    in that column, from the left join. On 2026-10-13 a NaN `faces_info`
+    killed the worker (``TypeError: 'float' object is not iterable``) and the
+    album waited out the full 200s, then failed."""
+    sent = frame([3, 4])
+    sent['faces_info'] = [float('nan'), []]
+    sent['background_centroid'] = [SimpleNamespace(x=0.5, y=0.5), float('nan')]
+    job = _CropJob(_crop_frame(sent))
+    try:
+        cropped = job.result(timeout=30)
+    finally:
+        job.close()
+    assert sorted(cropped['image_id']) == [3, 4]
