@@ -21,7 +21,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from main import _CropJob
+from main import _CROP_CONTEXT, _CropJob
 
 
 def frame(ids):
@@ -40,7 +40,15 @@ def frame(ids):
     })
 
 
-@pytest.mark.skipif(mp.get_start_method() not in ('spawn', 'fork'),
+def test_the_worker_is_never_forked_from_the_stage():
+    """A fork from here copies the other stages mid-flight; on 2026-10-12 one
+    landed during the read stage's numpy matmul and froze the pod for good."""
+    assert _CROP_CONTEXT.get_start_method() != 'fork'
+    if 'forkserver' in mp.get_all_start_methods():
+        assert _CROP_CONTEXT.get_start_method() == 'forkserver'
+
+
+@pytest.mark.skipif(_CROP_CONTEXT.get_start_method() not in ('spawn', 'forkserver'),
                     reason='needs a working multiprocessing start method')
 def test_result_is_the_frame_that_was_sent():
     job = _CropJob(frame([1, 2, 3]))
