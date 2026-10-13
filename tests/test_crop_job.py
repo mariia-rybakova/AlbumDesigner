@@ -85,6 +85,39 @@ def test_each_job_owns_its_own_queue():
         second.close()
 
 
+def test_a_frame_of_real_protobufs_crosses_into_the_worker():
+    """The frame is pickled into a fresh process, and protobuf messages
+    unpickle only where their module has registered the type. On 2026-10-13
+    the first forkserver build failed every album on this:
+    ``KeyError: Couldn't find message FaceVectorMessageWrapper.FaceVectorMessageV1.Photo.Face``.
+    Under pytest the worker's `__main__` is not `main.py`, so nothing but the
+    crop module itself can have registered the types -- as in the pods."""
+    from ptinfra.proto.pb import BGSegmentation_pb2, FaceVector_pb2, PersonVector_pb2
+
+    faces = FaceVector_pb2.FaceVectorMessageWrapper().v1.photos.add().faces
+    face = faces.add()
+    face.bbox.x1, face.bbox.y1, face.bbox.x2, face.bbox.y2 = 0.3, 0.3, 0.5, 0.5
+    face.probability = 0.9
+    centroid = BGSegmentation_pb2.PhotoBGSegmentationMessageWrapper().v1.photos.add().blobCentroid
+    centroid.x, centroid.y = 0.5, 0.5
+    bodies = list(PersonVector_pb2.PersonVectorMessageWrapper().v1.photos.add().bodies)
+
+    sent = pd.DataFrame({
+        'image_id': [5],
+        'faces_info': [list(faces)],
+        'background_centroid': [centroid],
+        'diameter': [1.0],
+        'image_as': [1.5],
+        'bodies_info': [bodies],
+    })
+    job = _CropJob(sent)
+    try:
+        cropped = job.result(timeout=60)
+    finally:
+        job.close()
+    assert list(cropped['image_id']) == [5]
+
+
 def test_close_is_safe_after_a_result_was_read():
     job = _CropJob(frame([7]))
     cropped = job.result(timeout=30)
