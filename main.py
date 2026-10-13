@@ -17,7 +17,7 @@ from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 
 from ptinfra import intialize, get_logger
-from ptinfra.pt_queue import  MessageQueue, MemoryQueue, RoundRobinReader
+from ptinfra.pt_queue import  MessageQueue, MemoryQueue, PriorityRoundRobinReader
 from ptinfra.config import get_variable
 from ptinfra.stage import Stage
 from ptinfra.pt_queue import QReader, Message
@@ -721,34 +721,42 @@ class ReportStage(Stage):
         self.print_time_summary()
 
 
-def _get_azure_input_queue(logger):
+def _input_queue_prefixes(environment):
+    """The queue-name prefixes one environment listens on, read round robin."""
+    if environment == 'dev':
+        return ['dev', 'dev3']
+    if environment == 'production':
+        return ['', 'ep']
+    return [environment]
+
+
+def _get_azure_input_queue(logger, queue_factory=None):
+    """Every requested-album queue first, every automatic-album queue after.
+
+    Each prefix the environment listens on has two queues: the requested
+    albums (``devaigeneratealbumdto``) and the automatic ones
+    (``devaigenerateautoalbumdto``). An automatic album is read only while
+    every requested queue is empty, so a backlog of them -- dev carried twelve
+    hours of one on 2026-10-13 -- never holds up an album someone asked for.
+    The priority is strict: requested albums that never stop arriving leave
+    the automatic ones waiting.
+    """
     try:
-        prefix = get_variable('PTEnvironment')
+        environment = get_variable('PTEnvironment')
     except:
-        prefix = 'dev'
+        environment = 'dev'
 
-    input_queue = CONFIGS['collection_name']
-    print(prefix + input_queue)
-
-    if prefix == 'dev':
-        dev_queue = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                 max_dequeue_allowed=1000)
-        dev3_queue = MessageQueue('dev3' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                  max_dequeue_allowed=1000)
-        azure_input_q = RoundRobinReader([dev_queue, dev3_queue])
-    elif prefix == 'production':
-        logger.info('PRODUCTION environment set, queue name: ' + input_queue)
-        ep_queue = MessageQueue('ep' + input_queue, def_visibility=CONFIGS['visibility_timeout'],
+    if queue_factory is None:
+        def queue_factory(name):
+            return MessageQueue(name, def_visibility=CONFIGS['visibility_timeout'],
                                 max_dequeue_allowed=1000)
-        prod_queue = MessageQueue(input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                     max_dequeue_allowed=1000)
-        azure_input_q = RoundRobinReader([prod_queue, ep_queue])
-    else:
-        logger.info(prefix + ' environment, queue name: ' + prefix + input_queue)
-        azure_input_q = MessageQueue(prefix + input_queue, def_visibility=CONFIGS['visibility_timeout'],
-                                     max_dequeue_allowed=1000)
 
-    return azure_input_q
+    prefixes = _input_queue_prefixes(environment)
+    ranks = [[queue_factory(prefix + CONFIGS[key]) for prefix in prefixes]
+             for key in ('collection_name', 'auto_collection_name')]
+    logger.info(f"{environment} environment, input queues by priority: "
+                f"{[[q.name for q in rank] for rank in ranks]}")
+    return PriorityRoundRobinReader(ranks)
 
 
 def main():

@@ -142,6 +142,9 @@ CONFIGS = {'DEBUG': True,
            "max_photos_group":12,
            'wedding_merge_images_number':2,
            'collection_name': 'aigeneratealbumdto',
+           # Automatic (unrequested) albums, read only while every
+           # `collection_name` queue is empty. See `_get_azure_input_queue`.
+           'auto_collection_name': 'aigenerateautoalbumdto',
            'visibility_timeout':1200,
            'products_json_location':'pictures/photostore/32/settings/products.json.txt',
            'design_pack_base':'pictures/photostore/32/ext/designs',
