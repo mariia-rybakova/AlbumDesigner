@@ -293,3 +293,39 @@ def parents_seed(photos: pd.DataFrame, bride_parents: Iterable,
         people.extend(couple)
     people.extend(close_contacts(photos, parents, exclude=couple))
     return picks, _clean(people)
+
+
+def side_seed(photos: pd.DataFrame, side_parents: Iterable, other_parents: Iterable,
+              bride_id=None, groom_id=None
+              ) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
+    """``(photo_ids, person_ids)`` for an album of one side's family only.
+
+    Like `parents_seed`, with the preference limited to this side: its parents
+    take the whole photo allowance, frames that also hold the other side's
+    parents are used only when this side has nothing without them, and the
+    other side's parents are kept out of the circle -- a guest list built from
+    both families would pull the album back to the joint photos.
+    """
+    side = _clean(side_parents)
+    if not side or photos is None or photos.empty:
+        return (), ()
+    if Col.PERSONS_IDS not in photos.columns:
+        return (), ()
+
+    other = set(_clean(other_parents))
+    pool = photos
+    if other:
+        alone = photos[~photos[Col.PERSONS_IDS].apply(lambda v: bool(_people(v) & other))]
+        if not _side_frame(alone, side).empty:
+            pool = alone
+
+    picks = balanced_parent_photos(pool, side, ())
+    if not picks:
+        return (), ()
+
+    couple = _clean((bride_id, groom_id))
+    people = list(side)
+    if settings().get("include_couple", False):
+        people.extend(couple)
+    people.extend(close_contacts(photos, side, exclude=tuple(couple) + tuple(other)))
+    return picks, _clean(people)

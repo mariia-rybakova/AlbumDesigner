@@ -163,13 +163,16 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
         if spread_params[0] > 24:
             spread_params = (24.0, spread_params[1])
             
+        pinned = (resources.look_up_table.pinned_spreads(group_name, group2images[group_name])
+                  if hasattr(resources.look_up_table, 'pinned_spreads') else None)
         cur_result = process_group(group_name=group_name,
                                    group_images_df=updated_groups.get_group(group_name),
                                    spread_params=list(spread_params),
                                    resources=resources,
                                    is_wedding=is_wedding,
                                    params=params,
-                                   logger=logger)
+                                   logger=logger,
+                                   pinned_spreads=pinned)
         if cur_result:
             result_list.append(cur_result)
 

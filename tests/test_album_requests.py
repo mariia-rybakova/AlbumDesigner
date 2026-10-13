@@ -273,41 +273,49 @@ def wedding_with_parents():
     return facts
 
 
-def test_a_wedding_composes_one_album_today():
+def test_a_wedding_composes_both_albums_it_was_asked_for():
     variants, declines = plan({'albumRequests': [
         brief("AACP_1#0", "wedding_main_album"),
         brief("AACP_1#1", "wedding_parents_album", focus=["parents"]),
     ]}, facts=wedding_with_parents())
 
-    assert [v.fulfils for v in variants] == ["AACP_1#0"]
-    assert [(d.album_request_id, d.reason) for d in declines] == [
-        ("AACP_1#1", "focus_overridden")]
+    assert [v.fulfils for v in variants] == ["AACP_1#0", "AACP_1#1"]
+    assert declines == ()
 
 
-def test_the_parents_album_is_refused_even_where_it_could_be_composed():
-    """The parents were resolved, so the requirement is met and this is purely
-    the policy talking. Refused and not quietly turned into a couple album:
-    the two are indistinguishable at the caller, and only one was asked for."""
-    variants, declines = plan({'albumRequests': [
-        brief("AACP_1#1", "wedding_parents_album", focus=["parents"])]},
-        facts=wedding_with_parents())
-
-    assert [d.reason for d in declines] == ["focus_overridden"]
-    # Something still comes back -- the album the request itself asked for.
-    assert variants == [AS_REQUESTED]
-
-
-def test_a_third_wedding_album_is_refused_by_the_limit_not_the_focus():
-    """Two reasons the caller can tell apart: we do not make that kind of
-    album, and we are not making that many."""
+def test_a_wedding_parents_album_is_still_declined_without_parents():
+    """No policy refuses it any more; the requirement still does."""
     variants, declines = plan({'albumRequests': [
         brief("AACP_1#0", "wedding_main_album"),
-        brief("AACP_1#1", "wedding_couple_album", focus=["brideAndGroom"]),
+        brief("AACP_1#1", "wedding_parents_album", focus=["parents"]),
     ]}, facts=wedding())
 
     assert [v.fulfils for v in variants] == ["AACP_1#0"]
     assert [(d.album_request_id, d.reason) for d in declines] == [
-        ("AACP_1#1", "album_limit")]
+        ("AACP_1#1", "no_parents_resolved")]
+
+
+def test_an_overridden_focus_and_a_limit_are_declined_apart():
+    """Two reasons the caller can tell apart: we do not make that kind of
+    album, and we are not making that many. Config only today."""
+    from utils.configs import CONFIGS
+
+    original = CONFIGS['album_policy']
+    CONFIGS['album_policy'] = {**original,
+                               'wedding': {'max_albums': 1,
+                                           'overridden_focus': ('parents',)}}
+    try:
+        variants, declines = plan({'albumRequests': [
+            brief("AACP_1#0", "wedding_main_album"),
+            brief("AACP_1#1", "wedding_parents_album", focus=["parents"]),
+            brief("AACP_1#2", "wedding_couple_album", focus=["brideAndGroom"]),
+        ]}, facts=wedding_with_parents())
+    finally:
+        CONFIGS['album_policy'] = original
+
+    assert [v.fulfils for v in variants] == ["AACP_1#0"]
+    assert [(d.album_request_id, d.reason) for d in declines] == [
+        ("AACP_1#1", "focus_overridden"), ("AACP_1#2", "album_limit")]
 
 
 def test_the_policy_is_keyed_on_the_gallery_not_the_request():
@@ -363,6 +371,39 @@ def test_the_wedding_policy_does_not_reach_a_legacy_request():
 
     assert variants == [AS_REQUESTED]
     assert declines == ()
+
+
+def _single(focus, facts=None):
+    """A one-album request carrying its own focus; the context it leaves."""
+    from src.pipeline.contracts import AiHints
+    request = {'projectId': 1, 'aiMetadata': {'photoIds': [], 'focus': list(focus)}}
+    context = AlbumContext(photos=pd.DataFrame({Col.IMAGE_ID: [1, 2, 3]}),
+                           request=request, logger=_QUIET,
+                           hints=AiHints.from_request(request))
+    if facts is not None:
+        context.facts = facts
+    VariantsSubStage()(context)
+    return context
+
+
+def test_a_parents_album_asked_for_alone_fails_when_no_parents_were_found():
+    """53812098: the grouped call declined its parents brief, the caller sent
+    it again on its own, and it came back a second couple album."""
+    context = _single(['parents'])
+
+    assert context.failed
+    assert 'no_parents_resolved' in context.error
+
+
+def test_a_parents_album_asked_for_alone_is_composed_when_parents_were_found():
+    context = _single(['parents'], facts=with_parents())
+
+    assert not context.failed
+    assert context.variants == [AS_REQUESTED]
+
+
+def test_a_single_album_with_another_focus_is_untouched():
+    assert not _single(['brideAndGroom']).failed
 
 
 def test_a_legacy_request_grows_no_new_keys():

@@ -187,6 +187,19 @@ CONFIGS = {'DEBUG': True,
            'grays_scale_limit': 2,
            'person_count_percentage': 0.20,
            'small_gallery_number': 15,
+           # A small wedding gallery goes into the album nearly whole, by a
+           # weight that is 1 up to `full_up_to` photos and falls linearly to
+           # 0 at `none_from` (`select.small_gallery`): it moves each class's
+           # budget toward everything the class holds, and scales CP-SAT's
+           # penalties by 1 - weight. Nothing switches at a threshold.
+           # 53812098 (109 photos) came back with 36 without it. The budget
+           # stays under the design's spreads x `max_photos_per_spread`.
+           'small_gallery_album': {
+               'enabled': True,
+               'full_up_to': 100,
+               'none_from': 200,
+               'max_photos_per_spread': 6,
+           },
            'events_disallowing_small_images': ['settings', 'vehicle', 'rings', 'food', 'accessories', 'entertainment',
                                                'dancing',
                                                'wedding dress', 'kiss'],
@@ -290,7 +303,14 @@ CONFIGS = {'DEBUG': True,
         'family_album': {
             'enabled': True,
 
+            # A parents brief is composed as one album per resolved side, each
+            # seeded from that side's parents alone (`family.side_seed`). The
+            # first answers the brief; the second carries `derivedFrom` it.
+            # False composes the one album of both families, balanced.
+            'one_album_per_side': True,
+
             # How many photos the pseudo selection commits, over both sides.
+            # A per-side album takes the whole allowance for its own side.
             # `select.preselect` honours these unconditionally, so this is a
             # floor on the album's family content and not a target: eight of
             # roughly a hundred is a visible spine without spending the album.
@@ -333,17 +353,12 @@ CONFIGS = {'DEBUG': True,
         # something else, because a parents album that is really a second
         # couple album is indistinguishable from the real thing at the caller.
         #
-        # Today weddings get one album, the couple's. The parents album is
-        # refused rather than capped, so the album that survives is the one
-        # asked for first and not whichever brief happened to lead the list.
-        # Both of those are product decisions and both are meant to move: an
-        # entry per gallery type, `None` for no cap.
+        # Every gallery type composes what it was asked for today, weddings
+        # included: a parents brief is still declined where `enrich.parents`
+        # resolved nobody, by the requirement in `enrich.variants`, not by
+        # policy. Both are product decisions and meant to move: an entry per
+        # gallery type ('wedding' or 'default'), `None` for no cap.
         'album_policy': {
-            'wedding': {
-                'max_albums': 1,
-                'overridden_focus': ('parents',),
-            },
-            # Everything else composes what it was asked for.
             'default': {
                 'max_albums': None,
                 'overridden_focus': (),

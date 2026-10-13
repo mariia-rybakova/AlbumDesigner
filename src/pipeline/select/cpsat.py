@@ -207,6 +207,11 @@ class CpSatPicker:
         self.donor_caps: Dict[str, int] = {}
         #: {(giver, receiver): move variable}, for the log.
         self.flows: Dict[Tuple[str, str], Any] = {}
+        #: What the charges that hold a photo out are worth: 1 normally,
+        #: falling toward 0 on a small gallery (`select.small_gallery`), so
+        #: its restrictions ease off gradually rather than at a threshold.
+        from src.pipeline.select import small_gallery
+        self.penalty_scale: float = 1.0 - small_gallery.weight_for(context)
 
     # -- entry point --------------------------------------------------------
 
@@ -261,6 +266,10 @@ class CpSatPicker:
         chosen = self._collect(attempt.frame, attempt.x, attempt.solver)
         self._report(attempt.frame, attempt.x, attempt.solver, attempt.status)
         return chosen, self.per_category
+
+    def _scaled(self, value) -> int:
+        """A penalty weight at this gallery's `penalty_scale`."""
+        return int(round(float(value) * self.penalty_scale))
 
     def _shortfall_trigger(self) -> int:
         return int(self._retry_cfg().get('shortfall_trigger', 3))
@@ -355,7 +364,7 @@ class CpSatPicker:
             for index, score in frame['_score'].items()
         ]
         grey = [
-            x[index] * int(self.cfg.get('grayscale_penalty', 200))
+            x[index] * self._scaled(self.cfg.get('grayscale_penalty', 200))
             for index in frame.index[frame[Col.IMAGE_COLOR] == 0]
         ]
 
@@ -976,7 +985,7 @@ class CpSatPicker:
         default = int(config.get('weight', 0))
         per_class = config.get('per_class') or {}
 
-        penalty = int(config.get('contradiction_penalty', 0))
+        penalty = self._scaled(config.get('contradiction_penalty', 0))
 
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
             entry = IDENTITY_RULES.get(category)
@@ -1088,7 +1097,7 @@ class CpSatPicker:
                 bar = max(bar, int(round(float(scores.quantile(quantile))
                                          * SCORE_SCALE)))
             costs.loc[free] = bar
-        return costs
+        return (costs * self.penalty_scale).round().astype(int)
 
     # -- coverage (Phase 1 of docs/cpsat_scoring_plan.md) -------------------
 
@@ -1206,7 +1215,7 @@ class CpSatPicker:
         edges = np.linspace(0, self.positions or len(frame), count + 1).astype(int)
         frame['_window'] = np.searchsorted(edges[1:-1], frame[tl.POSITION], side='right')
 
-        class_weight = int(self.cfg.get('class_window_weight', 300))
+        class_weight = self._scaled(self.cfg.get('class_window_weight', 300))
         sparse_max = int(self.cfg.get('sparse_quota', 3))
 
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
@@ -1224,7 +1233,7 @@ class CpSatPicker:
 
         # And the album as a whole, so no window is starved by rounding.
         total = int(sum(max(0, int(v)) for v in self.plan.images.values())) + len(self.committed)
-        overall_weight = int(self.cfg.get('window_weight', 150))
+        overall_weight = self._scaled(self.cfg.get('window_weight', 150))
         for window, members in frame.groupby('_window'):
             target = int(round(total / count))
             deviation = model.NewIntVar(0, max(total, 1), f"dev_all_{window}")
@@ -1340,8 +1349,8 @@ class CpSatPicker:
         cap = int(config.get('max_people', 0))
 
         for category, group in frame.groupby(Col.CLUSTER_CONTEXT):
-            weight = int((config.get('per_class') or {}).get(category,
-                                                             config.get('weight', 0)))
+            weight = self._scaled((config.get('per_class') or {}).get(category,
+                                                                      config.get('weight', 0)))
             if weight <= 0:
                 continue
             for person, members in _largest(_by_identity(group), cap):
@@ -1376,7 +1385,7 @@ class CpSatPicker:
         Same class and inside the cohesion window, like the two terms it sits
         between, which keeps it O(n) rather than O(n^2) over the gallery.
         """
-        weight = int(self.cfg.get('similar_penalty_weight', 0))
+        weight = self._scaled(self.cfg.get('similar_penalty_weight', 0))
         soft = float(self.cfg.get('similar_soft_threshold', 1.0))
         hard = float(self.cfg.get('duplicate_similarity', 0.97))
         if weight <= 0 or soft >= 1.0 or soft >= hard:

@@ -278,7 +278,8 @@ def _fill_partitions_trace(trace: dict, sorted_parts: List[Partition],
 
 def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
                      params: SpreadSearchParams, layouts_df: pd.DataFrame,
-                     trace: Optional[dict] = None) -> List[Partition]:
+                     trace: Optional[dict] = None,
+                     n_spreads: Optional[int] = None) -> List[Partition]:
     """
     Find all feasible partitions for a group of photos and rank them by fit.
 
@@ -299,6 +300,8 @@ def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
             candidate funnel (every scored partition plus the stage that
             dropped it) for the combinations analysis PDF. Purely diagnostic —
             it never affects the returned partitions.
+        n_spreads: Keep only partitions into exactly this many spreads -- a
+            group whose count a merge pinned (`LookUpTable.pin_spreads`).
 
     Returns:
         List of valid Partition objects sorted by weight (descending), filtered
@@ -326,6 +329,8 @@ def get_partitions(photos_df: pd.DataFrame, class_spread_params: List[float],
     filtered_parts = Partition.filter_by_layout(sorted_parts, layouts_dict, n_portraits, n_landscapes, params,
                                                 trace=layout_trace)
     valid_parts = Partition.filter_by_len(filtered_parts, n_photos)
+    if n_spreads is not None:
+        valid_parts = [part for part in filtered_parts if len(part.spread_sizes) == n_spreads]
 
     if trace is not None:
         trace.update({

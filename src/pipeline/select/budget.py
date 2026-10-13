@@ -57,6 +57,22 @@ class BudgetSubStage(SubStage):
         if not allocation.images:
             return context.fail("No images got selected!")
 
+        # A small gallery goes in nearly whole (`select.small_gallery`), so the
+        # plan layout sizes the album from grows by the same weight.
+        from src.pipeline.select import small_gallery
+        w = small_gallery.weight_for(context)
+        if w > 0.0:
+            ceiling = allocation.max_total_spreads * int(
+                small_gallery.settings().get('max_photos_per_spread', 6))
+            images, spreads = small_gallery.blended_budget(
+                allocation.images, allocation.spreads, available, allocation.lookup_table, w,
+                ceiling=ceiling)
+            allocation.images, allocation.spreads = images, spreads
+            if logger:
+                logger.info(f"Budget: small gallery (weight {w:.2f}) -- "
+                            f"{sum(images.values())} photos, "
+                            f"{sum(spreads.values()):.1f} spreads planned")
+
         if logger:
             logger.info(f"Budget: {allocation.summary()}")
 

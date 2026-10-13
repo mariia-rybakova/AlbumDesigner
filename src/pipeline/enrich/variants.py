@@ -26,7 +26,9 @@ which on a gallery the couple dominates is the couple. So where there are
 parents to build an album around, the variant also carries a pseudo
 ``aiMetadata`` -- their photos and their people -- which `select.preselect`
 commits before ranking and `person_score` weighs everywhere else. See
-`src.pipeline.family`.
+`src.pipeline.family`. With `family_album.one_album_per_side` that is one
+album per resolved side, each seeded from its own parents alone: the first
+answers the brief, the second carries `derived_from` it.
 
 Where no parents were resolved there is nothing to seed from, and the plan is
 exactly what it was: two focus-only variants. That is the normal outcome on a
@@ -105,6 +107,9 @@ class VariantsSubStage(SubStage):
 
         context.unfulfilled = tuple(declines)
         if not request.get(AUTO_ALBUMS):
+            refusal = _single_album_refusal(context)
+            if refusal is not None:
+                context.fail(refusal)
             return [AS_REQUESTED]
 
         plan = [AlbumVariant(name=focus, focus=(focus,)) for focus in AUTO_FOCUS]
@@ -116,7 +121,8 @@ class VariantsSubStage(SubStage):
             plan = plan[:limit]
         if not plan:
             return [AS_REQUESTED]
-        return [VariantsSubStage._seed(variant, context) for variant in plan]
+        return [album for variant in plan
+                for album in VariantsSubStage._seed(variant, context)]
 
     @staticmethod
     def _from_briefs(briefs, declines, context: AlbumContext) -> List[AlbumVariant]:
@@ -161,7 +167,7 @@ class VariantsSubStage(SubStage):
                 person_ids=brief.person_ids,
                 fulfils=brief.album_request_id,
             )
-            plan.append(VariantsSubStage._seed(variant, context))
+            plan.extend(VariantsSubStage._seed(variant, context))
 
         if not plan:
             # Nothing survived. The gallery still gets the album the request
@@ -190,14 +196,21 @@ class VariantsSubStage(SubStage):
 
 
     @staticmethod
-    def _seed(variant: AlbumVariant, context: AlbumContext) -> AlbumVariant:
-        """Give the parents album a pseudo selection, where there is one.
+    def _seed(variant: AlbumVariant, context: AlbumContext) -> List[AlbumVariant]:
+        """The albums a variant becomes: itself, or its parents seeded.
 
-        Every other variant is returned untouched, so this cannot reach the
-        album the request actually asked for.
+        Every variant but a parents one is returned untouched, so this cannot
+        reach the album the request actually asked for. A parents variant is
+        one album per resolved side where `family_album.one_album_per_side`
+        is on, else one album of both families.
         """
         if PARENTS_FOCUS not in (variant.focus or ()) or not family.enabled():
-            return variant
+            return [variant]
+
+        if family.settings().get("one_album_per_side", False):
+            sides = VariantsSubStage._by_side(variant, context)
+            if sides:
+                return sides
 
         facts = context.facts
         photo_ids, person_ids = family.parents_seed(
@@ -210,18 +223,50 @@ class VariantsSubStage(SubStage):
         if not photo_ids:
             # Parents resolved but nothing to show them in, or none resolved at
             # all. A focus-only variant is still a valid album.
-            return variant
+            return [variant]
+        return [VariantsSubStage._seeded(variant, photo_ids, person_ids, context)]
 
+    @staticmethod
+    def _by_side(variant: AlbumVariant, context: AlbumContext) -> List[AlbumVariant]:
+        """One album for the bride's parents and one for the groom's.
+
+        Each is seeded from its own side alone (`family.side_seed`). A side
+        that was not resolved, or has no photo to seed from, gets no album.
+        The first album answers the brief; a second carries `derived_from`,
+        since the caller asked for one album and keys its record on the id.
+        """
+        facts = context.facts
+        bride = tuple(getattr(facts, "bride_parents", ()) or ())
+        groom = tuple(getattr(facts, "groom_parents", ()) or ())
+        albums: List[AlbumVariant] = []
+        for side, mine, theirs in (("bride", bride, groom), ("groom", groom, bride)):
+            photo_ids, person_ids = family.side_seed(
+                context.photos, mine, theirs,
+                getattr(facts, "bride_id", None), getattr(facts, "groom_id", None))
+            if not photo_ids:
+                continue
+            side_variant = replace(variant, name=f"{variant.name} ({side})")
+            if albums:
+                side_variant = replace(side_variant, fulfils=None,
+                                       derived_from=variant.fulfils or variant.derived_from)
+            albums.append(VariantsSubStage._seeded(side_variant, photo_ids,
+                                                   person_ids, context))
+        return albums
+
+    @staticmethod
+    def _seeded(variant: AlbumVariant, photo_ids, person_ids,
+                context: AlbumContext) -> AlbumVariant:
+        """The variant with its pseudo selection, user picks per config."""
         if not family.settings().get("replace_user_picks", True):
             existing = tuple(context.hints.photo_ids or ())
-            photo_ids = tuple(dict.fromkeys(existing + photo_ids))
+            photo_ids = tuple(dict.fromkeys(existing + tuple(photo_ids)))
 
         if context.logger:
             context.logger.info(
                 f"Variants: seeded the '{variant.name}' album with "
                 f"{len(photo_ids)} parent photo(s) and {len(person_ids)} "
                 f"identity/identities")
-        return replace(variant, photo_ids=photo_ids, person_ids=person_ids)
+        return replace(variant, photo_ids=tuple(photo_ids), person_ids=tuple(person_ids))
 
 
 def _resolved_parents(context: AlbumContext) -> bool:
@@ -243,6 +288,29 @@ def _needs_parents(brief, context: AlbumContext):
         return None
     return ("no_parents_resolved",
             "enrich.parents resolved nobody, so there is no family to build around")
+
+
+def _single_album_refusal(context: AlbumContext):
+    """Why a request for one album cannot be composed as asked, or None.
+
+    The same requirements a brief is held to, applied to the request's own
+    `aiMetadata.focus`. Without this a parents album skipped them whenever it
+    arrived alone: on 53812098 the grouped call declined its parents brief,
+    the caller re-sent it on its own, and it came back a second couple album
+    -- the class table within two photos of the main album's.
+
+    A brief can be declined and the rest of the call still answered. A request
+    for one album has nothing else to answer with, so this fails it, and the
+    reason names the requirement so the caller can tell it from a crash.
+    """
+    focus = tuple(getattr(context.hints, "focus", None) or ())
+    brief = album_requests.AlbumRequest(album_request_id="", focus=focus)
+    for requirement in REQUIREMENTS:
+        answer = requirement(brief, context)
+        if answer is not None:
+            reason, detail = answer
+            return f"album not composed ({reason}): {detail}"
+    return None
 
 
 #: The known set a brief can be refused by. Config may select from these; it

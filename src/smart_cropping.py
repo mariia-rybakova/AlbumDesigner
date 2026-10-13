@@ -5,6 +5,12 @@ import numpy as np
 import pandas as pd
 from utils.configs import CONFIGS
 
+# Not used by name: imported so the crop worker can unpickle its frame. The
+# frame's faces, centroids and bodies are protobuf messages, which unpickle only
+# where their module has registered the type, and the worker is a fresh process
+# (`main._CropJob`) -- this module is the first thing it imports.
+from ptinfra.proto.pb import BGSegmentation_pb2, FaceVector_pb2, PersonVector_pb2  # noqa: F401
+
 
 def cropWeight(tl, imageShape, foregroundMask=None, faceMask=None, aspectRatio=1,
                center_weight=200, face_weight=150, size_weight=1000):

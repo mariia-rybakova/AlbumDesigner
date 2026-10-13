@@ -273,6 +273,12 @@ def _crop_frame(frame):
     return out
 
 
+#: How crop workers are started; see `_CropJob`. `spawn` where there is no
+#: forkserver (Windows), which is just as safe and only slower to start.
+_CROP_CONTEXT = mp.get_context(
+    'forkserver' if 'forkserver' in mp.get_all_start_methods() else 'spawn')
+
+
 class _CropJob:
     """One crop subprocess and the queue carrying its result, owned together.
 
@@ -288,12 +294,21 @@ class _CropJob:
     so `_fillable_cover_boxes` found no cover photo and left the box empty. Two
     pods shipped albums with blank first and last pages for four days, from
     each pod's own exception until the deployment that restarted them.
+
+    The worker is started from a forkserver, never forked from this process.
+    A fork copies a process whose other stages are mid-flight, and on
+    2026-10-12 that froze all six dev pods one by one: the read stage was in a
+    numpy matmul (`concept_scores`, under `enrich.parents`) when this stage
+    forked, OpenBLAS tore its thread pool down for the fork, and the read
+    thread spun forever waiting on workers that no longer existed -- one core
+    at 100%, no log, no restart. The forkserver is single-threaded, so forking
+    from it is safe; the frame is pickled across, which `_crop_frame` prepares.
     """
 
     def __init__(self, frame, label='cropping'):
         self.label = label
-        self.queue = mp.Queue()
-        self.worker = mp.Process(target=process_crop_images, args=(self.queue, frame))
+        self.queue = _CROP_CONTEXT.Queue()
+        self.worker = _CROP_CONTEXT.Process(target=process_crop_images, args=(self.queue, frame))
         self.worker.start()
 
     def result(self, logger=None, timeout=200):
