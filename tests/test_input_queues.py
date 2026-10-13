@@ -32,8 +32,7 @@ def _reader(monkeypatch, environment):
 
 
 @pytest.mark.parametrize('environment, requested, automatic', [
-    ('dev', ['devaigeneratealbumdto', 'dev3aigeneratealbumdto'],
-            ['devaigenerateautoalbumdto', 'dev3aigenerateautoalbumdto']),
+    ('dev', ['devaigeneratealbumdto'], ['devaigenerateautoalbumdto']),
     ('production', ['aigeneratealbumdto', 'epaigeneratealbumdto'],
                    ['aigenerateautoalbumdto', 'epaigenerateautoalbumdto']),
     ('sup', ['supaigeneratealbumdto'], ['supaigenerateautoalbumdto']),
@@ -44,14 +43,14 @@ def test_each_queue_has_an_auto_queue_ranked_below_it(monkeypatch, environment, 
 
 
 def test_an_auto_album_waits_until_every_requested_queue_is_empty(monkeypatch):
-    reader, q = _reader(monkeypatch, 'dev')
-    q['devaigenerateautoalbumdto'].messages.extend(['auto1', 'auto2'])
-    q['devaigeneratealbumdto'].messages.append('dev1')
-    q['dev3aigeneratealbumdto'].messages.append('dev3-1')
+    reader, q = _reader(monkeypatch, 'production')
+    q['aigenerateautoalbumdto'].messages.extend(['auto1', 'auto2'])
+    q['aigeneratealbumdto'].messages.append('prod1')
+    q['epaigeneratealbumdto'].messages.append('ep1')
 
     read = [reader.nextMessage(wait_for_message=False) for _ in range(5)]
 
-    assert read[:2] in (['dev1', 'dev3-1'], ['dev3-1', 'dev1'])
+    assert read[:2] in (['prod1', 'ep1'], ['ep1', 'prod1'])
     assert read[2:] == ['auto1', 'auto2', None]
 
 

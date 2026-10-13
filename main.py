@@ -723,8 +723,6 @@ class ReportStage(Stage):
 
 def _input_queue_prefixes(environment):
     """The queue-name prefixes one environment listens on, read round robin."""
-    if environment == 'dev':
-        return ['dev', 'dev3']
     if environment == 'production':
         return ['', 'ep']
     return [environment]
