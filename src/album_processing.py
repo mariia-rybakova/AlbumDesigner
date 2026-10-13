@@ -25,6 +25,84 @@ from src.spreads_layout import fold
 FIXED_COMPOSITIONS = 3
 
 
+def _persons_in(group_name) -> int:
+    """How many people a non-wedding group is of: the count its
+    ``people_cluster`` key starts with (``'3_pple_2_12_4'`` -> 3,
+    ``'1_person_10'`` -> 1); ``'No PEOPLE'`` and anything unparsable -> 0."""
+    key = group_name[0] if isinstance(group_name, tuple) else group_name
+    head = str(key).split('_', 1)[0]
+    return int(head) if head.isdigit() else 0
+
+
+def _group_rank(group2images):
+    """Non-wedding groups, most people first; a tie goes to the bigger group."""
+    return sorted(group2images, key=lambda g: (-_persons_in(g), -group2images[g], str(g)))
+
+
+def cap_non_wedding_groups(group2images, spreads_per_group, max_total_spreads, logger=None):
+    """The groups a non-wedding album keeps so its spreads fit the design.
+
+    The non-wedding route groups photos by who is in them, and a gallery the
+    content model never classified splits into one small group per
+    combination of people. Each needs at least one spread, and the reduction in
+    `update_with_limit` only ever takes spreads *from* a group, never a group
+    away -- so 44090624 (2026-10-12; every one of its 3,034 photos
+    ``image_class -1``) was laid out at 142 spreads, sent 146 compositions, and
+    its product allows 41.
+
+    Groups are taken most people first, as long as their spreads still fit
+    ``max_total_spreads`` (the design's maximum less `FIXED_COMPOSITIONS`); a
+    group too big for what is left is skipped and smaller ones still try.
+    Returns the kept group names, in ``group2images`` order.
+    """
+    total = sum(spreads_per_group.values())
+    if total <= max_total_spreads:
+        return list(group2images)
+
+    kept, used = set(), 0
+    for group in _group_rank(group2images):
+        need = spreads_per_group.get(group, 1)
+        if used + need <= max_total_spreads:
+            kept.add(group)
+            used += need
+    if not kept:
+        # Not even the first group fits: an album of it beats an empty one.
+        first = _group_rank(group2images)[0]
+        kept, used = {first}, spreads_per_group.get(first, 1)
+    if logger:
+        logger.warning(f"Non-wedding cap: {len(group2images)} groups need {total} spreads, "
+                       f"the design allows {max_total_spreads}; kept {len(kept)} groups "
+                       f"({used} spreads), most people first")
+    return [g for g in group2images if g in kept]
+
+
+def trim_non_wedding_results(named_results, group2images, max_total_spreads, logger=None):
+    """Drop the fewest-people groups until the laid-out spreads fit.
+
+    The layout search may give a group a spread more than it was planned at, so
+    the cap above can still land a spread or two over. ``named_results`` is
+    ``[(group_name, {group_id: GroupProcessingResult}), ...]``.
+    """
+    def spreads(result):
+        return sum(len(r.spreads) for r in result.values())
+
+    total = sum(spreads(r) for _, r in named_results)
+    if total <= max_total_spreads:
+        return named_results
+    order = {g: i for i, g in enumerate(_group_rank(group2images))}
+    dropped = set()
+    for i, (group, result) in sorted(enumerate(named_results),
+                                     key=lambda item: -order.get(item[1][0], len(order))):
+        if total <= max_total_spreads:
+            break
+        dropped.add(i)
+        total -= spreads(result)
+    if logger:
+        logger.warning(f"Non-wedding cap: laid out over {max_total_spreads} spreads; "
+                       f"dropped {len(dropped)} fewest-people group(s), {total} spreads left")
+    return [nr for i, nr in enumerate(named_results) if i not in dropped]
+
+
 def _json_default(o):
     if hasattr(o, 'item'):
         return o.item()
@@ -143,6 +221,13 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
                                               min_total_spreads=min_total_spreads,logger = logger,
                                               per_group=True, target_total_spreads=target_total_spreads)
 
+    if not is_wedding:
+        kept = cap_non_wedding_groups(
+            group2images, resources.look_up_table._compute_initial_spreads(group2images),
+            max_total_spreads, logger)
+        if len(kept) < len(group2images):
+            group2images = {g: group2images[g] for g in kept}
+
     if CONFIGS['save_files']['spreads']:
         # Wipe stale per-group jsons from any previous run. Without this, files
         # whose group key isn't reused by the new run linger and mix into the
@@ -157,7 +242,7 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     reset_combinations_dir()
 
     fold.reset_tally()
-    result_list = []
+    named_results = []
     for group_name in group2images.keys():
         spread_params = resources.look_up_table.get_current_spread_parameters(group_name, group2images[group_name])
         if spread_params[0] > 24:
@@ -174,7 +259,11 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
                                    logger=logger,
                                    pinned_spreads=pinned)
         if cur_result:
-            result_list.append(cur_result)
+            named_results.append((group_name, cur_result))
+
+    if not is_wedding:
+        named_results = trim_non_wedding_results(named_results, group2images, max_total_spreads, logger)
+    result_list = [result for _, result in named_results]
 
     logger.info(f'General groups processing time: {time.time() - start_time:.2f} seconds')
 
