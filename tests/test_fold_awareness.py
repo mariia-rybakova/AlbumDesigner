@@ -361,3 +361,46 @@ def test_selection_without_fold_info_keeps_the_search_result():
 
     assert chosen.spreads_layouts[0].layout_idx == 0
     assert chosen.spreads_layouts[0].left_page_photos, "still resolved onto its boxes"
+
+
+# ------------------------------------------------- a head that was not detected
+
+def body(x1, x2, y1=0.1, y2=0.9):
+    return types.SimpleNamespace(bbox=types.SimpleNamespace(x1=x1, y1=y1, x2=x2, y2=y2))
+
+
+def test_a_body_without_a_detected_face_still_gets_a_head():
+    """A head turned sideways is usually missed; the body is not. 2036 of
+    53316807 and 54015357's 6918 bodies hold no detected face."""
+    spans = fold.subject_spans([], [body(0.40, 0.60)])
+
+    assert len(spans) == 1
+    x1, x2, weight = spans[0]
+    assert x1 == pytest.approx(0.44) and x2 == pytest.approx(0.56), "centre +/- 0.3 body widths"
+    assert weight < 1.0, "an estimate must not outvote a face that was found"
+
+
+def test_a_body_holding_a_face_is_not_estimated_twice():
+    spans = fold.subject_spans([face(0.45, 0.55)], [body(0.40, 0.60)])
+
+    assert len(spans) == 1, "the detected face stands on its own"
+    assert spans[0][:2] == (0.45, 0.55)
+
+
+def test_the_head_estimate_is_narrower_than_the_body():
+    """A fold through an outstretched arm is not the thing being avoided."""
+    wide = fold.subject_spans([], [body(0.10, 0.90)])[0]
+
+    assert wide[0] > 0.10 and wide[1] < 0.90
+
+
+def test_a_fold_through_an_estimated_head_costs_something():
+    spans = fold.subject_spans([], [body(0.40, 0.60)])
+
+    assert fold.fold_cost(spans, 0.50) > 0
+    assert fold.fold_cost(spans, 0.50) < fold.fold_cost(fold.face_spans([face(0.44, 0.56)]), 0.50)
+
+
+def test_a_photo_with_neither_face_nor_body_has_nothing_to_protect():
+    assert fold.subject_spans([], []) == ()
+    assert fold.subject_spans(None, None) == ()

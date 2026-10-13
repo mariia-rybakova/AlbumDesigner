@@ -151,6 +151,21 @@ def gutter_in_image(box: Dict[str, Any], window: Window,
     return width * float(window[2]) / box_width
 
 
+def fold_clearance(spans: Sequence[FaceSpan], fold_u: float) -> float:
+    """How far the fold is from the nearest face, in image widths.
+
+    Negative when it falls inside one. `fold_cost` says whether a layout is
+    acceptable; this says how comfortably, which is what decides between two
+    that both are. Stopping at the first acceptable one took 28mm of clearance
+    on 53316807's page 8 where the same spread could have had 169mm.
+    """
+    if not spans:
+        return 1.0
+    return min((-min(fold_u - x1, x2 - fold_u) if x1 <= fold_u <= x2
+                else min(abs(fold_u - x1), abs(fold_u - x2)))
+               for x1, x2, _ in spans)
+
+
 def fold_cost(spans: Sequence[FaceSpan], fold_u: float,
               face_margin: Optional[float] = None, gutter: float = 0.0) -> float:
     """How badly a fold at image column `fold_u` cuts these faces.
@@ -186,6 +201,56 @@ def fold_cost(spans: Sequence[FaceSpan], fold_u: float,
         if overlap > _EPSILON:
             total += weight * overlap
     return total if total > _EPSILON else 0.0
+
+
+def body_head_spans(faces: Any, bodies: Any,
+                    known_faces: Sequence[FaceSpan] = ()) -> Tuple[FaceSpan, ...]:
+    """Where the head probably is, for each body whose face was not detected.
+
+    Face-Recognition finds a face looking at the camera. A head turned sideways
+    is often missed, and across 53316807 and 54015357 that is 2036 of the 6918
+    detected bodies -- a person in frame the fold cannot see. `blurLevel` -1 is
+    no help: of 399 such detections only 10 are in a photo with no accepted
+    face, so they are spurious extras beside real faces, not profiles.
+
+    The body box is, so the head is placed inside it. Measured over the 4882
+    bodies that *do* hold a detected face, the head is 0.27 of the body's width
+    (median, 0.37 at p90) and its centre sits within 0.12 of the body's centre
+    (0.33 at p90). `body_head_share` either side of the centre covers that;
+    the whole body box would not, because it includes an outstretched arm, and
+    a fold through an arm is not the thing being avoided.
+
+    Carried at `body_weight`, below a real face: this is an estimate of where a
+    head is, and should not outvote one that was actually found.
+    """
+    config = settings()
+    share = float(config.get('body_head_share', 0.30))
+    weight = float(config.get('body_weight', 0.5))
+
+    spans: List[FaceSpan] = []
+    for body in _as_list(bodies):
+        bbox = getattr(body, 'bbox', None)
+        if bbox is None:
+            continue
+        try:
+            x1, x2 = float(bbox.x1), float(bbox.x2)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if x2 <= x1:
+            continue
+        # A body already holding a detected face needs no estimate.
+        if any(x1 <= (a + b) / 2 <= x2 for a, b, _ in known_faces):
+            continue
+        centre, width = (x1 + x2) / 2, x2 - x1
+        spans.append((max(0.0, centre - share * width),
+                      min(1.0, centre + share * width), weight))
+    return tuple(spans)
+
+
+def subject_spans(faces: Any, bodies: Any = None) -> Tuple[FaceSpan, ...]:
+    """Everything the fold must miss: the faces found, and the heads inferred."""
+    found = face_spans(faces)
+    return found + body_head_spans(faces, bodies, found)
 
 
 def box_target_ar(box: Dict[str, Any], album_ar: float = 2.0) -> float:
@@ -238,7 +303,7 @@ def photo_fold_info(images_df) -> Dict[Any, Dict[str, Any]]:
     for row in frame.itertuples(index=False, name=None):
         image_id, image_as, faces = row[0], row[1], row[2]
 
-        spans = face_spans(faces)
+        spans = subject_spans(faces, row[3] if optional else None)
         if not spans:
             continue
         try:
@@ -280,8 +345,17 @@ def spread_fold_cost(spread, layout_id2data: Dict[int, Any],
                      photo_info: Dict[Any, Dict[str, Any]],
                      album_ar: float = 2.0) -> float:
     """How much face one spread puts on the fold; its photos must be resolved."""
+    return _spread_fold(spread, layout_id2data, box_id2data, photo_info, album_ar)[0]
+
+
+def _spread_fold(spread, layout_id2data: Dict[int, Any],
+                 box_id2data: Dict[Tuple[int, int], Any],
+                 photo_info: Dict[Any, Dict[str, Any]],
+                 album_ar: float = 2.0) -> Tuple[float, float]:
+    """(cost, clearance) for a spread -- the second is the tightest of its boxes."""
     tolerance = float(settings().get('edge_tolerance', 0.005))
     total = 0.0
+    clearance = 1.0
     for key, photo in _spread_pairs(spread, layout_id2data):
         box = box_id2data.get(key)
         if not box:
@@ -293,9 +367,10 @@ def spread_fold_cost(spread, layout_id2data: Dict[int, Any],
         if info is None:
             continue
         window = estimate_window(info['ar'], box, album_ar, info['faces'], info['bodies'])
-        total += fold_cost(info['spans'], fold_image_x(window, fraction),
-                           gutter=gutter_in_image(box, window))
-    return total
+        fold_u = fold_image_x(window, fraction)
+        total += fold_cost(info['spans'], fold_u, gutter=gutter_in_image(box, window))
+        clearance = min(clearance, fold_clearance(info['spans'], fold_u))
+    return total, clearance
 
 
 def _page_shape(ids, layout_id, box_id2data) -> Tuple[int, int, int]:
@@ -353,7 +428,8 @@ def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, An
     before_total = after_total = 0.0
 
     for spread in group_layout.spreads_layouts:
-        before = spread_fold_cost(spread, layout_id2data, box_id2data, photo_info, album_ar)
+        before, before_clearance = _spread_fold(spread, layout_id2data, box_id2data,
+                                                photo_info, album_ar)
         before_total += before
         if before <= 0:
             after_total += before
@@ -363,7 +439,7 @@ def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, An
             shapes = _shape_index(layout_id2data, box_id2data)
         shape = layout_shape(spread.layout_idx, layout_id2data, box_id2data)
 
-        best_idx, best_cost = spread.layout_idx, before
+        best_idx, best_key = spread.layout_idx, (before, -before_clearance)
         for layout_idx in shapes.get(shape, ()):
             if layout_idx == spread.layout_idx:
                 continue
@@ -373,18 +449,19 @@ def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, An
                                        number_of_squares=spread.number_of_squares)
             trial.resolve_photos(photos)
             trial.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
-            cost = spread_fold_cost(trial, layout_id2data, box_id2data, photo_info, album_ar)
-            if cost < best_cost - 1e-9:
-                best_idx, best_cost = layout_idx, cost
-                if cost <= 0:
-                    break
+            cost, clearance = _spread_fold(trial, layout_id2data, box_id2data,
+                                           photo_info, album_ar)
+            # Lowest cost wins; among layouts that all clear the margin, the
+            # one that leaves the most room does.
+            if (cost, -clearance) < best_key:
+                best_idx, best_key = layout_idx, (cost, -clearance)
 
         if best_idx != spread.layout_idx:
             moved += 1
             spread.layout_idx = best_idx
             spread.resolve_photos(photos)
             spread.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
-        after_total += best_cost
+        after_total += best_key[0]
 
     if moved:
         _TALLY[0] += moved
@@ -421,7 +498,7 @@ def pick_cover_layout(candidates: List[int], layouts_df, box_id2data: Dict[Tuple
         return candidates[0]
 
     faces = image_row.get('faces_info') if hasattr(image_row, 'get') else None
-    spans = face_spans(faces)
+    spans = subject_spans(faces, image_row.get('bodies_info') if hasattr(image_row, 'get') else None)
     if not spans:
         return candidates[0]
     try:
@@ -429,32 +506,40 @@ def pick_cover_layout(candidates: List[int], layouts_df, box_id2data: Dict[Tuple
     except (KeyError, TypeError, ValueError):
         return candidates[0]
 
-    best_idx, best_cost = candidates[0], None
-    for layout_idx in candidates:
+    def measure(layout_idx):
+        """(cost, -clearance) for a candidate, or None if it is not usable."""
         try:
             row = layouts_df.loc[layout_idx]
         except KeyError:
-            continue
+            return None
         box_ids = list(row['left_box_ids']) + list(row['right_box_ids'])
         if len(box_ids) != 1:
-            continue
+            return None
         box = box_id2data.get((row['id'], box_ids[0]))
         if not box:
-            continue
-
+            return None
         fraction = fold_fraction(box)
         if fraction is None:
-            cost = 0.0            # does not cross the fold: nothing to damage
-        else:
-            window = estimate_window(image_ar, box, album_ar, faces,
-                                     image_row.get('bodies_info'))
-            cost = fold_cost(spans, fold_image_x(window, fraction),
-                             gutter=gutter_in_image(box, window))
+            return 0.0, -1.0          # does not cross the fold: nothing to damage
+        window = estimate_window(image_ar, box, album_ar, faces,
+                                 image_row.get('bodies_info'))
+        fold_u = fold_image_x(window, fraction)
+        return (fold_cost(spans, fold_u, gutter=gutter_in_image(box, window)),
+                -fold_clearance(spans, fold_u))
 
-        if best_cost is None or cost < best_cost - _EPSILON:
-            best_idx, best_cost = layout_idx, cost
-            if cost <= 0:
-                break
+    # The order `_find_single_box_layout` chose stands unless its first pick
+    # actually puts the fold on a face. Ranking every candidate by clearance
+    # would hand the cover to whichever design crosses no fold, on every album
+    # with a face in its opening photo, which is not this feature's business.
+    first = measure(candidates[0])
+    if first is None or first[0] <= 0:
+        return candidates[0]
+
+    best_idx, best_key = candidates[0], first
+    for layout_idx in candidates[1:]:
+        key = measure(layout_idx)
+        if key is not None and key < best_key:
+            best_idx, best_key = layout_idx, key
 
     if logger and best_idx != candidates[0]:
         logger.debug(f"fold: cover layout {layouts_df.loc[best_idx]['id']} "

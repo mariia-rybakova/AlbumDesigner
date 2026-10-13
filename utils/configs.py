@@ -109,13 +109,22 @@ CONFIGS = {'DEBUG': True,
                # half-widths: a fold against an ear is barely better than one
                # through a nose, and how close that is scales with the head.
                'face_margin': 0.15,
-               # The strip of paper the fold itself eats, as a share of the
-               # spread's width -- roughly 9mm either side of the fold on a
-               # 24-inch spread. Unlike `face_margin` this does not scale with
-               # the face: the gutter is the same width of paper whoever stands
-               # in it. Without it a small face ending 0.009 of the image from
-               # the fold scored zero while the gutter ran through its edge.
-               'gutter_width': 0.025,
+               # The strip of paper the fold eats, as a share of the spread's
+               # width. Unlike `face_margin` it does not scale with the face:
+               # the gutter is the same width of paper whoever stands in it.
+               # 0.06 is 21mm either side of the fold on 53316807's 700mm
+               # spread; at 8.75mm a face 28mm from the fold scored clear and
+               # was plainly too close on the page.
+               'gutter_width': 0.06,
+               # A head turned sideways is usually not detected as a face, but
+               # the body is. `body_head_share` is how far either side of a
+               # body's centre the head may be, in body widths: measured over
+               # 4882 bodies holding a detected face, the head is 0.27 of the
+               # body wide and its centre within 0.12 of the body's, 0.37 and
+               # 0.33 at p90. `body_weight` keeps such an estimate below a face
+               # that was actually found.
+               'body_head_share': 0.30,
+               'body_weight': 0.5,
            },
            'color_mix': 0.0001,
            'double_page_color_mix': 0.00000001,
