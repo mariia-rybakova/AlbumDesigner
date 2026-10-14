@@ -796,7 +796,8 @@ def rank_general_covers(frame, logger, presence=None, subjects=2):
 
     The wedding score's terms that are about the *photograph* and not about
     the bride and groom: quality (`_quality`, background, light, frame),
-    the content model's rank, how much of the frame its people are
+    the content model's rank (weighted 0 by `general_weights`: the model
+    reads every gallery as a wedding), how much of the frame its people are
     (`significance`), and the penalties for a frame with nobody in it and for
     a subject cut off by the border. Orientation is the same preference, and
     the same floor (`_preferred_orientation_first`) puts a good-enough
@@ -809,7 +810,7 @@ def rank_general_covers(frame, logger, presence=None, subjects=2):
     """
     if frame.empty:
         return []
-    weights = settings().get('weights', {})
+    weights = {**settings().get('weights', {}), **settings().get('general_weights', {})}
     scored = frame.copy()
     rank = np.asarray(_minmax_normalize(
         [float(v) if v == v else 0.0 for v in scored['image_order']]), dtype=float) \

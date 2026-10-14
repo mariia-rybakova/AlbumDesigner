@@ -920,6 +920,13 @@ CONFIGS = {'DEBUG': True,
 
             # Faces beyond the couple before `crowd` starts to bite.
             'crowd_slack': 1,
+            # `weights` overridden for a gallery that is not a wedding
+            # (`rank_general_covers`, the narrator's covers). No `rank`: the
+            # content model's order is trained on weddings and reads a family
+            # trip in their terms -- 54117560's frames are "father fixing
+            # groom's collar" and "flower girls walking aisle" -- so what it
+            # ranks there is not what a cover needs.
+            'general_weights': {'rank': 0.0},
             # The orientation a single-box cover fills best.
             'preferred_orientation': 'landscape',
             # The best frame in that orientation becomes the cover when it
