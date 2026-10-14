@@ -20,9 +20,9 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from utils.configs import CONFIGS
-from utils.stages_recorder.context import get_is_artificial_time
-from utils.stages_recorder.photo_records import photos_to_records
-from utils.stages_recorder.time_utils import build_general_time_to_clock
+from src.stages_recorder.context import get_is_artificial_time
+from src.stages_recorder.photo_records import photos_to_records
+from src.stages_recorder.time_utils import build_general_time_to_clock
 
 
 _GROUPS_OUT_DIR = os.path.join('files', 'stages_info', 'groups')

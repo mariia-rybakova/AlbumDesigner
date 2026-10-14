@@ -14,7 +14,7 @@ one of those margins is the case that reads as "too close" on paper and scores
 as damage here, and the two are hard to reconcile without seeing them together.
 
 Input is `files/stages_info/fold/fold.json`, written by
-`utils/stages_recorder/fold.py`. This module imports only `_shared`; the JSON
+`src/stages_recorder/fold.py`. This module imports only `_shared`; the JSON
 is the contract.
 """
 

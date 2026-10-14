@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from src.core.photos import Photo
 from utils.configs import CONFIGS, SPECIAL_GROUP_SEP
-from utils.stages_recorder.context import get_image_time_date, get_is_artificial_time
+from src.stages_recorder.context import get_image_time_date, get_is_artificial_time
 
 
 _COMBINATIONS_OUT_DIR = os.path.join('files', 'stages_info', 'combinations')

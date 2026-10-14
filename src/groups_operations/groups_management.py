@@ -19,8 +19,8 @@ from utils.configs import CONFIGS, SPECIAL_CONTENT_CLASSES, SPECIAL_GROUP_SEP
 
 # All stage-info data collection (photo projections, subgroup snapshots,
 # split.json / merge.json accumulation, wall-clock time maps) lives in
-# utils/stages_recorder/. Pipeline code just calls these recorder hooks.
-from utils.stages_recorder import (
+# src/stages_recorder/. Pipeline code just calls these recorder hooks.
+from src.stages_recorder import (
     SplitRecorder,
     build_split_notes,
     flush_merge_events,

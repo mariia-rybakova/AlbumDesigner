@@ -9,8 +9,8 @@ from utils.configs import CONFIGS, SPECIAL_CONTENT_CLASSES, SPECIAL_GROUP_SEP
 
 # Merge events (search / merge_skipped / merge_succeeded) and the
 # `merge_illegal_group_by_time(... details=...)` accumulator are all defined in
-# utils/stages_recorder/merges.py — see that module for the event shapes.
-from utils.stages_recorder import (
+# src/stages_recorder/merges.py — see that module for the event shapes.
+from src.stages_recorder import (
     new_candidate_details,
     record_search,
     record_skip,
@@ -18,8 +18,8 @@ from utils.stages_recorder import (
 )
 # Re-exported for backwards compatibility with import sites that still pull
 # these names directly from this module.
-from utils.stages_recorder.merges import reset_merge_events as reset_merge_records  # noqa: F401
-from utils.stages_recorder.merges import get_merge_events  # noqa: F401
+from src.stages_recorder.merges import reset_merge_events as reset_merge_records  # noqa: F401
+from src.stages_recorder.merges import get_merge_events  # noqa: F401
 
 
 SIMILAR_CLASSES_L1 = [

@@ -24,26 +24,26 @@ spread-split collection on `CONFIGS['save_files']['combinations']`; when off,
 the record/flush calls are cheap no-ops so they can be left in the pipeline.
 """
 
-from utils.stages_recorder import fold as fold_recorder
-from utils.stages_recorder.context import (
+from src.stages_recorder import fold as fold_recorder
+from src.stages_recorder.context import (
     set_is_artificial_time,
     set_general_time_index,
     get_is_artificial_time,
 )
-from utils.stages_recorder.photo_records import PHOTO_RECORD_COLUMNS, photos_to_records
-from utils.stages_recorder.time_utils import (
+from src.stages_recorder.photo_records import PHOTO_RECORD_COLUMNS, photos_to_records
+from src.stages_recorder.time_utils import (
     build_general_time_to_clock,
     hhmmss_from_iso,
 )
-from utils.stages_recorder.subgroups import (
+from src.stages_recorder.subgroups import (
     snapshot_subgroups,
     save_subgroups_snapshot,
 )
-from utils.stages_recorder.splits import (
+from src.stages_recorder.splits import (
     SplitRecorder,
     build_split_notes,
 )
-from utils.stages_recorder.merges import (
+from src.stages_recorder.merges import (
     reset_merge_events,
     get_merge_events,
     flush_merge_events,
@@ -52,7 +52,7 @@ from utils.stages_recorder.merges import (
     record_skip,
     record_succeeded,
 )
-from utils.stages_recorder.combinations import (
+from src.stages_recorder.combinations import (
     is_enabled as combinations_recording_enabled,
     reset_output_dir as reset_combinations_dir,
     build_subgroup_record,

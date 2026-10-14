@@ -2,7 +2,7 @@
 
 Scripts that read what users actually *did* with what the Album Designer
 produced — as opposed to the pipeline's own view of a run, which lives in
-`utils/stages_recorder` and the Datadog logs.
+`src/stages_recorder` and the Datadog logs.
 
 | script | what it does |
 |---|---|

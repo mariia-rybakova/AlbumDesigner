@@ -14,7 +14,7 @@ from src.spreads_layout.group_layouts import GroupSingleLayout, get_group_single
 from src.spreads_layout import fold
 from utils.configs import (CONFIGS, SPECIAL_GROUP_SEP,
                            CHRONOLOGY_FIRST_CLASSES, CHRONOLOGY_FIRST_PENALTIES)
-from utils.stages_recorder import (
+from src.stages_recorder import (
     build_subgroup_record,
     combinations_recording_enabled,
     reset_subgroup_records,

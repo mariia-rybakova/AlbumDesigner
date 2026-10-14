@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
-from utils.stages_recorder.time_utils import build_general_time_to_image_time
+from src.stages_recorder.time_utils import build_general_time_to_image_time
 
 _is_artificial_time = False
 _general_time_to_image_time: Dict[float, Any] = {}

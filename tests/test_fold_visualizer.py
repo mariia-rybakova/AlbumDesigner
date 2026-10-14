@@ -14,7 +14,7 @@ import pytest
 
 from stages_visualizer import fold as fold_visualizer
 from utils.configs import CONFIGS
-from utils.stages_recorder import fold as fold_recorder
+from src.stages_recorder import fold as fold_recorder
 
 
 def face(x1, x2, blur=300.0):

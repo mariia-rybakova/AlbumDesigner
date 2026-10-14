@@ -15,7 +15,7 @@ from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from src.core.models import GroupProcessingResult
 from src.smart_cropping import face_aware_crop, placement_window, single_subject_window
-from utils.stages_recorder import fold_recorder
+from src.stages_recorder import fold_recorder
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -565,7 +565,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
     counter_comp_id = 0
     counter_image_id = 0
     # One-photo spreads are the only ones a box can cross the fold on; the
-    # printed geometry is only settled here. See `utils/stages_recorder/fold.py`.
+    # printed geometry is only settled here. See `src/stages_recorder/fold.py`.
     fold_recorder.reset()
 
     original_designs_data = message.content['designInfo']['designs']

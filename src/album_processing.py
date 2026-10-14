@@ -12,7 +12,7 @@ from utils.album_tools import get_none_wedding_groups, get_wedding_groups, get_i
 from utils.time_processing import sort_groups_by_time, reorder_disjoint_spreads
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
-from utils.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
+from src.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir
 from src.spreads_layout.spreads.spread import set_neutral_contexts
 from src.spreads_layout.twins import apply_twin_colors
 from src.spreads_layout import fold
