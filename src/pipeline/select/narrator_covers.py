@@ -22,16 +22,28 @@ photos repeating the new covers are pruned as on the wedding path.
 `src/narrator` itself is untouched: it is copied verbatim from albumNarrator
 so it can be diffed against its source.
 
-What is kept from the narrator's rule: its time windows, and its dominant-group
-overlap, as the presence term. What is added is the wedding covers' scoring
-minus everything about a bride and groom (`key_pages.rank_general_covers`),
-and the same widening of the opening window for small galleries.
+What is kept from the narrator's rule: its time windows. What is added is the
+wedding covers' scoring minus everything about a bride and groom
+(`key_pages.rank_general_covers`), and the same widening of the opening window
+for small galleries.
+
+**Presence is the gallery's main people, not its most frequent group.** The
+narrator's `hero.dominant_group` is the most frequent *exact* set of
+identities, and a family's most frequent set is rarely the family: whoever
+holds the camera is missing from most frames. On 54117560 (a family trip,
+mother, son and father) mother-and-son was in 70 photos and all three in 12,
+so every frame of all three scored 2/3 of a pair's presence and both covers
+went to the pair. The main people are every identity in at least
+`cover_main_share` of the identified photos (`main_people`) -- there, all
+three -- and the overlap with them is the presence term, with a bonus for a
+frame that has every one of them (`_presence`).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple
+from collections import Counter
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -93,7 +105,8 @@ def _choose(pg, rows: pd.DataFrame, logger) -> Optional[Tuple[int, int]]:
 
     if pg.n < 3:
         return -1, -1
-    group = hero.dominant_group(pg)
+    group = main_people(pg) or hero.dominant_group(pg)
+    subjects = max(2, len(group))
 
     def ranked(indices: np.ndarray, exclude: int) -> List[int]:
         indices = [int(i) for i in indices if int(i) != exclude
@@ -101,9 +114,10 @@ def _choose(pg, rows: pd.DataFrame, logger) -> Optional[Tuple[int, int]]:
         if not indices:
             return []
         frame = rows.loc[[int(pg.photo_ids[i]) for i in indices]].reset_index(drop=True)
-        presence = [hero._group_score(pg, i, group) for i in indices]
+        presence = [_presence(pg, i, group) for i in indices]
         by_id = {int(pg.photo_ids[i]): i for i in indices}
-        return [by_id[int(pid)] for pid in rank_general_covers(frame, logger, presence)]
+        return [by_id[int(pid)]
+                for pid in rank_general_covers(frame, logger, presence, subjects)]
 
     opening = ranked(_window(pg, _opening_fraction(pg.n), first=True), exclude=-1)
     if not opening:
@@ -113,6 +127,43 @@ def _choose(pg, rows: pd.DataFrame, logger) -> Optional[Tuple[int, int]]:
     if not closing:
         return None
     return first, closing[0]
+
+
+def main_people(pg) -> frozenset:
+    """Every identity in at least `cover_main_share` of the identified photos.
+
+    Empty when nobody is identified or nobody is that frequent -- a gallery of
+    many people with no one at its centre -- and the caller then falls back
+    to the narrator's own group.
+    """
+    from src.pipeline.select.narrator import settings
+
+    identified = [s for s in pg.cast if s]
+    if not identified:
+        return frozenset()
+    share = float(settings().get('cover_main_share', 0.25))
+    counts = Counter(i for s in identified for i in s)
+    return frozenset(int(i) for i, c in counts.items() if c >= share * len(identified))
+
+
+def _presence(pg, i: int, group: frozenset) -> float:
+    """Photo i's overlap with ``group``, and `cover_full_group_bonus` if it has all of them.
+
+    The overlap is linear in the people a frame has -- for five main people,
+    two, three and four of them are equal steps -- but the whole group is not
+    one more step: it is the photo of the family, and a cover should be it
+    when there is a good one. On 54117560 the overlap alone left every frame
+    of all three a third of a step ahead of a pair, which a pair's sharper
+    photograph made up. A group of one is any frame of that person; there is
+    no whole to prefer.
+    """
+    from src.narrator.env import hero
+    from src.pipeline.select.narrator import settings
+
+    score = hero._group_score(pg, i, group)
+    if len(group) > 1 and group <= (pg.cast[i] or frozenset()):
+        score += float(settings().get('cover_full_group_bonus', 0.0))
+    return score
 
 
 def _window(pg, fraction: float, first: bool) -> np.ndarray:

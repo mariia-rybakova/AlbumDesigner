@@ -1359,6 +1359,19 @@ def test_only_the_two_largest_bodies_are_the_couple():
     assert _significance_of([0.2, 0.2, 0.3], d) == _significance_of([0.3, 0.2], d)
 
 
+def test_a_family_of_three_is_measured_on_three_bodies():
+    """54117560: at two bodies, the frame of all three read smaller than a pair."""
+    from src.core.key_pages import _significance
+
+    low, high = CONFIGS['covers']['significance_range']
+    frame = couple_gallery(n=1)
+    frame[Col.BODIES_INFO] = [[_bbox(0.0, 0.0, 0.3, 0.3)] * 3]
+    frame[Col.DIAMETER] = _diameter_for(3 * 0.09 / high)
+
+    assert _significance(frame, subjects=3)[0] == pytest.approx(1.0)
+    assert _significance(frame)[0] == pytest.approx((2 / 3 * high - low) / (high - low))
+
+
 def test_nothing_to_measure_is_not_evidence_against_a_frame():
     from src.core.key_pages import _significance
 

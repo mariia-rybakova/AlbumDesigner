@@ -998,6 +998,17 @@ CONFIGS = {'DEBUG': True,
             # dominant-group-then-content-score rule, and prune body photos
             # that repeat a cover. See `select.narrator_covers`.
             'our_covers': True,
+            # The covers' presence term counts a person as one of the people
+            # the album is about from this share of the identified photos up
+            # (`narrator_covers.main_people`). 54117560's father, behind the
+            # camera most of the trip, is in 0.30 of them.
+            'cover_main_share': 0.25,
+            # Added to the presence overlap (0-1, before its 0.75 weight) of a
+            # frame showing every one of the main people, when there are two or
+            # more: the whole family is preferred over the linear continuation
+            # from a part of it (`narrator_covers._presence`). 54117560 needed
+            # 0.05 for the opening and 0.14 for the closing.
+            'cover_full_group_bonus': 0.30,
 
             # The trained policy. 46 MB, and loaded once per process. Read with
             # `weights_only=False` because the checkpoint carries the training

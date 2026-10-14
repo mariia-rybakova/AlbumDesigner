@@ -376,7 +376,7 @@ def _detail_penalty(frame):
     return (~_shows_people(frame)).astype(float)
 
 
-def _significance(frame):
+def _significance(frame, subjects=2):
     """0-1: how much of the photo's subject the couple is.
 
     The couple's two largest body boxes against the foreground blob -- the
@@ -392,8 +392,15 @@ def _significance(frame):
     so the foreground's share of the frame is pi*(d/2)^2 whatever the
     orientation. Frames with no body boxes or no blob read 1 -- nothing to
     measure is not evidence against them, and a detail is `_detail_penalty`'s.
+
+    ``subjects`` is how many bodies make up the people the photo is of: two
+    for a couple, and the gallery's main people for a family. At two, a
+    family of three is measured on two of its bodies and the frame showing
+    all of them reads smaller than the one showing a pair -- 54117560's
+    best trio frames graded 0.66 and 0.76 against the pairs' 1.0.
     """
     low, high = settings().get('significance_range', (0.7, 1.2))
+    subjects = max(1, int(subjects))
 
     def ratio(row):
         bodies = _listed(row.get('bodies_info'))
@@ -406,7 +413,7 @@ def _significance(frame):
             return None
         areas = sorted((max(0.0, b.bbox.x2 - b.bbox.x1) * max(0.0, b.bbox.y2 - b.bbox.y1)
                         for b in bodies), reverse=True)
-        return sum(areas[:2]) / (np.pi * (diameter / 2) ** 2)
+        return sum(areas[:subjects]) / (np.pi * (diameter / 2) ** 2)
 
     def grade(row):
         r = ratio(row)
@@ -784,7 +791,7 @@ def _ranked_ids(frame, queries, logger, bride_id=None, groom_id=None):
     return _preferred_orientation_first(scored, ids, logger)
 
 
-def rank_general_covers(frame, logger, presence=None):
+def rank_general_covers(frame, logger, presence=None, subjects=2):
     """Cover candidates of a gallery that is not a wedding, best first.
 
     The wedding score's terms that are about the *photograph* and not about
@@ -796,8 +803,9 @@ def rank_general_covers(frame, logger, presence=None):
     landscape on the cover.
 
     ``presence`` is the caller's 0-1 answer to "are these the people this
-    album is about" -- the narrator's dominant-group overlap. Without one the
-    term is left out rather than guessed.
+    album is about" -- the overlap with the gallery's main people. Without one
+    the term is left out rather than guessed. ``subjects`` is how many people
+    those are, which is how many bodies `_significance` measures.
     """
     if frame.empty:
         return []
@@ -808,7 +816,7 @@ def rank_general_covers(frame, logger, presence=None):
         if 'image_order' in scored.columns else np.zeros(len(scored))
     score = (weights.get('quality', 0.0) * _quality(scored, logger)
              + weights.get('rank', 0.0) * (1.0 - rank)
-             + weights.get('significance', 0.0) * _significance(scored)
+             + weights.get('significance', 0.0) * _significance(scored, subjects)
              + _orientation_preference(scored)
              - weights.get('detail', 0.0) * _detail_penalty(scored)
              - weights.get('cut_subject', 0.0) * _cut_subject_penalty(scored))

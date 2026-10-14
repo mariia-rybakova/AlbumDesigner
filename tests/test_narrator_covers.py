@@ -77,6 +77,50 @@ def test_the_people_the_album_is_about_still_count(no_quality):
     assert first == 1
 
 
+def test_the_main_people_are_everyone_frequent_not_the_most_frequent_set():
+    """54117560: mother+son in 70 frames, all three in 12 -- the father holds the camera."""
+    cast = ([frozenset({1, 3})] * 70 + [frozenset({1})] * 53 + [frozenset({1, 2})] * 48
+            + [frozenset({3})] * 46 + [frozenset({1, 2, 3})] * 12 + [frozenset({2})] * 10
+            + [frozenset({7})] * 3 + [frozenset()] * 20)
+
+    assert nc.main_people(packed(len(cast), cast)) == frozenset({1, 2, 3})
+
+
+def test_nobody_frequent_enough_leaves_no_main_people():
+    cast = [frozenset({i}) for i in range(10)]
+
+    assert nc.main_people(packed(10, cast)) == frozenset()
+
+
+def test_the_whole_family_takes_the_cover_over_a_pair_of_it(no_quality):
+    n = 20
+    cast = [frozenset({1, 3})] * 10 + [frozenset({1, 2})] * 6 + [frozenset({1, 2, 3})] * 4
+    cast[0], cast[3] = frozenset({1, 3}), frozenset({1, 2, 3})
+    photos = frame(n, order=list(range(n)))                # 100 is the best ranked
+
+    first, _ = nc._choose(packed(n, cast), photos.set_index(Col.IMAGE_ID, drop=False), LOG)
+
+    assert first == 3, "the frame of all three, though ranked fourth"
+
+
+def test_the_whole_group_is_more_than_the_next_linear_step():
+    """Five main people: two, three, four are equal steps; all five is more."""
+    group = frozenset(range(1, 6))
+    cast = [frozenset(range(1, k + 1)) for k in (2, 3, 4, 5)]
+    pg = packed(4, cast)
+
+    two, three, four, five = (nc._presence(pg, i, group) for i in range(4))
+
+    assert three - two == pytest.approx(four - three)
+    assert five - four > four - three
+
+
+def test_a_group_of_one_gets_no_bonus():
+    pg = packed(2, [frozenset({1}), frozenset({1, 2})])
+
+    assert nc._presence(pg, 0, frozenset({1})) == pytest.approx(1.0)
+
+
 def test_the_opening_window_widens_for_a_small_gallery():
     """44 photos: 40% of the timeline, not the narrator's quarter."""
     window = nc._window(packed(44), kp._opening_fraction(44), first=True)
