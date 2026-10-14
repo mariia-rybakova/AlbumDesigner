@@ -7,6 +7,7 @@ Reads `CONFIGS['save_files']` flags to decide which stage PDFs to produce:
     save_files.groups       -> stages_visualizer.splits.render()  -> split.pdf
                                stages_visualizer.merges.render()  -> merge.pdf
     save_files.combinations -> stages_visualizer.combinations.render() -> combinations.pdf
+    save_files.fold         -> stages_visualizer.fold.render()         -> fold.pdf
 
 All output goes into `<output_dir>/<projectId>/album1_analysis/` (a folder)
 next to the existing `<output_dir>/<projectId>/album1.pdf` produced by
@@ -34,6 +35,7 @@ from stages_visualizer import merges as merges_visualizer
 from stages_visualizer import subgroups as subgroups_visualizer
 from stages_visualizer import layouts as layouts_visualizer
 from stages_visualizer import combinations as combinations_visualizer
+from stages_visualizer import fold as fold_visualizer
 from process_gallery import request_name, album_name
 
 
@@ -48,6 +50,7 @@ request_path = os.path.join('files', 'test_requests', request_name + '.json')
 # a specific JSON inside the subdir — render(json_path, images, out).
 STAGE_RENDERERS = (
     ('combinations', 'combinations', None,       'combinations.pdf',    combinations_visualizer),
+    ('fold',    'fold',    'fold.json',          'fold.pdf',            fold_visualizer),
     ('spreads', 'spreads', None,                 'spreads_layouts.pdf', spreads_visualizer),
     ('spreads', 'spreads', '_layouts.json',      'layouts.pdf',         layouts_visualizer),
     ('groups',  'groups',  None,                 'split.pdf',           splits_visualizer),

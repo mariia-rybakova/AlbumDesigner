@@ -7,6 +7,9 @@ CONFIGS = {'DEBUG': True,
                # Stage 1-2 trace per sub-group (partitions + combinations),
                # rendered as combinations.pdf by visualization.py.
                'combinations': False,
+               # Where the fold falls inside each one-photo spread, and how
+               # close it comes to a face or an estimated head -> fold.pdf.
+               'fold': False,
                'top_k': 5
                },
 

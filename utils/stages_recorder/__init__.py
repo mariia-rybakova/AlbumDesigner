@@ -24,6 +24,7 @@ spread-split collection on `CONFIGS['save_files']['combinations']`; when off,
 the record/flush calls are cheap no-ops so they can be left in the pipeline.
 """
 
+from utils.stages_recorder import fold as fold_recorder
 from utils.stages_recorder.context import (
     set_is_artificial_time,
     set_general_time_index,

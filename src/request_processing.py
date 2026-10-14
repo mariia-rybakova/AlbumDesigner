@@ -15,6 +15,7 @@ from qdrant_client import QdrantClient, models
 from pymongo import MongoClient
 from src.core.models import GroupProcessingResult
 from src.smart_cropping import face_aware_crop, placement_window, single_subject_window
+from utils.stages_recorder import fold_recorder
 
 def read_layouts_data(message, json_content, logger=None):
     if 'designInfo' in json_content and json_content['designInfo'] is None:
@@ -563,6 +564,9 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
 
     counter_comp_id = 0
     counter_image_id = 0
+    # One-photo spreads are the only ones a box can cross the fold on; the
+    # printed geometry is only settled here. See `utils/stages_recorder/fold.py`.
+    fold_recorder.reset()
 
     original_designs_data = message.content['designInfo']['designs']
     layouts_df = message.designsInfo['anyPagelayouts_df']
@@ -605,6 +609,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
             all_box_ids, first_page_data['first_images_df'],
             first_page_data['first_images_ids'], 'firstPage', logger)
         for idx, box_id in enumerate(all_box_ids):
+            printed_box = next((b for b in design_boxes if b.get('id') == box_id), None)
             x, y, w, h = cover_box(first_page_data['first_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                             "compositionId": counter_comp_id,
@@ -619,6 +624,10 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                             "projectId": message.content['projectId'],
                                             "photoFilter": 0,
                                             "photo": None})
+            if len(all_box_ids) == 1 and printed_box is not None:
+                fold_recorder.record_spread(counter_comp_id, design_id, counter_comp_id,
+                                            printed_box, result_dict['placementsImg'][-1],
+                                            first_page_data['first_images_df'].iloc[idx], album_ar)
         counter_comp_id += 1
         counter_image_id += 1
 
@@ -705,6 +714,10 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                                     "projectId" : message.content['projectId'],
                                                     "photoFilter" : 0,
                                                     "photo" : None})
+                    if len(all_box_ids) == 1:
+                        fold_recorder.record_spread(counter_comp_id, design_id, counter_comp_id,
+                                                    box, result_dict['placementsImg'][-1],
+                                                    image_info.iloc[0], album_ar)
                     counter_image_id += 1
                 counter_comp_id += 1
                 if logger is not None:
@@ -738,6 +751,7 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
             all_box_ids, last_page_data['last_images_df'],
             last_page_data['last_images_ids'], 'lastPage', logger)
         for idx, box_id in enumerate(all_box_ids):
+            printed_box = next((b for b in design_boxes if b.get('id') == box_id), None)
             x, y, w, h = cover_box(last_page_data['last_images_df'].iloc[idx], box_id2data[(design_id,box_id)], album_ar, logger)
             result_dict['placementsImg'].append({"placementImgId": counter_image_id,
                                                  "compositionId": counter_comp_id,
@@ -752,8 +766,14 @@ def assembly_output(output_list, message, images_df, first_last_pages_data_dict,
                                                  "projectId": message.content['projectId'],
                                                  "photoFilter": 0,
                                                  "photo": None})
+            if len(all_box_ids) == 1 and printed_box is not None:
+                fold_recorder.record_spread(counter_comp_id, design_id, counter_comp_id,
+                                            printed_box, result_dict['placementsImg'][-1],
+                                            last_page_data['last_images_df'].iloc[idx], album_ar)
 
     logger.info(f"Added last page composition with id {counter_comp_id}")
+
+    fold_recorder.flush(message.content.get('projectId'))
 
     result_dict = convert_int64_to_int(result_dict)
 
