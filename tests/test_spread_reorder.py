@@ -17,7 +17,7 @@ import pytest
 
 from src.core.models import GroupProcessingResult, Spread
 from src.core.photos import Photo
-from src.spreads_layout.ordering import reorder_disjoint_spreads
+from src.core.spread_ordering import reorder_disjoint_spreads
 
 
 LOGGER = logging.getLogger('test')

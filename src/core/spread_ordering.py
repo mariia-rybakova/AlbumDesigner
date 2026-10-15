@@ -7,9 +7,10 @@ atomic; `reorder_disjoint_spreads` then relaxes that, but only between two
 spreads whose times cannot overlap, so a late spread of an early group can
 fall back behind an early spread of a late one.
 
-Split out of `time_processing` -- it shares that module's subject, time, but
-not its material: everything here works on `Spread` and
-`GroupProcessingResult` objects, long after the DataFrame stage is over.
+It works on `Spread` and `GroupProcessingResult` objects, long after the
+DataFrame stage is over, and it runs after `spreads_layout` has returned --
+which is why it sits here and not in that package: that is a tree entered at
+its own `main`, and this is called from outside it.
 """
 
 from statistics import median
