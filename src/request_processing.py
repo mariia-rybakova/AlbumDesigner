@@ -7,7 +7,7 @@ from datetime import datetime
 from pycparser.c_ast import Continue
 
 from utils.configs import CONFIGS
-from utils.layouts_tools import generate_layouts_df, get_layouts_data, order_boxes_indices
+from src.core.design_templates import generate_layouts_df, get_layouts_data, order_boxes_indices
 from ptinfra.azure.pt_file import PTFile
 from ptinfra.utils.gallery import Gallery
 import json
@@ -515,7 +515,7 @@ def customize_box(image_info, box_info, album_ar=2):
 def sort_boxes(boxes):
     # Reading order with a y-tolerance so sub-pixel y noise in design data
     # doesn't flip the left/right order of side-by-side boxes. Must match the
-    # ordering used to build left_box_ids/right_box_ids (utils.layouts_tools).
+    # ordering used to build left_box_ids/right_box_ids (src.core.design_templates).
     sorted_indices = order_boxes_indices(boxes)
     sorted_boxes = [boxes[ind] for ind in sorted_indices]
     return sorted_boxes

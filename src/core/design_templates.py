@@ -1,17 +1,21 @@
+"""The printlab's design catalogue, read into tables.
+
+One album design arrives as JSON describing its pages and the boxes on them.
+`generate_layouts_df` turns that into the layouts DataFrame the spread search
+picks from, and `get_layouts_data` into the `layout_id2data` / `box_id2data`
+lookups the reply is built against. A box is classified portrait, landscape
+or square by its real printed ratio (`classify_box`), and the boxes of a page
+are put into reading order by `order_boxes_indices`.
+
+This is the design as data, which is why it sits in `core` rather than in
+`spreads_layout`: that package is a tree rooted at its own `main`, and this is
+read from outside it -- by `request_processing`, before any layout happens.
+"""
+
 import ast
-import csv
 import math
-import pickle
 import numpy as np
 import pandas as pd
-
-
-def read_pkl_file(file):
-    # Load the dictionary from the binary file
-    with open(file, 'rb') as f:
-        loaded_data = pickle.load(f)
-    return loaded_data
-
 
 
 def is_square(adjusted_width, adjusted_height, tolerance):

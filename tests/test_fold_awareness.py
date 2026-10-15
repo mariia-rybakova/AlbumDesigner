@@ -25,7 +25,7 @@ from src.spreads_layout.group_layouts import GroupSingleLayout
 from src.spreads_layout.main import select_best_layout_for_subgroup
 from src.spreads_layout.spreads.spread import SingleSpreadLayout
 from utils.configs import CONFIGS
-from utils.layouts_tools import generate_layouts_df, get_layouts_data
+from src.core.design_templates import generate_layouts_df, get_layouts_data
 
 
 def face(x1, x2, blur=300.0, y1=0.2, y2=0.4):

@@ -11,7 +11,7 @@ and each kept 53% of its height.
 
 import pytest
 
-from utils.layouts_tools import SQUARE_TOLERANCE, classify_box
+from src.core.design_templates import SQUARE_TOLERANCE, classify_box
 
 ALBUM_AR = 1.9620315074640127
 

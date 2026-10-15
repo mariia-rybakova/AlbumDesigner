@@ -1,4 +1,5 @@
 import copy
+import pickle
 from math import isnan
 
 import numpy as np
@@ -102,3 +103,10 @@ def pick_from_set(candidates, allowed_set):
         if c in allowed_set:
             return c
     return np.nan
+
+
+def read_pkl_file(file):
+    # Load the dictionary from the binary file
+    with open(file, 'rb') as f:
+        loaded_data = pickle.load(f)
+    return loaded_data
