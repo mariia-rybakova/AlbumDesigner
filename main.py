@@ -35,7 +35,7 @@ from src.predefined.processing import predefined_layout_processing, build_first_
 from src.album_response import build_reply, encoded_size
 from src.pipeline.album_requests import UNFULFILLED_KEY, record_failure
 from src.request_processing import read_messages, assembly_output
-from utils.time_processing import generate_time_clusters
+from src.core.time_processing import generate_time_clusters
 from utils.configs import CONFIGS
 
 

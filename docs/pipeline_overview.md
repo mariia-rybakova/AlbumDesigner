@@ -138,5 +138,5 @@ Each stage logs timing into `read_time_list`, `processing_time_list`, or `report
 - `src/core/*.py`: Photo data structures, spread combinatorics, scoring heuristics.
 - `src/smart_cropping.py`: Foreground/face-aware cropping executed in a subprocess.
 
-This document should serve as the starting point for deeper dives into specialized modules (e.g., `src/selection/ai_wedding_selection.py`, `utils/time_processing.py`) whenever additional behavior details are required.
+This document should serve as the starting point for deeper dives into specialized modules (e.g., `src/selection/ai_wedding_selection.py`, `src/core/time_processing.py`) whenever additional behavior details are required.
 

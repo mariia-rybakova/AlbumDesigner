@@ -18,7 +18,7 @@ import pandas as pd
 
 from src.selection.ai_wedding_selection import time_clusters_fixed_span
 from utils.selection.time_orientation_selection import identify_temporal_clusters
-from utils.time_processing import convert_to_timestamp
+from src.core.time_processing import convert_to_timestamp
 
 #: A photo joins a temporal cluster if it is within this many minutes of another.
 TEMPORAL_LINK_MINUTES = 20

@@ -9,7 +9,7 @@ from __future__ import annotations
 from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
-from utils.time_processing import process_gallery_time
+from src.core.time_processing import process_gallery_time
 
 
 @register

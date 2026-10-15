@@ -9,7 +9,7 @@ from src.groups_operations.groups_management import process_wedding_illegal_grou
 from src.core.models import AlbumDesignResources, SpreadSearchParams
 from utils.lookup_table_tools import WeddingLookUpTable, NonWeddingLookUpTable
 from src.groups_operations.grouping import get_none_wedding_groups, get_wedding_groups, get_images_per_groups
-from utils.time_processing import sort_groups_by_time, reorder_disjoint_spreads
+from src.spreads_layout.ordering import sort_groups_by_time, reorder_disjoint_spreads
 from src.spreads_layout.main import process_group
 from utils.configs import CONFIGS
 from src.stages_recorder import set_is_artificial_time, set_general_time_index, reset_combinations_dir

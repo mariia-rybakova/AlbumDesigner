@@ -102,7 +102,7 @@ Manual selection path bypasses special/regular splitting to avoid overriding cur
 ## 5. Output Assembly & Ordering
 
 - After collecting `result_list` entries per group, `album_processing` logs the overall processing duration.
-- Weddings call `utils.time_processing.sort_groups_by_time(result_list, logger)` to ensure chronological spread order before returning; non-weddings keep original order.
+- Weddings call `src.spreads_layout.ordering.sort_groups_by_time(result_list, logger)` to ensure chronological spread order before returning; non-weddings keep original order.
 
 ### Downstream Interface
 - `ProcessStage.process_message` receives the list and passes it into `assembly_output`, along with `message.designsInfo` and enriched image metadata.
@@ -125,7 +125,7 @@ album_processing
 ├── src.core.spreads.generate_filtered_multi_spreads
 │   ├── selectPartitions / listSingleCombinations / greedy_combination_search
 │   └── add_ranking_score / assign_photos_order
-└── utils.time_processing.sort_groups_by_time
+└── src.spreads_layout.ordering.sort_groups_by_time
 ```
 
 ---

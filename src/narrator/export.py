@@ -23,7 +23,7 @@ Mapping (decided 2026-08-18):
     They must NOT be emitted as spreads: the designer would lay them out as body spreads
     and the album would open on a one-photo spread instead of a cover.
   * **spread order is a hint only.** The designer re-sorts spreads by time downstream
-    (``utils/time_processing.py::sort_groups_by_time``), and the narrator already orders
+    (``src/spreads_layout/ordering.py::sort_groups_by_time``), and the narrator already orders
     chronologically under ``reward.order_by_time``, so the two agree rather than fight.
 
 The block is emitted verbatim as the request's ``predefinedLayout`` key; its presence is the
