@@ -334,12 +334,12 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
     album's output. It is needed because the pipeline is stochastic in more
     places than is obvious -- `select_random_image` in the non-wedding
     selection, medoid initialisation in `time_orientation_selection`,
-    combination sampling in `spreads_layout/math_tools`, cover choice in
-    `album_tools` -- and several of those only fire above a size threshold, so
-    a gallery can look deterministic and stop being so. Without a seed, "N
-    identical variants produce identical albums" is not testable; with the
-    same seed per album, difference can only come from the variant, which is
-    where it should come from.
+    combination sampling in `spreads_layout/math_tools` -- and several of
+    those only fire above a size threshold, so a gallery can look
+    deterministic and stop being so. Without a seed, "N identical variants
+    produce identical albums" is not testable; with the same seed per album,
+    difference can only come from the variant, which is where it should
+    come from.
     """
     base = GalleryBase.capture(message, logger=logger, services=services)
     if variants is not None:

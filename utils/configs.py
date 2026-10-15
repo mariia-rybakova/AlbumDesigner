@@ -982,7 +982,7 @@ CONFIGS = {'DEBUG': True,
             # Reseed both global RNGs identically before each album. Off in
             # production: the pipeline samples randomly in several places
             # (combination sampling in spreads_layout, cover choice in
-            # album_tools, medoids in time_orientation_selection, the
+            # grouping, medoids in time_orientation_selection, the
             # non-wedding selection), so seeding would move a single album's
             # output. On, it is what makes N identical variants comparable.
             'seed': None,
@@ -2011,7 +2011,7 @@ SPECIAL_GROUP_SEP = '|'
 
 # Content classes that mean "the classifier had nothing to say" rather than a
 # real subject. Groups with one of these are the "special" groups: they are the
-# ones `album_tools.split_groups` singles out to be tagged 'class|idx', get
+# ones `grouping.split_groups` singles out to be tagged 'class|idx', get
 # their own merge limit ('none_limit_times'), all count as one context in
 # `merge.count_contexts`, and are the only classes whose groups do not treat a
 # shared label as shared content when merging. Every one of those rules reads

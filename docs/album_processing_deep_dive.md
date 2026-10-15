@@ -44,9 +44,9 @@ Key considerations:
 ## 3. Group Discovery & Enforcement
 
 ### Initial Grouping
-- Weddings: `utils.album_tools.get_wedding_groups(df, manual_selection, logger)` groups by time cluster and context while tracking metadata for later sorting.
+- Weddings: `src.groups_operations.grouping.get_wedding_groups(df, manual_selection, logger)` groups by time cluster and context while tracking metadata for later sorting.
 - Non-weddings: `get_none_wedding_groups` provides simpler clusters.
-- `utils.album_tools.get_images_per_groups` converts group objects into `{group_name: image_ids}` for LUT steps.
+- `src.groups_operations.grouping.get_images_per_groups` converts group objects into `{group_name: image_ids}` for LUT steps.
 
 ### Illegal Group Handling (`process_wedding_illegal_groups`)
 Only applied when `is_wedding=True`.
@@ -114,8 +114,8 @@ Manual selection path bypasses special/regular splitting to avoid overriding cur
 
 ```
 album_processing
-├── utils.album_tools.get_wedding_groups / get_none_wedding_groups
-├── utils.album_tools.get_images_per_groups
+├── src.groups_operations.grouping.get_wedding_groups / get_none_wedding_groups
+├── src.groups_operations.grouping.get_images_per_groups
 ├── utils.lookup_table_tools.{get_lookup_table, update_lookup_table_with_layouts_size, update_lookup_table_with_limit}
 ├── src.groups_operations.groups_management.process_wedding_illegal_groups
 │   ├── handle_wedding_splitting

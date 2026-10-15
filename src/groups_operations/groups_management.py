@@ -3,7 +3,7 @@ from typing import List, Tuple, Iterable, Callable, Any, Dict, Optional
 import pandas as pd
 
 from src.core.models import AlbumDesignResources
-from utils.album_tools import (get_images_per_groups, get_missing_columns, split_groups,
+from src.groups_operations.grouping import (get_images_per_groups, get_missing_columns, split_groups,
                                assign_special_group_contexts)
 from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_merge_candidates_other,
                                          update_with_merges_bridegroom, update_with_merges_other,
