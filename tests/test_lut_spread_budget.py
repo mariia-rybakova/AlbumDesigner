@@ -154,3 +154,23 @@ def test_reduction_cannot_go_below_one_spread_per_group(table):
     groups = dict(RUN1_INITIAL)
     table.update_with_limit(groups, max_total_spreads=8, min_total_spreads=None)
     assert implied_spreads(table, groups) == len(groups)
+
+
+# --------------------------------------------------------------------------
+# A shared class prior is written from the whole class, not one group of it
+# --------------------------------------------------------------------------
+
+# 54117169 (AC.519688cd-...0.1), the 2026-10-13T17:11 production run: two
+# `bride` groups of very different sizes, layout floor 14, ceiling 16.
+BRIDE_SPLIT_INITIAL = {(0, 'bride'): 2, (1, 'None'): 17, (1, 'bride'): 74}
+
+
+def test_a_small_group_does_not_dilute_its_class_for_a_large_one(table):
+    """Only the 2-photo `bride` group could still grow, and writing its 2/2
+    into the shared `bride` prior read the 74-photo group back as 74 spreads:
+    37 pairs, 47 compositions on a 16-spread design."""
+    table.update_with_limit(BRIDE_SPLIT_INITIAL, max_total_spreads=16,
+                            min_total_spreads=14, target_total_spreads=16)
+
+    assert table.get_spread_params((1, 'bride'))[0] >= wedding_lookup_table['bride'][0]
+    assert implied_spreads(table, {(1, 'bride'): 74}) <= 16

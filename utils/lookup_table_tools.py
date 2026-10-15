@@ -362,6 +362,31 @@ class LookUpTable:
         else:
             self._table[self._get_content_key(key)] = (new_value, extra_value)
 
+    def _write_back_counts(self, key, spreads_per_group: Dict, group2images: Dict,
+                           per_group: bool) -> Tuple[int, int]:
+        """(photos, spreads) a recomputed value for ``key`` is derived from.
+
+        One group's own, for a per-group override. For the content prior, every
+        group of that class together, because every one of them reads it back:
+        on 54117169 the expansion grew a 2-photo `bride` group to 2 spreads and
+        wrote 2/2 = 1 photo per spread into `bride`, and the 74-photo `bride`
+        group beside it read that back as 74 spreads -- split into 37 pairs, an
+        album of 47 compositions on a 16-spread design. Over the class it is
+        76 photos in 6 spreads, which leaves the prior where it was.
+
+        Expansion only. A reduction writes a value only when it is *higher*, so
+        on a shared prior the most squeezed group of the class already wins,
+        and a sibling made denser than it needs to be only shortens the album,
+        which is what a reduction is for. The class average there let 4 of 8
+        replayed weddings come out 1-2 spreads longer, over their ceiling.
+        """
+        if per_group:
+            return group2images[key], spreads_per_group[key]
+        content = self._get_content_key(key)
+        keys = [k for k in spreads_per_group if self._get_content_key(k) == content]
+        return (sum(group2images[k] for k in keys),
+                sum(spreads_per_group[k] for k in keys))
+
     def _apply_table_reduction(self, spreads_per_group: Dict, group2images: Dict,
                                per_group: bool = False) -> None:
         """Write back LUT after reduction: only increase values (to produce fewer spreads).
@@ -392,9 +417,10 @@ class LookUpTable:
         Flooring instead overshot: a group of 11 planned for 3 spreads was
         written as 3 photos per spread and came back asking for 4.
         """
-        for key, target_spreads in spreads_per_group.items():
+        for key in spreads_per_group:
             current_value, extra_value = self.get_spread_params(key)
-            new_value = max(1, math.ceil(group2images[key] / target_spreads))
+            photos, spreads = self._write_back_counts(key, spreads_per_group, group2images, per_group)
+            new_value = max(1, math.ceil(photos / spreads))
             if new_value < current_value:
                 self._write_value(key, new_value, extra_value, per_group)
 
