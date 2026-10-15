@@ -239,6 +239,36 @@ def test_detection_embeddings_are_pooled_and_width_checked():
     assert narrator_stage._pooled(None, Config().env.face_dim) is None
 
 
+def test_a_panorama_is_held_at_the_bound_the_policy_accepts():
+    """The policy refuses any scalar past +/-10; one 13:1 panorama declined
+    37793284's whole gallery. Missing and non-finite ratios read as square."""
+    photos = gallery_frame(n=4)
+    photos[Col.IMAGE_AS] = [13.0, 0.02, np.nan, 1.5]
+
+    gallery, _ = build_gallery(photos)
+
+    assert [p.aspect_ratio for p in gallery.photos] == [
+        narrator_stage.MAX_ASPECT, 1.0 / narrator_stage.MAX_ASPECT, 1.0, 1.5]
+
+
+def test_a_photo_the_detection_readers_missed_has_no_detections():
+    """The left join leaves NaN in `faces_info` / `bodies_info` for a photo
+    whose reader had nothing for it yet. That photo has no detections; it
+    must not decline the whole gallery (54111962: 63 compositions instead of
+    13)."""
+    photos = gallery_frame(n=4)
+    photos[Col.FACES_INFO] = photos[Col.FACES_INFO].astype(object)
+    photos[Col.BODIES_INFO] = photos[Col.BODIES_INFO].astype(object)
+    photos.at[photos.index[1], Col.FACES_INFO] = np.nan
+    photos.at[photos.index[2], Col.BODIES_INFO] = np.nan
+
+    gallery, _ = build_gallery(photos)
+
+    assert len(gallery.photos) == 4
+    assert gallery.photos[1].face_emb is None
+    assert gallery.photos[2].body_emb is None
+
+
 def test_the_time_axis_prefers_general_time():
     """`general_time` is the rebuilt monotonic day when the EXIF is unusable,
     and the policy's temporal terms measure gaps along it."""

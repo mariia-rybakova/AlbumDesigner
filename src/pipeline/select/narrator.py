@@ -142,8 +142,15 @@ def _pooled(detections, width: int) -> Optional[np.ndarray]:
     Mirrors the narrator's own pooling: each detection carries its vector as
     raw bytes, wrong-width ones are dropped rather than reshaped, and a photo
     with no usable detection gets None (the schema's "no detections" value).
+
+    A float is the left join's NaN for a photo whose face or body reader had
+    nothing for it yet -- a gallery still being processed. Iterating it raised
+    "'float' object is not iterable" and the narrator declined the whole
+    gallery: 54111962 fell back to people grouping and came out at 63
+    compositions, where the complete data composes 13. Not a list check:
+    `bodies_info` is a protobuf repeated container.
     """
-    if detections is None:
+    if detections is None or isinstance(detections, float):
         return None
     vectors = []
     for det in detections:
@@ -198,6 +205,28 @@ def _unit(value, default: float) -> float:
     if not np.isfinite(number) or not 0.0 <= number <= 1.0:
         return default
     return number
+
+
+#: The policy refuses a gallery with any scalar feature past +/-10
+#: (`models.policy.SCALAR_ABS_MAX`), and it trained on aspect ratios of about
+#: 0.5-2. A panorama is a real measurement, not a sentinel, so it is held at
+#: the bound -- still the widest photo in the gallery -- rather than replaced.
+MAX_ASPECT = 10.0
+
+
+def _aspect(value) -> float:
+    """`image_as` as the policy can take it: square when missing, bounded when extreme.
+
+    One 13:1 panorama declined 37793284's whole gallery ("aspect[col 9]
+    range=[0.6554, 13]"); the old selection took over and laid out 49 spreads.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    if not np.isfinite(number) or number <= 0.0:
+        return 1.0
+    return min(max(number, 1.0 / MAX_ASPECT), MAX_ASPECT)
 
 
 def _centroid(value) -> Tuple[float, float]:
@@ -273,7 +302,7 @@ def _gallery_from_frame(photos: pd.DataFrame, context: AlbumContext, cfg):
             selection_score=_unit(row[Col.RANKING] if has(Col.RANKING) else None, 0.0),
             composition_score=_unit(row['composition_score'] if has('composition_score') else None, 0.0),
             flatness_score=0.5,
-            aspect_ratio=float(row[Col.IMAGE_AS]) if has(Col.IMAGE_AS) and row[Col.IMAGE_AS] else 1.0,
+            aspect_ratio=_aspect(row[Col.IMAGE_AS]) if has(Col.IMAGE_AS) else 1.0,
             blob_centroid=_centroid(row[Col.BACKGROUND_CENTROID] if has(Col.BACKGROUND_CENTROID) else None),
             blob_diameter=float(row[Col.DIAMETER] or 0.0) if has(Col.DIAMETER) else 0.0,
             cluster_id=int(row[Col.CLUSTER_LABEL]) if has(Col.CLUSTER_LABEL)
