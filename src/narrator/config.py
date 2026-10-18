@@ -33,6 +33,18 @@ class EnvConfig:
     candid_page_max: int = 4
     min_pages: int = 12
     max_pages: int = 17
+    # Make the page floor (min_pages, minus the hero bookends) REACHABLE instead of hoping for it.
+    #
+    # The END mask alone does not hold the floor on small galleries: a page can lock a B&W/style
+    # signature that no remaining photo shares, nothing is then legal, and the deadlock safety net
+    # ends the album short -- v29 left 20% of 24-40 photo galleries below its 10-spread floor. And a
+    # gallery can simply be too small for the floor (12 body spreads need 24 body photos).
+    #
+    # With this on, reset caps the floor at the most pages the gallery can still supply, and the
+    # mask refuses every ASSIGN that would make that floor unreachable (opening a page no remaining
+    # photo can complete, or spending photos the floor still needs). END stays blocked until the
+    # floor is met. Off = historical masking, bit-identical.
+    feasible_page_floor: bool = False
     target_photos_per_page: float = 3.5
     target_pages: float = 14.0
     # Width of the shape_preference Gaussians as a fraction of the target (see ShapeSpec).
@@ -198,6 +210,39 @@ class RewardConfig:
     # chosen to feature the most frequently appearing group of people. Selected deterministically
     # at reset and withheld from the assignable pool, so the policy composes only the body.
     hero_pages: bool = False
+    # Choose the heroes with Album Designer's cover rules instead of the narrator's own.
+    #
+    # Why: production AD (`select.narrator`, `our_covers: True`) REPLACES the narrator's covers after
+    # composing -- its picks leave the body spreads they were on, the narrator's two heroes leave the
+    # album, and body photos that look like a new cover are pruned. A 2-photo page that loses one
+    # photo ships as a 1-photo spread, usually a portrait, and the album shrinks. AD swaps after the
+    # fact because a policy handed foreign bookends composed a shorter album: it was trained on its
+    # own. Training on AD's rule removes the reason to swap.
+    #
+    # Mirrors what the packed data can express: AD's wider opening window for small galleries and its
+    # landscape-first rule (`hero_landscape_floor`). AD's photo-quality and cut-subject terms have no
+    # source here, so AD can still disagree on some galleries.
+    hero_ad_rules: bool = False
+    # The best landscape candidate opens/closes the album when it scores at least this share of the
+    # best frame (AD `orientation_floor` 0.60). Only read under `hero_ad_rules`.
+    hero_landscape_floor: float = 0.60
+    # Withhold body photos whose CLIP cosine to a hero is >= this (AD `cover_duplicate_similarity`
+    # 0.80), so AD's cover-duplicate pruning finds nothing to remove from a composed spread.
+    # 0 disables.
+    hero_dup_sim: float = 0.0
+    # ...but at most this many, the most similar first (AD `cover_duplicate_max_drop` 3). Without the
+    # cap a cover resembling most of a session empties the body: on 52076797 (53 photos) 41 of the 51
+    # non-cover photos sit >= 0.80 to a cover, which left 10 photos and a 4-spread album.
+    hero_dup_max: int = 3
+    # Make AD's cover-duplicate pruning harmless instead of trying to pre-empt it. AD prunes the
+    # `hero_dup_max` most similar body photos at or above this cosine to a cover, picked from the
+    # FINISHED body, so withholding the gallery's top few in advance only moves the pruning to the next
+    # ones. Instead the mask tracks that prune set as the album is built (masking.prune_set) and lets a
+    # page close, or survive END, only with >= 2 photos outside it -- whatever AD prunes, every spread
+    # keeps >= 2. The set only gains members on the page being filled, so closed pages stay safe.
+    # Costs at most `hero_dup_max` photos per album. (A stricter one-per-page rule cost homogeneous
+    # small sessions up to 8 spreads: 52076797, 79% of it >= 0.80 to a cover, fell to 4.) 0 disables.
+    hero_risk_sim: float = 0.0
     # Order the finished pages CHRONOLOGICALLY by construction (page median capture time) instead
     # of leaving the order to the policy. Phase B then emits no decisions at all: the env finalizes
     # phase A and immediately places every page in time order.

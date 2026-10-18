@@ -62,6 +62,14 @@ class AlbumState:
     # composes the body. -1 = disabled.
     hero_first: int = -1
     hero_last: int = -1
+    # Body pages the album must reach before END (cfg.env.feasible_page_floor); -1 = the
+    # historical min_pages rule. Set at reset, already capped at what the gallery can supply.
+    page_floor: int = -1
+    # (N,) int: rank of each photo AD could prune as a near-copy of a cover (cfg.reward.hero_risk_sim),
+    # ascending by similarity then photoId as AD sorts; -1 for photos it never prunes. None = rule off.
+    # AD prunes the `prune_cap` highest-ranked photos of the finished body (masking.prune_set).
+    risk_rank: np.ndarray | None = None
+    prune_cap: int = 0
     final_pages: list[list[int]] = field(default_factory=list)
     order: list[int] = field(default_factory=list)          # placed page indices, in order
     placed: np.ndarray = None                               # (n_final,) bool
@@ -90,6 +98,11 @@ class AlbumState:
     def n_pages_total(self) -> int:
         """Pages that would exist if the album ended now (open counts if non-empty)."""
         return self.n_closed + (1 if self.open_page else 0)
+
+    @property
+    def at_risk(self) -> np.ndarray | None:
+        """(N,) bool: photos AD could prune as near-copies of a cover; None when the rule is off."""
+        return None if self.risk_rank is None else self.risk_rank >= 0
 
     @property
     def n_included(self) -> int:

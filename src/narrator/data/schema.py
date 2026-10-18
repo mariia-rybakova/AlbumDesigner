@@ -138,6 +138,10 @@ class PackedGallery:
     # dt_seconds = dt_norm * time_span. Measured p10/p50/p90 span = 20 min / 1 h / 357 days, so
     # any threshold expressed as a FRACTION of it means wildly different things per gallery.
     time_span: float = 1.0
+    # (opening, closing) hero indices recorded by AlbumNarratorEnv.reset under the run's config, or
+    # None before any reset / when hero pages are off. `hero.pick_hero_photos(pg)` without a config
+    # returns these, so post-compose callers agree with the bookends the policy composed around.
+    heroes: tuple[int, int] | None = None
 
     @property
     def n(self) -> int:

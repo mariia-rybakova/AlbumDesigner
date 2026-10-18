@@ -48,7 +48,9 @@ class AlbumNarratorEnv:
         # structural (it exempts their pages from the page-local terms under
         # cfg.hero_exempt_local). pick_hero_photos returns (-1, -1) when the gallery cannot
         # supply two distinct bookends, which disables the whole mechanism for that gallery.
-        first, last = hero.pick_hero_photos(pg) if self.reward_cfg.hero_pages else (-1, -1)
+        first, last = (hero.pick_hero_photos(pg, self.reward_cfg) if self.reward_cfg.hero_pages
+                       else (-1, -1))
+        pg.heroes = (first, last) if first >= 0 else None
         self.engine = RewardEngine(pg, cache, self.reward_cfg, hero_photos=(first, last))
         self.state = AlbumState(pg=pg)
         if first >= 0:
@@ -59,6 +61,27 @@ class AlbumNarratorEnv:
             for i in (first, last):
                 self.state.remaining[i] = False
                 self.state.status[i] = STATUS_CLOSED
+            if self.reward_cfg.hero_dup_sim > 0:
+                # Near-copies of a cover never reach the body (cfg.hero_dup_sim): AD would prune
+                # them from the finished spreads, hollowing out pages the policy composed. Same
+                # selection as AD's `_drop_cover_duplicates`: the most similar, at most hero_dup_max.
+                sim = cache.sim[[first, last]].max(0)
+                over = np.nonzero(self.state.remaining & (sim >= self.reward_cfg.hero_dup_sim))[0]
+                twin = over[np.argsort(sim[over], kind="stable")][::-1][:max(self.reward_cfg.hero_dup_max, 0)]
+                self.state.remaining[twin] = False
+                self.state.status[twin] = STATUS_EXCLUDED
+            if self.reward_cfg.hero_risk_sim > 0:
+                # Rank what AD could prune, in AD's order (similarity, then photoId); the mask keeps
+                # every page safe against its top `hero_dup_max` (masking.prune_set).
+                sim = cache.sim[[first, last]].max(0)
+                risky = np.nonzero(self.state.remaining & (sim >= self.reward_cfg.hero_risk_sim))[0]
+                rank = np.full(pg.n, -1, dtype=np.int64)
+                rank[risky[np.lexsort((pg.photo_ids[risky], sim[risky]))]] = np.arange(risky.size)
+                self.state.risk_rank = rank
+                self.state.prune_cap = max(self.reward_cfg.hero_dup_max, 0)
+        if self.env_cfg.feasible_page_floor:
+            self.state.page_floor = masking.initial_page_floor(
+                self.state, self.env_cfg, self.reward_cfg.page_size_enforced)
         self.n = pg.n
         self._steps = 0
         self._budget = int(self.env_cfg.step_budget_factor * self.n) + 10
@@ -216,7 +239,7 @@ class AlbumNarratorEnv:
     def _finalize_and_maybe_finish(self) -> None:
         s = self.state
         # keep the open page only if it meets ITS style's minimum (else exclude it)
-        page_min = masking.page_size_bounds(s.open_style, self.env_cfg)[0]
+        page_min = masking.page_min(s, masking.page_size_bounds(s.open_style, self.env_cfg)[0])
         s.finalize(page_min)
         if self.reward_cfg.order_by_time:
             # Narrative order is structural, not learned (cfg.order_by_time): place every page in
