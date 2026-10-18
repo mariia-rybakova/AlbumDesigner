@@ -64,7 +64,7 @@ COPY ./ /usr/app/
 # The URL is versioned on purpose: a rebuild must not silently pick up different
 # weights than the ones a run was validated against.
 # -----------------------------------------------------------------------------
-ADD 'https://a1devops1versions.blob.core.windows.net/ai-models/album-narrator/narrator_models_v1.zip?se=2123-08-31T07%3A37%3A22Z&sp=r&sv=2022-11-02&sr=b&sig=eNmidzNDDd3FS6XiOTUKYEwpBPGqiZxOSei5NzV5kOU%3D' ./files/narrator/models.zip
+ADD 'https://a1devops1versions.blob.core.windows.net/ai-models/album-narrator/narrator_models_v2.zip?se=2123-08-31T07%3A37%3A22Z&sp=r&spr=https&sv=2022-11-02&sr=b&sig=69YrGKU7IEjM5VxxjmsHKD5eOhx8bV3k3tThLJz2SNE%3D' ./files/narrator/models.zip
 RUN unzip ./files/narrator/models.zip -d ./files/narrator && rm ./files/narrator/models.zip
 
 
