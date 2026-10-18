@@ -248,9 +248,10 @@ def _shape_spec(context: AlbumContext, cfg):
     The ranges are hard masking bounds -- the policy cannot end an album below
     ``min_pages`` or past ``max_pages`` -- so they are the shape it learned to
     compose for, not a preference to be overwritten with the product's own
-    limits. v29 composes 10-13 spreads where a typical album is 15-26, and
-    forcing it up to the product's floor would put it somewhere it has never
-    been. So the trained range stands, and only a design that is *tighter* than
+    limits. v29 composed 10-13 spreads where a typical album is 15-26; v31
+    holds a 12-spread floor wherever the gallery can supply it, still short of
+    that. Forcing it up to the product's floor would put it somewhere it has
+    never been. So the trained range stands, and only a design that is *tighter* than
     it applies.
     """
     from src.narrator.data.schema import ShapeSpec
