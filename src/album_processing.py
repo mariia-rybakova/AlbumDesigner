@@ -211,7 +211,8 @@ def album_processing(df, designs_info, is_wedding, modified_lut, params: SpreadS
     if is_wedding:
         updated_groups, group2images, updated_photos_df = process_wedding_illegal_groups(df, resources, manual_selection, logger,
                                                                          all_gallery_df=all_gallery_df,
-                                                                         selection_min_total_spreads=selection_min_total_spreads)
+                                                                         selection_min_total_spreads=selection_min_total_spreads,
+                                                                         max_total_spreads=max_total_spreads)
         resources.look_up_table = look_up_table
         logger.info(f'Illegal groups processing time: {time.time() - start_time:.2f} seconds')
     else:

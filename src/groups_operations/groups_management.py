@@ -1,3 +1,4 @@
+import math
 from typing import List, Tuple, Iterable, Callable, Any, Dict, Optional
 
 import pandas as pd
@@ -457,6 +458,86 @@ def _resolve_singletons(photos_df, resources, manual_selection, logger, all_gall
     return photos_df
 
 
+# Over-maximum pair merge
+def _merge_over_maximum(photos_df: pd.DataFrame, resources: AlbumDesignResources,
+                        max_total_spreads: int, logger) -> pd.DataFrame:
+    """Join one-spread groups in pairs while the planned album is over its maximum.
+
+    The merge loop only takes a group smaller than one spread (`max_img_split`
+    2), so once every group fills a spread it stops, however many groups there
+    are -- and `update_with_limit` cannot take a group below one spread either.
+    54167191 (2026-10-17) ended with 32 one-spread groups against a maximum of
+    20 and was laid out at 37; 30240629 (2026-10-18) with 29 against 24, laid
+    out at 35.
+
+    Counts the album the way `update_with_limit` can at best leave it -- one
+    spread per group, more only past `max_imges_per_spread` photos -- so it does
+    nothing when the reduction can still fit the maximum, and stops as soon as
+    it can. Each merge joins two unpinned groups that the reduction floors at
+    one spread, of the same time cluster, closest in time first, when a layout
+    exists for their combined size; the pair keeps the larger group's class (no
+    class is reassigned, unlike `rebalance_spreads_by_pair_merge`) and is pinned
+    at one spread, as a force-merged singleton is, so its own class value
+    cannot spend the spread back. A pinned group is not merged again.
+    """
+    look_up_table = getattr(resources, 'look_up_table', None)
+    if look_up_table is None or not hasattr(look_up_table, 'pin_spreads'):
+        return photos_df
+    box_counts = {int(n) for n in resources.printlab_data.layouts_df['number of boxes'].unique()}
+    per_spread = CONFIGS['max_imges_per_spread']
+    group_keys = ['time_cluster', 'cluster_context', 'group_sub_index']
+
+    def floor(n):
+        # `_reduce_spreads` takes no group below this.
+        return max(1, math.ceil(n / per_spread))
+
+    groups = photos_df.groupby(group_keys)
+    total = sum(floor(len(group)) for _, group in groups)
+    if total <= max_total_spreads:
+        return photos_df
+    before, merged = total, 0
+
+    while total > max_total_spreads:
+        groups = photos_df.groupby(group_keys)
+        sizes = {key: len(group) for key, group in groups}
+        eligible = [key for key, n in sizes.items()
+                    if floor(n) == 1 and look_up_table.pinned_spreads(key, n) is None]
+        general_times_list, _ = get_groups_time(groups)
+
+        pair = None
+        # Smallest groups first: they are the ones a spread of their own
+        # least suits.
+        for src_key in sorted(eligible, key=lambda k: (sizes[k], groups.get_group(k)['general_time'].min())):
+            partners = [groups.get_group(k) for k in eligible
+                        if k != src_key and k[0] == src_key[0]
+                        and sizes[k] + sizes[src_key] in box_counts]
+            if not partners:
+                continue
+            partner, _ = merge_illegal_group_by_time(
+                partners, groups.get_group(src_key), general_times_list,
+                max_images_per_spread=per_spread)
+            if partner is not None:
+                pair = (groups.get_group(src_key), partner)
+                break
+        if pair is None:
+            break
+
+        src_group, partner_group = pair
+        larger = src_group if len(src_group) > len(partner_group) else partner_group
+        context = larger['cluster_context'].iloc[0]
+        new_sub_index, merged_group = apply_pair_merge_for_rebalance(
+            photos_df, src_group, partner_group, context)
+        new_key = (larger['time_cluster'].iloc[0], context, new_sub_index)
+        look_up_table.pin_spreads(new_key, len(merged_group), 1)
+        total -= 1
+        merged += 1
+
+    logger.info(f"Over maximum: {before} groups need a spread each against {max_total_spreads}; "
+                f"{merged} pair merge(s) -> {total}"
+                + ("" if total <= max_total_spreads else ", no further pair fits"))
+    return photos_df
+
+
 # Spread rebalancing via pair merges
 def _compute_group_expected(group_key: Tuple[str, str, int], group: pd.DataFrame,
                             look_up_table: dict) -> Tuple[float, int]:
@@ -680,6 +761,7 @@ def process_wedding_illegal_groups(
         photos_df: pd.DataFrame, resources: AlbumDesignResources, manual_selection: bool,
         logger=None, max_iterations: int = 500, all_gallery_df=None,
         selection_min_total_spreads: Optional[int] = None,
+        max_total_spreads: Optional[int] = None,
     ) -> Tuple[Optional[Any], Optional[dict], pd.DataFrame]:
     """
     Full pipeline for splitting and merging photo groups into legal album spreads.
@@ -690,7 +772,9 @@ def process_wedding_illegal_groups(
       3. Merge complementary bride/groom groups.
       4. Iteratively merge remaining small groups until no more merges are possible
          or `max_iterations` is reached.
-      5. Optionally rebalance spreads to meet a minimum spread target
+      5. When the planned album is over `max_total_spreads`, pair one-spread
+         groups until it is not (`_merge_over_maximum`).
+      6. Optionally rebalance spreads to meet a minimum spread target
          (only when `selection_min_total_spreads` is provided and not in manual mode).
 
     Args:
@@ -704,6 +788,8 @@ def process_wedding_illegal_groups(
             infinite execution.
         selection_min_total_spreads: Minimum total spreads target from the AI
             selection stage; triggers pair-merge rebalancing when set.
+        max_total_spreads: The album's content-spread maximum. None leaves the
+            groups as the merge loop left them, however many there are.
 
     Returns:
         A tuple of:
@@ -743,6 +829,9 @@ def process_wedding_illegal_groups(
         photos_df = _resolve_singletons(
             photos_df, resources, manual_selection, logger, all_gallery_df
         )
+
+        if max_total_spreads is not None:
+            photos_df = _merge_over_maximum(photos_df, resources, max_total_spreads, logger)
 
         # Rebalance spreads to meet the AI-selection target (skipped for manual selection)
         if (CONFIGS.get('use_rebalance_spreads', False)
