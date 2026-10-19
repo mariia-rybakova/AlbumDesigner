@@ -25,7 +25,7 @@ is unchanged; only the import path looks tidier, and the next person reads a
 tree that is no longer one.
 
 Two modules left for exactly this reason and are the worked examples:
-`src/core/design_templates.py` (the design catalogue, read by
+`src/readers/design_templates.py` (the design catalogue, read by
 `request_processing` before any layout happens) and
 `src/core/spread_ordering.py` (chronological order, applied after
 `process_group` has returned).

@@ -30,7 +30,7 @@ import pandas as pd
 
 from src.pipeline.contracts import Col
 from src.selection.auto_selection import load_pre_queries_embeddings
-from utils.reading_tools import map_cluster_label
+from src.readers.proto_labels import map_cluster_label
 
 #: Working columns added by :func:`ordered`. Underscore-prefixed so they cannot
 #: collide with a real photo-table column.

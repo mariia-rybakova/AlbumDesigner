@@ -1,5 +1,19 @@
+"""What the numbers in the protobuf blobs mean.
+
+`protos` reads the blobs and gets coded fields back -- `cluster_class`,
+`image_class`, `persons_ids`, `n_bodies`. This turns them into the words the
+rest of the album speaks:
+
+* `map_cluster_label`   a `cluster_class` int -> a content name from
+                        `label_list`, folding 'two brides' and 'two grooms'
+                        into 'bride and groom'
+* `generate_dict_key`   person ids and a body count -> the `people_cluster`
+                        key ('3_pple_2_12_4'), which non-wedding albums group by
+* `check_gallery_type`  wedding or not, from the share of classified photos
+                        whose `image_class` came back unclassified
+"""
+
 import copy
-import pickle
 from math import isnan
 
 import numpy as np
@@ -104,9 +118,3 @@ def pick_from_set(candidates, allowed_set):
             return c
     return np.nan
 
-
-def read_pkl_file(file):
-    # Load the dictionary from the binary file
-    with open(file, 'rb') as f:
-        loaded_data = pickle.load(f)
-    return loaded_data

@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.pipeline import ENRICH, AlbumContext, Col  # noqa: E402
 from src.pipeline.contracts import GalleryFacts  # noqa: E402
 from src.pipeline.registry import get  # noqa: E402
-from utils.reading_tools import label_list, map_cluster_label  # noqa: E402
+from src.readers.proto_labels import label_list, map_cluster_label  # noqa: E402
 
 BRIDE, PARTNER, GUEST = 1, 5, 18
 

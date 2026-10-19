@@ -1,6 +1,6 @@
 from utils.configs import CONFIGS
 from utils.selection.non_wedding_selection_tools import get_appearance_percentage,select_images_of_group,select_images_of_one_person
-from utils.reading_tools import generate_dict_key
+from src.readers.proto_labels import generate_dict_key
 
 
 def smart_non_wedding_selection(df, logger):

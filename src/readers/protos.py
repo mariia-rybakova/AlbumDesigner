@@ -25,9 +25,9 @@ from ptinfra.proto.pb import PersonVector_pb2 as person_vector
 from ptinfra.proto.pb import SocialCircle_pb2 as social_circle
 from ptinfra.read_stage import load_versioned
 
-from utils.reading_tools import generate_dict_key, check_gallery_type, process_content, _flatten
+from src.readers.proto_labels import generate_dict_key, check_gallery_type, process_content, _flatten
 from utils.configs import CONFIGS
-from utils.image_queries import generate_query
+from src.readers.query_bank import generate_query
 
 
 def get_image_embeddings(file, logger):

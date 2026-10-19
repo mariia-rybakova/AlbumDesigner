@@ -22,7 +22,7 @@ import pandas as pd
 from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
-from utils.read_protos_files import add_content_class, add_semantic_tags, classify_gallery_type
+from src.readers.protos import add_content_class, add_semantic_tags, classify_gallery_type
 
 
 @register

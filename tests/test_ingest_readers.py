@@ -28,7 +28,7 @@ from ptinfra.proto.pb import BGSegmentation_pb2, ContentCluster_pb2  # noqa: E40
 from ptinfra.proto.pb import FaceVector_pb2, PersonInfo_pb2  # noqa: E402
 from ptinfra.proto.pb import PersonVector_pb2, SocialCircle_pb2  # noqa: E402
 
-import utils.read_protos_files as readers  # noqa: E402
+import src.readers.protos as readers  # noqa: E402
 
 PHOTO_A, PHOTO_B = 5001, 5002
 IDENTITY_A, IDENTITY_B = 11, 22

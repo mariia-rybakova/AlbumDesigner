@@ -11,7 +11,7 @@ from src.pipeline.enrich import parents
 from src.pipeline import subject
 from src.request_processing import identify_parents
 from utils.configs import CONFIGS
-from utils.read_protos_files import add_people_cluster, resolve_bride_groom
+from src.readers.protos import add_people_cluster, resolve_bride_groom
 
 
 @register
@@ -143,7 +143,7 @@ SOLO_CLASSES = ('bride', 'groom')
 
 
 def _same_sex_classes():
-    from utils.reading_tools import label_list
+    from src.readers.proto_labels import label_list
     return {i for i, label in enumerate(label_list) if label in SAME_SEX_LABELS}
 
 

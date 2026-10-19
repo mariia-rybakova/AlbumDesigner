@@ -19,7 +19,7 @@ import pytest
 
 from src.pipeline.contracts import AlbumContext, DesignSpec
 from src.pipeline.registry import get
-from utils.reading_tools import check_gallery_type
+from src.readers.proto_labels import check_gallery_type
 
 LOGGER = logging.getLogger('test_partial_ingest')
 

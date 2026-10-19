@@ -76,7 +76,7 @@ documentation of current behaviour:
 
 ### 2.2 `gallery_photos_info` schema (columns selection actually reads)
 
-Built in `utils/read_protos_files.get_info_protobufs` by outer-joining five protobufs
+Built in `src/readers/protos.get_info_protobufs` by outer-joining five protobufs
 (plus CLIP vectors from Qdrant when `isInVectorDatabase`), then enriched in
 `src/request_processing.py`.
 
@@ -87,7 +87,7 @@ Built in `utils/read_protos_files.get_info_protobufs` by outer-joining five prot
 | `model_version` | same | 1 or 2 — picks the `pre_queries` folder and the queries `.pkl` |
 | `image_class`, `cluster_label`, `cluster_class`, `ranking`, `image_order` | `content_cluster.pb` | `ranking` = `selectionScore` (higher is better, already 0–1). `image_order` = `selectionOrder` (**lower is better**) |
 | `cluster_context` | `map_cluster_label(cluster_class)` via `process_content` | The category name driving everything below. `-1`/out-of-range ⇒ `"None"`; `two brides`/`two grooms` collapse to `bride and groom` |
-| `image_query_content`, `image_subquery_content` | `utils/image_queries.generate_query` | Best-matching tag / sub-query text for the image, searched **within** `cluster_context` when that context exists in the queries pkl |
+| `image_query_content`, `image_subquery_content` | `src/readers/query_bank.generate_query` | Best-matching tag / sub-query text for the image, searched **within** `cluster_context` when that context exists in the queries pkl |
 | `persons_ids` | `persons_info.pb` | List of identity ids; coerced to `[]` when missing |
 | `main_persons` | same | Used to resolve bride/groom |
 | `bride_id`, `groom_id` | derived in `get_info_protobufs` | Most frequent identity in `cluster_context == 'bride'` / `'groom'`, preferring members of `main_persons`; several NaN fallbacks |

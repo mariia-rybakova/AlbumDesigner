@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.read_protos_files import _other_partner, resolve_bride_groom  # noqa: E402
+from src.readers.protos import _other_partner, resolve_bride_groom  # noqa: E402
 
 BRIDE, PARTNER, GUEST = 1, 5, 18
 

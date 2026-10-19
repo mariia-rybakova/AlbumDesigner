@@ -830,7 +830,7 @@ changes.
 
 | File | Change |
 |------|--------|
-| `utils/read_protos_files.py` | `get_info_protobufs` split into `load_gallery_assets` (pure read) + `classify_gallery_type`, `add_content_class`, `resolve_bride_groom`, `add_semantic_tags`, `require_cluster_data`, `add_people_cluster`. `get_info_protobufs` remains as their composition, in the original order, with its original signature. Every reader now decodes through ptinfra (§3.1) |
+| `src/readers/protos.py` | `get_info_protobufs` split into `load_gallery_assets` (pure read) + `classify_gallery_type`, `add_content_class`, `resolve_bride_groom`, `add_semantic_tags`, `require_cluster_data`, `add_people_cluster`. `get_info_protobufs` remains as their composition, in the original order, with its original signature. Every reader now decodes through ptinfra (§3.1) |
 | `utils/protos/` | Deleted — replaced by `ptinfra.proto.pb` (§3.1) |
 | `src/smart_cropping.py` | Its two `utils.protos` imports repointed at `ptinfra.proto.pb` |
 | `src/request_processing.py` | `read_messages` is now a thin driver over the ingest + enrich pipeline. Same signature, same `(messages, error)` contract. Helper functions unchanged |

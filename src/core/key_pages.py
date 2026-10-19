@@ -686,7 +686,7 @@ def _subquery_vectors(queries, model_version):
     """(names, unit vectors) of the listed subqueries the tagger's bank holds."""
     key = (queries, model_version)
     if key not in _SUBQUERY_VECTORS:
-        from utils.reading_tools import read_pkl_file
+        from src.readers.query_bank import read_pkl_file
         bank = read_pkl_file(CONFIGS['queries_file_v2' if model_version == 1 else 'queries_file_v3'])
         found = {}
         for phrases in bank.values():

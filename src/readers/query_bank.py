@@ -1,7 +1,35 @@
+"""Matching photos against the pre-computed query bank.
+
+A query bank is a pickle of text-query embeddings living in the same vector
+space as the `embedding` column on each photo. `generate_query` scores every
+photo against it and keeps the best tag and sub-tag, writing
+`image_query_content` and `image_subquery_content`. When a photo already has
+a `cluster_context`, only that context's queries are searched, so a ceremony
+shot is matched against ceremony phrasings.
+
+Today those vectors come from a fine-tuned CLIP, and there are three banks --
+`files/queries_embeddings_v1/v2/v3.pkl` -- picked by the photo's
+`model_version` (see `core/key_pages._subquery_vectors`). Nothing here knows
+that: this module only does dot products, so a different encoder means a
+different bank, not a different file.
+
+`read_pkl_file` loads a bank, and lives here because both of its callers want
+exactly that -- this module loading the tag bank, and `core/key_pages`
+loading the query bank it ranks cover candidates against.
+"""
+
+import pickle
+
 import numpy as np
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from utils.reading_tools import read_pkl_file
+
+
+def read_pkl_file(file):
+    # Load the dictionary from the binary file
+    with open(file, 'rb') as f:
+        loaded_data = pickle.load(f)
+    return loaded_data
 
 
 def process_row(idx, row, loaded_tags_features):

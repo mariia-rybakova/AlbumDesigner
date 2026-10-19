@@ -5,7 +5,7 @@ from __future__ import annotations
 from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
-from utils.read_protos_files import load_gallery_assets
+from src.readers.protos import load_gallery_assets
 
 
 @register

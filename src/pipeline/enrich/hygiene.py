@@ -8,7 +8,7 @@ from src.pipeline.contracts import AlbumContext, Col, photo
 from src.pipeline.registry import register
 from src.pipeline.enrich.dedupe import shot_groups, treatment_twins
 from src.pipeline.substage import SubStage
-from utils.read_protos_files import require_cluster_data
+from src.readers.protos import require_cluster_data
 
 
 @register

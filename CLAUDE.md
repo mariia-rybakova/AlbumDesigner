@@ -30,7 +30,8 @@ Both packages have known exceptions that predate the rule, listed in their own
 
 | Package | What belongs there |
 |---|---|
-| `src/core/` | Domain vocabulary and constructors, imported from anywhere: `models`, `photos`, `group_formation`, `design_templates`, `time_processing`, `spread_ordering` |
+| `src/core/` | Domain vocabulary and constructors, imported from anywhere: `models`, `photos`, `group_formation`, `time_processing`, `spread_ordering` |
+| `src/readers/` | Libraries that turn an outside format into the album's tables — protobuf blobs, the design JSON, the query bank. Not substages; the substages that call them live in `src/pipeline/ingest` |
 | `src/pipeline/` | The substage pipeline — `ingest` reads and organises but never infers; `enrich` infers; `select` chooses the photos and the spread budget |
 | `src/groups_operations/`, `src/spreads_layout/` | The two trees above |
 | `src/selection/` | The selection algorithms, shared by the old monolith and the new pipeline. `src/pipeline/select` may import from here; the reverse would couple the frozen path to the moving one |
@@ -38,7 +39,9 @@ Both packages have known exceptions that predate the rule, listed in their own
 | `utils/` | Being dissolved. Nothing new goes here |
 
 `utils/` was a second `src` — domain code filed under a name that promised
-generic helpers. What is left of it is on its way out; add nothing to it.
+generic helpers. Three things are left in it and each is there for a reason:
+`configs.py` (the config, edited constantly, moving it would conflict with
+everything), `lookup_table_tools.py`, and `selection/`. Add nothing to it.
 
 ## Tests
 
