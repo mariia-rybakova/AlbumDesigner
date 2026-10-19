@@ -1,0 +1,12 @@
+# Contributors who committed under more than one name or address.
+#
+# Karmel switched from the company account to a personal one on 2025-09-07
+# and the display name varied after that ("Kaf", "karmel", once "Nicole Nah"
+# on the GitHub web account). Without this file `git log --author` and
+# `git blame` report one person as five, and `git shortlog -sn` splits 720
+# commits across four rows.
+Karmel Salah <karmel.salah@gmail.com> <karmel@pictimeprod.onmicrosoft.com>
+Karmel Salah <karmel.salah@gmail.com> <karmel.salah@gmail.com>
+Karmel Salah <karmel.salah@gmail.com> <39573452+karmelyoei@users.noreply.github.com>
+
+Andrii Hyryla <andrii@pic-time.com> <110470054+ahyryla@users.noreply.github.com>
