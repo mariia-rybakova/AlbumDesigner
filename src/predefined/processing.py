@@ -20,7 +20,7 @@ import pandas as pd
 from src.core.models import (AlbumDesignResources, GroupProcessingResult,
                              Spread, SpreadSearchParams)
 from src.core.photos import get_photos_from_df
-from src.core.key_pages import _find_single_box_layout
+from src.covers.pages import find_single_box_layout
 from src.spreads_layout.combinations import Combination
 from src.spreads_layout.group_layouts import get_group_single_layouts
 from src.spreads_layout.main import select_best_layout_for_subgroup
@@ -94,7 +94,7 @@ def _build_cover(photo_ids: List[str], gallery_df: pd.DataFrame, layouts_df: pd.
                  position: str, logger) -> Optional[Dict[str, Any]]:
     """Build one cover entry (firstPage/lastPage) for ``first_last_pages_data_dict``.
 
-    Keeps the design-driven cover-layout pick (``_find_single_box_layout`` by
+    Keeps the design-driven cover-layout pick (``find_single_box_layout`` by
     orientation) but takes the photos from the contract instead of the selection
     heuristic. ``position`` is 'first' or 'last' -- it only names the dict keys
     that ``assembly_output`` expects.
@@ -105,7 +105,7 @@ def _build_cover(photo_ids: List[str], gallery_df: pd.DataFrame, layouts_df: pd.
         return None
 
     orientation = rows["image_orientation"].values[0]
-    candidates = _find_single_box_layout(layouts_df, orientation)
+    candidates = find_single_box_layout(layouts_df, orientation)
     if not candidates:
         logger.warning(f"No single-box {position}Page layout for orientation {orientation}")
         return None

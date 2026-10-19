@@ -167,7 +167,7 @@ def cover_row(faces):
 
 def test_the_opening_page_avoids_a_fold_through_the_face():
     """53316807 opened on a face 0.005 of the image from the fold, because
-    `_find_single_box_layout` returns candidates and the caller took the first."""
+    `find_single_box_layout` returns candidates and the caller took the first."""
     chosen = fold.pick_cover_layout([0, 1, 2], _Layouts(COVER_ROWS), COVER_BOXES,
                                     cover_row([face(0.44, 0.56)]), album_ar=2.0)
 
@@ -182,7 +182,7 @@ def test_a_cover_candidate_that_crosses_no_fold_is_good_enough():
 
 
 def test_the_covers_keep_their_own_order_when_the_fold_is_clear():
-    """`_find_single_box_layout` prefers large boxes; that preference stands
+    """`find_single_box_layout` prefers large boxes; that preference stands
     wherever the fold is not the deciding question."""
     assert fold.pick_cover_layout([0, 1, 2], _Layouts(COVER_ROWS), COVER_BOXES,
                                   cover_row([face(0.05, 0.15)]), album_ar=2.0) == 0

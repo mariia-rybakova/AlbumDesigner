@@ -534,7 +534,7 @@ def _fillable_cover_boxes(all_box_ids, images_df, image_ids, part, logger):
     """The boxes a cover section has photos for.
 
     The cover layout is meant to hold exactly one photo, and
-    `_find_single_box_layout` now guarantees that. This is the second line:
+    `find_single_box_layout` now guarantees that. This is the second line:
     should a layout with more boxes than cover photos ever reach here again,
     the extra boxes are left empty instead of `iloc` running off the end of the
     frame and failing the entire album -- which is how 53009168 was lost.

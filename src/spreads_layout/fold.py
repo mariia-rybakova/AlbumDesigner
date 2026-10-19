@@ -26,7 +26,7 @@ only thing that differs is where the boxes sit on the paper.
 
 **The opening and closing pages.** Those are placed by `cover_box`, which the
 layout search never sees, so `pick_cover_layout` chooses among the candidates
-`_find_single_box_layout` already returns.
+`find_single_box_layout` already returns.
 
 Knowing where the fold falls *inside the photo* means knowing the crop.
 `estimate_window` answers with `smart_cropping.placement_window` -- the same
@@ -479,7 +479,7 @@ def pick_cover_layout(candidates: List[int], layouts_df, box_id2data: Dict[Tuple
                       image_row, album_ar: float = 2.0, logger=None) -> Optional[int]:
     """Which of the opening/closing candidates keeps the fold off the faces.
 
-    `_find_single_box_layout` returns every single-box design that suits the
+    `find_single_box_layout` returns every single-box design that suits the
     photo's orientation, in its own order of preference -- large boxes first --
     and the caller has always taken the first. On a pack whose single-box
     designs all cross the fold, as 53316807's does, that put the gutter through
@@ -527,7 +527,7 @@ def pick_cover_layout(candidates: List[int], layouts_df, box_id2data: Dict[Tuple
         return (fold_cost(spans, fold_u, gutter=gutter_in_image(box, window)),
                 -fold_clearance(spans, fold_u))
 
-    # The order `_find_single_box_layout` chose stands unless its first pick
+    # The order `find_single_box_layout` chose stands unless its first pick
     # actually puts the fold on a face. Ranking every candidate by clearance
     # would hand the cover to whichever design crosses no fold, on every album
     # with a face in its opening photo, which is not this feature's business.

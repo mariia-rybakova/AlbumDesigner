@@ -374,7 +374,7 @@ walking-the-aisle detector can reuse it rather than fork it.
 
 Which photo opens the album and which closes it. Choosing a cover is an
 inference about photos, not a step of page layout, but it has always run inside
-ProcessStage — `src/core/key_pages.py::generate_first_last_pages`, wedged
+ProcessStage — `src/covers/pages.py::generate_first_last_pages`, wedged
 between time clustering and the layout search.
 
 Weddings only, for now, alongside the other substages built around the couple.

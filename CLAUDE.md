@@ -31,6 +31,7 @@ Both packages have known exceptions that predate the rule, listed in their own
 | Package | What belongs there |
 |---|---|
 | `src/core/` | Domain vocabulary and constructors, imported from anywhere: `models`, `photos`, `group_formation`, `time_processing`, `spread_ordering` |
+| `src/covers/` | The album's first and last pages — `scoring` ranks a photograph as a cover, `choosing` picks the two, `pages` lays them out. A shelf, not a tree, and it depends in one direction only |
 | `src/readers/` | Libraries that turn an outside format into the album's tables — protobuf blobs, the design JSON, the query bank. Not substages; the substages that call them live in `src/pipeline/ingest` |
 | `src/pipeline/` | The substage pipeline — `ingest` reads and organises but never infers; `enrich` infers; `select` chooses the photos and the spread budget |
 | `src/groups_operations/`, `src/spreads_layout/` | The two trees above |

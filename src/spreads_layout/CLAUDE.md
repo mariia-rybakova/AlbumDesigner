@@ -37,7 +37,7 @@ already true — it is being worked towards:
 
 | Module | Imported from outside by |
 |---|---|
-| `fold` | `album_processing`, `core/key_pages`, `stages_recorder/fold` |
+| `fold` | `album_processing`, `covers/pages`, `stages_recorder/fold` |
 | `twins.apply_twin_colors` | `album_processing` |
 | `spreads/spread.set_neutral_contexts` | `album_processing` |
 | `combinations.Combination`, `group_layouts.get_group_single_layouts` | `predefined/processing` |

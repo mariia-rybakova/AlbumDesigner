@@ -3,7 +3,7 @@
 Choosing a cover is an inference about photos -- which frame of the couple best
 opens a story, which one best ends it -- not a step of page layout. It has
 nevertheless always run inside ProcessStage, in
-``src/core/key_pages.py::generate_first_last_pages``, wedged between time
+``src/covers/pages.py::generate_first_last_pages``, wedged between time
 clustering and the layout search. This substage is the first half of moving it
 where it belongs.
 
@@ -47,7 +47,7 @@ from typing import List, Tuple
 
 import pandas as pd
 
-from src.core.key_pages import choose_good_wedding_images
+from src.covers.choosing import choose_good_wedding_images
 from src.pipeline.contracts import AlbumContext, Col, KeyPages, ctx, photo
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage

@@ -1,6 +1,6 @@
 """Tests for ``enrich.key_pages``.
 
-The rule itself is `src/core/key_pages.py`, which ProcessStage has always used
+The rule itself is `src/covers/`, which ProcessStage has always used
 and which this substage calls unchanged. What is worth guarding is the wiring:
 that the substage runs over the whole gallery without disturbing it, that its
 answer survives the message boundary, and that a gallery it cannot serve loses
@@ -22,11 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.pipeline import ENRICH, AlbumContext, Col, KeyPages  # noqa: E402
 from src.pipeline.contracts import DesignSpec, GalleryFacts  # noqa: E402
-from src.core.key_pages import (  # noqa: E402
-    COVER_FRACTION,
-    _pick_cover_subset,
-    _select_by_priority_from_subset,
-)
+from src.covers.choosing import _pick_cover_subset, _select_by_priority_from_subset
 from src.pipeline.enrich.key_pages import CLOSING, OPENING  # noqa: E402
 from src.pipeline.registry import get  # noqa: E402
 from utils.configs import CONFIGS  # noqa: E402
@@ -202,9 +198,9 @@ def test_the_opening_window_widens_as_the_gallery_shrinks(photos, share):
     """40% of the couple frames at 200 photos or fewer, a quarter from 500 up,
     linear in between. 53951381 (199 photos) closed a quarter-window ten frames
     before the kiss the photographer wanted."""
-    from src.core.key_pages import _opening_fraction
+    from src.covers.choosing import opening_fraction
 
-    assert _opening_fraction(photos) == pytest.approx(share)
+    assert opening_fraction(photos) == pytest.approx(share)
 
 
 def test_a_gap_in_the_gallery_does_not_widen_the_window():
@@ -539,7 +535,7 @@ def test_the_rank_fallback_takes_the_best_photo_not_the_worst():
     descending, so the one path that ran when no candidate was found handed
     back the worst-ranked photo in the gallery.
     """
-    from src.core.key_pages import get_important_imgs
+    from src.covers.choosing import get_important_imgs
 
     # No couple frames at all, so both covers fall through to the fallback.
     frame = couple_gallery(n=6)
@@ -560,7 +556,7 @@ def test_quality_decides_between_equal_candidates(monkeypatch):
     """The term the priority ladder had no way to express: two frames matching
     the same subquery, one of them a better photograph.
     """
-    import src.core.key_pages as key_pages
+    import src.covers.scoring as key_pages
 
     frame = couple_gallery(n=16)
     frame[Col.IMAGE_ORDER] = 5.0
@@ -595,7 +591,8 @@ def test_covers_survive_concepts_being_unavailable():
 
 
 def _scored(frame, queries=None, bride=BRIDE, groom=GROOM):
-    from src.core.key_pages import FIRST_COVER_QUERIES, _score_covers
+    from src.covers.choosing import FIRST_COVER_QUERIES
+    from src.covers.scoring import _score_covers
     return _score_covers(frame, queries or FIRST_COVER_QUERIES, _QUIET_LOG, bride, groom)
 
 
@@ -609,7 +606,7 @@ def test_affection_takes_the_max_and_quality_the_mean():
     0.5); row 1 is evenly good (max 0.6, mean 0.6). Rows 2 and 3 fill out the
     candidates. Max ranks row 0 first, mean ranks row 1 first.
     """
-    from src.core.key_pages import _concept_score
+    from src.covers.scoring import _concept_score
     import src.pipeline.enrich.timeline as tl
 
     def fake(frame, concept):
@@ -632,7 +629,8 @@ def test_a_candid_beats_a_posed_portrait_on_subquery():
     """The commonest couple subquery by a wide margin is the posed portrait --
     147 of 211 on 53227528 -- and it used to rank second of four, so the cover
     was the album's most generic frame."""
-    from src.core.key_pages import FIRST_COVER_QUERIES, _subquery_affinity
+    from src.covers.choosing import FIRST_COVER_QUERIES
+    from src.covers.scoring import _subquery_affinity
 
     frame = couple_gallery(n=2)
     frame.loc[frame.index[0], Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom kissing'
@@ -645,7 +643,7 @@ def test_a_candid_beats_a_posed_portrait_on_subquery():
 
 
 def test_presence_grades_rather_than_gates():
-    from src.core.key_pages import _presence
+    from src.covers.scoring import _presence
 
     frame = couple_gallery(n=4)
     frame.at[frame.index[1], Col.PERSONS_IDS] = [BRIDE]
@@ -689,7 +687,7 @@ def test_quality_rewards_the_photograph_and_charges_its_faults(monkeypatch):
     """A clean, well-composed frame beats one with guests behind and blur,
     whatever the cosines' own scale: each concept is standardised first."""
     import src.pipeline.enrich.timeline as tl
-    from src.core.key_pages import _quality
+    from src.covers.scoring import _quality
     covers = CONFIGS['covers']
     monkeypatch.setitem(covers, 'quality_concepts', ('clean_background',))
     monkeypatch.setitem(covers, 'quality_negative_concepts', ('background_people', 'blurry'))
@@ -710,7 +708,7 @@ def test_quality_rewards_the_photograph_and_charges_its_faults(monkeypatch):
 
 def test_quality_without_its_bins_is_no_term(monkeypatch):
     import src.pipeline.enrich.timeline as tl
-    from src.core.key_pages import _quality
+    from src.covers.scoring import _quality
 
     def missing(f, concept):
         raise FileNotFoundError(concept)
@@ -753,7 +751,7 @@ def test_the_couple_classes_are_all_reachable():
 
 
 def test_a_kiss_frame_can_be_a_cover_now():
-    from src.core.key_pages import _candidate_base
+    from src.covers.choosing import _candidate_base
 
     frame = couple_gallery(n=4)
     frame.loc[frame.index[0], Col.CLUSTER_CONTEXT] = 'kiss'
@@ -795,11 +793,11 @@ def test_a_body_photo_that_repeats_a_cover_is_dropped():
     """Taking the cover out of the body is not enough -- the next frame of the
     burst is a different `image_id`. On 53227528 the back cover and a body
     photo are the same forehead kiss one step wider, cosine 0.840."""
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
 
     body, covers = _cover_and_body(0.84)
 
-    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+    kept = drop_cover_duplicates(body, covers, _QUIET_LOG)
 
     assert list(kept[Col.IMAGE_ID]) == [11]
 
@@ -807,18 +805,18 @@ def test_a_body_photo_that_repeats_a_cover_is_dropped():
 def test_a_merely_related_body_photo_is_kept():
     """The threshold has to leave the ordinary run of couple photos alone: the
     next-nearest on 53227528 is 0.719 and nothing on 49995684 exceeds 0.567."""
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
 
     body, covers = _cover_and_body(0.72)
 
-    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+    kept = drop_cover_duplicates(body, covers, _QUIET_LOG)
 
     assert list(kept[Col.IMAGE_ID]) == [10, 11]
 
 
 def test_the_drop_is_capped():
     """A cover resembling half the gallery must not empty the body."""
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
     import numpy as _np
 
     cover = _np.array([1.0, 0.0], dtype=_np.float32)
@@ -828,19 +826,19 @@ def test_the_drop_is_capped():
     })
     covers = pd.DataFrame({Col.IMAGE_ID: [1], 'embedding': [cover]})
 
-    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+    kept = drop_cover_duplicates(body, covers, _QUIET_LOG)
 
     cap = CONFIGS['covers']['cover_duplicate_max_drop']
     assert len(kept) == 10 - cap
 
 
 def test_no_embeddings_is_not_an_error():
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
 
     body = pd.DataFrame({Col.IMAGE_ID: [10, 11]})
     covers = pd.DataFrame({Col.IMAGE_ID: [1]})
 
-    assert len(_drop_cover_duplicates(body, covers, _QUIET_LOG)) == 2
+    assert len(drop_cover_duplicates(body, covers, _QUIET_LOG)) == 2
 
 
 def test_a_manual_selection_never_loses_a_photo_to_the_cover_check():
@@ -849,12 +847,12 @@ def test_a_manual_selection_never_loses_a_photo_to_the_cover_check():
     44573310 asked for 55 chosen photos; three were near-identical to the cover
     and were dropped without a word.
     """
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
 
     body, covers = _cover_and_body(0.99)
 
-    assert len(_drop_cover_duplicates(body, covers, _QUIET_LOG)) == 1
-    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG, manual_selection=True)
+    assert len(drop_cover_duplicates(body, covers, _QUIET_LOG)) == 1
+    kept = drop_cover_duplicates(body, covers, _QUIET_LOG, manual_selection=True)
 
     assert len(kept) == 2
     assert set(kept[Col.IMAGE_ID]) == {10, 11}
@@ -862,7 +860,7 @@ def test_a_manual_selection_never_loses_a_photo_to_the_cover_check():
 
 def test_a_manual_selection_keeps_photos_identical_to_the_cover():
     """Not even the cap-filling case: no drop means none at all."""
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
     import numpy as _np
 
     cover = _np.array([1.0, 0.0], dtype=_np.float32)
@@ -872,14 +870,14 @@ def test_a_manual_selection_keeps_photos_identical_to_the_cover():
     })
     covers = pd.DataFrame({Col.IMAGE_ID: [1], 'embedding': [cover]})
 
-    kept = _drop_cover_duplicates(body, covers, _QUIET_LOG, manual_selection=True)
+    kept = drop_cover_duplicates(body, covers, _QUIET_LOG, manual_selection=True)
 
     assert len(kept) == 10
 
 
 def test_choose_good_wedding_images_passes_the_manual_flag_down():
     """The flag has to survive the call the layout stage actually makes."""
-    from src.core import key_pages as kp
+    from src.covers import choosing as kp
 
     seen = {}
 
@@ -887,8 +885,8 @@ def test_choose_good_wedding_images_passes_the_manual_flag_down():
         seen['manual_selection'] = manual_selection
         return df
 
-    original = kp._drop_cover_duplicates
-    kp._drop_cover_duplicates = _spy
+    original = kp.drop_cover_duplicates
+    kp.drop_cover_duplicates = _spy
     try:
         df = pd.DataFrame({
             Col.IMAGE_ID: [1, 2, 3, 4],
@@ -899,19 +897,19 @@ def test_choose_good_wedding_images_passes_the_manual_flag_down():
         })
         kp.choose_good_wedding_images(df, None, _QUIET_LOG, manual_selection=True)
     finally:
-        kp._drop_cover_duplicates = original
+        kp.drop_cover_duplicates = original
 
     assert seen.get('manual_selection') is True
 
 
 def test_the_cover_duplicate_check_can_be_switched_off():
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
 
     body, covers = _cover_and_body(0.99)
     original = CONFIGS['covers']
     CONFIGS['covers'] = {**original, 'cover_duplicate_similarity': 0.0}
     try:
-        kept = _drop_cover_duplicates(body, covers, _QUIET_LOG)
+        kept = drop_cover_duplicates(body, covers, _QUIET_LOG)
     finally:
         CONFIGS['covers'] = original
 
@@ -939,7 +937,7 @@ def test_a_recognised_outsider_scores_below_a_frame_that_recognised_nobody():
     `_presence` became a grade to protect. A frame naming somebody else cannot
     be, and must not share its score.
     """
-    from src.core.key_pages import _presence
+    from src.covers.scoring import _presence
 
     frame = couple_gallery(n=3)
     frame.at[frame.index[1], Col.PERSONS_IDS] = []          # faces, no identity
@@ -995,7 +993,8 @@ def test_affection_is_undiluted_for_a_frame_naming_both():
     """The constraint the gate had to respect: affection keeps its full weight
     where the identities confirm the couple. Only frames whose presence is in
     doubt are discounted, so the gate is not a quiet cut to the weight."""
-    from src.core.key_pages import _score_covers, FIRST_COVER_QUERIES
+    from src.covers.choosing import FIRST_COVER_QUERIES
+    from src.covers.scoring import _score_covers
 
     frame = couple_gallery(n=2)
     frame[Col.IMAGE_SUBQUERY_CONTENT] = 'bride and groom smiling at each other'
@@ -1023,7 +1022,7 @@ def test_affection_is_undiluted_for_a_frame_naming_both():
 # out-of-bounds`. The cover section is filled from the cover photos -- one, for
 # a wedding -- but the loop walked every box of the chosen layout, and the
 # chosen layout had more than one: the preferred branches of
-# `_find_single_box_layout` tested only "max landscapes == 1", which a
+# `find_single_box_layout` tested only "max landscapes == 1", which a
 # three-box design with one large landscape satisfies.
 
 def _layout_row(**over):
@@ -1039,7 +1038,7 @@ def _layout_row(**over):
 
 
 def test_a_multi_box_layout_is_never_offered_as_a_cover():
-    from src.core.key_pages import _find_single_box_layout
+    from src.covers.pages import find_single_box_layout
 
     layouts = pd.DataFrame([
         # one large landscape, but three boxes: accepted before, fatal later
@@ -1050,7 +1049,7 @@ def test_a_multi_box_layout_is_never_offered_as_a_cover():
                               "right_large_landscape": 1}),
     ])
 
-    chosen = _find_single_box_layout(layouts, "landscape")
+    chosen = find_single_box_layout(layouts, "landscape")
 
     assert chosen, "a single-box landscape layout exists and must be found"
     assert all(layouts.loc[key]["number of boxes"] == 1 for key in chosen)
@@ -1058,7 +1057,7 @@ def test_a_multi_box_layout_is_never_offered_as_a_cover():
 
 
 def test_a_multi_box_portrait_layout_is_never_offered_as_a_cover():
-    from src.core.key_pages import _find_single_box_layout
+    from src.covers.pages import find_single_box_layout
 
     layouts = pd.DataFrame([
         _layout_row(id=20, **{"number of boxes": 2, "max portraits": 1,
@@ -1067,7 +1066,7 @@ def test_a_multi_box_portrait_layout_is_never_offered_as_a_cover():
                               "right_large_portrait": 1}),
     ])
 
-    chosen = _find_single_box_layout(layouts, "portrait")
+    chosen = find_single_box_layout(layouts, "portrait")
 
     assert chosen
     assert all(layouts.loc[key]["number of boxes"] == 1 for key in chosen)
@@ -1111,7 +1110,7 @@ def _with_tears(values):
 def test_tears_are_penalised_on_the_raw_score_not_the_window():
     """Absolute: a window where nobody cries is not penalised at all."""
     import src.pipeline.enrich.timeline as tl
-    from src.core.key_pages import _tears_penalty
+    from src.covers.scoring import _tears_penalty
 
     low, high = CONFIGS['covers']['tears_range']
     original = _with_tears([low - 0.05, (low + high) / 2, high + 0.05])
@@ -1143,7 +1142,7 @@ def test_a_crying_frame_loses_to_the_same_frame_dry():
 
 def test_a_missing_tears_bin_costs_nothing():
     import src.pipeline.enrich.timeline as tl
-    from src.core.key_pages import _tears_penalty
+    from src.covers.scoring import _tears_penalty
 
     original = tl.concept_scores
 
@@ -1160,7 +1159,7 @@ def test_a_missing_tears_bin_costs_nothing():
 
 
 def test_a_frame_with_nobody_in_it_is_a_detail():
-    from src.core.key_pages import _detail_penalty
+    from src.covers.scoring import _detail_penalty
 
     frame = couple_gallery(n=3)
     frame[Col.NUMBER_BODIES] = [2, 1, 0]
@@ -1172,7 +1171,7 @@ def test_a_frame_with_nobody_in_it_is_a_detail():
 def test_held_hands_count_only_where_there_are_people():
     """In a close-up of hands, the hands are the subject, not a sign of it."""
     import src.pipeline.enrich.timeline as tl
-    from src.core.key_pages import _affection
+    from src.covers.scoring import _affection
 
     frame = couple_gallery(n=3)
     frame[Col.NUMBER_BODIES] = [2, 2, 0]
@@ -1222,7 +1221,7 @@ GUEST_BODY = _bbox(0.90, 0.40, 0.98, 0.60)       # small, in the back
 
 
 def _grade(frame):
-    from src.core.key_pages import _presence
+    from src.covers.scoring import _presence
     return _presence(frame, BRIDE, GROOM)[0]
 
 
@@ -1299,7 +1298,7 @@ def test_no_body_data_changes_nothing():
 
 def test_without_body_data_nothing_is_a_detail():
     """No body detections to consult: a faceless frame may be an embrace."""
-    from src.core.key_pages import _detail_penalty
+    from src.covers.scoring import _detail_penalty
 
     frame = couple_gallery(n=2)
     frame[Col.N_FACES] = [0, 0]
@@ -1316,7 +1315,7 @@ def test_without_body_data_nothing_is_a_detail():
 
 def _significance_of(body_areas, diameter):
     """One frame whose bodies are squares of the given areas, and a blob."""
-    from src.core.key_pages import _significance
+    from src.covers.scoring import _significance
 
     bodies = [_bbox(0.0, 0.0, a ** 0.5, a ** 0.5) for a in body_areas]
     frame = couple_gallery(n=1)
@@ -1361,7 +1360,7 @@ def test_only_the_two_largest_bodies_are_the_couple():
 
 def test_a_family_of_three_is_measured_on_three_bodies():
     """54117560: at two bodies, the frame of all three read smaller than a pair."""
-    from src.core.key_pages import _significance
+    from src.covers.scoring import _significance
 
     low, high = CONFIGS['covers']['significance_range']
     frame = couple_gallery(n=1)
@@ -1373,7 +1372,7 @@ def test_a_family_of_three_is_measured_on_three_bodies():
 
 
 def test_nothing_to_measure_is_not_evidence_against_a_frame():
-    from src.core.key_pages import _significance
+    from src.covers.scoring import _significance
 
     frame = couple_gallery(n=2)
     frame[Col.BODIES_INFO] = [[], [_bbox(0.1, 0.1, 0.5, 0.9)]]
@@ -1393,7 +1392,7 @@ def _face(x1, y1, x2, y2, blur=1.0):
 def test_a_face_cut_by_the_side_of_the_photo_is_penalised():
     """49994361 closed on the bride laughing with the groom half out of the
     picture, his face cut by the right border of the original."""
-    from src.core.key_pages import _cut_subject_penalty
+    from src.covers.scoring import _cut_subject_penalty
     frame = pd.DataFrame({'faces_info': [
         [_face(0.3, 0.3, 0.5, 0.5), _face(0.85, 0.3, 1.0, 0.5)],   # groom off the right
         [_face(0.3, 0.3, 0.5, 0.5), _face(0.6, 0.3, 0.8, 0.5)],    # both inside
@@ -1423,7 +1422,7 @@ def test_the_cut_frame_loses_the_closing():
 def test_processing_keeps_the_key_pages_it_was_handed():
     """ProcessStage chose again over the few selected couple frames and closed
     on a different photo from the one chosen over the whole gallery."""
-    from src.core.key_pages import choose_good_wedding_images
+    from src.covers.choosing import choose_good_wedding_images
     gallery = couple_gallery(n=24)
     couple = gallery[gallery[Col.CLUSTER_CONTEXT] == 'bride and groom']
     preferred = KeyPages(opening=[1003], closing=[1020])
@@ -1435,7 +1434,7 @@ def test_processing_keeps_the_key_pages_it_was_handed():
 
 
 def test_a_key_page_missing_from_the_pool_is_chosen_again():
-    from src.core.key_pages import choose_good_wedding_images
+    from src.covers.choosing import choose_good_wedding_images
     gallery = couple_gallery(n=24)
     couple = gallery[gallery[Col.CLUSTER_CONTEXT] == 'bride and groom']
     preferred = KeyPages(opening=[1003], closing=[99999])
@@ -1463,7 +1462,7 @@ def test_the_closing_can_be_the_cake_or_a_toast_and_the_opening_cannot():
 
 
 def _ranked_by(scores, orientations, monkeypatch, floor=0.6):
-    import src.core.key_pages as kp
+    import src.covers.scoring as kp
     monkeypatch.setitem(CONFIGS['covers'], 'orientation_floor', floor)
     monkeypatch.setattr(kp, '_score_covers', lambda f, *a, **k: np.array(scores, dtype=float))
     frame = pd.DataFrame({Col.IMAGE_ID: list(range(1, len(scores) + 1)),
@@ -1494,7 +1493,7 @@ def test_a_near_tie_with_a_kiss_scores_nearly_as_a_kiss(monkeypatch):
     """53951381's garden-gate kiss: labelled the last-listed "posing" by 0.005
     over "kissing". Scored by its label it got the posing grade; scored softly
     it sits between the two, much nearer a kiss than the label said."""
-    import src.core.key_pages as kp
+    import src.covers.scoring as kp
     queries = ('kissing', 'smiling', 'posing')
     kiss, pose, smile = np.eye(3, 4, dtype=np.float32)
     monkeypatch.setattr(kp, '_subquery_vectors',
@@ -1512,7 +1511,7 @@ def test_a_near_tie_with_a_kiss_scores_nearly_as_a_kiss(monkeypatch):
 
 
 def test_without_embeddings_the_label_still_decides():
-    from src.core.key_pages import _subquery_affinity, _subquery_grades
+    from src.covers.scoring import _subquery_affinity, _subquery_grades
     queries = ('kissing', 'posing')
     frame = pd.DataFrame({'image_subquery_content': ['kissing', 'posing', 'other']})
 
@@ -1523,7 +1522,7 @@ def test_without_embeddings_the_label_still_decides():
 
 
 def test_a_speech_closes_only_when_it_is_a_toast():
-    from src.core.key_pages import _candidate_base
+    from src.covers.choosing import _candidate_base
     frame = pd.DataFrame({
         Col.CLUSTER_CONTEXT: ['speech', 'speech', 'bride and groom'],
         Col.IMAGE_SUBQUERY_CONTENT: ['person standing giving a speech',
@@ -1544,7 +1543,7 @@ def test_the_table_penalty_spares_standing_at_the_cake(monkeypatch):
     """Raw `seated_at_table` scores: seated frames read 0.45 and up, the couple
     standing at the cake table 0.28-0.35. Only the first is charged."""
     import src.pipeline.enrich.timeline as timeline
-    from src.core.key_pages import _table_penalty
+    from src.covers.scoring import _table_penalty
     frame = pd.DataFrame({Col.IMAGE_ID: [1, 2, 3, 4]})
     monkeypatch.setattr(timeline, 'concept_scores',
                         lambda f, concept: np.array([0.53, 0.42, 0.31, 0.01]))
@@ -1558,7 +1557,7 @@ def test_the_table_penalty_spares_standing_at_the_cake(monkeypatch):
 
 def test_the_table_penalty_is_inert_without_its_bin(monkeypatch):
     import src.pipeline.enrich.timeline as timeline
-    from src.core.key_pages import _table_penalty
+    from src.covers.scoring import _table_penalty
 
     def missing(frame, concept):
         raise FileNotFoundError(concept)

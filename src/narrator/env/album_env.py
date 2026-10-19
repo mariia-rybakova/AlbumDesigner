@@ -64,7 +64,7 @@ class AlbumNarratorEnv:
             if self.reward_cfg.hero_dup_sim > 0:
                 # Near-copies of a cover never reach the body (cfg.hero_dup_sim): AD would prune
                 # them from the finished spreads, hollowing out pages the policy composed. Same
-                # selection as AD's `_drop_cover_duplicates`: the most similar, at most hero_dup_max.
+                # selection as AD's `drop_cover_duplicates`: the most similar, at most hero_dup_max.
                 sim = cache.sim[[first, last]].max(0)
                 over = np.nonzero(self.state.remaining & (sim >= self.reward_cfg.hero_dup_sim))[0]
                 twin = over[np.argsort(sim[over], kind="stable")][::-1][:max(self.reward_cfg.hero_dup_max, 0)]

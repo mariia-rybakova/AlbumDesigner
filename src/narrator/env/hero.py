@@ -20,10 +20,10 @@ from ..data.schema import PackedGallery
 FIRST_WINDOW = 0.25   # fraction of the timeline the opening photo is drawn from
 LAST_WINDOW = 0.25
 
-# Album Designer's cover rules (AlbumDesigner `utils/configs.py` + `src/core/key_pages.py`), mirrored
+# Album Designer's cover rules (AlbumDesigner `utils/configs.py` + `src/covers/`), mirrored
 # so the policy trains against the covers AD will actually ship -- see RewardConfig.hero_ad_rules.
 # AD widens the OPENING window for small galleries: 0.40 at <= 200 photos, 0.25 at >= 500, linear
-# in between (`key_pages._opening_fraction`, `opening_window`).
+# in between (`covers.choosing.opening_fraction`, `opening_window`).
 AD_OPENING_WINDOW = ((200, 0.40), (500, 0.25))
 # Landscape is aspect > 1.02, portrait < 0.98 (the thresholds tools/make_album_pdfs.py uses to
 # build AD's `image_orientation` column).

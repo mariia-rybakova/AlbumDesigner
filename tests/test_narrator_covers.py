@@ -18,7 +18,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import src.core.key_pages as kp  # noqa: E402
+import src.covers.choosing as kp  # noqa: E402
+import src.covers.scoring as kp_scoring  # noqa: E402
 from src.pipeline.contracts import Col  # noqa: E402
 from src.pipeline.select import narrator_covers as nc  # noqa: E402
 
@@ -49,7 +50,7 @@ def frame(n, orientation=None, order=None):
 @pytest.fixture
 def no_quality(monkeypatch):
     """Quality from the photos' own embeddings would make the test about them."""
-    monkeypatch.setattr(kp, '_quality', lambda f, logger: np.zeros(len(f)))
+    monkeypatch.setattr(kp_scoring, '_quality', lambda f, logger: np.zeros(len(f)))
 
 
 def test_a_good_enough_landscape_opens_over_the_best_ranked_portrait(no_quality):
@@ -123,7 +124,7 @@ def test_a_group_of_one_gets_no_bonus():
 
 def test_the_opening_window_widens_for_a_small_gallery():
     """44 photos: 40% of the timeline, not the narrator's quarter."""
-    window = nc._window(packed(44), kp._opening_fraction(44), first=True)
+    window = nc._window(packed(44), kp.opening_fraction(44), first=True)
 
     assert len(window) == 18
 
@@ -153,7 +154,7 @@ def test_the_swap_moves_the_new_covers_out_of_the_body():
 
 
 def test_a_body_photo_repeating_a_cover_is_pruned(monkeypatch):
-    monkeypatch.setitem(kp.settings(), 'cover_duplicate_similarity', 0.8)
+    monkeypatch.setitem(kp_scoring.settings(), 'cover_duplicate_similarity', 0.8)
     photos = frame(5)
     near_copy = photos.at[0, Col.EMBEDDING] + 0.05 * photos.at[1, Col.EMBEDDING]
     photos.at[3, Col.EMBEDDING] = near_copy                # the cover's burst neighbour

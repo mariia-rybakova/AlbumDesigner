@@ -707,7 +707,7 @@ CONFIGS = {'DEBUG': True,
             # frames: `small`'s share for a gallery of up to that many photos,
             # `large`'s from that many up, linear in between. A small gallery's
             # quarter was a handful of frames from the first minutes of the
-            # shoot. See `key_pages._opening_fraction`. The closing keeps a
+            # shoot. See `covers.choosing.opening_fraction`. The closing keeps a
             # quarter (`COVER_FRACTION`).
             # At 0.35, 53951381 (199 photos) stopped three frames short of the
             # kiss the photographer wanted, 26th of 66.

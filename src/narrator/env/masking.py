@@ -63,7 +63,7 @@ def prune_set(state: AlbumState) -> np.ndarray:
     """(N,) bool: the photos AD would prune if the album ended now.
 
     The ``prune_cap`` included photos with the highest ``risk_rank`` (similarity to the nearest cover,
-    ties by photoId, exactly as AD's `_drop_cover_duplicates` sorts). Heroes are never ranked.
+    ties by photoId, exactly as AD's `drop_cover_duplicates` sorts). Heroes are never ranked.
 
     MONOTONE in the one way the mask relies on: adding a photo can only push it into the set and push
     the least similar member out, so a page that is not ASSIGNed to never gains a member. A page that

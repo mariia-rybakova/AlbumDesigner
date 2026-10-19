@@ -9,12 +9,12 @@ shot is matched against ceremony phrasings.
 
 Today those vectors come from a fine-tuned CLIP, and there are three banks --
 `files/queries_embeddings_v1/v2/v3.pkl` -- picked by the photo's
-`model_version` (see `core/key_pages._subquery_vectors`). Nothing here knows
+`model_version` (see `covers.scoring._subquery_vectors`). Nothing here knows
 that: this module only does dot products, so a different encoder means a
 different bank, not a different file.
 
 `read_pkl_file` loads a bank, and lives here because both of its callers want
-exactly that -- this module loading the tag bank, and `core/key_pages`
+exactly that -- this module loading the tag bank, and `covers`
 loading the query bank it ranks cover candidates against.
 """
 

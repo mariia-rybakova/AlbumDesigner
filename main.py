@@ -27,7 +27,7 @@ from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.pipeline import (AlbumContext, album_group, build_select,
                           compose_albums)
-from src.core.key_pages import generate_first_last_pages
+from src.covers.pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
 from src.predefined.models import PredefinedLayoutInput

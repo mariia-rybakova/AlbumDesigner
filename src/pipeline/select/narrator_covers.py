@@ -100,7 +100,8 @@ def apply_covers(block: dict, covers: Tuple[int, int], photos: pd.DataFrame,
 
 
 def _choose(pg, rows: pd.DataFrame, logger) -> Optional[Tuple[int, int]]:
-    from src.core.key_pages import _opening_fraction, rank_general_covers
+    from src.covers.choosing import opening_fraction
+    from src.covers.scoring import rank_general_covers
     from src.narrator.env import hero
 
     if pg.n < 3:
@@ -119,7 +120,7 @@ def _choose(pg, rows: pd.DataFrame, logger) -> Optional[Tuple[int, int]]:
         return [by_id[int(pid)]
                 for pid in rank_general_covers(frame, logger, presence, subjects)]
 
-    opening = ranked(_window(pg, _opening_fraction(pg.n), first=True), exclude=-1)
+    opening = ranked(_window(pg, opening_fraction(pg.n), first=True), exclude=-1)
     if not opening:
         return None
     first = opening[0]
@@ -180,11 +181,11 @@ def _window(pg, fraction: float, first: bool) -> np.ndarray:
 def prune_cover_duplicates(block: dict, photos: pd.DataFrame, logger=None) -> dict:
     """The block without body photos that repeat a cover.
 
-    The wedding path's `_drop_cover_duplicates`, on the narrator's block: the
+    The wedding path's `drop_cover_duplicates`, on the narrator's block: the
     burst neighbour of a cover is a different photo and survives in the body.
     A spread left empty is dropped.
     """
-    from src.core.key_pages import _drop_cover_duplicates
+    from src.covers.choosing import drop_cover_duplicates
 
     covers = [pid for field in ('firstPagePhotoIds', 'lastPagePhotoIds')
               for pid in block.get(field, [])]
@@ -193,7 +194,7 @@ def prune_cover_duplicates(block: dict, photos: pd.DataFrame, logger=None) -> di
     body = [pid for spread in block.get('spreads', []) for pid in spread.get('photoIds', [])]
     frame = photos[photos[Col.IMAGE_ID].isin(body)]
     cover_rows = photos[photos[Col.IMAGE_ID].isin(covers)]
-    kept = set(_drop_cover_duplicates(frame, cover_rows, logger)[Col.IMAGE_ID])
+    kept = set(drop_cover_duplicates(frame, cover_rows, logger)[Col.IMAGE_ID])
     if len(kept) == len(set(body)):
         return block
     spreads = []
