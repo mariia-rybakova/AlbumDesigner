@@ -1,30 +1,30 @@
+"""Finding the scene that breaks the album's clock.
+
+A gallery sometimes carries a "highlight" scene -- a folder of shots gathered
+from across the whole day. Its timestamps are real but its place in the story
+is not, so left alone it drags the artificial timeline out of shape.
+`detect_anachronism_scene` names it, and `time_processing` sets it aside.
+
+The scene is found from six lightweight signals over the photo table, no
+embeddings needed:
+
+  class_entropy        Shannon entropy of the image_class distribution
+  dominant_ratio       share held by the modal class (scored as 1 - ratio,
+                       so a scene of many classes scores higher)
+  class_coverage       unique classes here / unique classes in the gallery
+  ranking_spread       IQR of ranking (a wide spread means mixed content)
+  ranking_mean         mean ranking (a highlight is made of the good shots)
+  ctx_entropy          Shannon entropy of cluster_context, when present
+
+Each scene gets a composite score and the highest wins; ties are all returned.
+
+Written as an offline experiment ("Experiment 2") whose detector was promoted
+into the pipeline. The evaluation half -- ground-truth parsing and a TP/FP/FN
+report -- was removed once its author left and nothing called it; the git
+history has it if the experiment is ever re-run.
 """
-Experiment 2 — Anachronism Scene Detection: TP / FP / FN / TN Evaluation
-=========================================================================
-Detects the anachronism ("highlight") scene using only lightweight signals
-derived from the CSV — no embeddings required:
 
-  Signal 1 · class_entropy        Shannon entropy of image_class distribution
-  Signal 2 · dominant_ratio       Fraction of images belonging to the modal class
-                                  (1 − dominant_ratio used in score so higher = better candidate)
-  Signal 3 · unique_class_ratio   Unique classes / max unique classes in gallery
-  Signal 4 · ranking_spread       IQR of ranking values (wide spread → diverse content)
-  Signal 5 · ranking_mean         Mean ranking (high-quality images from many moments)
-  Signal 6 · cluster_ctx_entropy  Shannon entropy of cluster_context distribution
-                                  (if column present; else 0)
-
-A composite score is computed per scene; the scene with the highest score is
-declared the detected anachronism.  Ties are broken by keeping ALL tied scenes —
-if any of them matches a ground-truth label the gallery counts as a True Positive.
-
-Ground truth is supplied as GROUND_TRUTH dict at the top of this file.
-Each entry is  gallery_id → one scene name OR a list of acceptable scene names.
-"""
-
-import argparse
-import re as _re
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -55,17 +55,6 @@ SIGNAL_NAMES = [
     "ranking_mean",        # mean ranking                — size-invariant
     "ctx_entropy_norm",    # H / log2(k) on ctx labels   — size-corrected
 ]
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# I/O — scene folders (no embedding loading)
-# ══════════════════════════════════════════════════════════════════════════════
-_IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}
-
-
-def _strip_prefix(folder_name: str) -> str:
-    """'00_Highlights' → 'Highlights'"""
-    return _re.sub(r"^\d+_", "", folder_name).strip()
 
 
 def _is_highlight_scene(scene_name: str) -> bool:
@@ -275,62 +264,6 @@ def detect_anachronism(scored_df: pd.DataFrame) -> list[str]:
     # Ties: keep all scenes within floating-point epsilon of the top
     tied = scored_df[np.isclose(scored_df["composite_score"], top_score, atol=1e-6)]
     return tied["scene_name"].tolist()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Evaluation
-# ══════════════════════════════════════════════════════════════════════════════
-def normalise_gt(raw) -> list[str] | None:
-    """Normalise ground-truth entry to a list (or None for 'no scene')."""
-    if raw is None:
-        return None
-    if isinstance(raw, str):
-        return [raw]
-    return list(raw)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Pretty printing helpers
-# ══════════════════════════════════════════════════════════════════════════════
-_OUTCOME_COLOR = {"TP": "\033[92m", "TN": "\033[96m",
-                  "FP": "\033[91m", "FN": "\033[93m"}
-_RESET = "\033[0m"
-
-
-def _c(text: str, outcome: str) -> str:
-    return f"{_OUTCOME_COLOR.get(outcome, '')}{text}{_RESET}"
-
-
-def print_gallery_detail(gallery_id: str,
-                         scored_df: pd.DataFrame,
-                         outcome_dict: dict,
-                         top_n: int = 6):
-    """Print a compact per-gallery breakdown to the terminal."""
-    outcome  = outcome_dict["outcome"]
-    detected = outcome_dict["detected"]
-    gt       = outcome_dict["ground_truth"]
-
-    print(f"\n{'-' * 72}")
-    print(f"  Gallery  : {gallery_id}")
-    print(f"  Outcome  : {_c(outcome, outcome)}")
-    print(f"  Detected : {detected}")
-    print(f"  GT       : {gt}")
-    print()
-
-    # Show size-corrected signals + raw entropy for comparison
-    cols = [
-        "scene_name", "n_images",
-        "class_entropy_norm", "class_entropy_raw",
-        "dominant_ratio",
-        "class_coverage",
-        "class_density",
-        "n_unique_classes",
-        "ranking_spread", "ranking_mean",
-        "ctx_entropy_norm",
-        "composite_score",
-    ]
-    show = [c for c in cols if c in scored_df.columns]
-    print(scored_df[show].head(top_n).to_string(index=False, float_format="{:.3f}".format))
 
 
 def detect_anachronism_scene(df,logger):
