@@ -3,7 +3,7 @@ import random
 import numpy as np
 
 from scipy.spatial.distance import cosine
-from utils.configs import CONFIGS, limit_imgs, relations
+
 
 def select_n_images(images, n, gallery_photos_info):
     """
@@ -65,7 +65,6 @@ def select_n_images(images, n, gallery_photos_info):
     return selected_images
 
 
-
 def select_random_image(images):
     if not images:
         return None
@@ -79,12 +78,10 @@ def calculate_centroid(embeddings):
     return np.mean(embeddings, axis=0)
 
 
-
 def calculate_required_images(total_images, min_limit=10, max_limit=30, max_total_images=150):
     # Ensure required images are between min_limit and max_limit
     required_images = min_limit + ((max_limit - min_limit) / max_total_images) * total_images
     return max(min_limit, min(max_limit, round(required_images)))
-
 
 
 def select_images_of_one_person(related_images, photos_dict,logger):
@@ -308,23 +305,3 @@ def select_images_of_group(people_clustering_dict, photos_dict, clusters_class_i
     selected = proportional_selection_with_calculation(pple_images_related, clusters_class_imgs,
                                                        photos_dict,logger)
     return selected
-
-def generate_dict_key(numbers, n_bodies):
-    if numbers == 0 and n_bodies == 0 or not numbers:
-        return 'No PEOPLE'
-
-    # Convert the string of numbers into a list
-    try:
-        id_list = eval(numbers) if isinstance(numbers, str) else numbers
-    except:
-        return "Invalid_numbers"
-
-    # Calculate the count based on the list length or n_bodies
-    count = max(len(id_list), n_bodies) if isinstance(id_list, list) else n_bodies
-
-    # Determine the suffix
-    suffix = "person" if count == 1 else "pple"
-
-    # Combine count, suffix, and the numbers joined by underscores
-    key = f"{count}_{suffix}_" + "_".join(map(str, id_list))
-    return key

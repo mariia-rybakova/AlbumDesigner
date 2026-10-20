@@ -1,16 +1,9 @@
 import re
-import random
-from typing import Dict, List, Optional
+from typing import Dict, List
+
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-try:
-    from pyclustering.cluster.kmedoids import kmedoids as PycKMedoids
-    _HAS_PYCLUST = True
-except Exception:
-    _HAS_PYCLUST = False
 
-from experiments.plotting import plot_groups_to_pdf
 
 def build_time_merged_groups(
     df: pd.DataFrame,
@@ -178,79 +171,6 @@ def allocate_prefer_larger_artificial(
         raise
     return alloc
 
-def allocate_prefer_larger(
-    groups: dict,
-    need: int,
-    small_threshold: int = 5,   # kept for compatibility; not used in this variant
-    ensure_one: bool = True,    # kept for compatibility; not used in this variant
-    base_per_group: int = 1,    # kept for compatibility; not used in this variant
-):
-    """
-    Smart allocation:
-      - Exclude '_SINGLES_' and groups with <2 items.
-      - Base: give 2 per valid group (largest-first) until need is close.
-      - Cap per group: size<=2 -> size; else -> max(2, size//2).
-      - Round-robin +1 across groups (largest-first) without exceeding caps.
-      - If caps prevent reaching `need`, return early (by design).
-    """
-    # 1) filter valid groups
-    valid = {g: idxs for g, idxs in groups.items()
-             if g != "_SINGLES_" and len(idxs) >= 2}
-    keys_all = list(groups.keys())
-    alloc = {g: 0 for g in keys_all}
-
-    if need <= 0 or not valid:
-        if "_SINGLES_" in groups:
-            alloc["_SINGLES_"] = 0
-        return alloc
-
-    sizes = {g: len(idxs) for g, idxs in valid.items()}
-    order = sorted(valid.keys(), key=lambda k: sizes[k], reverse=True)
-
-    # 2) per-group caps: don't take more than ~half (except tiny groups can be fully used)
-    caps = {}
-    for g, sz in sizes.items():
-        caps[g] = sz if sz <= 2 else max(2, sz // 2)
-
-    # 3) base pass: try to give 2 per group (largest-first), respecting caps & need
-    remaining = need
-    base = 2
-    base_demand = sum(min(base, caps[g]) for g in order)
-
-    if remaining <= base_demand:
-        # not enough to give base to all; give up to 2 (and cap) to largest groups first
-        for g in order:
-            if remaining == 0:
-                break
-            give = min(base, caps[g], remaining)
-            alloc[g] += give
-            remaining -= give
-    else:
-        # give base to all valid groups
-        for g in order:
-            give = min(base, caps[g])
-            alloc[g] += give
-            remaining -= give
-
-        # 4) round-robin +1 until need met or caps reached
-        while remaining > 0:
-            progressed = False
-            for g in order:
-                if remaining == 0:
-                    break
-                if alloc[g] < caps[g]:
-                    alloc[g] += 1
-                    remaining -= 1
-                    progressed = True
-            if not progressed:
-                break  # all groups at cap; stop early (acceptable)
-
-    # ensure singles get zero
-    if "_SINGLES_" in groups:
-        alloc["_SINGLES_"] = 0
-
-    return alloc
-
 
 def _sanitize_key(text: str) -> str:
     """Safe key: letters/digits/_ only (handy for filenames/alloc keys)."""
@@ -263,55 +183,6 @@ def _sanitize_key(text: str) -> str:
     # replace spaces and non-word with underscores
     text = re.sub(r"\W+", "_", text)
     return text
-
-def _chunk_by_window(df, order_cols=None, window_size=10, label="W"):
-    if order_cols is None:
-        order_cols = [c for c in ["scene_order", "image_time_date"] if c in df.columns] or None
-    df_sorted = df.sort_values(order_cols) if order_cols else df
-    idxs = df_sorted.index.to_list()
-    groups = {}
-    for i in range(0, len(idxs), window_size):
-        groups[f"{label}{i//window_size}"] = idxs[i:i+window_size]
-    return groups
-
-def _chunk_by_scene_cluster(
-    df: pd.DataFrame,
-    *,
-    scene_col: str = "scene_order",
-    cluster_col: str = "cluster_label",
-    order_cols: Optional[List[str]] = None,
-    window_size: int = 10,
-    label_prefix: str = "WIN",
-) -> Dict[str, List[int]]:
-    """
-    Split a single-scene dataframe into windows of size `window_size`,
-    but first partition by `cluster_label` so each cluster forms its own
-    contiguous windows.
-
-    Returns:
-        { f"{label_prefix}_{cluster}_{w}": [row_idx,...], ... }
-    """
-    if order_cols is None:
-        order_cols = [c for c in (scene_col, "image_time_date") if c in df.columns]
-
-    # Sort once for deterministic order within each cluster
-    df_sorted = df.sort_values(order_cols) if order_cols else df
-
-    # If no cluster column (or all missing), just chunk the whole scene
-    if cluster_col not in df_sorted.columns or df_sorted[cluster_col].isna().all():
-        return _chunk_by_window(df_sorted, order_cols=order_cols, window_size=window_size, label=label_prefix)
-
-    groups: Dict[str, List[int]] = {}
-    # Group by cluster within the scene
-    for cl, gdf in df_sorted.groupby(cluster_col, dropna=False, sort=True):
-        cl_key = _sanitize_key(cl)
-        idxs = gdf.index.to_list()
-        # Window within this cluster
-        for w, start in enumerate(range(0, len(idxs), window_size)):
-            win = idxs[start:start + window_size]
-            groups[f"{label_prefix}_{cl_key}_{w}"] = win
-
-    return groups
 
 
 def select_remove_similar(
@@ -462,4 +333,3 @@ def select_remove_similar(
         raise
 
     return final_selected
-

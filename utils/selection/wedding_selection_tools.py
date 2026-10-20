@@ -1,85 +1,5 @@
-from collections import defaultdict, deque
-from itertools import combinations_with_replacement
+from collections import deque
 
-from utils.configs import CONFIGS,spreads_required_per_category,min_images_per_category,priority_categories
-
-
-def get_possible_image_sums():
-    # Precompute all possible image sums for 1 to max required spreads
-    max_spreads = max(spreads_required_per_category.values())
-    spread_image_sums = defaultdict(set)  # {spread_count: set of total image sums}
-
-    for spread_count in range(1, max_spreads + 1):
-        for combo in combinations_with_replacement(CONFIGS['layouts'], spread_count):
-            spread_image_sums[spread_count].add(sum(combo))
-
-    # Now calculate results for each category
-    result = {}
-    for category, spreads_needed in spreads_required_per_category.items():
-        result[category] = spread_image_sums[spreads_needed]
-
-    return result
-
-def allocate_images_to_categories(
-        available_images_per_category,
-        possible_image_sums,
-):
-    result = {}
-
-    # 1. Initial assignment from min_images_per_category
-    initial_total = 0
-    for category in available_images_per_category.keys():
-        min_images = min_images_per_category.get(category, 0)
-        result[category] = min_images
-        initial_total += min_images
-
-    # 2. Remaining budget
-    remaining = CONFIGS['total_target_images'] - initial_total
-
-    if remaining <= 0:
-        return result
-
-        # 3. Calculate allocation scores
-    scores = {}
-    max_limits = {}
-    for i, category in enumerate(priority_categories):
-        spreads = spreads_required_per_category.get(category, 0)
-        if spreads == 0:
-            continue
-
-        max_possible_combo = max(possible_image_sums.get(category, []), default=0)
-        max_available = available_images_per_category.get(category, float('inf'))
-        current = result.get(category, 0)
-
-        max_limit = min(max_possible_combo, max_available)
-        max_limits[category] = max_limit
-
-        allocation_capacity = max(0, max_limit - current)
-
-        # Higher priority → higher weight (reverse index)
-        priority_weight = len(priority_categories) - i
-        score = priority_weight * allocation_capacity
-        if score > 0:
-            scores[category] = score
-
-    # 4. Normalize scores to percentages
-    total_score = sum(scores.values())
-    if total_score == 0:
-        return result  # No capacity left to allocate
-
-    # 5. Distribute remaining budget by percentage
-    for category, score in scores.items():
-        share = (score / total_score) * remaining
-        allocated = int(round(share))  # You can fine-tune rounding logic if needed
-        max_limit = max_limits[category]
-        current = result.get(category, 0)
-
-        to_add = min(max_limit - current, allocated)
-        if category not in result:
-            continue
-        result[category] += to_add
-
-    return result
 
 def get_clusters(df):
     clusters_ids = {}
@@ -136,8 +56,3 @@ def select_non_similar_images(clusters_ids,image_order_dict,needed_count):
             break
 
     return result
-
-
-
-
-

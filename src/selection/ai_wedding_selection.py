@@ -13,7 +13,6 @@ from utils.selection.wedding_selection_tools import get_clusters,select_non_simi
 from src.core.time_processing import convert_to_timestamp
 from src.selection.person_clustering import person_max_union_selection
 from utils.selection.time_orientation_selection import identify_temporal_clusters
-#from utils.selection.filtering_selection import select_remove_similar
 from utils.selection.refactoring import select_remove_similar
 
 
