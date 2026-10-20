@@ -7,7 +7,7 @@ from sklearn.cluster import DBSCAN
 from collections import Counter
 
 from utils.configs import CONFIGS
-from utils.lookup_table_tools import wedding_lookup_table
+from src.core.lookup_table import wedding_lookup_table
 from utils.configs import relations,selection_threshold
 from utils.selection.wedding_selection_tools import get_clusters,select_non_similar_images
 from src.core.time_processing import convert_to_timestamp

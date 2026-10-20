@@ -11,7 +11,7 @@ from src.pipeline.select.scoring import build_ratings
 from src.pipeline.substage import SubStage
 from src.selection.auto_selection import get_tags_bins
 from utils.configs import CONFIGS
-from utils.lookup_table_tools import wedding_lookup_table
+from src.core.lookup_table import wedding_lookup_table
 
 #: Categories whose spread budget is uncapped when the user picked the photos
 #: themselves — their choices should not be squeezed into a default allowance.

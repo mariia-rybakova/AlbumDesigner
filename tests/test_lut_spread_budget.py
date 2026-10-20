@@ -12,7 +12,7 @@ import math
 import pytest
 
 from utils.configs import CONFIGS
-from utils.lookup_table_tools import WeddingLookUpTable, wedding_lookup_table
+from src.core.lookup_table import WeddingLookUpTable, wedding_lookup_table
 
 # Detected groups: (time_cluster, cluster_context) -> photos
 RUN1_INITIAL = {

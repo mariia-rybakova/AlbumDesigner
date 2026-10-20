@@ -30,7 +30,7 @@ Return value: ordered `list` of spread dictionaries (one entry per logical group
 
 | Step | Function | Purpose |
 |------|----------|---------|
-| Derive/Reuse | `modified_lut` or `utils.lookup_table_tools.get_lookup_table(group2images, is_wedding, logger, density)` | Establish baseline `(max_spreads, min_photos_per_spread)` per cluster/context |
+| Derive/Reuse | `modified_lut` or `src.core.lookup_table.get_lookup_table(group2images, is_wedding, logger, density)` | Establish baseline `(max_spreads, min_photos_per_spread)` per cluster/context |
 | Layout-Aware Limits | `update_lookup_table_with_layouts_size(look_up_table, designs_info['anyPagelayouts_df'])` | Ensures LUT respects available layout capacities (number of boxes per design) |
 | Global Caps | `update_lookup_table_with_limit(group2images, is_wedding, look_up_table, max_total_spreads)` | Enforces absolute spread maximum (max of `CONFIGS['max_total_spreads']` and `designs_info['maxPages']`) |
 | Post-Processing | Re-applied after group adjustments | Guarantees the LUT remains consistent after merges/splits |
@@ -116,7 +116,7 @@ Manual selection path bypasses special/regular splitting to avoid overriding cur
 album_processing
 ├── src.groups_operations.grouping.get_wedding_groups / get_none_wedding_groups
 ├── src.groups_operations.grouping.get_images_per_groups
-├── utils.lookup_table_tools.{get_lookup_table, update_lookup_table_with_layouts_size, update_lookup_table_with_limit}
+├── src.core.lookup_table.{get_lookup_table, update_lookup_table_with_layouts_size, update_lookup_table_with_limit}
 ├── src.groups_operations.groups_management.process_wedding_illegal_groups
 │   ├── handle_wedding_splitting
 │   ├── handle_wedding_bride_groom_merge

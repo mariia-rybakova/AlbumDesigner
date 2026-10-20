@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Set, Optional
 import pandas as pd
 from src.core.photos import Photo
-from utils.lookup_table_tools import LookUpTable
+from src.core.lookup_table import LookUpTable
 
 
 @dataclass

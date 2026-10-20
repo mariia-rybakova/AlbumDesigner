@@ -533,7 +533,7 @@ def test_aisle_classes_are_known_content_classes_everywhere():
     from utils.configs import (limit_imgs, min_images_per_category, priority_categories,
                                relations, selection_threshold,
                                spreads_required_per_category)
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
     for cls in (BRIDE_AISLE, GROOM_AISLE):
         for focus in ('brideAndGroom', 'parents', 'everyoneElse'):
             assert cls in relations[focus], f"relations[{focus}] missing {cls}"
@@ -568,7 +568,7 @@ def test_send_off_is_a_known_content_class_everywhere():
     from utils.configs import (limit_imgs, min_images_per_category, priority_categories,
                                relations, selection_threshold,
                                spreads_required_per_category)
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
 
     for focus in ('brideAndGroom', 'parents', 'everyoneElse'):
         assert SEND_OFF in relations[focus], f"relations[{focus}]"
@@ -813,7 +813,7 @@ def test_every_yes_category_is_cheap_in_the_lookup_table():
     import csv
     import re
 
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
 
     rows = list(csv.DictReader(open(CONFIGS['focus_csv_path'], encoding='utf-8')))
     columns = [c for c in rows[0] if c.strip().lower() != 'sub event']
@@ -932,7 +932,7 @@ def test_the_present_categories_are_normalised_up_to_the_whole_album():
     `focus_csv.csv`.
     """
     from src.pipeline.select import allocation as al
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
 
     counts = {'ceremony': 200, 'bride and groom': 200, 'dancing': 200}
     lut = al.density_scaled(wedding_lookup_table, 3)
@@ -1029,7 +1029,7 @@ def _profile(log):
 def _allocate(actual_counts):
     """Run the select.budget allocator over a category->count mapping."""
     from src.pipeline.select.allocation import allocate
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
 
     log = _quiet()
     result = allocate(actual_counts, _profile(log), wedding_lookup_table, 3,
@@ -1040,7 +1040,7 @@ def _allocate(actual_counts):
 def _allocate_full(actual_counts):
     """As _allocate, but the whole Allocation so the reasoning is visible."""
     from src.pipeline.select.allocation import allocate
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
 
     log = _quiet()
     # `key_page_spreads=0`: the reference sizes the whole album and budgets for
@@ -1053,7 +1053,7 @@ def _allocate_reference(actual_counts):
     """The pre-rewrite calculate_optimal_selection, kept as the oracle."""
     from src.selection.ai_wedding_selection import calculate_optimal_selection
     from utils.configs import relations
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
 
     log = _quiet()
     images, spreads, lo, hi = calculate_optimal_selection(

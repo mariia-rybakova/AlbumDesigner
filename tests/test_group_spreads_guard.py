@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 
 from src.groups_operations.groups_management import _update_group_spreads
-from utils.lookup_table_tools import WeddingLookUpTable
+from src.core.lookup_table import WeddingLookUpTable
 
 
 class _Table:

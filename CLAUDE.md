@@ -30,7 +30,7 @@ Both packages have known exceptions that predate the rule, listed in their own
 
 | Package | What belongs there |
 |---|---|
-| `src/core/` | Domain vocabulary and constructors, imported from anywhere: `models`, `photos`, `group_formation`, `time_processing`, `spread_ordering` |
+| `src/core/` | Domain vocabulary and constructors, imported from anywhere: `models`, `photos`, `group_formation`, `lookup_table`, `time_processing`, `spread_ordering` |
 | `src/covers/` | The album's first and last pages — `scoring` ranks a photograph as a cover, `choosing` picks the two, `pages` lays them out. A shelf, not a tree, and it depends in one direction only |
 | `src/readers/` | Libraries that turn an outside format into the album's tables — protobuf blobs, the design JSON, the query bank. Not substages; the substages that call them live in `src/pipeline/ingest` |
 | `src/pipeline/` | The substage pipeline — `ingest` reads and organises but never infers; `enrich` infers; `select` chooses the photos and the spread budget |
@@ -40,9 +40,9 @@ Both packages have known exceptions that predate the rule, listed in their own
 | `utils/` | Being dissolved. Nothing new goes here |
 
 `utils/` was a second `src` — domain code filed under a name that promised
-generic helpers. Three things are left in it and each is there for a reason:
-`configs.py` (the config, edited constantly, moving it would conflict with
-everything), `lookup_table_tools.py`, and `selection/`. Add nothing to it.
+generic helpers. Two things are left: `configs.py` (the config, edited
+constantly, and read from 70-odd places) and `selection/`, which is mostly
+unreachable and waiting on a decision about deleting it. Add nothing to it.
 
 ## Tests
 

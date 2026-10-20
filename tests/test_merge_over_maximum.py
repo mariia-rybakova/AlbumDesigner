@@ -21,7 +21,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.groups_operations.groups_management import _merge_over_maximum  # noqa: E402
-from utils.lookup_table_tools import WeddingLookUpTable  # noqa: E402
+from src.core.lookup_table import WeddingLookUpTable  # noqa: E402
 
 LOGGER = logging.getLogger('test_merge_over_maximum')
 KEYS = ['time_cluster', 'cluster_context', 'group_sub_index']

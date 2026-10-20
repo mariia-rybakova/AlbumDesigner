@@ -23,7 +23,7 @@ It complements `docs/pipeline_overview.md` (§4) and `docs/album_processing_deep
 | Cluster round-robin | `utils/selection/wedding_selection_tools.py` → `get_clusters`, `select_non_similar_images` | Default fallback strategy |
 | Temporal filtering | `utils/selection/time_orientation_selection.py` → `identify_temporal_clusters` | Drops temporally isolated photos |
 | Non-wedding helpers | `utils/selection/non_wedding_selection_tools.py` | Quota math, per-cluster picking, fallbacks |
-| Tunables | `utils/configs.py`, `utils/lookup_table_tools.py`, `files/focus_csv.csv` | Weights, thresholds, per-category priors |
+| Tunables | `utils/configs.py`, `src/core/lookup_table.py`, `files/focus_csv.csv` | Weights, thresholds, per-category priors |
 
 ### Dead / legacy modules
 
@@ -561,7 +561,7 @@ All in `utils/configs.py` unless noted.
 | `ε` | `1e-9` | Flat-column guard in normalization |
 | `focus_csv_path` | `files/focus_csv.csv` | Per-focus category percentages |
 | `bin_name_dictionary` | camelCase → file name | Tag `.bin` resolution |
-| `wedding_lookup_table` | `utils/lookup_table_tools.py` | `(photos_per_spread, std)` per category |
+| `wedding_lookup_table` | `src/core/lookup_table.py` | `(photos_per_spread, std)` per category |
 | `relations` | `utils/configs.py` | Loaded per focus but **currently unused** |
 | Hard-coded | `20 min` / `min 4` (temporal clusters), `4 min` (fixed span), `5 min` (merge gap), `0.90` (dedup cosine), `0.95` (portrait dedup cosine), `±10 min` (parent pairing), `need × 3` (candidate fallback and `min_keep`) | Not exposed in config |
 

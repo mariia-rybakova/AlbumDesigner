@@ -607,7 +607,7 @@ class CpSatPicker:
         table = getattr(self.plan, 'lookup_table', None)
         if table:
             return table
-        from utils.lookup_table_tools import wedding_lookup_table
+        from src.core.lookup_table import wedding_lookup_table
         return wedding_lookup_table
 
     @staticmethod

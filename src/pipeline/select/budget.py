@@ -9,7 +9,7 @@ from src.pipeline.select.contracts import SelectionPlan
 from src.pipeline.substage import SubStage
 from src.selection.ai_wedding_selection import load_event_mapping
 from utils.configs import CONFIGS
-from utils.lookup_table_tools import wedding_lookup_table
+from src.core.lookup_table import wedding_lookup_table
 
 
 @register

@@ -93,7 +93,7 @@ def test_the_budget_counts_content_spreads_not_the_album():
     longer lands on 21."""
     import pandas as pd
     from src.pipeline.select.allocation import allocate
-    from utils.lookup_table_tools import wedding_lookup_table
+    from src.core.lookup_table import wedding_lookup_table
     profile = {'bride and groom': {'type': 'percentage', 'value': 100.0}}
     photos = pd.DataFrame({'persons_ids': [[1, 2]] * 60})
 

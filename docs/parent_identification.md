@@ -195,7 +195,7 @@ lives in `parent_category`. Yet `bride with her parents`, `groom with his
 parents` and `bride and groom with parents` are configured as if they were
 categories — in `files/focus_csv.csv` (3% / 2% / 2% under the `parents` focus),
 in three threshold blocks in `utils/configs.py`, and in
-`utils/lookup_table_tools.py`. None is reachable
+`src/core/lookup_table.py`. None is reachable
 (`parents_categories = {"parents portrait"}`). A `focus: parents` request
 therefore gets **3%**, not the 10% the CSV reads as.
 `budget_normalise_present_only` makes the dead rows cost nothing, so this is a

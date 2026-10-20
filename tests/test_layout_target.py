@@ -16,7 +16,7 @@ import math
 import pytest
 
 from src.album_processing import layout_target
-from utils.lookup_table_tools import WeddingLookUpTable, wedding_lookup_table
+from src.core.lookup_table import WeddingLookUpTable, wedding_lookup_table
 
 # The final groups of that run, as the second LUT pass saw them.
 GROUPS_49994361 = {

@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.photos import Photo  # noqa: E402
 from src.spreads_layout.spreads.spread import SingleSpreadLayout, set_neutral_contexts  # noqa: E402
-from utils.lookup_table_tools import WeddingLookUpTable  # noqa: E402
+from src.core.lookup_table import WeddingLookUpTable  # noqa: E402
 
 FOOD = (8, 'food', -1)
 
