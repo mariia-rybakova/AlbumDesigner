@@ -89,6 +89,9 @@ INGEST: Sequence[str] = (
     "ingest.rating",
     "ingest.project_registry",
     "ingest.embeddings",
+    # After `ingest.project_registry`, which is what says whether this project
+    # is in the vector database and under which model.
+    "ingest.photo_metadata",
     "ingest.gallery_assets",
 )
 
@@ -107,6 +110,9 @@ ENRICH: Sequence[str] = (
     "enrich.require_cluster_data",
     "enrich.people_cluster",
     "ingest.merge_ratings",
+    # Beside it, not after it in any contested sense: this one writes
+    # `metadata_rating` and `keywords`, and leaves `user_rating` alone.
+    "ingest.merge_photo_metadata",
     "ingest.scenes",
     "enrich.temporal",
     # After `enrich.temporal`, which is what gives it a day to cut into

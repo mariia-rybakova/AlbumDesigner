@@ -72,7 +72,19 @@ class Col:
     DIAMETER = "diameter"
 
     # -- ingest.rating -----------------------------------------------------
+    #: The rating the request names, 0 when it names none.
     USER_RATING = "user_rating"
+
+    # -- ingest.photo_metadata (vector-database payload) -------------------
+    #: The `rating` on the photo's vector-database payload, 0 when it carries
+    #: none. NOT `USER_RATING` under another name: that one is what the request
+    #: asked this album to be built with, this one is what the payload happened
+    #: to hold, and nothing establishes that the two are the same number on the
+    #: same scale. They are kept apart until something does.
+    METADATA_RATING = "metadata_rating"
+    #: The `keywords` on that same payload, [] when it carries none. Only a
+    #: vectorised gallery has either -- see `src/readers/qdrant.py`.
+    KEYWORDS = "keywords"
 
     # -- enrich.content_class ---------------------------------------------
     CLUSTER_CONTEXT = "cluster_context"
@@ -314,6 +326,10 @@ class AlbumContext:
     # -- ingest sidecars ----------------------------------------------------
     clip_embeddings: Optional[pd.DataFrame] = None
     ratings: Optional[pd.DataFrame] = None
+    #: `image_id` / `metadata_rating` / `keywords` read off the vector
+    #: database's payload. None when the project is not vectorised, in which
+    #: case the same metadata sits in blob storage and nobody reads it.
+    photo_metadata: Optional[pd.DataFrame] = None
     social_circles: Optional[pd.DataFrame] = None
     person_details: Optional[pd.DataFrame] = None
     is_in_vector_db: Optional[bool] = None
