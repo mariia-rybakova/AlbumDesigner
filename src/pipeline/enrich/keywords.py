@@ -1,16 +1,16 @@
-"""Acting on the keywords the photographer addressed to the album."""
+"""Acting on the keywords and ratings the photographer addressed to the album."""
 
 from __future__ import annotations
 
+from src.core.keywords import RATING_COLUMN, is_for_album, is_not_for_album
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
-from src.core.keywords import is_for_album, is_not_for_album
 
 
 @register
 class AlbumKeywordsSubStage(SubStage):
-    """Remove every photograph the photographer marked ``notforalbum``.
+    """Remove the photographs marked ``notforalbum``, and count the rest.
 
     First of everything, and that placement is the rule rather than a detail.
     It runs before `enrich.duplicate_shots`, so an excluded frame can neither
@@ -25,15 +25,16 @@ class AlbumKeywordsSubStage(SubStage):
     photograph does not save it: that photograph is not on the table by the
     time anything reads `album`.
 
-    The *acting* on `album` is not here at all -- it is a lift on the score,
-    applied by `core.keywords.for_album_lift` wherever a photograph is ranked.
-    What is here is the count, because this is the last moment the whole
-    gallery is on the table and every number after it is of a pool something
-    has already narrowed.
+    The counting is here rather than anywhere later because this is the last
+    moment the whole gallery is on the table -- every number after this is of
+    a pool something has already narrowed. The *acting* on `album` and on
+    `metadata_rating` is not here at all; both are a lift on the score, applied
+    by `core.keywords.priority_lift` wherever a photograph is ranked.
 
     Skipped, silently, on a gallery with no keyword column -- one that was
     never vectorised, whose metadata sits in blob storage that nothing reads.
-    Absent keywords are not an instruction either way.
+    Absent keywords are not an instruction either way, and `read=False` on the
+    summary is what tells the report the zeros mean "nothing was read".
     """
 
     name = "enrich.album_keywords"
@@ -44,17 +45,23 @@ class AlbumKeywordsSubStage(SubStage):
 
     def execute(self, context: AlbumContext) -> AlbumContext:
         photos = context.photos
+        summary = context.keyword_summary
+        summary.read = True
 
         excluded = photos[Col.KEYWORDS].map(is_not_for_album)
-        dropped = int(excluded.sum())
-        if dropped:
+        summary.excluded = int(excluded.sum())
+        if summary.excluded:
             photos = photos[~excluded]
             context.photos = photos
 
+        summary.prioritised = int(photos[Col.KEYWORDS].map(is_for_album).sum())
+        if RATING_COLUMN in photos.columns:
+            summary.rated = int((photos[RATING_COLUMN] > 0).sum())
+
         if context.logger:
-            prioritised = int(photos[Col.KEYWORDS].map(is_for_album).sum())
             context.logger.info(
-                f"Album keywords: dropped {dropped} photos keyworded "
+                f"Album keywords: dropped {summary.excluded} photos keyworded "
                 f"notforalbum; {len(photos)} remain, of which "
-                f"{prioritised} are keyworded album")
+                f"{summary.prioritised} are keyworded album and "
+                f"{summary.rated} carry a metadata rating")
         return context

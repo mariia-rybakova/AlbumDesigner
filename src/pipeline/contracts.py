@@ -286,6 +286,42 @@ class KeyPages:
 
 
 @dataclass
+class KeywordSummary:
+    """What the photographer's own metadata did to this request.
+
+    Counted once over the whole gallery by `enrich.album_keywords`, which is
+    the last moment every photograph is still on the table, and reported by
+    `select.keyword_report` once the album knows what it kept. Shared by every
+    album variant: the exclusion and the priority set are properties of the
+    gallery, while `used` is per album and filled in at the end.
+    """
+
+    #: Photographs dropped for a `notforalbum` keyword.
+    excluded: int = 0
+    #: Photographs that survived and carry the `album` keyword.
+    prioritised: int = 0
+    #: Photographs that survived and carry a `metadata_rating` above 0.
+    rated: int = 0
+    #: True when the gallery carried a keyword column at all, i.e. it was
+    #: vectorised. False means the counts above are zero because nothing was
+    #: read, not because nothing was marked.
+    read: bool = False
+
+    def as_content(self) -> Dict[str, Any]:
+        return {"excluded": self.excluded, "prioritised": self.prioritised,
+                "rated": self.rated, "read": self.read}
+
+    @classmethod
+    def from_content(cls, payload: Any) -> "KeywordSummary":
+        if not isinstance(payload, dict):
+            return cls()
+        return cls(excluded=int(payload.get("excluded", 0)),
+                   prioritised=int(payload.get("prioritised", 0)),
+                   rated=int(payload.get("rated", 0)),
+                   read=bool(payload.get("read", False)))
+
+
+@dataclass
 class Services:
     """External clients, injected rather than constructed inside substages so a
     substage can be exercised against fakes."""
@@ -336,6 +372,9 @@ class AlbumContext:
 
     # -- derived ------------------------------------------------------------
     facts: GalleryFacts = field(default_factory=GalleryFacts)
+    #: What the photographer's keywords and ratings did to this request.
+    #: Gallery-level, so it is shared across album variants rather than copied.
+    keyword_summary: KeywordSummary = field(default_factory=KeywordSummary)
     key_pages: Optional[KeyPages] = None
     #: {image_id: photo row} of the copies `enrich.duplicate_shots` dropped that
     #: are some kept photo's `treatment_twin`. The same shot in the other
@@ -455,6 +494,8 @@ class AlbumContext:
         context.hints = AiHints.from_request(content)
         context.key_pages = KeyPages.from_content(content.get("key_pages"))
         context.treatment_twins = dict(content.get("treatment_twins") or {})
+        context.keyword_summary = KeywordSummary.from_content(
+            content.get("keyword_summary"))
         context.facts = GalleryFacts(
             is_wedding=content.get("is_wedding"),
             is_artificial_time=content.get("is_artificial_time", False),
@@ -491,6 +532,8 @@ class AlbumContext:
             content["key_pages"] = self.key_pages.as_content()
         if self.treatment_twins:
             content["treatment_twins"] = self.treatment_twins
+        if self.keyword_summary.read:
+            content["keyword_summary"] = self.keyword_summary.as_content()
 
         if self.selection is not None:
             content["photos"] = self.selection.photo_ids

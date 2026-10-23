@@ -142,6 +142,8 @@ SELECT: Sequence[str] = (
     "select.narrator",
     "select.pick",
     "select.publish",
+    # Last: `used` is not known until the picker has finished.
+    "select.keyword_report",
 )
 
 

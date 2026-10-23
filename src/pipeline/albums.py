@@ -33,7 +33,8 @@ import pandas as pd
 
 from dataclasses import replace as _replace
 
-from src.pipeline.contracts import AlbumContext, AiHints, GalleryFacts, Services
+from src.pipeline.contracts import (AlbumContext, AiHints, GalleryFacts,
+                                    KeywordSummary, Services)
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,10 @@ class GalleryBase:
     #: The dropped copies `enrich.duplicate_shots` kept aside for a later swap
     #: of treatment. Read-only after ENRICH, so shared rather than copied.
     treatment_twins: Any = None
+    #: What the photographer's keywords did to the gallery. Counted once, over
+    #: the whole gallery, so every album reports the same exclusion and the
+    #: same priority set -- only `used` differs between them.
+    keyword_summary: Any = None
 
     #: The album briefs `enrich.variants` planned for this gallery. Empty means
     #: nobody planned any, and one album with no overrides is composed.
@@ -174,6 +179,7 @@ class GalleryBase:
             available_photo_ids=tuple(source.available_photo_ids or ()),
             key_pages=source.key_pages,
             treatment_twins=getattr(source, "treatment_twins", None) or {},
+            keyword_summary=getattr(source, "keyword_summary", None),
             variants=tuple(getattr(source, "variants", None) or ()),
             designs=source.designs,
             clip_embeddings=source.clip_embeddings,
@@ -216,6 +222,7 @@ class GalleryBase:
             facts=copy.copy(self.facts),
             key_pages=copy.copy(self.key_pages),
             treatment_twins=self.treatment_twins or {},
+            keyword_summary=copy.copy(self.keyword_summary) or KeywordSummary(),
         )
 
 

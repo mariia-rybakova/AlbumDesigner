@@ -88,7 +88,7 @@ from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.enrich import timeline as tl
 from src.pipeline.select import narrowing
 from src.pipeline.subject import IDENTITY_RULES, _people_of
-from src.core.keywords import for_album_lift
+from src.core.keywords import priority_lift
 from src.pipeline.select.scoring import CandidateGate, Scorer
 from utils.configs import CONFIGS
 
@@ -720,7 +720,7 @@ class CpSatPicker:
             # photographer's instruction, and an instruction outranks a guess
             # outright. `rank` spans 0..1, so +1 clears it; the lift rides on
             # top so `album` still outranks a rating inside the band.
-            lift = for_album_lift(group)
+            lift = priority_lift(group)
             return rank + (lift > 0) * 1.0 + lift
 
         _ranked, scored = scorer.score(group.copy())

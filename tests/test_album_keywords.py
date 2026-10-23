@@ -226,3 +226,138 @@ def test_the_unscored_path_puts_marked_photos_first():
     assert candidates == [1, 3, 0, 2]
     assert used_image_order is True
 
+
+# ------------------------------------------------------- rating, and its place
+
+def rated_frame(ratings, keywords=None):
+    data = {
+        'image_id': np.arange(len(ratings), dtype=np.int64),
+        'metadata_rating': ratings,
+        'image_order': list(range(len(ratings))),
+    }
+    data['keywords'] = keywords if keywords is not None else [[]] * len(ratings)
+    return pd.DataFrame(data)
+
+
+def test_a_higher_rating_lifts_further():
+    from src.core.keywords import metadata_rating_lift
+
+    lift = metadata_rating_lift(rated_frame([5, 4, 1, 0]))
+    assert lift[0] > lift[1] > lift[2] > lift[3] == 0.0
+
+
+def test_the_scale_is_taken_from_the_gallery_rather_than_assumed():
+    """Nothing in the payload says the rating is out of five. A gallery rated
+    out of 100 and one rated out of 5 must order the same way."""
+    from src.core.keywords import metadata_rating_lift
+
+    out_of_five = metadata_rating_lift(rated_frame([5, 4, 1, 0])).tolist()
+    out_of_hundred = metadata_rating_lift(rated_frame([100, 80, 20, 0])).tolist()
+    assert out_of_five == out_of_hundred
+
+
+def test_the_album_keyword_beats_the_best_rating():
+    """The ordering asked for: `album` > 5 > 4 > unrated, between photographs
+    the blend scores alike."""
+    from src.core.keywords import FOR_ALBUM_BONUS, METADATA_RATING_BONUS, priority_lift
+
+    frame = rated_frame([0, 4, 5, 0], keywords=[[], [], [], ['album']])
+    lift = priority_lift(frame)
+
+    assert lift[3] > lift[2] > lift[1] > lift[0] == 0.0
+    assert METADATA_RATING_BONUS < FOR_ALBUM_BONUS, "the invariant the ordering rests on"
+
+
+def test_a_photo_carrying_both_is_lifted_by_both():
+    from src.core.keywords import FOR_ALBUM_BONUS, METADATA_RATING_BONUS, priority_lift
+
+    frame = rated_frame([5, 5, 0], keywords=[['album'], [], ['album']])
+    lift = priority_lift(frame)
+
+    assert lift[0] == pytest.approx(FOR_ALBUM_BONUS + METADATA_RATING_BONUS)
+    assert lift[1] == pytest.approx(METADATA_RATING_BONUS)
+    assert lift[2] == pytest.approx(FOR_ALBUM_BONUS)
+    assert lift[0] > lift[2] > lift[1], "album+5 > album > 5"
+
+
+def test_a_zero_or_negative_rating_is_unrated():
+    from src.core.keywords import metadata_rating_lift
+
+    assert metadata_rating_lift(rated_frame([0, -3, 5])).tolist()[:2] == [0.0, 0.0]
+
+
+def test_a_gallery_nobody_rated_lifts_nothing():
+    from src.core.keywords import metadata_rating_lift
+
+    assert metadata_rating_lift(rated_frame([0, 0, 0])).tolist() == [0.0, 0.0, 0.0]
+
+
+def test_a_gallery_with_no_rating_column_lifts_nothing():
+    from src.core.keywords import priority_lift
+
+    frame = pd.DataFrame({'image_id': [1, 2], 'keywords': [[], []]})
+    assert priority_lift(frame).tolist() == [0.0, 0.0]
+
+
+# ------------------------------------------------------------------ the report
+
+class Recorder:
+    def __init__(self):
+        self.lines = []
+
+    def __getattr__(self, _name):
+        return self._record
+
+    def _record(self, message, *a, **k):
+        self.lines.append(str(message))
+
+
+def test_the_counts_are_taken_over_the_whole_gallery_before_it_narrows():
+    photos = rated_frame(
+        [5, 0, 4, 0, 0],
+        keywords=[['album'], ['not for album'], [], ['Album'], ['beach']])
+    context = AlbumContext(photos=photos, logger=LOGGER)
+    context = get('enrich.album_keywords')()(context)
+
+    summary = context.keyword_summary
+    assert summary.read is True
+    assert summary.excluded == 1
+    assert summary.prioritised == 2, "both `album` photos survived the exclusion"
+    assert summary.rated == 2, "the 5 and the 4; the excluded photo is not counted"
+
+
+def test_a_gallery_that_was_never_vectorised_is_marked_unread():
+    """So the zeros in the report cannot be read as 'nobody marked anything'."""
+    context = AlbumContext(photos=pd.DataFrame({'image_id': [1, 2]}), logger=LOGGER)
+    context = get('enrich.album_keywords')()(context)
+    assert context.keyword_summary.read is False
+
+
+def test_the_report_says_the_three_numbers_that_were_asked_for():
+    from src.pipeline.contracts import KeywordSummary
+
+    logger = Recorder()
+    kept = rated_frame([5, 0], keywords=[['album'], ['beach']])
+    context = AlbumContext(
+        photos=kept, logger=logger,
+        keyword_summary=KeywordSummary(excluded=4, prioritised=3, rated=7, read=True))
+    get('select.keyword_report')()(context)
+
+    line = "\n".join(logger.lines)
+    assert "excluded 4" in line
+    assert "priority set 3 keyworded album" in line
+    assert "used 1/3 keyworded" in line
+
+
+def test_nothing_is_logged_for_a_gallery_whose_keywords_were_never_read():
+    logger = Recorder()
+    context = AlbumContext(photos=rated_frame([0]), logger=logger)
+    get('select.keyword_report')()(context)
+    assert logger.lines == []
+
+
+def test_the_report_runs_last_so_that_used_is_known():
+    from src.pipeline.registry import SELECT
+
+    assert list(SELECT)[-1] == 'select.keyword_report'
+    assert list(SELECT).index('select.publish') < list(SELECT).index('select.keyword_report')

@@ -115,3 +115,70 @@ def for_album_lift(frame, bonus: float = None):
         return pd.Series(0.0, index=frame.index)
     return frame[KEYWORDS_COLUMN].map(is_for_album).astype(float) * float(bonus)
 
+
+# --------------------------------------------------------------------------
+# What a metadata rating is worth
+# --------------------------------------------------------------------------
+
+#: The column the vector-database rating arrives in (`Col.METADATA_RATING`).
+RATING_COLUMN = "metadata_rating"
+
+#: How far the best-rated photograph in a frame is lifted above an unrated one.
+#:
+#: **Strictly below** :data:`FOR_ALBUM_BONUS`, and that is the whole ordering
+#: asked for: between two photographs the blend scores alike, `album` beats the
+#: top rating, the top rating beats the one below it, and any rating beats no
+#: rating. A photograph carrying both is lifted by both, so `album` + top
+#: rating outranks `album` alone, which outranks the top rating alone.
+METADATA_RATING_BONUS = 0.15
+
+assert METADATA_RATING_BONUS < FOR_ALBUM_BONUS, (
+    "`album` must outrank every rating; see the module docstring")
+
+
+def metadata_rating_lift(frame, bonus: float = None):
+    """Per-row score lift from ``metadata_rating``, 0 where there is none.
+
+    **Scaled against the frame's own best rating, because the scale is not
+    known.** The payload is written by whatever catalogue the photographer
+    uses; it is five stars often enough, but nothing in the record says so, and
+    a rule that divided by a hard-coded 5 would silently do almost nothing to a
+    gallery rated out of 100 and overshoot one rated out of 3. Dividing by the
+    best rating actually present needs no such assumption and keeps the only
+    property that was asked for: 5 beats 4 beats 1 beats unrated.
+
+    Scaled per *frame*, which is one content category, because that is the only
+    place these scores ever compete -- the picker fills each category from its
+    own ranking. Two categories whose photographers used different parts of the
+    scale are never compared, so there is nothing for a gallery-wide maximum to
+    make fairer.
+
+    A rating of 0 or less is "unrated" and lifts nothing. That is the same
+    thing the reader means by 0 when a payload carried no `rating` at all; the
+    two cannot be told apart and there is no sense in which a zero-star
+    photograph should outrank an unmarked one.
+    """
+    import pandas as pd
+
+    bonus = METADATA_RATING_BONUS if bonus is None else bonus
+    if RATING_COLUMN not in getattr(frame, 'columns', ()) or not bonus:
+        return pd.Series(0.0, index=frame.index)
+
+    ratings = pd.to_numeric(frame[RATING_COLUMN], errors='coerce').fillna(0.0)
+    ratings = ratings.clip(lower=0.0)
+    best = ratings.max()
+    if not best > 0:
+        return pd.Series(0.0, index=frame.index)
+
+    return ratings / best * float(bonus)
+
+
+def priority_lift(frame):
+    """Everything the photographer's metadata adds to a photograph's score.
+
+    The one entry point the scorers call, so the two rules cannot drift apart
+    or be applied in one path and not another. Zero for every photograph that
+    carries neither mark -- which is what keeps a gallery nobody keyworded or
+    rated scoring exactly what it scored before any of this existed.
+    """
+    return for_album_lift(frame) + metadata_rating_lift(frame)

@@ -8,6 +8,9 @@
                      any ranking runs
 ``select.pick``      the category loop; delegates to a category strategy
 ``select.publish``   narrow the photo table and finalise the outcome
+``select.keyword_report``
+                     one line on what the photographer's keywords and ratings
+                     changed, now that the album knows what it kept
 ===================  =====================================================
 
 ``select.pick`` is decomposed a second time internally: the shared scaffolding
@@ -20,6 +23,7 @@ Importing this package registers every substage it defines.
 
 from src.pipeline.select import (  # noqa: F401  (imported for registration)
     budget,
+    keyword_report,
     narrator,
     pick,
     preselect,
@@ -27,4 +31,5 @@ from src.pipeline.select import (  # noqa: F401  (imported for registration)
     route,
 )
 
-__all__ = ["budget", "narrator", "pick", "preselect", "publish", "route"]
+__all__ = ["budget", "keyword_report", "narrator", "pick", "preselect",
+           "publish", "route"]

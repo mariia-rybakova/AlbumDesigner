@@ -257,18 +257,19 @@ def test_a_gallery_with_no_metadata_produces_the_same_result_as_today():
       no keyword column and no rating column at all;
     * the same gallery with both columns present and empty, which is what a
       vectorised project whose photographer marked nothing looks like;
-    * the same gallery with the bonus set to 0, which is the scorer exactly as
-      it was before any of this was written.
+    * the same gallery with both bonuses set to 0, which is the scorer exactly
+      as it was before any of this was written.
     """
     without_columns = select(marked(columns=False))
     with_empty_columns = select(marked())
 
-    original = keywords.FOR_ALBUM_BONUS
+    original = (keywords.FOR_ALBUM_BONUS, keywords.METADATA_RATING_BONUS)
     keywords.FOR_ALBUM_BONUS = 0
+    keywords.METADATA_RATING_BONUS = 0
     try:
         rule_switched_off = select(marked())
     finally:
-        keywords.FOR_ALBUM_BONUS = original
+        keywords.FOR_ALBUM_BONUS, keywords.METADATA_RATING_BONUS = original
 
     assert without_columns.selection.photo_ids == with_empty_columns.selection.photo_ids
     assert without_columns.selection.photo_ids == rule_switched_off.selection.photo_ids
@@ -279,7 +280,8 @@ def test_a_gallery_with_no_metadata_produces_the_same_result_as_today():
 
 def test_an_unmarked_photo_in_a_marked_gallery_scores_what_it_always_did():
     """The bisect property, measured on the scorer rather than argued: in a
-    gallery where one photograph is marked, it moves and nothing else does.
+    gallery where two photographs are marked, those two move and nothing else
+    does.
 
     Compared photo by photo, not position by position -- `get_scores` hands
     back its pairs sorted by score, so two runs line up different photographs.
@@ -287,8 +289,9 @@ def test_an_unmarked_photo_in_a_marked_gallery_scores_what_it_always_did():
     from src.selection.ai_wedding_selection import get_scores
 
     plain = marked()
-    lifted = [int(plain['image_id'].iloc[5])]
-    gallery = marked(keywords_by_id={lifted[0]: ['album']})
+    lifted = [int(plain['image_id'].iloc[5]), int(plain['image_id'].iloc[9])]
+    gallery = marked(keywords_by_id={lifted[0]: ['album']},
+                     ratings_by_id={lifted[1]: 5})
 
     before, _ = get_scores(plain.copy(), plain.iloc[:0], [], {}, LOGGER, {})
     after, _ = get_scores(gallery.copy(), gallery.iloc[:0], [], {}, LOGGER, {})
@@ -310,7 +313,7 @@ def test_the_keyword_albums_does_not_match():
     plural = int(gallery['image_id'].iloc[33])
     frame = marked(keywords_by_id={plural: ['albums']})
 
-    assert keywords.for_album_lift(frame).sum() == 0.0, "nothing was lifted"
+    assert keywords.priority_lift(frame).sum() == 0.0, "nothing was lifted"
 
 
 def test_the_plural_changes_no_selection_at_all():

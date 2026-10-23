@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from src.core.keywords import for_album_lift
+from src.core.keywords import priority_lift
 from src.pipeline import subject
 from src.selection.ai_wedding_selection import get_scores
 from utils.configs import selection_threshold
@@ -88,7 +88,7 @@ class CandidateGate:
                 scored = frame.copy()
                 scored["total_score"] = 1.0
                 scored = scored.assign(
-                    _priority=for_album_lift(scored)
+                    _priority=priority_lift(scored)
                 ).sort_values(by=['_priority', 'image_order'],
                               ascending=[False, True]).drop(columns='_priority')
                 return scored, scored["image_id"].tolist(), True
