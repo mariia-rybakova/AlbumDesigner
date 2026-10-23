@@ -5,6 +5,7 @@ These all used to be interleaved with the protobuf reads inside
 none of them is reading — each one *infers* something:
 
 ===========================  =========================================
+``enrich.album_keywords``    photos the photographer keyworded out of the album
 ``enrich.duplicate_shots``   one copy of each shot uploaded more than once
 ``enrich.gallery_type``      wedding or not, from the classifier output
 ``enrich.content_class``     ``cluster_class`` int -> category name
@@ -32,10 +33,11 @@ from src.pipeline.enrich import (  # noqa: F401  (imported for registration,
     hygiene,
     identities,
     key_pages,
+    keywords,
     temporal,
     variants,
 )
 
 __all__ = ["ceremony_anchor", "classification", "couple_scenes", "dedupe",
            "hygiene", "identities",
-           "key_pages", "temporal", "timeline", "variants"]
+           "key_pages", "keywords", "temporal", "timeline", "variants"]

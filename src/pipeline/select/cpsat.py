@@ -88,6 +88,7 @@ from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.enrich import timeline as tl
 from src.pipeline.select import narrowing
 from src.pipeline.subject import IDENTITY_RULES, _people_of
+from src.core.keywords import for_album_lift
 from src.pipeline.select.scoring import CandidateGate, Scorer
 from utils.configs import CONFIGS
 
@@ -702,7 +703,25 @@ class CpSatPicker:
             # Nothing to score against, so `image_order` decides -- 0 is best,
             # so invert it into a descending desirability the objective can add.
             order = group[Col.IMAGE_ORDER].rank(method='first', ascending=True)
-            return 1.0 - (order - 1) / max(len(group), 1)
+            rank = 1.0 - (order - 1) / max(len(group), 1)
+
+            # The photographer's marks go in a band above all of it. Adding the
+            # lift to `rank` the way the scored path adds it to `total_score`
+            # does not work here and measuring is what showed it: a blend
+            # clusters its photos within a few tenths, where 0.25 is decisive,
+            # while this rank is spread evenly across the whole 0..1, where
+            # 0.25 only means "a quarter of the way up the category". On a
+            # 60-photo category taking 8, a marked photo at rank 40 moved to 25
+            # and still missed; 30 marked photos across the gallery changed the
+            # album by nothing at all.
+            #
+            # The band is the honest rule rather than a bigger nudge. Here
+            # `image_order` is the content model's guess and the keyword is the
+            # photographer's instruction, and an instruction outranks a guess
+            # outright. `rank` spans 0..1, so +1 clears it; the lift rides on
+            # top so `album` still outranks a rating inside the band.
+            lift = for_album_lift(group)
+            return rank + (lift > 0) * 1.0 + lift
 
         _ranked, scored = scorer.score(group.copy())
         if scored is None or Col.TOTAL_SCORE not in scored.columns:

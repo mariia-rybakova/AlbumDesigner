@@ -93,12 +93,18 @@ INGEST: Sequence[str] = (
     # is in the vector database and under which model.
     "ingest.photo_metadata",
     "ingest.gallery_assets",
+    # Last, because it is the photo table it merges onto.
+    "ingest.merge_photo_metadata",
 )
 
 #: Everything the read stage used to do that is not reading: classification,
 #: CLIP projection, identity resolution, temporal normalisation and the
 #: event/relationship detectors.
 ENRICH: Sequence[str] = (
+    # First of all: a photo keyworded out of the album should not be counted,
+    # paired, classified or ranked, and must not survive as a treatment twin
+    # the layout could swap back in.
+    "enrich.album_keywords",
     # Before the drop, so the pairing it records survives it.
     "enrich.treatment_twins",
     "enrich.duplicate_shots",
@@ -110,9 +116,6 @@ ENRICH: Sequence[str] = (
     "enrich.require_cluster_data",
     "enrich.people_cluster",
     "ingest.merge_ratings",
-    # Beside it, not after it in any contested sense: this one writes
-    # `metadata_rating` and `keywords`, and leaves `user_rating` alone.
-    "ingest.merge_photo_metadata",
     "ingest.scenes",
     "enrich.temporal",
     # After `enrich.temporal`, which is what gives it a day to cut into

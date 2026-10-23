@@ -89,9 +89,20 @@ def test_runs_before_anything_counts_the_gallery():
     """Left until selection, the budget sizes the album against a supply twice
     as large as it really is and every category then runs out.
 
-    `enrich.treatment_twins` goes first, because it records the pairing the
-    drop would lose; it counts nothing and changes no photo."""
-    assert list(ENRICH)[:2] == ["enrich.treatment_twins", "enrich.duplicate_shots"]
+    `enrich.treatment_twins` goes immediately before the drop, because it
+    records the pairing the drop would lose; it counts nothing and changes no
+    photo. The only thing ahead of the pair is `enrich.album_keywords`, which
+    counts nothing either -- it removes the photos the photographer keyworded
+    out, and it has to go first precisely so one of them cannot be set aside
+    here as a twin and swapped back onto a page later."""
+    order = list(ENRICH)
+    assert order[:3] == ["enrich.album_keywords", "enrich.treatment_twins",
+                         "enrich.duplicate_shots"]
+
+    counts_the_gallery = ("enrich.gallery_type", "enrich.require_cluster_data",
+                          "enrich.variants")
+    for name in counts_the_gallery:
+        assert order.index("enrich.duplicate_shots") < order.index(name)
 
 
 # -- a gallery uploaded twice ----------------------------------------------

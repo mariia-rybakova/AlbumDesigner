@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from src.core.keywords import for_album_lift
 from src.pipeline import subject
 from src.selection.ai_wedding_selection import get_scores
 from utils.configs import selection_threshold
@@ -79,9 +80,17 @@ class CandidateGate:
                                            self.logger)
         try:
             if self.unscored:
+                # Nothing to score against, so `image_order` decides -- except
+                # that the photographer's own marks are instructions rather
+                # than signals to weigh, so they still order the front of the
+                # list: `album` first, then by rating, then the gallery's own
+                # order within each. Photos carrying neither are untouched.
                 scored = frame.copy()
                 scored["total_score"] = 1.0
-                scored = scored.sort_values(by='image_order', ascending=True)
+                scored = scored.assign(
+                    _priority=for_album_lift(scored)
+                ).sort_values(by=['_priority', 'image_order'],
+                              ascending=[False, True]).drop(columns='_priority')
                 return scored, scored["image_id"].tolist(), True
 
             ranked, scored = self.scorer.score(frame)

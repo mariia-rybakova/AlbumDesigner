@@ -6,6 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import DBSCAN
 from collections import Counter
 
+from src.core.keywords import for_album_lift
 from utils.configs import CONFIGS
 from src.core.lookup_table import wedding_lookup_table
 from utils.configs import relations,selection_threshold
@@ -321,6 +322,12 @@ def get_scores(df, selected_photos_df, people_ids, tags_features, logger, rating
                 weights['rank'] * df['ranking'] +  # swap with image_order_score_norm if needed
                 weights['rating'] * df['rating_score_norm']
         )
+
+        # The photographer keyworded this one `album`. Added on top of the
+        # blend rather than weighted into it, so every photo they did not mark
+        # keeps the score it had before this rule existed; see
+        # `core.keywords.FOR_ALBUM_BONUS` for the size and why.
+        df['total_score'] = df['total_score'] + for_album_lift(df)
 
         sorted_df = df.sort_values(by='total_score', ascending=False)
         sorted_scores = list(zip(sorted_df['image_id'], sorted_df['total_score']))
