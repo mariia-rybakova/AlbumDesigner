@@ -27,6 +27,7 @@ from src.core.photos import update_photos_ranks
 from src.smart_cropping import process_crop_images
 from src.pipeline import (AlbumContext, album_group, build_select,
                           compose_albums)
+from src.pipeline.select.narrator import warm_up as warm_up_narrator
 from src.covers.pages import generate_first_last_pages
 from src.album_processing import album_processing
 from src.core.models import SpreadSearchParams
@@ -773,6 +774,11 @@ def main():
     read_q = MemoryQueue(1)
     selection_q = MemoryQueue(1)
     report_q = MemoryQueue(1)
+
+    # Before any worker exists: `import torch` is visible to every thread from
+    # the moment it starts, and a half-built torch costs whichever gallery is
+    # being laid out at that moment one of its groups. See `narrator.warm_up`.
+    warm_up_narrator(logger)
 
     # Define stages
     read_stage = ReadStage(azure_input_q, read_q, report_q, logger=logger)

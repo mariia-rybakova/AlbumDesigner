@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -131,6 +132,50 @@ def _load_policy(logger=None):
                         f"(clip_dim={cfg.env.clip_dim}, {threads} torch thread(s))")
         _POLICY = (net, cfg)
     return _POLICY
+
+
+def warm_up(logger=None) -> bool:
+    """Load the policy on the main thread, before any worker exists.
+
+    `_load_policy` defers `import torch` to the first non-wedding request, and
+    `_POLICY_LOCK` only serialises narrator threads against each other. The
+    import publishes a half-built `sys.modules['torch']` that every other
+    thread can see for the seconds it takes, and `scipy.stats.pearsonr` --
+    which `GroupSingleLayout.get_score` calls for every candidate layout --
+    asks `is_torch_array`, whose entire guard is `'torch' not in sys.modules`.
+    So a ProcessStage worker laying out a *different* gallery reads
+    `torch.Tensor` off that half-built module and raises "partially
+    initialized module 'torch' has no attribute 'Tensor'". `process_group`
+    catches per group and returns None, so the album ships with that group's
+    photographs missing and nothing in the reply saying so: 16 groups over four
+    days, every one of them within 15s before this function's own log line.
+
+    Called from `main` before any stage starts, so no worker can observe the
+    import. It costs the first non-wedding request nothing -- that request pays
+    today: `select.narrator` measured 9.489s on a cold pod against 0.700s on
+    the same pod a minute later. The work moves to start-up, where no album is
+    waiting on it.
+
+    Never fatal. The request path still loads lazily and `NarratorSubStage`
+    already declines to today's selection on any exception, so a failure here
+    costs nothing that was not already being risked. `narrator.warm_up: false`
+    turns it off if the added start-up time is ever worth more than the groups.
+    """
+    if not settings().get('enabled', False) or not settings().get('warm_up', True):
+        return False
+
+    start = time.time()
+    try:
+        _load_policy(logger)
+    except Exception as exc:  # noqa: BLE001 - start-up must not hang on this
+        if logger:
+            logger.warning(f"narrator: warm-up failed ({type(exc).__name__}: {exc}); "
+                           "the first non-wedding request will load the policy")
+        return False
+
+    if logger:
+        logger.info(f"narrator: warmed up in {time.time() - start:.2f}s")
+    return True
 
 
 # -- the adapter -----------------------------------------------------------

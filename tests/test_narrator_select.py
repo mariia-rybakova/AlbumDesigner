@@ -434,3 +434,71 @@ def test_serves_a_non_wedding_request_where_the_user_picked_nothing():
 
 def test_a_wedding_is_still_never_served():
     assert applies(context(is_wedding=True)) is False
+
+
+# -- the warm-up ----------------------------------------------------------
+#
+# `import torch` is visible to every thread the moment it starts, and
+# `scipy.stats.pearsonr` -- which the layout scorer calls per candidate --
+# only guards on `'torch' not in sys.modules`. A worker laying out another
+# gallery during the import loses the group it is on. The warm-up closes the
+# window by doing the import on the main thread before any worker exists, so
+# what these pin is that it runs, that it never raises, and that nothing in
+# `main` starts a stage before it.
+
+
+def warm_calls(monkeypatch, raises=None):
+    """Count `_load_policy` calls, without torch or a checkpoint."""
+    calls = []
+
+    def fake_load(logger=None):
+        calls.append(logger)
+        if raises is not None:
+            raise raises
+        return (object(), object())
+
+    monkeypatch.setattr(narrator_stage, '_load_policy', fake_load)
+    return calls
+
+
+def test_warms_the_policy_when_the_narrator_is_on(monkeypatch):
+    calls = warm_calls(monkeypatch)
+
+    assert narrator_stage.warm_up() is True
+    assert len(calls) == 1
+
+
+def test_a_disabled_narrator_does_not_pay_for_torch(monkeypatch):
+    calls = warm_calls(monkeypatch)
+    CONFIGS['narrator'] = {**CONFIGS['narrator'], 'enabled': False}
+
+    assert narrator_stage.warm_up() is False
+    assert calls == [], "an album service that never narrates should not import torch"
+
+
+def test_the_warm_up_can_be_turned_off_without_turning_the_narrator_off(monkeypatch):
+    """The escape hatch if start-up time is ever worth more than the groups."""
+    calls = warm_calls(monkeypatch)
+    CONFIGS['narrator'] = {**CONFIGS['narrator'], 'warm_up': False}
+
+    assert narrator_stage.warm_up() is False
+    assert calls == []
+
+
+def test_a_missing_checkpoint_does_not_stop_the_service(monkeypatch):
+    """Start-up must survive it: the request path loads lazily and declines."""
+    warm_calls(monkeypatch, raises=FileNotFoundError('narrator checkpoint not found'))
+
+    assert narrator_stage.warm_up() is False
+
+
+def test_the_warm_up_runs_before_any_stage_starts():
+    """Ordering is the whole point -- a warm-up after the workers start would
+    import torch with threads already running, which is today's bug."""
+    source = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               'main.py'), encoding='utf-8').read()
+
+    warmed = source.index('warm_up_narrator(logger)')
+    first_start = min(source.index(f'{stage}.start()')
+                      for stage in ('read_stage', 'selection_stage', 'process_stage', 'report_stage'))
+    assert warmed < first_start
