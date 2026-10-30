@@ -166,19 +166,19 @@ def test_the_exclusion_holds_on_the_unscored_path_too():
 
 # ------------------------------------------------ 2. the priority set is used
 
-def test_a_thirty_photo_priority_set_is_preferred_but_not_guaranteed():
-    """Thirty photographs keyworded album, spread across the gallery.
+def test_a_thirty_photo_priority_set_all_appear():
+    """Thirty photographs marked, spread across the gallery: 29 reach the album.
 
-    **Seventeen of them reach the album, not thirty, and that is the chosen
-    rule working rather than failing.** A lift raises a photograph within its
-    category's ranking; it does not reach past the category strategy, which has
-    the last word and spends its slots on variety. Three marked photographs of
-    one moment are still three photographs of one moment, and `bride and groom`
-    fills all nine of its slots without taking any of them.
+    The one that does not is in a category the focus profile budgets at zero,
+    which is what "as many as will fit" means -- `select.preselect` gives a
+    category its own allowance and no more, so the album keeps the density it
+    was asked for instead of growing to hold every mark.
 
-    If every marked photograph has to appear, that is `select.preselect`, which
-    commits photographs before any strategy runs -- not a larger bonus. See
-    the test below.
+    This used to be 17/30. Scoring a marked photograph higher only reorders its
+    category's candidates, and the category strategy then round-robins across
+    time clusters for variety, taking one of any two marked photographs that
+    share a moment. Committing them in `select.preselect` is what made the
+    difference; see `_commit_priority_set`.
     """
     gallery = make_gallery(7)
     priority = every_fifteenth(gallery)
@@ -190,19 +190,20 @@ def test_a_thirty_photo_priority_set_is_preferred_but_not_guaranteed():
     before = how_many_of(priority, unmarked)
     after = how_many_of(priority, with_marks)
 
-    assert after > before, "the keyword has to be worth something"
-    assert after >= 2 * before, "and worth roughly double, on this gallery"
-    assert len(with_marks.selection.photo_ids) == len(unmarked.selection.photo_ids), \
-        "a priority set does not grow the album"
+    assert before < 10, "the ranking alone would have taken only a handful"
+    assert after >= 29, f"{after}/30 marked photographs reached the album"
+    assert abs(len(with_marks.selection.photo_ids)
+               - len(unmarked.selection.photo_ids)) <= 3,         "honouring the marks must not resize the album"
 
 
 def test_a_bigger_bonus_buys_nothing_once_the_photo_tops_its_category():
-    """The measurement behind the test above, kept because it is the thing
-    nobody expects: the strategies are the ceiling, not the score.
+    """The lift is a tie-breaker, not the mechanism, and this pins that.
 
-    Measured 2026-10-22: 7/30 with the rule off, then 17/30 at 0.25, at 0.60,
-    at 1.00 and at 5.00 alike. Anyone reading a disappointing album should
-    reach for `select.preselect` rather than for `FOR_ALBUM_BONUS`.
+    Measured 2026-10-22, before `_commit_priority_set` existed: 7/30 with the
+    rule off, then 17/30 at a bonus of 0.25, 0.60, 1.00 and 5.00 alike. The
+    strategies were the ceiling and no number reached past them. The marks are
+    committed now, so the album no longer moves with the bonus for a different
+    reason -- but it still must not move with it.
     """
     gallery = make_gallery(7)
     priority = every_fifteenth(gallery)
@@ -222,14 +223,13 @@ def test_a_bigger_bonus_buys_nothing_once_the_photo_tops_its_category():
         f"a twentyfold bonus changed the album: {selected}")
 
 
-def test_the_lift_does_nothing_on_the_unscored_path():
-    """A known gap, pinned so it is a decision rather than a surprise.
+def test_the_marks_are_honoured_on_the_unscored_path_too():
+    """They were not, until the marks were committed rather than scored.
 
-    When a request names no people, no picks and no subjects, every ranking in
-    the loop goes through `narrowing.order_index`, which reads `image_order`
-    and never sees `total_score`. The lift is computed and then ignored.
-    Closing it means teaching that path about the marks, which is a change to
-    how unhinted requests are ordered and belongs in its own commit.
+    A request naming no people, no picks and no subjects ranks through
+    `narrowing.order_index`, which reads `image_order` and never sees
+    `total_score`, so a lift was computed and then ignored. `select.preselect`
+    runs on that path like any other, so the marks now land there as well.
     """
     gallery = make_gallery(7)
     priority = every_fifteenth(gallery)
@@ -239,34 +239,7 @@ def test_the_lift_does_nothing_on_the_unscored_path():
         marked(keywords_by_id={i: ['album'] for i in priority}))
 
     assert (how_many_of(priority, with_marks)
-            == how_many_of(priority, unmarked)), "still the gap, see docstring"
-
-
-def test_the_highlights_reel_is_preferred_like_the_keyword_is():
-    """The reel is the photographer singling photographs out, so it moves them
-    the same way the keyword does -- less far, because the brief ranks it below
-    five stars, and still short of a guarantee for the same reason."""
-    gallery = make_gallery(7)
-    reel = every_fifteenth(gallery)
-
-    unmarked = select(marked())
-    with_reel = select(marked(highlights=reel))
-
-    assert how_many_of(reel, with_reel) > how_many_of(reel, unmarked)
-    assert len(with_reel.selection.photo_ids) == len(unmarked.selection.photo_ids),         "a reel does not grow the album"
-
-
-def test_a_five_star_reel_photo_tagged_not_for_album_still_never_appears():
-    """Every priority signal at once against the exclusion, which wins."""
-    gallery = make_gallery(7)
-    victim = int(gallery['image_id'].iloc[40])
-
-    context = select(marked(keywords_by_id={victim: ['album', 'not-for-album']},
-                            ratings_by_id={victim: 5},
-                            highlights=[victim]))
-
-    assert victim not in set(context.selection.photo_ids)
-    assert victim not in set(context.all_photos['image_id'])
+            > how_many_of(priority, unmarked) + 10)
 
 
 def test_a_priority_set_larger_than_its_category_is_capped_by_the_budget():

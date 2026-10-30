@@ -51,6 +51,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from src.core.keywords import priority_lift
 from src.pipeline.contracts import AlbumContext, Col, ctx, photo
 from src.pipeline.registry import register
 from src.pipeline import subject
@@ -119,6 +120,8 @@ class Preselector:
     def run(self) -> Dict[Any, str]:
         if self._settings.get('user_picks', True):
             self._commit_user_picks()
+        if self._settings.get('priority_set', True):
+            self._commit_priority_set()
         if self._settings.get('identities', True):
             self._commit_identity_coverage()
         if self._settings.get('key_pages', True):
@@ -152,6 +155,61 @@ class Preselector:
         for image_id in self.user_selected[Col.IMAGE_ID].tolist():
             if self._commit(image_id, "user"):
                 self._charge(image_id)
+
+    def _commit_priority_set(self) -> None:
+        """The photographs the photographer marked, as many as will fit.
+
+        **Scoring them higher was not enough, and the reason is worth keeping.**
+        A lift reorders a category's candidates, and then the category strategy
+        round-robins across time clusters to keep the spread varied -- so of
+        two marked photographs in one cluster it takes one and moves on. On a
+        real gallery, 62 photographs keyworded `album` put 37 in the album, and
+        raising the bonus twentyfold changed nothing: the ranking was never the
+        binding constraint.
+
+        Those 62 were themselves a finished album, so there was nothing
+        impossible about using them. What was missing is that a mark is a
+        decision rather than a candidate, which is what this stage is for.
+
+        **Capped by what each category can hold**, which is what "when
+        possible" means. A category is given its own allowance and no more, so
+        a gallery that marked sixty photographs of the dancing still gets an
+        album rather than sixty dancing photographs, and the album never grows
+        past the requested density. Charged to its category, like a hand pick,
+        for the same reason.
+
+        Ranked by `core.keywords.priority_lift`, so where a category cannot
+        hold them all the brief's order decides which go: `album` keyword, then
+        five stars, then Highlights, then four stars.
+        """
+        pool = self._remaining()
+        if pool.empty or Col.CLUSTER_CONTEXT not in pool.columns:
+            return
+
+        lift = priority_lift(pool)
+        marked = pool[lift > 0]
+        if marked.empty:
+            return
+
+        for category, frame in marked.groupby(Col.CLUSTER_CONTEXT):
+            room = self.plan.images.get(category, 0)
+            if room <= 0:
+                continue
+            for image_id in self._best_marked(frame, room):
+                if self._commit(image_id, f"priority:{category}"):
+                    self._charge(image_id)
+
+    def _best_marked(self, frame: pd.DataFrame, count: int) -> List[Any]:
+        """The ``count`` best of a marked frame: by tier first, then as the
+        picker would rank them within a tier."""
+        chosen: List[Any] = []
+        lift = priority_lift(frame)
+        for value in sorted(set(lift), reverse=True):
+            if len(chosen) >= count:
+                break
+            tier = frame[lift == value]
+            chosen.extend(self._best_of(tier, count - len(chosen)))
+        return chosen
 
     def _commit_identity_coverage(self) -> None:
         """Each named identity gets its photos, whatever the ranking says.
