@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.core.keywords import RATING_COLUMN, is_for_album
+from src.core.keywords import HIGHLIGHTS_COLUMN, RATING_COLUMN, is_for_album
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
@@ -37,18 +37,22 @@ class KeywordReportSubStage(SubStage):
         summary = context.keyword_summary
         kept = context.photos
 
-        used = rated_used = 0
-        if kept is not None and not kept.empty and Col.KEYWORDS in kept.columns:
-            used = int(kept[Col.KEYWORDS].map(is_for_album).sum())
+        used = rated_used = reel_used = 0
+        if kept is not None and not kept.empty:
+            if Col.KEYWORDS in kept.columns:
+                used = int(kept[Col.KEYWORDS].map(is_for_album).sum())
             if RATING_COLUMN in kept.columns:
                 rated_used = int((kept[RATING_COLUMN] > 0).sum())
+            if HIGHLIGHTS_COLUMN in kept.columns:
+                reel_used = int(kept[HIGHLIGHTS_COLUMN].fillna(False).sum())
 
         album = context.variant_name or "album"
         context.logger.info(
             f"Keyword report [{album}]: excluded {summary.excluded}; "
             f"priority set {summary.prioritised} keyworded album, "
-            f"{summary.rated} rated; "
-            f"used {used}/{summary.prioritised} keyworded and "
-            f"{rated_used}/{summary.rated} rated "
+            f"{summary.rated} rated, {summary.highlighted} in Highlights; "
+            f"used {used}/{summary.prioritised} keyworded, "
+            f"{rated_used}/{summary.rated} rated and "
+            f"{reel_used}/{summary.highlighted} from Highlights "
             f"in the {len(kept) if kept is not None else 0} photos selected")
         return context

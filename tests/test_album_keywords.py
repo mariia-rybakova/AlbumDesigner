@@ -361,3 +361,165 @@ def test_the_report_runs_last_so_that_used_is_known():
 
     assert list(SELECT)[-1] == 'select.keyword_report'
     assert list(SELECT).index('select.publish') < list(SELECT).index('select.keyword_report')
+
+
+# ------------------------------------------------------ the Highlights reel
+
+class Scene:
+    """As `ptinfra.utils.gallery.Scene` presents itself to the reader."""
+
+    def __init__(self, is_highlights, photo_ids):
+        self.isHighlights = is_highlights
+        self.photos = [type('P', (), {'photoId': i})() for i in photo_ids]
+
+
+class FakeGallery:
+    def __init__(self, scenes):
+        self.scenes = scenes
+
+
+def a_gallery(scenes):
+    import src.readers.gallery as reader
+    return lambda _url: FakeGallery(scenes)
+
+
+def test_only_the_reel_scenes_contribute_ids(monkeypatch):
+    import src.readers.gallery as reader
+
+    monkeypatch.setattr(reader, 'Gallery', a_gallery([
+        Scene(False, [1, 2, 3]),
+        Scene(True, [2, 9]),
+        Scene(False, [4]),
+        Scene(True, [9, 10]),
+    ]))
+    assert reader.highlight_photo_ids('url', LOGGER) == {2, 9, 10}
+
+
+def test_a_gallery_with_no_reel_marks_nothing(monkeypatch):
+    import src.readers.gallery as reader
+
+    monkeypatch.setattr(reader, 'Gallery', a_gallery([Scene(False, [1, 2])]))
+    assert reader.highlight_photo_ids('url', LOGGER) == set()
+
+
+def test_a_scene_list_that_cannot_be_read_marks_nothing(monkeypatch):
+    """Blob storage is unreachable. That is a gallery whose photographs are
+    unmarked, not a gallery with no album."""
+    import src.readers.gallery as reader
+
+    def explode(_url):
+        raise OSError('blob storage is unreachable')
+
+    monkeypatch.setattr(reader, 'Gallery', explode)
+    assert reader.highlight_photo_ids('url', LOGGER) == set()
+
+
+def test_the_substage_writes_the_flag(monkeypatch):
+    import src.readers.gallery as reader
+
+    monkeypatch.setattr(reader, 'Gallery', a_gallery([Scene(True, [1, 3])]))
+    context = AlbumContext(
+        photos=pd.DataFrame({'image_id': np.array([1, 2, 3], dtype=np.int64)}),
+        logger=LOGGER, project_url='url')
+    context = get('ingest.highlights')()(context)
+
+    assert context.photos[Col.IN_HIGHLIGHTS].tolist() == [True, False, True]
+
+
+def test_the_substage_writes_the_flag_even_when_the_read_fails(monkeypatch):
+    """So no later rule has to ask whether this gallery had a reel."""
+    import src.readers.gallery as reader
+
+    def explode(_url):
+        raise OSError('nope')
+
+    monkeypatch.setattr(reader, 'Gallery', explode)
+    context = AlbumContext(
+        photos=pd.DataFrame({'image_id': np.array([1, 2], dtype=np.int64)}),
+        logger=LOGGER, project_url='url')
+    context = get('ingest.highlights')()(context)
+
+    assert context.photos[Col.IN_HIGHLIGHTS].tolist() == [False, False]
+    assert not context.failed
+
+
+def test_the_reel_is_read_before_anything_counts_or_ranks():
+    from src.pipeline.registry import ENRICH, INGEST
+
+    order = list(INGEST) + list(ENRICH)
+    assert order.index('ingest.highlights') < order.index('enrich.album_keywords')
+
+
+# -------------------------------------------- what the reel is worth
+
+def standing_frame(ratings, reel):
+    return pd.DataFrame({
+        'image_id': np.arange(len(ratings), dtype=np.int64),
+        'keywords': [[]] * len(ratings),
+        'metadata_rating': ratings,
+        'in_highlights': reel,
+    })
+
+
+def test_the_reel_stands_for_four_and_a_half_stars():
+    from src.core.keywords import HIGHLIGHTS_STARS, standing_ratings
+
+    standing = standing_ratings(standing_frame([0, 3, 4, 5], [True] * 4))
+    assert standing.tolist() == [HIGHLIGHTS_STARS, HIGHLIGHTS_STARS,
+                                 HIGHLIGHTS_STARS, 5.0]
+
+
+def test_the_reel_is_a_floor_and_never_lowers_a_rating():
+    from src.core.keywords import standing_ratings
+
+    assert standing_ratings(standing_frame([5], [True])).tolist() == [5.0]
+
+
+def test_the_brief_s_order_holds_end_to_end():
+    """`album` > 5 stars > Highlights > 4 stars > unmarked."""
+    from src.core.keywords import priority_lift
+
+    frame = pd.DataFrame({
+        'image_id': np.arange(5, dtype=np.int64),
+        'keywords': [['album'], [], [], [], []],
+        'metadata_rating': [0, 5, 0, 4, 0],
+        'in_highlights': [False, False, True, False, False],
+    })
+    album, five, reel, four, nothing = priority_lift(frame)
+
+    assert album > five > reel > four > nothing == 0.0
+
+
+def test_a_gallery_with_no_reel_column_is_rated_as_before():
+    """Adding the signal must not move a gallery whose scenes were never read."""
+    from src.core.keywords import metadata_rating_lift
+
+    with_column = standing_frame([5, 4, 0], [False, False, False])
+    without = with_column.drop(columns='in_highlights')
+
+    assert (metadata_rating_lift(with_column).tolist()
+            == metadata_rating_lift(without).tolist())
+
+
+def test_a_reel_in_a_gallery_nobody_rated_still_lifts():
+    from src.core.keywords import METADATA_RATING_BONUS, metadata_rating_lift
+
+    lift = metadata_rating_lift(standing_frame([0, 0], [True, False]))
+    assert lift.tolist() == [METADATA_RATING_BONUS, 0.0]
+
+
+def test_the_counts_include_the_reel():
+    photos = pd.DataFrame({
+        'image_id': np.arange(4, dtype=np.int64),
+        'keywords': [['album'], ['not for album'], [], []],
+        'metadata_rating': [0.0, 5.0, 4.0, 0.0],
+        'in_highlights': [False, True, False, True],
+    })
+    context = get('enrich.album_keywords')()(
+        AlbumContext(photos=photos, logger=LOGGER))
+
+    summary = context.keyword_summary
+    assert summary.excluded == 1
+    assert summary.prioritised == 1
+    assert summary.rated == 1, "the 4-star photo; the excluded 5-star is gone"
+    assert summary.highlighted == 1, "the excluded photo's reel place goes with it"

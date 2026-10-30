@@ -86,6 +86,13 @@ class Col:
     #: vectorised gallery has either -- see `src/readers/qdrant.py`.
     KEYWORDS = "keywords"
 
+    # -- ingest.highlights -------------------------------------------------
+    #: Whether the photograph is in a Highlights scene -- the reel the
+    #: photographer built to show the client. A scene flag turned into a photo
+    #: flag; see `src/readers/gallery.py`. False when the gallery has no reel
+    #: and when its scene list could not be read.
+    IN_HIGHLIGHTS = "in_highlights"
+
     # -- enrich.content_class ---------------------------------------------
     CLUSTER_CONTEXT = "cluster_context"
 
@@ -302,6 +309,8 @@ class KeywordSummary:
     prioritised: int = 0
     #: Photographs that survived and carry a `metadata_rating` above 0.
     rated: int = 0
+    #: Photographs that survived and are in the Highlights reel.
+    highlighted: int = 0
     #: True when the gallery carried a keyword column at all, i.e. it was
     #: vectorised. False means the counts above are zero because nothing was
     #: read, not because nothing was marked.
@@ -309,7 +318,8 @@ class KeywordSummary:
 
     def as_content(self) -> Dict[str, Any]:
         return {"excluded": self.excluded, "prioritised": self.prioritised,
-                "rated": self.rated, "read": self.read}
+                "rated": self.rated, "highlighted": self.highlighted,
+                "read": self.read}
 
     @classmethod
     def from_content(cls, payload: Any) -> "KeywordSummary":
@@ -318,6 +328,7 @@ class KeywordSummary:
         return cls(excluded=int(payload.get("excluded", 0)),
                    prioritised=int(payload.get("prioritised", 0)),
                    rated=int(payload.get("rated", 0)),
+                   highlighted=int(payload.get("highlighted", 0)),
                    read=bool(payload.get("read", False)))
 
 

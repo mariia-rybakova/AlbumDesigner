@@ -65,15 +65,23 @@ def a_query_bank(seed: int = 3):
         route.get_tags_bins = original
 
 
-def marked(keywords_by_id=None, ratings_by_id=None, columns=True, seed=7):
-    """The synthetic gallery, with the photographer's metadata written onto it."""
+def marked(keywords_by_id=None, ratings_by_id=None, highlights=(), columns=True,
+           seed=7):
+    """The synthetic gallery, with the photographer's own marks written onto it.
+
+    ``columns=False`` is the gallery as it arrives from a project that was
+    never vectorised and whose scenes were never read: none of the three
+    columns exists at all.
+    """
     gallery = make_gallery(seed)
     if not columns:
         return gallery
 
     ids = gallery['image_id']
+    reel = set(highlights or ())
     gallery['keywords'] = [list((keywords_by_id or {}).get(i, [])) for i in ids]
     gallery['metadata_rating'] = [float((ratings_by_id or {}).get(i, 0.0)) for i in ids]
+    gallery['in_highlights'] = [i in reel for i in ids]
     return gallery
 
 
@@ -232,6 +240,33 @@ def test_the_lift_does_nothing_on_the_unscored_path():
 
     assert (how_many_of(priority, with_marks)
             == how_many_of(priority, unmarked)), "still the gap, see docstring"
+
+
+def test_the_highlights_reel_is_preferred_like_the_keyword_is():
+    """The reel is the photographer singling photographs out, so it moves them
+    the same way the keyword does -- less far, because the brief ranks it below
+    five stars, and still short of a guarantee for the same reason."""
+    gallery = make_gallery(7)
+    reel = every_fifteenth(gallery)
+
+    unmarked = select(marked())
+    with_reel = select(marked(highlights=reel))
+
+    assert how_many_of(reel, with_reel) > how_many_of(reel, unmarked)
+    assert len(with_reel.selection.photo_ids) == len(unmarked.selection.photo_ids),         "a reel does not grow the album"
+
+
+def test_a_five_star_reel_photo_tagged_not_for_album_still_never_appears():
+    """Every priority signal at once against the exclusion, which wins."""
+    gallery = make_gallery(7)
+    victim = int(gallery['image_id'].iloc[40])
+
+    context = select(marked(keywords_by_id={victim: ['album', 'not-for-album']},
+                            ratings_by_id={victim: 5},
+                            highlights=[victim]))
+
+    assert victim not in set(context.selection.photo_ids)
+    assert victim not in set(context.all_photos['image_id'])
 
 
 def test_a_priority_set_larger_than_its_category_is_capped_by_the_budget():

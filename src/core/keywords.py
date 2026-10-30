@@ -117,11 +117,28 @@ def for_album_lift(frame, bonus: float = None):
 
 
 # --------------------------------------------------------------------------
-# What a metadata rating is worth
+# What a rating and a place in Highlights are worth
 # --------------------------------------------------------------------------
 
 #: The column the vector-database rating arrives in (`Col.METADATA_RATING`).
 RATING_COLUMN = "metadata_rating"
+
+#: The column saying the photograph is in the Highlights reel
+#: (`Col.IN_HIGHLIGHTS`).
+HIGHLIGHTS_COLUMN = "in_highlights"
+
+#: What a place in Highlights is worth, said in stars.
+#:
+#: The brief ranks the marks `album` > 5 stars > **Highlights** > 4 stars, and
+#: four and a half stars is that sentence written as a number: the reel lands
+#: between the two ratings it is asked to land between, through the same
+#: arithmetic rather than through a second rule that would have to be kept in
+#: step with this one by hand.
+#:
+#: A floor, not an override. A five-star photograph that is also in the reel
+#: stays a five-star photograph -- the reel cannot make it worth less than the
+#: photographer already said it was.
+HIGHLIGHTS_STARS = 4.5
 
 #: How far the best-rated photograph in a frame is lifted above an unrated one.
 #:
@@ -136,10 +153,39 @@ assert METADATA_RATING_BONUS < FOR_ALBUM_BONUS, (
     "`album` must outrank every rating; see the module docstring")
 
 
-def metadata_rating_lift(frame, bonus: float = None):
-    """Per-row score lift from ``metadata_rating``, 0 where there is none.
+def standing_ratings(frame):
+    """The rating each row is judged by: the catalogue's, floored by the reel.
 
-    **Scaled against the frame's own best rating, because the scale is not
+    A photograph in Highlights that the catalogue rated lower -- or did not
+    rate at all -- is read as :data:`HIGHLIGHTS_STARS`. One the catalogue rated
+    higher keeps its own rating.
+
+    Either column may be absent. A gallery that was never vectorised has no
+    rating, one whose scene list could not be read has no reel, and each
+    absence simply means that signal said nothing about this photograph.
+    """
+    import pandas as pd
+
+    columns = getattr(frame, 'columns', ())
+
+    if RATING_COLUMN in columns:
+        ratings = pd.to_numeric(frame[RATING_COLUMN], errors='coerce')
+        ratings = ratings.fillna(0.0).clip(lower=0.0)
+    else:
+        ratings = pd.Series(0.0, index=frame.index)
+
+    if HIGHLIGHTS_COLUMN in columns:
+        in_reel = frame[HIGHLIGHTS_COLUMN].fillna(False).astype(bool)
+        ratings = ratings.mask(in_reel & (ratings < HIGHLIGHTS_STARS),
+                               HIGHLIGHTS_STARS)
+
+    return ratings
+
+
+def metadata_rating_lift(frame, bonus: float = None):
+    """Per-row lift from the rating and the reel, 0 where there is neither.
+
+    **Scaled against the frame's own best standing, because the scale is not
     known.** The payload is written by whatever catalogue the photographer
     uses; it is five stars often enough, but nothing in the record says so, and
     a rule that divided by a hard-coded 5 would silently do almost nothing to a
@@ -153,7 +199,7 @@ def metadata_rating_lift(frame, bonus: float = None):
     scale are never compared, so there is nothing for a gallery-wide maximum to
     make fairer.
 
-    A rating of 0 or less is "unrated" and lifts nothing. That is the same
+    A rating of 0 or less, on a photograph outside the reel, lifts nothing. That is the same
     thing the reader means by 0 when a payload carried no `rating` at all; the
     two cannot be told apart and there is no sense in which a zero-star
     photograph should outrank an unmarked one.
@@ -161,11 +207,12 @@ def metadata_rating_lift(frame, bonus: float = None):
     import pandas as pd
 
     bonus = METADATA_RATING_BONUS if bonus is None else bonus
-    if RATING_COLUMN not in getattr(frame, 'columns', ()) or not bonus:
+    columns = getattr(frame, 'columns', ())
+    if not bonus or (RATING_COLUMN not in columns
+                     and HIGHLIGHTS_COLUMN not in columns):
         return pd.Series(0.0, index=frame.index)
 
-    ratings = pd.to_numeric(frame[RATING_COLUMN], errors='coerce').fillna(0.0)
-    ratings = ratings.clip(lower=0.0)
+    ratings = standing_ratings(frame)
     best = ratings.max()
     if not best > 0:
         return pd.Series(0.0, index=frame.index)

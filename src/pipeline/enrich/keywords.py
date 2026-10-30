@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from src.core.keywords import RATING_COLUMN, is_for_album, is_not_for_album
+from src.core.keywords import (HIGHLIGHTS_COLUMN, RATING_COLUMN,
+                               is_for_album, is_not_for_album)
 from src.pipeline.contracts import AlbumContext, Col
 from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
@@ -57,11 +58,14 @@ class AlbumKeywordsSubStage(SubStage):
         summary.prioritised = int(photos[Col.KEYWORDS].map(is_for_album).sum())
         if RATING_COLUMN in photos.columns:
             summary.rated = int((photos[RATING_COLUMN] > 0).sum())
+        if HIGHLIGHTS_COLUMN in photos.columns:
+            summary.highlighted = int(photos[HIGHLIGHTS_COLUMN].fillna(False).sum())
 
         if context.logger:
             context.logger.info(
                 f"Album keywords: dropped {summary.excluded} photos keyworded "
                 f"notforalbum; {len(photos)} remain, of which "
-                f"{summary.prioritised} are keyworded album and "
-                f"{summary.rated} carry a metadata rating")
+                f"{summary.prioritised} are keyworded album, "
+                f"{summary.rated} carry a metadata rating and "
+                f"{summary.highlighted} are in Highlights")
         return context

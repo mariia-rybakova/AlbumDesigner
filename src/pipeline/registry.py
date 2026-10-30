@@ -93,8 +93,9 @@ INGEST: Sequence[str] = (
     # is in the vector database and under which model.
     "ingest.photo_metadata",
     "ingest.gallery_assets",
-    # Last, because it is the photo table it merges onto.
+    # Last, because it is the photo table they write onto.
     "ingest.merge_photo_metadata",
+    "ingest.highlights",
 )
 
 #: Everything the read stage used to do that is not reading: classification,
