@@ -152,7 +152,6 @@ class GalleryBase:
     designs: Any = None
     clip_embeddings: Optional[pd.DataFrame] = None
     ratings: Optional[pd.DataFrame] = None
-    social_circles: Optional[pd.DataFrame] = None
     person_details: Optional[pd.DataFrame] = None
     is_in_vector_db: Optional[bool] = None
 
@@ -184,7 +183,6 @@ class GalleryBase:
             designs=source.designs,
             clip_embeddings=source.clip_embeddings,
             ratings=source.ratings,
-            social_circles=source.social_circles,
             person_details=source.person_details,
             is_in_vector_db=source.is_in_vector_db,
         )
@@ -216,7 +214,6 @@ class GalleryBase:
             designs=self.designs,
             clip_embeddings=self.clip_embeddings,
             ratings=self.ratings,
-            social_circles=self.social_circles,
             person_details=self.person_details,
             is_in_vector_db=self.is_in_vector_db,
             facts=copy.copy(self.facts),

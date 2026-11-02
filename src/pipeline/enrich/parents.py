@@ -1,7 +1,6 @@
 """Who the parents are -- by identity, or not at all.
 
-The old rule (`identify_parents`, still reachable via
-``CONFIGS['parents']['by_identity'] = False``) classified *photos*: a portrait
+The old rule (`identify_parents`, since removed) classified *photos*: a portrait
 with 3-4 people including a partner, whose two others were of different
 genders, were "in a social circle", and were roughly ``couple_age + 15``.
 Every one of those tests turned out to be wrong or vacuous -- the age offset
@@ -42,14 +41,13 @@ mean, so a 60-year-old reads as ~50 and a 30-year-old as ~32: the *gap*
 compresses but the *ordering* survives. Same lesson as `enrich.timeline` --
 position is trustworthy, measured distance is not.
 
-Two rarer signals are near-conclusive when they fire and absent otherwise, so
-they enter as bonuses rather than requirements: a **two-person dance frame**
+One rarer signal is near-conclusive when it fires and absent otherwise, so it
+enters as a bonus rather than a requirement: a **two-person dance frame**
 holding exactly one partner and one candidate (the father-daughter or
-mother-son dance -- id 16 on 53459898, the groom's mother, has two), and a
-**small social circle** shared with another old candidate, which is how the
-two parents of one side corroborate each other. The circles really do carry
-this: 53459898's are `[19,21]`, `[8,27]`, `[8,28,39]`, `[17,25,33]` -- pairs
-and family triples, exactly the structure the old rule flattened away.
+mother-son dance -- id 16 on 53459898, the groom's mother, has two).
+
+The `social_circles.pb` blob is deliberately not read. Everything here is
+measured from the gallery's own photos.
 
 **The queries augment age, they do not replace it.** `parents_of_couple` minus
 `wedding_party_member`, scored only on photos where the candidate is one of at
@@ -141,7 +139,6 @@ class Indicators:
     #: at 45-53. Ten is disqualifying on an absolute scale and obviously not
     #: on a relative one.
     party_share: float = 0.0
-    circle_partners: Tuple[int, ...] = ()
     span: Tuple[float, float] = (0.0, 1.0)
 
     #: Small posed portraits holding this candidate and that partner. The
@@ -290,23 +287,9 @@ def _shrink(value: float, sample: int, prior: int) -> float:
     return value * (sample / float(sample + prior))
 
 
-def _small_circles(social_circles: Optional[pd.DataFrame]) -> List[frozenset]:
-    """Circles small enough to be a household rather than a guest list."""
-    if social_circles is None or social_circles.empty:
-        return []
-    limit = settings()["max_circle_size"]
-    circles = []
-    for ids in social_circles.get("identity_ids", []):
-        members = frozenset(int(i) for i in (ids or []))
-        if 2 <= len(members) <= limit:
-            circles.append(members)
-    return circles
-
-
 def measure(
     photos: pd.DataFrame,
     person_details: Optional[pd.DataFrame],
-    social_circles: Optional[pd.DataFrame],
     bride_id,
     groom_id,
 ) -> List[Indicators]:
@@ -363,7 +346,6 @@ def measure(
 
     everyone = {p for group in people for p in group}
     out: List[Indicators] = []
-    circles = _small_circles(social_circles)
 
     for identity in sorted(everyone):
         if identity in (bride_id, groom_id):
@@ -424,11 +406,10 @@ def measure(
             parent_query=_shrink(parent_delta, n_attr, config["query_prior"]),
             dance_query=dance_query,
             celebrant_query=celebrant_query,
-            circle_partners=(),
             span=((mine.min() / total, mine.max() / total) if total else (0.0, 1.0)),
         ))
 
-    return _attach_circles(_attach_party_share(out), circles)
+    return _attach_party_share(out)
 
 
 def _attach_party_share(candidates: List[Indicators]) -> List[Indicators]:
@@ -443,29 +424,6 @@ def _attach_party_share(candidates: List[Indicators]) -> List[Indicators]:
         return candidates
     return [Indicators(**{**c.__dict__, "party_share": c.party / float(reference)})
             for c in candidates]
-
-
-def _attach_circles(candidates: List[Indicators], circles: Sequence[frozenset]):
-    """Record, per candidate, which *other old candidates* share a small circle.
-
-    Two parents of one side corroborate each other: a household circle holding
-    two candidates who are both in the older part of the gallery is far better
-    evidence than either alone. A circle shared with a young candidate says
-    nothing -- that is a bridesmaid and her partner.
-    """
-    floor = settings()["min_age_rank"]
-    old = {c.identity for c in candidates if c.age_rank >= floor}
-    by_id = {c.identity: c for c in candidates}
-    updated = []
-    for candidate in candidates:
-        partners = set()
-        for circle in circles:
-            if candidate.identity in circle:
-                partners |= {i for i in circle
-                             if i != candidate.identity and i in old and i in by_id}
-        updated.append(Indicators(**{**candidate.__dict__,
-                                     "circle_partners": tuple(sorted(partners))}))
-    return updated
 
 
 # -- scoring ----------------------------------------------------------------
@@ -488,7 +446,6 @@ def score(candidate: Indicators, side: str) -> float:
     value += weights["aisle"] * _saturate(candidate.aisle(side), config["aisle_full"])
     value += weights["family"] * _saturate(candidate.family(side), config["family_full"])
     value += weights["duo_dance"] * (1.0 if candidate.duo_dance(side) else 0.0)
-    value += weights["circle"] * (1.0 if candidate.circle_partners else 0.0)
     value += weights["query"] * float(
         np.clip(candidate.parent_query / config["query_full"], -1.0, 1.0))
 
@@ -619,8 +576,6 @@ def _explain(candidate: Indicators, side: str) -> str:
         bits.append(f"aisle={candidate.aisle(side)}")
     if candidate.duo_dance(side):
         bits.append(f"parent-dance={candidate.duo_dance(side)}")
-    if candidate.circle_partners:
-        bits.append(f"circle={list(candidate.circle_partners)}")
     if candidate.party:
         bits.append(f"party={candidate.party}")
     bits.append(f"query={candidate.parent_query:+.3f}")

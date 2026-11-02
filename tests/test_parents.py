@@ -75,12 +75,6 @@ def details(ages):
                          for i, (a, g) in ages.items()])
 
 
-def circles(groups):
-    return pd.DataFrame([{"circle_index": i, "identity_ids": list(ids),
-                          "num_ids": len(ids)}
-                         for i, ids in enumerate(groups)])
-
-
 AGES = {BRIDE: (30, 1), GROOM: (32, 0),
         MOTHER: (58, 1), FATHER: (60, 0),
         GROOM_MOTHER: (57, 1), GROOM_FATHER: (61, 0),
@@ -116,7 +110,7 @@ def a_normal_wedding():
     return gallery(rows)
 
 
-def resolve(frame, ages=None, groups=None, quiet_queries=True, monkeypatch=None):
+def resolve(frame, ages=None, quiet_queries=True, monkeypatch=None):
     """Measure and resolve, with the CLIP term neutralised by default.
 
     The query term is a second opinion on age worth 0.15; the tests are about
@@ -128,7 +122,7 @@ def resolve(frame, ages=None, groups=None, quiet_queries=True, monkeypatch=None)
         parents.concept_scores = lambda photos, concept: np.zeros(len(photos))
     try:
         candidates = parents.measure(
-            frame, details(ages or AGES), circles(groups or []), BRIDE, GROOM)
+            frame, details(ages or AGES), BRIDE, GROOM)
         return candidates, parents.resolve(candidates)
     finally:
         if quiet_queries:
@@ -227,14 +221,13 @@ def test_age_is_read_as_a_rank_not_as_an_offset():
     assert set(wide.groom_parents) == set(narrow.groom_parents)
 
 
-def test_a_young_pair_in_a_circle_is_not_promoted_to_parents():
-    """The old circle test was `pair & set_of_all_ids_in_any_circle`, which any
-    two guests pass. Here the two candidates share a circle *and* are close in
-    age to the couple; only their age rank should keep them out."""
+def test_a_young_pair_is_not_promoted_to_parents():
+    """Two candidates photographed often with the bride but close in age to
+    the couple; their age rank should keep them out."""
     rows = [("portrait", [BRIDE, BRIDESMAID]) for _ in range(10)]
     rows += [("portrait", [BRIDE, GUEST]) for _ in range(10)]
 
-    _, outcome = resolve(gallery(rows), groups=[[BRIDESMAID, GUEST]])
+    _, outcome = resolve(gallery(rows))
 
     assert not outcome.resolved()
 
@@ -300,23 +293,6 @@ def test_the_officiant_is_not_a_parent():
 
     assert officiant.span[1] - officiant.span[0] <= CONFIGS["parents"]["officiant_span"]
     assert parents.score(officiant, "bride") < CONFIGS["parents"]["min_score"]
-
-
-def test_a_small_circle_with_another_old_candidate_corroborates():
-    """How the two parents of one side support each other. A circle shared
-    with a *young* candidate says nothing -- that is a couple of guests."""
-    rows = [("portrait", [BRIDE, MOTHER]) for _ in range(8)]
-    rows += [("portrait", [BRIDE, FATHER]) for _ in range(8)]
-
-    with_family, _ = resolve(gallery(rows), groups=[[MOTHER, FATHER]])
-    alone, _ = resolve(gallery(rows), groups=[[MOTHER, BRIDESMAID]])
-
-    mother_in = next(c for c in with_family if c.identity == MOTHER)
-    mother_out = next(c for c in alone if c.identity == MOTHER)
-
-    assert mother_in.circle_partners == (FATHER,)
-    assert mother_out.circle_partners == ()
-    assert parents.score(mother_in, "bride") > parents.score(mother_out, "bride")
 
 
 # -- the query term --------------------------------------------------------
@@ -495,16 +471,16 @@ def test_a_gallery_with_no_couple_is_not_an_error():
     """`main_persons[1]` raised IndexError on a gallery with one identity."""
     frame = gallery([("portrait", [BRIDE, MOTHER])])
 
-    assert parents.measure(frame, details(AGES), None, BRIDE, None) == []
-    assert parents.measure(frame, details(AGES), None, None, None) == []
+    assert parents.measure(frame, details(AGES), BRIDE, None) == []
+    assert parents.measure(frame, details(AGES), None, None) == []
 
 
 def test_missing_person_details_is_not_an_error():
     """`persons_details_df.set_index` raised AttributeError on None."""
     frame = a_normal_wedding()
 
-    assert parents.measure(frame, None, None, BRIDE, GROOM) == []
-    assert parents.measure(frame, pd.DataFrame(), None, BRIDE, GROOM) == []
+    assert parents.measure(frame, None, BRIDE, GROOM) == []
+    assert parents.measure(frame, pd.DataFrame(), BRIDE, GROOM) == []
 
 
 def test_a_candidate_with_no_age_row_is_not_an_error():
@@ -554,7 +530,7 @@ def test_the_named_parents_reach_the_gallery_facts():
         context = AlbumContext(
             logger=quiet(), photos=a_normal_wedding(),
             facts=GalleryFacts(is_wedding=True, bride_id=BRIDE, groom_id=GROOM),
-            person_details=details(AGES), social_circles=circles([]))
+            person_details=details(AGES))
         context = get("enrich.parents")()(context)
     finally:
         parents.concept_scores = original
@@ -562,23 +538,6 @@ def test_the_named_parents_reach_the_gallery_facts():
     assert not context.failed
     assert MOTHER in context.facts.bride_parents
     assert GROOM_MOTHER in context.facts.groom_parents
-
-
-def test_the_old_rule_is_still_reachable():
-    """The equivalence tests need a way back to the pre-refactor behaviour."""
-    original = CONFIGS["parents"]["by_identity"]
-    CONFIGS["parents"] = {**CONFIGS["parents"], "by_identity": False}
-    try:
-        context = AlbumContext(
-            logger=quiet(), photos=a_normal_wedding(),
-            facts=GalleryFacts(is_wedding=True, bride_id=BRIDE, groom_id=GROOM),
-            person_details=details(AGES), social_circles=circles([[MOTHER, FATHER]]))
-        context = get("enrich.parents")()(context)
-    finally:
-        CONFIGS["parents"] = {**CONFIGS["parents"], "by_identity": original}
-
-    assert not context.failed
-    assert context.facts.bride_parents == (), "the old rule names nobody"
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ Everything moves inside one object, `src/pipeline/contracts.AlbumContext`.
 | `hints` (`AiHints`) | `aiMetadata`: picked photos, people, focus, subjects, density |
 | `designs` (`DesignSpec`) | Layout data |
 | `facts` (`GalleryFacts`) | `is_wedding`, `is_artificial_time`, `model_version`, `bride_id`, `groom_id` |
-| `clip_embeddings`, `ratings`, `social_circles`, `person_details`, `is_in_vector_db` | Ingest sidecars |
+| `clip_embeddings`, `ratings`, `person_details`, `is_in_vector_db` | Ingest sidecars |
 | `selection_inputs`, `selection_plan` | Selection working state |
 | `key_pages` (`KeyPages`) | The photos that open and close the album |
 | `selection` (`SelectionOutcome`) | Chosen photo ids, spread budget, lookup table |

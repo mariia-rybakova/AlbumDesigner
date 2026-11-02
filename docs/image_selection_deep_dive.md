@@ -98,7 +98,7 @@ Built in `src/readers/protos.get_info_protobufs` by outer-joining five protobufs
 | `image_as`, `background_centroid`, `diameter` | same | Consumed by cropping, not selection |
 | `image_time`, `general_time` | `process_gallery_time` | `image_time` is converted to `image_time_date` (a real timestamp) inside selection |
 | `scene_order`, `scene_name` | `add_scenes_info` / `add_scene_info` | Pic-Time gallery scene ordering — the substitute for time when `is_artificial_time` |
-| `parent_category` | `identify_parents` | `"bride and groom with parents"` / `"bride with her parents"` / `"groom with his parents"`. Rows that get one also have `cluster_context` rewritten to `"parents portrait"` |
+| `parent_category` | `enrich.parents` (`parents.label`) | `"bride and groom with parents"` / `"bride with her parents"` / `"groom with his parents"`. Rows that get one also have `cluster_context` rewritten to `"parents portrait"` |
 | `user_rating` | optional | Alternative to the `rating` list |
 
 ---

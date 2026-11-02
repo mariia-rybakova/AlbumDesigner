@@ -52,7 +52,7 @@ Each stage logs timing into `read_time_list`, `processing_time_list`, or `report
    - `add_scenes_info`: merges Pic-Time gallery scene ordering (skips filenames containing underscores or non-numeric IDs).
    - `process_gallery_time`: normalizes timestamps, produces `is_artificial_time`.
    - `identify_kiss_ceremony`: marks ceremony spreads as `"may kiss bride"` when SAT rules hold (valid start/end, same day, officiant anchor within ±6 minutes).
-   - `identify_parents`: re-labels portrait clusters as `"parents portrait"` when couples and age tolerances match social-circle data.
+   - `enrich.parents`: names the couple's parents as identities (or leaves them inconclusive), then re-labels the portraits they appear in as `"parents portrait"`.
 7. **Packing**: attaches `gallery_photos_info`, `is_wedding`, and `is_artificial_time` to `message.content`. Errors bubble up and abort the batch.
 
 ---

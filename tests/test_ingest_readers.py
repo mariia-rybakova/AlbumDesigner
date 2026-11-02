@@ -152,6 +152,7 @@ BLOBS = {
     'content_cluster.pb': cluster_blob,
     'persons_info.pb': persons_blob,
     'ai_person_vectors.pb': person_vector_blob,
+    # Present on purpose: ingest must not read it even when it exists.
     'social_circles.pb': social_blob,
     'ai_search_matrix.pai': pai_blob,
 }
@@ -167,10 +168,13 @@ class FakePTFile:
 
     #: filenames to report as missing, for the missing_ok paths
     missing: set = set()
+    #: every filename a reader opened, to prove what was *not* read
+    opened: set = set()
 
     def __init__(self, url):
         self.url = url
         self.name = str(url).replace('\\', '/').rsplit('/', 1)[-1]
+        FakePTFile.opened.add(self.name)
 
     def exists(self):
         return self.name in BLOBS and self.name not in self.missing
@@ -184,6 +188,7 @@ class FakePTFile:
 @contextmanager
 def fake_blobs(missing=()):
     FakePTFile.missing = set(missing)
+    FakePTFile.opened = set()
     try:
         # load_versioned imports PTFile from azurev12 at call time; the readers
         # that bypass it (the PAI one) use the module-level import.
@@ -268,14 +273,6 @@ def test_person_vector_reader():
     assert df.loc[0, 'bodies_info'][0].bbox.x2 == np.float32(0.7).item()
 
 
-def test_social_circle_reader():
-    with fake_blobs():
-        df = readers.get_social_circle(path('social_circles.pb'), LOGGER)
-
-    assert list(df['identity_ids']) == [[IDENTITY_A, IDENTITY_B]]
-    assert list(df['num_ids']) == [2]
-
-
 def test_embeddings_reader():
     with fake_blobs():
         df = readers.get_image_embeddings(path('ai_search_matrix.pai'), LOGGER)
@@ -292,7 +289,6 @@ def test_missing_blob_returns_none():
         ('persons_info.pb', readers.get_persons_ids),
         ('content_cluster.pb', readers.get_clusters_info),
         ('ai_person_vectors.pb', readers.get_person_vectors),
-        ('social_circles.pb', readers.get_social_circle),
     ):
         with fake_blobs(missing={name}):
             assert reader(path(name), LOGGER) is None, f"{name} should read as absent"
@@ -301,7 +297,7 @@ def test_missing_blob_returns_none():
 def test_load_gallery_assets_end_to_end():
     """The whole ingest substage, against synthetic blobs."""
     with fake_blobs():
-        photos, person_details, social_circles, error = readers.load_gallery_assets(
+        photos, person_details, error = readers.load_gallery_assets(
             BASE, LOGGER, clip_df=None
         )
 
@@ -320,8 +316,22 @@ def test_load_gallery_assets_end_to_end():
     assert not missing, f"load_gallery_assets dropped columns: {sorted(missing)}"
 
     assert photos['image_class'].dtype == 'Int64'
-    assert social_circles is not None and len(social_circles) == 1
     assert person_details is not None and len(person_details) == 2
+
+
+def test_social_circles_are_never_read():
+    """`social_circles.pb` is deliberately ignored: ingest neither opens it
+    when it exists nor fails when it does not."""
+    with fake_blobs():
+        _, _, error = readers.load_gallery_assets(BASE, LOGGER, clip_df=None)
+        opened = set(FakePTFile.opened)
+    assert error is None
+    assert 'social_circles.pb' not in opened
+    assert 'persons_info.pb' in opened, 'the probe must see the real reads'
+
+    with fake_blobs(missing={'social_circles.pb'}):
+        _, _, error = readers.load_gallery_assets(BASE, LOGGER, clip_df=None)
+    assert error is None
 
 
 def test_pipeline_ingest_substage_uses_the_readers():
@@ -336,7 +346,6 @@ def test_pipeline_ingest_substage_uses_the_readers():
     assert not context.failed, context.error
     assert len(context.photos) == 2
     assert context.facts.model_version == 2
-    assert context.social_circles is not None
     # the substage's declared provides must actually hold
     assert context.missing(get('ingest.gallery_assets').provides) == []
 

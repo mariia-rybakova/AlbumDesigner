@@ -9,8 +9,6 @@ from src.pipeline.registry import register
 from src.pipeline.substage import SubStage
 from src.pipeline.enrich import parents
 from src.pipeline import subject
-from src.request_processing import identify_parents
-from utils.configs import CONFIGS
 from src.readers.protos import add_people_cluster, resolve_bride_groom
 
 
@@ -67,8 +65,7 @@ class ParentsSubStage(SubStage):
     outcome is three-valued -- bride's parents, groom's parents, or
     inconclusive -- and an unresolved side simply leaves the photo table
     untouched, because a stranger on the family spread is worse than a missing
-    category. `CONFIGS['parents']['by_identity'] = False` restores the old
-    photo-classifying rule.
+    category.
 
     Optional: the couple, the ages or the concept bins can all be missing on a
     real gallery, and none of those is a reason to fail the request.
@@ -86,19 +83,9 @@ class ParentsSubStage(SubStage):
         return bool(context.facts.is_wedding)
 
     def execute(self, context: AlbumContext) -> AlbumContext:
-        if not CONFIGS["parents"]["by_identity"]:
-            context.photos = identify_parents(
-                context.social_circles,
-                context.person_details,
-                context.photos,
-                logger=context.logger,
-            )
-            return context
-
         candidates = parents.measure(
             context.photos,
             context.person_details,
-            context.social_circles,
             context.facts.bride_id,
             context.facts.groom_id,
         )

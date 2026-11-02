@@ -6,8 +6,8 @@ parents, or *inconclusive* — and inconclusive is a normal outcome, not a
 failure.
 
 This replaces a rule that classified *photos* and never named anyone. Both of
-that rule's discriminating tests turned out to be broken; it is still reachable
-via `CONFIGS['parents']['by_identity'] = False`, for the equivalence tests.
+that rule's discriminating tests turned out to be broken, and it has been
+removed.
 
 ---
 

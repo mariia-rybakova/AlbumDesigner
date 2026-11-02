@@ -34,7 +34,7 @@ class GalleryAssetsSubStage(SubStage):
     })
 
     def execute(self, context: AlbumContext) -> AlbumContext:
-        photos, person_details, social_circles, error = load_gallery_assets(
+        photos, person_details, error = load_gallery_assets(
             project_base_url=context.project_url,
             logger=context.logger,
             clip_df=context.clip_embeddings,
@@ -44,7 +44,6 @@ class GalleryAssetsSubStage(SubStage):
 
         context.photos = photos
         context.person_details = person_details
-        context.social_circles = social_circles
 
         if not photos.empty:
             context.facts.model_version = photos.iloc[0][Col.MODEL_VERSION]

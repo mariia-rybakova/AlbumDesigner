@@ -377,7 +377,6 @@ class AlbumContext:
     #: database's payload. None when the project is not vectorised, in which
     #: case the same metadata sits in blob storage and nobody reads it.
     photo_metadata: Optional[pd.DataFrame] = None
-    social_circles: Optional[pd.DataFrame] = None
     person_details: Optional[pd.DataFrame] = None
     is_in_vector_db: Optional[bool] = None
 

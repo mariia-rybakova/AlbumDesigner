@@ -526,18 +526,13 @@ CONFIGS = {'DEBUG': True,
         #
         # Resolve the parents as *identities*, with an explicit inconclusive
         # outcome, instead of classifying photos by head count + gender + an
-        # age offset. Set 'by_identity' False for the old rule -- kept because
-        # the equivalence tests need a way back to the pre-refactor behaviour,
-        # not because it is worth running (its age window accepts +3..+27 years
-        # and so selects the sibling band, and its social-circle test collapses
-        # to "either candidate appears in any circle at all").
+        # age offset. See docs/parent_identification.md for why the old rule
+        # was removed.
         #
         # Every threshold here is set to fail toward silence. A parent we do
         # not name costs a category that would have been budgeted anyway; a
         # stranger we do name goes on the family spread.
         'parents': {
-            'by_identity': True,
-
             # A parents portrait is of the parents *with the couple* and
             # nobody else. Requiring only "a partner and a parent" admits the
             # big posed group shots -- the bride and her mother among twenty
@@ -655,11 +650,6 @@ CONFIGS = {'DEBUG': True,
             'family_max_people': 4,
             'family_full': 4,
 
-            # Circles this size or smaller read as a household rather than a
-            # guest list; a circle shared with another *old* candidate is how
-            # the two parents of one side corroborate each other.
-            'max_circle_size': 4,
-
             'weights': {
                 'age_rank': 0.40,
                 'own_side': 0.20,
@@ -667,7 +657,6 @@ CONFIGS = {'DEBUG': True,
                 'aisle': 0.15,
                 'family': 0.25,
                 'duo_dance': 0.25,
-                'circle': 0.15,
                 'query': 0.15,
                 # Negative terms. The party count is the only indicator nearly
                 # exclusive to the confusion class, so it is allowed to sink a

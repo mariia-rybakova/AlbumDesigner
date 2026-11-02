@@ -22,7 +22,6 @@ from ptinfra.proto.pb import ContentCluster_pb2 as content_cluster
 from ptinfra.proto.pb import FaceVector_pb2 as face_vector
 from ptinfra.proto.pb import PersonInfo_pb2 as person_info
 from ptinfra.proto.pb import PersonVector_pb2 as person_vector
-from ptinfra.proto.pb import SocialCircle_pb2 as social_circle
 from ptinfra.read_stage import load_versioned
 
 from src.readers.proto_labels import generate_dict_key, check_gallery_type, process_content, _flatten
@@ -306,39 +305,6 @@ def get_person_vectors(persons_file, logger):
 
     return photo_df
 
-def get_social_circle(social_circle_file, logger):
-    try:
-        message_data = load_versioned(social_circle_file, social_circle.SocialCircleMessageWrapper,
-                                      missing_ok=True)
-        if message_data is None:
-            return None
-
-        social_circles = message_data.socialCircles
-
-        circle_data = []
-
-        for idx, circle in enumerate(social_circles):
-            # identityNumeralId is a list<int32>
-            ids = list(circle.identityNumeralId) if circle.identityNumeralId else []
-
-            circle_data.append({
-                "circle_index": idx,
-                "identity_ids": ids,
-                "num_ids": len(ids)
-            })
-
-        social_df = pd.DataFrame(circle_data)
-
-        # Optional: if there are no circles, create empty DataFrame
-        if social_df.empty:
-            social_df = pd.DataFrame(columns=["circle_index", "identity_ids", "num_ids"])
-
-    except Exception as ex:
-        logger.error(f"Error reading social circle file from file: {ex}")
-        return None
-
-    return social_df
-
 # ==========================================================================
 # Gallery ingest / enrichment
 # ==========================================================================
@@ -357,7 +323,7 @@ def load_gallery_assets(project_base_url, logger, clip_df=None):
     Reads and organises only. Nothing here classifies a photo, projects an
     embedding against a query bank, or resolves an identity.
 
-    Returns ``(gallery_info_df, persons_details_df, social_circle_df, error)``.
+    Returns ``(gallery_info_df, persons_details_df, error)``.
     """
     try:
         start = datetime.now()
@@ -397,9 +363,9 @@ def load_gallery_assets(project_base_url, logger, clip_df=None):
                 persons_details_df = extra
 
             if result is None:
-                return None, None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
+                return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
             elif result.empty or result.shape[0] == 0:
-                return None, None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
+                return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
             results.append(result)
 
         if clip_df is not None:
@@ -432,18 +398,14 @@ def load_gallery_assets(project_base_url, logger, clip_df=None):
 
         logger.warning(f"Dropped {before - after} rows because embedding is NaN")
 
-        # get social circle of the project
-        social_circle_file = os.path.join(project_base_url, 'social_circles.pb')
-        social_circle_df = get_social_circle(social_circle_file, logger)
-
         logger.debug("Time for reading files: {}".format(datetime.now() - start))
 
     except Exception as ex:
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
-        return None, None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+        return None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
 
-    return gallery_info_df, persons_details_df, social_circle_df, None
+    return gallery_info_df, persons_details_df, None
 
 
 def classify_gallery_type(gallery_info_df):
@@ -585,10 +547,10 @@ def get_info_protobufs(project_base_url, logger, clip_df=None):
     pieces individually so each one can be replaced on its own.
     """
     try:
-        gallery_info_df, persons_details_df, social_circle_df, error = load_gallery_assets(
+        gallery_info_df, persons_details_df, error = load_gallery_assets(
             project_base_url, logger, clip_df=clip_df)
         if error is not None:
-            return None, None, None, None, error
+            return None, None, None, error
 
         is_wedding = classify_gallery_type(gallery_info_df)
 
@@ -600,9 +562,9 @@ def get_info_protobufs(project_base_url, logger, clip_df=None):
         gallery_info_df = require_cluster_data(gallery_info_df, logger)
         gallery_info_df = add_people_cluster(gallery_info_df)
 
-        return gallery_info_df, is_wedding, social_circle_df, persons_details_df, None
+        return gallery_info_df, is_wedding, persons_details_df, None
 
     except Exception as ex:
         tb = traceback.extract_tb(ex.__traceback__)
         filename, lineno, func, text = tb[-1]
-        return None, None, None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
+        return None, None, None, f'Error in reading protobufs: {ex}. Exception in function: {func}, line {lineno}, file {filename}.'
