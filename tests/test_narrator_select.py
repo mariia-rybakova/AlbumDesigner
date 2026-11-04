@@ -308,13 +308,23 @@ def test_the_shape_spec_keeps_the_trained_range():
 
 
 def test_a_tighter_design_caps_the_page_count():
+    """Through the config the env runs on, not through `Gallery.shape`.
+
+    This test used to assert the cap on `gallery.shape`, and passed for as long
+    as the cap did nothing: `pack_gallery` rebuilds the shape from the live
+    `EnvConfig` on every reset and says so in its own comment, so the capped
+    spec was discarded before the policy saw it. The cap now narrows the config
+    itself, and `_gallery_from_frame` reads the shape back off that -- so the
+    two agree rather than one quietly overriding the other.
+    """
     from src.narrator.config import Config
 
     ctx = context(pages={'firstPage': True, 'maxPages': 6})
-    gallery = narrator_stage._gallery_from_frame(ctx.photos, ctx, Config())
+    cfg = narrator_stage._request_config(ctx, Config(), logger=None)
+    gallery = narrator_stage._gallery_from_frame(ctx.photos, ctx, cfg)
 
-    assert gallery.shape.max_pages == 6
-    assert gallery.shape.min_pages <= 6
+    assert cfg.env.max_pages == 6, "the mask reads this"
+    assert gallery.shape.max_pages == 6 and gallery.shape.min_pages <= 6
 
 
 # -- declining safely ------------------------------------------------------
@@ -502,3 +512,100 @@ def test_the_warm_up_runs_before_any_stage_starts():
     first_start = min(source.index(f'{stage}.start()')
                       for stage in ('read_stage', 'selection_stage', 'process_stage', 'report_stage'))
     assert warmed < first_start
+
+
+# -- the design's own limits ----------------------------------------------
+#
+# The policy composes against `EnvConfig`: the mask reads min/max_pages and the
+# style bands clamp to [min_photos_per_page, max_photos_per_page]. A design
+# holds the photo counts its layouts have boxes for and no others, so a page
+# sized outside that set reaches `predefined.processing` with no layout at all.
+# `_request_config` narrows the config to what the design can print -- and only
+# ever narrows, because the trained range is the shape the policy learned for.
+
+
+def design_context(max_pages=None, box_counts=None):
+    ctx = context()
+    pages = {'firstPage': True}
+    if max_pages is not None:
+        pages['maxPages'] = max_pages
+    designs = {}
+    if box_counts is not None:
+        designs['anyPagelayouts_df'] = pd.DataFrame({'number of boxes': list(box_counts)})
+    ctx.designs = DesignSpec(pages=pages, designs=designs)
+    return ctx
+
+
+def trained():
+    from src.narrator.config import Config
+    return Config()
+
+
+def narrowed(ctx, cfg=None):
+    cfg = cfg or trained()
+    return cfg, narrator_stage._request_config(ctx, cfg, logger=None)
+
+
+def test_a_design_that_fits_nothing_in_particular_changes_nothing():
+    cfg, out = narrowed(design_context())
+
+    assert out is cfg, "no copy is made when there is nothing to narrow"
+
+
+def test_a_roomier_design_does_not_widen_the_trained_range():
+    cfg, out = narrowed(design_context(max_pages=40, box_counts=[2, 3, 4, 5, 9]))
+
+    assert out is cfg
+
+
+def test_the_design_page_cap_reaches_the_env_config():
+    """It used to be hung on `Gallery.shape`, which `pack_gallery` rebuilds --
+    so the cap did nothing at all until it was moved here."""
+    cfg, out = narrowed(design_context(max_pages=9))
+
+    assert out.env.max_pages == 9
+    assert out.env.min_pages == min(cfg.env.min_pages, 9)
+
+
+def test_a_design_whose_layouts_stop_short_narrows_the_page_band():
+    """The failing shape: layouts of two and three boxes, a policy that plans
+    up to five, and a five-photo spread with nowhere to go."""
+    cfg, out = narrowed(design_context(box_counts=[2, 3]))
+
+    assert out.env.max_photos_per_page == 3
+    assert out.env.min_photos_per_page == cfg.env.min_photos_per_page
+
+
+def test_a_design_with_no_small_layout_lifts_the_floor():
+    cfg, out = narrowed(design_context(box_counts=[4, 6]))
+
+    assert out.env.min_photos_per_page == 4
+    assert out.env.max_photos_per_page == cfg.env.max_photos_per_page
+
+
+def test_an_impossible_band_keeps_the_trained_one():
+    """Every layout bigger than the trained ceiling. Composing to a band with
+    no legal size would end every album at once; the fold handles it instead."""
+    cfg, out = narrowed(design_context(box_counts=[8, 9]))
+
+    assert out.env.min_photos_per_page == cfg.env.min_photos_per_page
+    assert out.env.max_photos_per_page == cfg.env.max_photos_per_page
+
+
+def test_the_shared_config_is_never_narrowed_in_place():
+    """`_POLICY` is loaded once and shared by every worker thread, so one
+    layout-poor gallery must not narrow every album behind it."""
+    cfg = trained()
+    before = (cfg.env.max_pages, cfg.env.max_photos_per_page)
+
+    out = narrator_stage._request_config(design_context(max_pages=9, box_counts=[2, 3]), cfg, None)
+
+    assert (cfg.env.max_pages, cfg.env.max_photos_per_page) == before
+    assert out is not cfg and out.env is not cfg.env
+
+
+def test_the_limits_can_be_turned_off():
+    CONFIGS['narrator'] = {**CONFIGS['narrator'], 'design_limits': False}
+    cfg, out = narrowed(design_context(max_pages=9, box_counts=[2, 3]))
+
+    assert out is cfg

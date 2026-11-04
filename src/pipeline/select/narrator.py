@@ -47,6 +47,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from dataclasses import replace
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -288,26 +289,92 @@ def _centroid(value) -> Tuple[float, float]:
 
 
 def _shape_spec(context: AlbumContext, cfg):
-    """Album shape for this request: the trained ranges, capped by the design.
+    """Album shape for this request, read off the env config it will run under.
 
-    The ranges are hard masking bounds -- the policy cannot end an album below
-    ``min_pages`` or past ``max_pages`` -- so they are the shape it learned to
-    compose for, not a preference to be overwritten with the product's own
-    limits. v29 composed 10-13 spreads where a typical album is 15-26; v31
-    holds a 12-spread floor wherever the gallery can supply it, still short of
-    that. Forcing it up to the product's floor would put it somewhere it has
-    never been. So the trained range stands, and only a design that is *tighter* than
-    it applies.
+    Nothing is capped here any more. `pack_gallery` rebuilds the shape from the
+    live `EnvConfig` and says so -- "ALWAYS rebuild from the LIVE EnvConfig;
+    never trust `gallery.shape`" -- so a cap applied to this object was thrown
+    away before the policy ever saw it, which is what the design's `maxPages`
+    limit did here for its whole life. The limits now narrow the config itself,
+    in `_request_config`, which is the only copy that reaches the mask.
     """
     from src.narrator.data.schema import ShapeSpec
 
-    spec = ShapeSpec.from_env(cfg.env)
+    return ShapeSpec.from_env(cfg.env)
+
+
+def _design_box_counts(context: AlbumContext) -> Optional[Tuple[int, int]]:
+    """The smallest and largest photo count the design's layouts can hold."""
+    designs = context.designs.designs if context.designs else None
+    layouts = (designs or {}).get('anyPagelayouts_df') if isinstance(designs, dict) else None
+    if layouts is None or getattr(layouts, 'empty', True):
+        return None
+    counts = {int(n) for n in layouts['number of boxes'] if int(n) > 0}
+    return (min(counts), max(counts)) if counts else None
+
+
+def _request_config(context: AlbumContext, cfg, logger=None):
+    """The trained config, narrowed to what this album's design can print.
+
+    The policy composes against `EnvConfig`: the mask reads `min_pages` /
+    `max_pages` and the style bands clamp to
+    `[min_photos_per_page, max_photos_per_page]`. A design holds the photo
+    counts its layouts have boxes for and no others, so a page sized outside
+    that set has no layout at all and `predefined.processing` has to fold it
+    into its neighbour or lose it.
+
+    Only ever *tightens*, the same rule the `maxPages` cap was written under:
+    the trained range is the shape the policy learned to compose for, and
+    forcing it wider would put it somewhere it has never been. A design roomier
+    than the trained range changes nothing.
+
+    Returned as a copy -- `_POLICY` is loaded once and shared by every worker
+    thread, so narrowing the config in place would narrow every album after it.
+
+    **It moves the observation with it.** `open_size_frac` is
+    `|open page| / max_photos_per_page` and `pages_frac` is
+    `n_pages_total / max_pages`, so a narrowed ceiling makes a smaller page
+    read as full. That pushes in the same direction as the mask -- close
+    sooner, where closing sooner is the only legal move -- but it is a real
+    change to what the policy sees, which is why `narrator.design_limits: false`
+    turns the whole thing off.
+    """
+    if not settings().get('design_limits', True):
+        return cfg
+
+    overrides: Dict[str, int] = {}
+
     pages = context.designs.pages if context.designs else None
-    design_max = (pages or {}).get('maxPages') if isinstance(pages, dict) else None
-    if isinstance(design_max, int) and 0 < design_max < spec.max_pages:
-        spec.max_pages = design_max
-        spec.min_pages = min(spec.min_pages, design_max)
-    return spec
+    design_max_pages = (pages or {}).get('maxPages') if isinstance(pages, dict) else None
+    if isinstance(design_max_pages, int) and 0 < design_max_pages < cfg.env.max_pages:
+        overrides['max_pages'] = design_max_pages
+        overrides['min_pages'] = min(cfg.env.min_pages, design_max_pages)
+
+    counts = _design_box_counts(context)
+    if counts is not None:
+        smallest, largest = counts
+        page_min = max(cfg.env.min_photos_per_page, smallest)
+        page_max = min(cfg.env.max_photos_per_page, largest)
+        if page_min > page_max:
+            # A design whose every layout is bigger than the trained ceiling,
+            # or smaller than its floor. Composing to an impossible band would
+            # end every album at once; leave the band and let the layout fold.
+            if logger:
+                logger.warning(f"narrator: design holds {smallest}-{largest} photos a page against "
+                               f"the trained {cfg.env.min_photos_per_page}-"
+                               f"{cfg.env.max_photos_per_page}; keeping the trained band")
+        else:
+            if page_min != cfg.env.min_photos_per_page:
+                overrides['min_photos_per_page'] = page_min
+            if page_max != cfg.env.max_photos_per_page:
+                overrides['max_photos_per_page'] = page_max
+
+    if not overrides:
+        return cfg
+
+    if logger:
+        logger.info(f"narrator: narrowed to the design -- {overrides}")
+    return replace(cfg, env=replace(cfg.env, **overrides))
 
 
 def _gallery_from_frame(photos: pd.DataFrame, context: AlbumContext, cfg):
@@ -441,6 +508,7 @@ class NarratorSubStage(SubStage):
         logger = context.logger
         try:
             net, cfg = _load_policy(logger)
+            cfg = _request_config(context, cfg, logger)
             gallery = _gallery_from_frame(context.photos, context, cfg)
 
             from src.narrator import export
