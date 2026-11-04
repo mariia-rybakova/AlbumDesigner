@@ -25,6 +25,7 @@ LOGGER = logging.getLogger("test_predefined_single_photo")
 FULL_SPREAD = 101   # one box over the whole spread: printed 2.00 : 1
 WIDE_BOX = 102      # one narrower box:               printed 1.47 : 1
 TWO_PORTRAITS = 103  # one portrait box per page
+THREE_BOX = 104      # one box left, two right
 
 DESIGNS = {
     str(FULL_SPREAD): {"boxes": [
@@ -37,14 +38,23 @@ DESIGNS = {
         {"id": 3, "x": 0.1, "y": 0.025, "width": 0.3, "height": 0.95, "layer": 1, "type": 0, "tag": None},
         {"id": 4, "x": 0.6, "y": 0.025, "width": 0.3, "height": 0.95, "layer": 1, "type": 0, "tag": None},
     ]},
+    str(THREE_BOX): {"boxes": [
+        {"id": 5, "x": 0.08, "y": 0.025, "width": 0.34, "height": 0.95, "layer": 1, "type": 0, "tag": None},
+        {"id": 6, "x": 0.55, "y": 0.025, "width": 0.2, "height": 0.45, "layer": 1, "type": 0, "tag": None},
+        {"id": 7, "x": 0.55, "y": 0.525, "width": 0.2, "height": 0.45, "layer": 1, "type": 0, "tag": None},
+    ]},
 }
+
+ALL_DESIGNS = (FULL_SPREAD, WIDE_BOX, TWO_PORTRAITS, THREE_BOX)
+#: The shape production still loses: nothing in the design holds one photo.
+NO_ONE_BOX = (TWO_PORTRAITS, THREE_BOX)
 
 PORTRAIT_AR = 0.67
 LANDSCAPE_AR = 1.5
 
 
-def designs_info():
-    layouts_df = generate_layouts_df(DESIGNS, [FULL_SPREAD, WIDE_BOX, TWO_PORTRAITS])
+def designs_info(ids=ALL_DESIGNS):
+    layouts_df = generate_layouts_df(DESIGNS, list(ids))
     layout_id2data, box_id2data = get_layouts_data(layouts_df, None, None)
     return {
         "anyPagelayouts_df": layouts_df,
@@ -68,9 +78,9 @@ def gallery(*ars):
     } for i, ar in enumerate(ars)])
 
 
-def lay_out(gallery_df, *spreads):
+def lay_out(gallery_df, *spreads, designs=ALL_DESIGNS):
     predefined = PredefinedLayoutInput(spreads=[PredefinedSpread(photo_ids=list(ids)) for ids in spreads])
-    result_list, _ = predefined_layout_processing(gallery_df, designs_info(), predefined,
+    result_list, _ = predefined_layout_processing(gallery_df, designs_info(designs), predefined,
                                                   SpreadSearchParams(), True, LOGGER)
     return result_list
 
@@ -83,9 +93,13 @@ def only_spread(result_list):
     return spread
 
 
-def boxes_of(layout_idx):
-    row = designs_info()["anyPagelayouts_df"].loc[layout_idx]
+def boxes_of(layout_idx, designs=ALL_DESIGNS):
+    row = designs_info(designs)["anyPagelayouts_df"].loc[layout_idx]
     return row["id"], row["number of boxes"]
+
+
+def photo_ids(spread):
+    return [p.id for p in list(spread.left_photos) + list(spread.right_photos)]
 
 
 # ------------------------------------------------------- the regression itself
@@ -153,3 +167,91 @@ def test_every_spread_of_a_mixed_album_survives():
                           [1, 2], [3], [1])
 
     assert len(result_list) == 3
+
+
+# ------------------------------ when no layout holds the count the plan asked for
+#
+# A design holds the photo counts its layouts have boxes for and no others.
+# Where the request names a count the design does not offer -- one photo where
+# there is no one-box layout, five where the richest layout holds four --
+# nothing in the search can help and the spread used to be dropped with its
+# photographs. `_fold_into_neighbour` gives them to the spread beside it: the
+# album loses a spread, not a photograph.
+
+
+def test_a_lone_photo_is_folded_into_the_previous_spread():
+    """No one-box layout exists, so the orphan joins the two beside it."""
+    result_list = lay_out(gallery(PORTRAIT_AR, PORTRAIT_AR, PORTRAIT_AR),
+                          [1, 2], [3], designs=NO_ONE_BOX)
+
+    spread = only_spread(result_list)
+    design_id, n_boxes = boxes_of(spread.layout_id, NO_ONE_BOX)
+    assert abs(design_id) == THREE_BOX and n_boxes == 3
+    assert sorted(photo_ids(spread)) == [1, 2, 3], "no photograph was lost"
+
+
+def test_the_next_spread_takes_it_when_there_is_no_previous_one():
+    result_list = lay_out(gallery(PORTRAIT_AR, PORTRAIT_AR, PORTRAIT_AR),
+                          [3], [1, 2], designs=NO_ONE_BOX)
+
+    spread = only_spread(result_list)
+    assert sorted(photo_ids(spread)) == [1, 2, 3]
+
+
+def test_a_spread_the_design_can_hold_is_never_folded():
+    """The fold is the last resort, not a shortcut past the search."""
+    result_list = lay_out(gallery(PORTRAIT_AR, PORTRAIT_AR, PORTRAIT_AR),
+                          [1, 2], [3])
+
+    assert len(result_list) == 2, "the single-box layout holds the lone photo on its own"
+
+
+def test_a_photograph_is_only_lost_when_no_neighbour_can_hold_it_either():
+    """Two photos per spread is all this design has: 2 + 1 fits nothing."""
+    result_list = lay_out(gallery(PORTRAIT_AR, PORTRAIT_AR, PORTRAIT_AR),
+                          [1, 2], [3], designs=(TWO_PORTRAITS,))
+
+    spread = only_spread(result_list)
+    assert sorted(photo_ids(spread)) == [1, 2], "the neighbour is unchanged"
+
+
+def test_the_other_side_gets_its_turn_when_the_first_cannot_hold_it():
+    """This design stops at three boxes: 3 + 1 fits nothing, 2 + 1 does."""
+    result_list = lay_out(gallery(*([PORTRAIT_AR] * 6)),
+                          [1, 2, 3], [4], [5, 6], designs=NO_ONE_BOX)
+
+    merged = [sorted(photo_ids(s)) for group in result_list for r in group.values() for s in r.spreads]
+    assert len(result_list) == 2
+    assert [1, 2, 3] in merged, "the three-photo spread on the left had no room"
+    assert [4, 5, 6] in merged, "so the right side took it"
+
+
+def test_a_spread_naming_photos_the_gallery_does_not_have_is_not_folded():
+    """Nothing to save, and the neighbour must not be relaid for it."""
+    result_list = lay_out(gallery(PORTRAIT_AR, PORTRAIT_AR), [1, 2], [999], designs=NO_ONE_BOX)
+
+    spread = only_spread(result_list)
+    assert sorted(photo_ids(spread)) == [1, 2]
+
+
+def test_every_spread_of_a_many_spread_album_survives_the_fold():
+    """Two orphans in one album, each folding into its own neighbour."""
+    result_list = lay_out(gallery(*([PORTRAIT_AR] * 6)),
+                          [1, 2], [3], [4, 5], [6], designs=NO_ONE_BOX)
+
+    kept = sorted(pid for group in result_list for r in group.values()
+                  for s in r.spreads for pid in photo_ids(s))
+    assert kept == [1, 2, 3, 4, 5, 6], "folded, never dropped"
+    assert len(result_list) == 2, "four planned spreads, two printable ones"
+
+
+def test_an_orphan_does_not_fold_into_a_spread_that_was_folded_away():
+    """`[3]` takes `[1,2]` and leaves a hole; `[4]` must step over it to the
+    three-photo spread that is actually there, find it full, and try the other
+    side -- not merge into a spread that is no longer in the album."""
+    result_list = lay_out(gallery(*([PORTRAIT_AR] * 6)),
+                          [1, 2], [3], [4], [5, 6], designs=NO_ONE_BOX)
+
+    merged = [sorted(photo_ids(s)) for group in result_list for r in group.values() for s in r.spreads]
+    assert [1, 2, 3] in merged
+    assert [4, 5, 6] in merged

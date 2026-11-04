@@ -124,13 +124,68 @@ def _layout_one_predefined_spread(spread: PredefinedSpread, gallery_df: pd.DataF
                             f"{'landscape' if photos[0].ar >= 1 else 'portrait'} photo; "
                             f"placed it in single-box layout {fallback.layout_id}")
                 return fallback
-        logger.warning(f"No layout found for predefined spread: {spread.photo_ids}")
+        # The warning is the caller's: a spread with no layout of its own may
+        # still reach the album folded into the one beside it, and only
+        # `predefined_layout_processing` knows whether that worked.
         return None
 
     single = best.spreads_layouts[0]
     return Spread(layout_id=single.layout_idx,
                   left_photos=single.left_page_photos,
                   right_photos=single.right_page_photos)
+
+
+def _fold_into_neighbour(idx: int, plan: List[List[Any]], laid: List[Optional[Spread]],
+                         gallery_df: pd.DataFrame, resources: AlbumDesignResources,
+                         params: SpreadSearchParams, is_wedding: bool, logger) -> bool:
+    """Give a spread no layout can hold to the spread beside it.
+
+    A design holds the photo counts its layouts have boxes for and no others.
+    Where the request asks for a count the design does not offer -- a lone photo
+    in a design with no one-box layout, a five-photo spread in a design whose
+    richest layout holds four -- nothing in the search can help, and the spread
+    used to be dropped with its photographs.
+
+    Merging costs the album one spread and keeps every photograph in it, next
+    to the ones it was planned beside. The previous spread is tried before the
+    next so the album keeps its order and a fold reads as the page running on.
+
+    Only `laid` neighbours are candidates, and the merged count has to have a
+    layout too -- a design that cannot hold 1 may not hold 3 either, and then
+    the other side gets its turn.
+    """
+    orphan = plan[idx]
+    if not gallery_df['image_id'].isin(orphan).any():
+        return False  # its photographs are not in the gallery; there is nothing to save
+
+    def nearest(step: int) -> Optional[int]:
+        """The closest spread on that side that is still in the album.
+
+        Stepping over the gaps matters: a spread that has itself been folded
+        away is no longer a place to put anything, and two unplaceable spreads
+        in a row would otherwise leave the second with a neighbour that no
+        longer exists.
+        """
+        j = idx + step
+        while 0 <= j < len(laid):
+            if laid[j] is not None:
+                return j
+            j += step
+        return None
+
+    for neighbour, side in ((nearest(-1), 'previous'), (nearest(1), 'next')):
+        if neighbour is None:
+            continue
+        merged = plan[neighbour] + orphan
+        spread = _layout_one_predefined_spread(PredefinedSpread(photo_ids=merged), gallery_df,
+                                               resources, params, is_wedding, logger)
+        if spread is None:
+            continue
+        laid[neighbour], plan[neighbour] = spread, merged
+        logger.info(f"Predefined spread {orphan}: no layout holds {len(orphan)} photo(s); "
+                    f"folded into the {side} spread, now {len(merged)} photo(s)")
+        return True
+    return False
 
 
 def predefined_layout_processing(gallery_df: pd.DataFrame, designs_info: Dict[str, Any],
@@ -142,17 +197,29 @@ def predefined_layout_processing(gallery_df: pd.DataFrame, designs_info: Dict[st
     returns, so ``assembly_output`` consumes it unchanged. Each spread becomes
     its own single-spread ``GroupProcessingResult`` so the downstream
     time-reorder can order them; input order is otherwise preserved here.
+
+    Two passes: every spread on its own, then `_fold_into_neighbour` for the
+    ones that found nothing. A spread is only warned about once both have
+    failed, so the warning means a photograph was actually lost.
     """
     resources = AlbumDesignResources.from_dict(designs_info)  # LookUpTable defaulted, unused
 
+    plan: List[List[Any]] = [list(spread.photo_ids) for spread in predefined.spreads]
+    laid: List[Optional[Spread]] = [
+        _layout_one_predefined_spread(spread, gallery_df, resources, params, is_wedding, logger)
+        for spread in predefined.spreads]
+
+    for idx in [i for i, spread in enumerate(laid) if spread is None]:
+        if not _fold_into_neighbour(idx, plan, laid, gallery_df, resources, params, is_wedding, logger):
+            logger.warning(f"No layout found for predefined spread: {plan[idx]}")
+
     result_list: List[Dict[str, GroupProcessingResult]] = []
-    for idx, spread in enumerate(predefined.spreads):
-        laid_out = _layout_one_predefined_spread(spread, gallery_df, resources, params, is_wedding, logger)
-        if laid_out is None:
+    for idx, spread in enumerate(laid):
+        if spread is None:
             continue
         group_id = f"predefined_{idx}"
         result_list.append({group_id: GroupProcessingResult(group_name=group_id,
-                                                            spreads=[laid_out], score=1.0)})
+                                                            spreads=[spread], score=1.0)})
 
     logger.info(f"Predefined layout: produced {len(result_list)}/{len(predefined.spreads)} spreads.")
     return result_list, gallery_df
