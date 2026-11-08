@@ -334,25 +334,27 @@ def load_gallery_assets(project_base_url, logger, clip_df=None):
         segmentation_file = os.path.join(project_base_url, 'bg_segmentation.pb')
         person_vector_file = os.path.join(project_base_url, 'ai_person_vectors.pb')
 
-        files = [image_file, faces_file, persons_file, cluster_file, segmentation_file, person_vector_file]
-
-        functions = [
-            partial(get_faces_info, faces_file),
-            partial(get_persons_ids, persons_file),
-            partial(get_clusters_info, cluster_file),
-            partial(get_photo_meta, segmentation_file),
-            partial(get_person_vectors, person_vector_file),
-
+        # Each reader paired with the file it reads, so an error names the file
+        # that actually failed. They used to be two parallel lists, and when
+        # CLIP came from Qdrant the embeddings reader was dropped from one but
+        # not the other: on 54495899 an empty `persons_info.pb` was reported as
+        # `ai_face_vectors.pb`, which was fine.
+        readers = [
+            (faces_file, get_faces_info),
+            (persons_file, get_persons_ids),
+            (cluster_file, get_clusters_info),
+            (segmentation_file, get_photo_meta),
+            (person_vector_file, get_person_vectors),
         ]
 
         if clip_df is None:
-            functions.insert(0, partial(get_image_embeddings, image_file))
+            readers.insert(0, (image_file, get_image_embeddings))
 
         persons_details_df = None
 
         results = []
-        for idx, func in enumerate(functions):
-            result = func(logger)
+        for file, func in readers:
+            result = func(file, logger)
 
             # handle special case where function returns (df, extra)
             if isinstance(result, tuple):
@@ -363,9 +365,17 @@ def load_gallery_assets(project_base_url, logger, clip_df=None):
                 persons_details_df = extra
 
             if result is None:
-                return None, None, 'Error in reading data from protobuf file: {}'.format(files[idx])
+                return None, None, 'Error in reading data from protobuf file: {}'.format(file)
+            # A gallery where nobody was identified is a real gallery, not a
+            # broken read: `persons_info.pb` exists and simply holds no
+            # identities. 54495899 -- 61 photos, faces on 16 of them, no
+            # recurring person -- failed the whole request here. Non-wedding
+            # composition does not need identities; a wedding does, and
+            # `enrich.identities` refuses it there with a message that says so.
+            if func is get_persons_ids and result.empty:
+                logger.warning(f"No identities in {file}; continuing with nobody identified")
             elif result.empty or result.shape[0] == 0:
-                return None, None, 'There are no required data in protobuf file: {}'.format(files[idx])
+                return None, None, 'There are no required data in protobuf file: {}'.format(file)
             results.append(result)
 
         if clip_df is not None:

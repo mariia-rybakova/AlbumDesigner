@@ -28,6 +28,17 @@ class IdentitiesSubStage(SubStage):
         return bool(context.facts.is_wedding)
 
     def execute(self, context: AlbumContext) -> AlbumContext:
+        # A wedding album is about the couple, and with nobody identified there
+        # is no couple to build it around. Ingest lets an empty
+        # `persons_info.pb` through for the non-wedding path; a wedding stops
+        # here, saying why, instead of in `resolve_bride_groom` on an empty
+        # `main_persons`.
+        if not _anyone_identified(context.photos):
+            return context.fail(
+                f"Wedding gallery with nobody identified: persons_info.pb holds no "
+                f"identities for any of {len(context.photos)} photos, so there is no "
+                f"couple to build the album around.")
+
         context.photos = resolve_bride_groom(context.photos, context.logger)
 
         if not context.photos.empty:
@@ -42,6 +53,13 @@ class IdentitiesSubStage(SubStage):
             context.photos, context.facts.bride_id, context.facts.groom_id,
             context.logger)
         return context
+
+
+def _anyone_identified(photos: pd.DataFrame) -> bool:
+    if photos is None or photos.empty or Col.PERSONS_IDS not in photos.columns:
+        return False
+    return bool(photos[Col.PERSONS_IDS].apply(
+        lambda ids: isinstance(ids, (list, tuple)) and len(ids) > 0).any())
 
 
 @register

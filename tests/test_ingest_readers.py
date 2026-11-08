@@ -350,6 +350,67 @@ def test_pipeline_ingest_substage_uses_the_readers():
     assert context.missing(get('ingest.gallery_assets').provides) == []
 
 
+def empty_persons_blob() -> bytes:
+    """A `persons_info.pb` that exists and holds no identities (54495899)."""
+    msg = PersonInfo_pb2.PersonInfoMessageWrapper()
+    msg.v1.accountId, msg.v1.storeId, msg.v1.clusteringVersion = 7, 32, 1
+    return msg.SerializeToString()
+
+
+def empty_bg_blob() -> bytes:
+    msg = BGSegmentation_pb2.PhotoBGSegmentationMessageWrapper()
+    msg.v1.accountId, msg.v1.storeId, msg.v1.modelVersion = 7, 32, 3
+    return msg.SerializeToString()
+
+
+def _clip():
+    """CLIP as it arrives from Qdrant, which drops the `.pai` reader."""
+    with fake_blobs():
+        return readers.get_image_embeddings(path('ai_search_matrix.pai'), LOGGER)
+
+
+def test_nobody_identified_is_not_a_failed_read():
+    """An empty persons table reads as nobody identified, not as an error."""
+    clip = _clip()
+    with mock.patch.dict(BLOBS, {'persons_info.pb': empty_persons_blob}), fake_blobs():
+        photos, person_details, error = readers.load_gallery_assets(BASE, LOGGER, clip_df=clip)
+
+    assert error is None
+    assert list(photos['image_id']) == [PHOTO_A, PHOTO_B]
+    assert all(ids == [] for ids in photos['persons_ids'])
+    assert all(ids == [] for ids in photos['faceless_persons_ids'])
+    assert 'main_persons' in photos.columns
+
+
+def test_empty_blob_error_names_the_file_that_was_empty():
+    """With CLIP from Qdrant the readers shift by one; the error must not."""
+    clip = _clip()
+    with mock.patch.dict(BLOBS, {'bg_segmentation.pb': empty_bg_blob}), fake_blobs():
+        _, _, error = readers.load_gallery_assets(BASE, LOGGER, clip_df=clip)
+
+    assert error is not None
+    assert error.endswith('bg_segmentation.pb'), error
+
+
+def test_wedding_with_nobody_identified_fails_with_a_reason():
+    from src.pipeline import AlbumContext
+    from src.pipeline.contracts import GalleryFacts
+    from src.pipeline.registry import get
+
+    photos = pd.DataFrame({
+        'image_id': [PHOTO_A, PHOTO_B],
+        'cluster_context': ['bride', 'groom'],
+        'persons_ids': [[], []],
+        'main_persons': [np.nan, np.nan],
+    })
+    context = AlbumContext(logger=LOGGER, photos=photos,
+                           facts=GalleryFacts(is_wedding=True))
+    context = get('enrich.identities')()(context)
+
+    assert context.failed
+    assert 'nobody identified' in context.error
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for test in tests:
