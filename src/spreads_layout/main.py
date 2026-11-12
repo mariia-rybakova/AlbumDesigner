@@ -68,16 +68,22 @@ def split_group_if_needed(group_photos: List[Photo], spread_params: List[float],
 
 
 def is_chronology_first(group_name: Optional[Tuple]) -> bool:
-    """Whether this group's class must read in the order the day happened.
+    """Whether this group must read in the order the day happened.
 
-    Matched on the group's `cluster_context` — the class the group is *of* —
-    not on each photo's `original_context`, which varies inside any group. The
-    match is exact, so a decorated special context ('other|4') never qualifies,
-    the same rule the time-split allow-list uses.
+    Matched on the group's `cluster_context` -- the class the group is *of*, not
+    each photo's `original_context`, which varies inside any group. The match is
+    exact, so a decorated special context ('other|4') never qualifies, the same
+    rule the time-split allow-list uses.
+
+    A class test is enough because the ceremony sequence is assembled before
+    layout: `groups_operations.ceremony.merge_ceremony_sequence` folds every group
+    lying inside the window into one group classed 'ceremony', so the couple's
+    frames at the altar arrive here already part of the sequence. What the class
+    test cannot catch is a group with one foot outside the window, which is
+    therefore not merged -- and that is the intended answer, not a gap. Outside
+    the sequence the design decides the order of a page.
     """
-    if not group_name or len(group_name) < 2:
-        return False
-    return group_name[1] in CHRONOLOGY_FIRST_CLASSES
+    return bool(group_name) and len(group_name) >= 2 and group_name[1] in CHRONOLOGY_FIRST_CLASSES
 
 
 def find_spreads_layouts_for_subgroup(photos: List[Photo], layouts_df: pd.DataFrame,
@@ -141,7 +147,8 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
                                    layout_id2data: Dict[int, Any], spread_params: List[float],
                                    params: SpreadSearchParams, largest_layout_size: int,
                                    group_name: Tuple, logger,
-                                   pinned_spreads: Optional[int] = None) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout], Optional[Dict[str, Any]]]]]:
+                                   pinned_spreads: Optional[int] = None,
+                                   chronology_first: bool = False) -> Optional[List[Tuple[List[Photo], List[GroupSingleLayout], Optional[Dict[str, Any]]]]]:
     """
     Find spread layouts for an entire group, with fallback attempts.
 
@@ -159,6 +166,8 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
         largest_layout_size: Maximum number of boxes in any available layout.
         group_name: Tuple identifying the group (used for logging).
         logger: Logger instance.
+        chronology_first: Whether this group must read in the order the day
+            happened, decided once by `process_group`.
 
     Returns:
         List of (sub_group_photos, layout_candidates) tuples on success, or None
@@ -178,7 +187,6 @@ def find_spreads_layouts_for_group(group_photos: List[Photo], layouts_df: pd.Dat
     # an album that loses a ceremony is worse than one that prints it out of
     # order, and this way the ordering is only given up once every relaxation
     # has been tried with it.
-    chronology_first = is_chronology_first(group_name)
     policies = [True, False] if chronology_first else [False]
 
     # A group whose count a merge pinned is searched at that count first,
@@ -312,7 +320,8 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
                                  group_name: Tuple, is_wedding: bool,
                                  photo_fold_info: Optional[Dict[Any, Any]] = None,
                                  album_ar: float = 2.0,
-                                 logger=None) -> Dict[str, GroupProcessingResult]:
+                                 logger=None,
+                                 chronology_first: bool = False) -> Dict[str, GroupProcessingResult]:
     """
     Select the best layout for each sub-group and structure the results.
 
@@ -327,6 +336,8 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
         design_box_id2data: Mapping from (layout_id, box_id) to box properties.
         group_name: Tuple identifying the group.
         is_wedding: Whether this is a wedding album.
+        chronology_first: Whether this group must read in the order the day
+            happened, decided once by `process_group`.
 
     Returns:
         Dict mapping group_id_str to GroupProcessingResult for each sub-group
@@ -338,7 +349,7 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
         for subgroup_photos, subgroup_layouts in final_groups_and_layouts:
             best_layout = select_best_layout_for_subgroup(subgroup_layouts, subgroup_photos, layout_id2data,
                                                           design_box_id2data, photo_fold_info, album_ar, logger,
-                                                          chronology_first=is_chronology_first(group_name))
+                                                          chronology_first=chronology_first)
             if best_layout is None:
                 continue
 
@@ -410,14 +421,21 @@ def process_group(group_name: Tuple, group_images_df: pd.DataFrame, spread_param
 
         group_photos = get_photos_from_df(group_images_df, is_wedding)
 
+        # Decided once, for the whole group: the search narrows what it may emit
+        # under it, and the page assignment reads back under it, and the two must
+        # not disagree about the same group.
+        chronology_first = is_chronology_first(group_name)
+
         final_groups_and_layouts = find_spreads_layouts_for_group(group_photos, layouts_df, layout_id2data, spread_params,
                                                                   params, largest_layout_size, group_name, logger,
-                                                                  pinned_spreads=pinned_spreads)
+                                                                  pinned_spreads=pinned_spreads,
+                                                                  chronology_first=chronology_first)
 
         local_result = select_best_layout_for_group(final_groups_and_layouts, layout_id2data, design_box_id2data,
                                                     group_name, is_wedding,
                                                     fold.photo_fold_info(group_images_df),
-                                                    resources.printlab_data.album_ar, logger)
+                                                    resources.printlab_data.album_ar, logger,
+                                                    chronology_first=chronology_first)
 
         collect()
         end = time.time()

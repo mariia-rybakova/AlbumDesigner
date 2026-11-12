@@ -5,6 +5,7 @@ import pandas as pd
 
 from src.core.models import AlbumDesignResources
 from src.core.group_formation import get_images_per_groups, get_missing_columns
+from src.groups_operations.ceremony import merge_ceremony_sequence
 from src.groups_operations.merge import (get_merge_candidates_bridegroom, get_merge_candidates_other,
                                          update_with_merges_bridegroom, update_with_merges_other,
                                          SPECIAL_MERGE_ROUNDS, SPECIAL_MERGE_CLASSES,
@@ -768,7 +769,10 @@ def process_wedding_illegal_groups(
 
     Executes the following steps in order:
       1. Initialize groups from the photos DataFrame.
-      2. Split oversized or temporally diverse groups.
+      2. Fold the ceremony sequence into one group, so the steps below
+         treat the processional, the vows and the send-off as the one
+         narrative they are (`ceremony.merge_ceremony_sequence`).
+      3. Split oversized or temporally diverse groups.
       3. Merge complementary bride/groom groups.
       4. Iteratively merge remaining small groups until no more merges are possible
          or `max_iterations` is reached.
@@ -803,14 +807,25 @@ def process_wedding_illegal_groups(
 
     iteration = 0
     try:
+        # original_context feeds layout scoring (class diversity / time ordering),
+        # which wants the content class, so strip any special 'class|idx' tag.
+        # Set before the ceremony merge, which rewrites `cluster_context` for the
+        # groups it folds together: taken after, every photo of the sequence
+        # would read as 'ceremony' and the page would lose the mix it is scored
+        # on. Nothing between here and the old position touches the context.
+        photos_df['original_context'] = photos_df['cluster_context'].apply(lambda c: c.split(SPECIAL_GROUP_SEP)[0])
+
+        # The processional, the vows and the send-off become one group before
+        # anything else reshapes them, so the splitting rules below -- the
+        # two-spread ceiling in particular -- apply to the sequence as they do to
+        # any other group.
+        photos_df = merge_ceremony_sequence(photos_df, all_gallery_df, logger)
+
         photos_df = handle_wedding_splitting(photos_df, resources, logger)
         save_subgroups_snapshot(photos_df, 'subgroups_1.json')
 
         photos_df['merge_allowed'] = True
         photos_df.loc[photos_df['group_size'] == 24, 'merge_allowed'] = False
-        # original_context feeds layout scoring (class diversity / time ordering),
-        # which wants the content class, so strip any special 'class|idx' tag.
-        photos_df['original_context'] = photos_df['cluster_context'].apply(lambda c: c.split(SPECIAL_GROUP_SEP)[0])
         photos_df['groups_merged'] = 1
         photos_df = handle_wedding_bride_groom_merge(photos_df, logger)
 

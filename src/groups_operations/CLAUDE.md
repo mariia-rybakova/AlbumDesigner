@@ -5,9 +5,20 @@ Everything else here is reached from above it, never from outside the package:
 
 ```
 groups_management.process_wedding_illegal_groups
-  ├── split    oversized or temporally diverse groups are cut
-  └── merge    small and complementary groups are joined
+  ├── ceremony  the processional, the vows and the send-off become one group
+  ├── split     oversized or temporally diverse groups are cut
+  └── merge     small and complementary groups are joined
 ```
+
+`ceremony` runs first and for a different reason than the other two. They
+reshape groups that are *illegal* -- too big, too diverse, too small. It
+reshapes legal ones, because the ceremony is one narrative told by four classes
+and a group is an atomic block downstream. Running it before `split` is what
+puts the merged sequence under the same two-spread ceiling as everything else.
+
+`docs/ceremony_sequence.md` is the design note: what was tried before it, which
+guards are load-bearing, and why the window is read from the gallery rather than
+from the photos selection kept. Read it before changing any of that.
 
 This package *reshapes* groups that already exist. Making them in the first
 place is `src/core/group_formation.py` — a different job, deliberately

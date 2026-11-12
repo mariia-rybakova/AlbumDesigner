@@ -13,6 +13,13 @@ CONFIGS = {'DEBUG': True,
                'top_k': 5
                },
 
+           # Fold the groups that lie wholly inside the ceremony window into one,
+           # so the processional, the vows and the send-off read forward across
+           # the class boundaries between them. False keeps every group its own
+           # block, which is the behaviour that prints the bride entering after
+           # the vows. See src/groups_operations/ceremony.py.
+           'merge_ceremony_sequence': True,
+
            'queries_file': r'files/queries_embeddings_v1.pkl',
            'queries_file_v2': r'files/queries_embeddings_v2.pkl',
            'queries_file_v3': r'files/queries_embeddings_v3.pkl',
@@ -526,13 +533,18 @@ CONFIGS = {'DEBUG': True,
         #
         # Resolve the parents as *identities*, with an explicit inconclusive
         # outcome, instead of classifying photos by head count + gender + an
-        # age offset. See docs/parent_identification.md for why the old rule
-        # was removed.
+        # age offset. Set 'by_identity' False for the old rule -- kept because
+        # the equivalence tests need a way back to the pre-refactor behaviour,
+        # not because it is worth running (its age window accepts +3..+27 years
+        # and so selects the sibling band, and its social-circle test collapses
+        # to "either candidate appears in any circle at all").
         #
         # Every threshold here is set to fail toward silence. A parent we do
         # not name costs a category that would have been budgeted anyway; a
         # stranger we do name goes on the family spread.
         'parents': {
+            'by_identity': True,
+
             # A parents portrait is of the parents *with the couple* and
             # nobody else. Requiring only "a partner and a parent" admits the
             # big posed group shots -- the bride and her mother among twenty
@@ -650,6 +662,11 @@ CONFIGS = {'DEBUG': True,
             'family_max_people': 4,
             'family_full': 4,
 
+            # Circles this size or smaller read as a household rather than a
+            # guest list; a circle shared with another *old* candidate is how
+            # the two parents of one side corroborate each other.
+            'max_circle_size': 4,
+
             'weights': {
                 'age_rank': 0.40,
                 'own_side': 0.20,
@@ -657,6 +674,7 @@ CONFIGS = {'DEBUG': True,
                 'aisle': 0.15,
                 'family': 0.25,
                 'duo_dance': 0.25,
+                'circle': 0.15,
                 'query': 0.15,
                 # Negative terms. The party count is the only indicator nearly
                 # exclusive to the confusion class, so it is allowed to sink a
@@ -2084,7 +2102,50 @@ TIME_SPLIT_ALLOWED_CLASSES = TIME_SPLIT_TIGHT_CLASSES + TIME_SPLIT_WATCH_CLASSES
 #            keeps plenty of room.
 #   stage 3  `CHRONOLOGY_FIRST_PENALTIES` below, which stops the layout
 #            scorer paying for the page arrangements that fight it.
-CHRONOLOGY_FIRST_CLASSES = ('ceremony',)
+# The classes that must read in the order the day happened. Deliberately the
+# same set as `CEREMONY_SEQUENCE_CLASSES` below, and aliased rather than
+# repeated so the two cannot drift: the stretch that has to read forward is the
+# stretch that defines itself.
+#
+# 'bride and groom' is not here and must not be -- it appears all over an album
+# and outside the ceremony the design has more to say about a page than the
+# clock does. The couple's frames *at the altar* get the rule anyway, by being
+# folded into the sequence's own group: see src/groups_operations/ceremony.py.
+
+# The classes whose photos mark where the ceremony sequence runs. They are not
+# the groups the rule applies to -- they are the groups that *locate* it. The
+# span their photos cover becomes the ceremony window, and every group
+# overlapping that window reads forward whatever its own class, which is how
+# the couple's frames at the altar are told from the couple's frames at sunset:
+# the content model files both as 'bride and groom' and only the clock differs.
+#
+# Deliberately not applied to a class as a whole. 'bride and groom' appears all
+# over an album, and outside the sequence the design has more to say about the
+# order of a page than the clock does.
+CEREMONY_SEQUENCE_CLASSES = ('bride walking the aisle', 'groom walking the aisle',
+                             'walking the aisle', 'ceremony', 'may kiss bride',
+                             'send off')
+
+CHRONOLOGY_FIRST_CLASSES = CEREMONY_SEQUENCE_CLASSES
+
+# Of those, the ones `enrich.ceremony_anchor` tags by reading outward from the
+# ceremony's climax. Each is bounded by construction -- the processional within
+# `aisle_lead_in` before the core, the send-off within `send_off_horizon` after
+# it -- so none of them can land far from the ceremony however odd the gallery.
+#
+# 'ceremony' is the exception and is deliberately not here: it comes from the
+# content model, which also puts it on frames shot before the ceremony started.
+# Enrich demotes the early ones; a late mislabel survives, and one of those
+# alone must not be allowed to define an edge of the window.
+CEREMONY_ANCHOR_CLASSES = ('bride walking the aisle', 'groom walking the aisle',
+                           'walking the aisle', 'may kiss bride', 'send off')
+
+# A sequence photo further than this from its nearest neighbour in the sequence
+# is an outlier and takes no part in the window, in seconds. The real gap this
+# has to clear is the ceremony's end to the send-off: guests gather, and 17
+# minutes of it was ordinary on the gallery this was measured against. A stray
+# label an hour away sits well outside and is dropped.
+CEREMONY_WINDOW_MAX_GAP = 30 * 60
 
 # Penalty overrides for those classes, merged over the defaults in
 # `spreads.spread.Penalties`. Only the fields named here change.
