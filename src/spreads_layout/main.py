@@ -231,7 +231,8 @@ def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], s
                                     design_box_id2data: Dict[Tuple[int, int], Any],
                                     photo_fold_info: Optional[Dict[Any, Any]] = None,
                                     album_ar: float = 2.0,
-                                    logger=None) -> Optional[GroupSingleLayout]:
+                                    logger=None,
+                                    chronology_first: bool = False) -> Optional[GroupSingleLayout]:
     """
     Select the top-ranked layout for a sub-group and resolve photo assignments.
 
@@ -248,6 +249,10 @@ def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], s
             None or empty turns the fold check off.
         album_ar: The album's width:height.
         logger: Logger instance.
+        chronology_first: Whether this group's class must read in the order the
+            day happened. Stages 2 and 3 already honour it; this carries it into
+            the fourth and last decision about order -- which box each photo
+            goes in -- where the area tiers would otherwise sort by rank.
 
     Returns:
         The best GroupSingleLayout with photos resolved and ordered, or None
@@ -257,13 +262,15 @@ def select_best_layout_for_subgroup(subgroup_layouts: List[GroupSingleLayout], s
         return None
 
     best_layout = subgroup_layouts[0]
-    best_layout.resolve_and_order(subgroup_photos, layout_id2data, design_box_id2data, merge_pages=False)
+    best_layout.resolve_and_order(subgroup_photos, layout_id2data, design_box_id2data, merge_pages=False,
+                                  chronology_first=chronology_first)
 
     # A spread with a face on the fold is re-housed in a layout of the same
     # shape. The photos stay exactly where the search put them.
     if fold.enabled() and photo_fold_info:
         fold.repair_spreads(best_layout, subgroup_photos, layout_id2data, design_box_id2data,
-                            photo_fold_info, album_ar, logger)
+                            photo_fold_info, album_ar, logger,
+                            chronology_first=chronology_first)
 
     return best_layout
 
@@ -330,7 +337,8 @@ def select_best_layout_for_group(final_groups_and_layouts: Optional[List[Tuple[L
     if final_groups_and_layouts is not None:
         for subgroup_photos, subgroup_layouts in final_groups_and_layouts:
             best_layout = select_best_layout_for_subgroup(subgroup_layouts, subgroup_photos, layout_id2data,
-                                                          design_box_id2data, photo_fold_info, album_ar, logger)
+                                                          design_box_id2data, photo_fold_info, album_ar, logger,
+                                                          chronology_first=is_chronology_first(group_name))
             if best_layout is None:
                 continue
 

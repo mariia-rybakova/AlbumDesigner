@@ -415,13 +415,18 @@ def _shape_index(layout_id2data, box_id2data) -> Dict[Tuple[int, ...], List[int]
 def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, Any],
                    box_id2data: Dict[Tuple[int, int], Any],
                    photo_info: Dict[Any, Dict[str, Any]],
-                   album_ar: float = 2.0, logger=None) -> Tuple[float, float]:
+                   album_ar: float = 2.0, logger=None,
+                   chronology_first: bool = False) -> Tuple[float, float]:
     """Re-house each damaged spread in an interchangeable layout that is clean.
 
     The photos do not move. The spread keeps the set the search gave it and the
     split across the two pages; only the layout holding them changes, and only
     for one of the same shape, which scores the same. Returns (cost before,
     cost after) over the whole group layout.
+
+    Re-housing re-runs the photo-to-box assignment, so `chronology_first` has to
+    travel with it: the same shape can be built from boxes of different areas,
+    and without the flag the move would quietly undo the chronological re-read.
     """
     shapes = None
     moved = 0
@@ -448,7 +453,8 @@ def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, An
                                        right_page_photo_idxs=set(spread.right_page_photo_idxs),
                                        number_of_squares=spread.number_of_squares)
             trial.resolve_photos(photos)
-            trial.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
+            trial.assign_photos_order(layout_id2data, box_id2data, merge_pages=False,
+                                      chronology_first=chronology_first)
             cost, clearance = _spread_fold(trial, layout_id2data, box_id2data,
                                            photo_info, album_ar)
             # Lowest cost wins; among layouts that all clear the margin, the
@@ -460,7 +466,8 @@ def repair_spreads(group_layout, photos: List[Any], layout_id2data: Dict[int, An
             moved += 1
             spread.layout_idx = best_idx
             spread.resolve_photos(photos)
-            spread.assign_photos_order(layout_id2data, box_id2data, merge_pages=False)
+            spread.assign_photos_order(layout_id2data, box_id2data, merge_pages=False,
+                                       chronology_first=chronology_first)
         after_total += best_key[0]
 
     if moved:

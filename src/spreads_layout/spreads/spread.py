@@ -417,7 +417,8 @@ class SingleSpreadLayout:
 
     @classmethod
     def _assign_part_photos_order(cls, boxes: List[Dict[str, Any]],
-                                 photos: List[Photo]) -> Tuple[List[Photo], List[Photo]]:
+                                 photos: List[Photo],
+                                 chronology_first: bool = False) -> Tuple[List[Photo], List[Photo]]:
         """
         Order photos into left and right page positions by matching box areas to ranks.
 
@@ -427,10 +428,19 @@ class SingleSpreadLayout:
         into left/right page positions. Assigned photos are removed from the pool
         before processing the next tier.
 
+        The chronological sort is per tier, so a page built from boxes of
+        different sizes still reads out of order: the largest tier takes first
+        pick from a pool sorted by rank, and nothing afterwards compares a photo
+        in one tier with a photo in another. `chronology_first` closes that gap
+        for the classes that must read forward -- see `_reorder_by_time`.
+
         Args:
             boxes: List of box dicts, each with 'id', 'area', 'orientation', 'side',
                 and 'position' keys.
             photos: Photos to assign, sorted by rank and time.
+            chronology_first: Whether this group's class must read in the order
+                the day happened, which outranks giving the biggest box the
+                best-ranked photo.
 
         Returns:
             Tuple of (left_photos_order, right_photos_order), each a list of Photo
@@ -490,11 +500,47 @@ class SingleSpreadLayout:
                 assigned_ids = set(id(p) for p in assigned_photos)
                 photos = [p for p in photos if id(p) not in assigned_ids]
 
+        if chronology_first:
+            cls._reorder_by_time(boxes, left_photos_order, right_photos_order)
+
         # Final per-page ordering, indexed by box position within each page.
         return left_photos_order, right_photos_order
 
+    @staticmethod
+    def _reorder_by_time(boxes: List[Dict[str, Any]],
+                         left_photos_order: List[Photo],
+                         right_photos_order: List[Photo]) -> None:
+        """Re-read the photos already assigned in time order, box shape permitting.
+
+        The area tiers above hand the biggest box the best-ranked photo and sort
+        chronologically only inside a tier, so a page whose boxes differ in size
+        reads in rank order rather than in the order the moment happened. This
+        permutes the photos that are already placed -- it never changes *which*
+        photos the page holds -- among the boxes of one orientation at a time, so
+        a portrait never lands in a landscape box and every photo keeps a box it
+        fits. Boxes are walked in reading order, left page before right.
+
+        What it cannot repair is a page whose orientations themselves run against
+        the clock: a landscape shot between two portraits stays in the landscape
+        box wherever that box sits. Choosing a layout whose shape allows the order
+        is the search's job, not this one's. Mutates the two lists in place.
+        """
+        pages = {0: left_photos_order, 1: right_photos_order}
+        by_orientation: Dict[Any, List[Dict[str, Any]]] = {}
+        for box in sorted(boxes, key=lambda b: (b['side'], b['position'])):
+            if pages[box['side']][box['position']] is None:
+                continue
+            by_orientation.setdefault(box['orientation'], []).append(box)
+
+        for slots in by_orientation.values():
+            in_time = sorted((pages[box['side']][box['position']] for box in slots),
+                             key=lambda photo: photo.general_time)
+            for box, photo in zip(slots, in_time):
+                pages[box['side']][box['position']] = photo
+
     def assign_photos_order(self, layout_id2data: Dict[int, Any],
-                            design_box_id2data: Dict[Tuple[int, int], Any], merge_pages: bool) -> None:
+                            design_box_id2data: Dict[Tuple[int, int], Any], merge_pages: bool,
+                            chronology_first: bool = False) -> None:
         """
         Determine final photo ordering within this spread's left and right pages.
 
@@ -510,6 +556,9 @@ class SingleSpreadLayout:
                 including 'area' and 'orientation'.
             merge_pages: If True, pool photos from both pages before assignment;
                 if False, assign each page's photos independently.
+            chronology_first: Whether this group's class must read in the order
+                the day happened; passed through to the area assignment, which
+                then re-reads each page chronologically.
         """
         # Look up the layout chosen for this spread and the box ids it defines per page.
         layout_data = layout_id2data[self.layout_idx]
@@ -536,14 +585,17 @@ class SingleSpreadLayout:
             # boxes at once so the best photos can land on either page.
             all_photos = sorted(list(self.left_page_photos) + list(self.right_page_photos),
                                 key=lambda ph: (ph.rank, ph.general_time))
-            left_photos_order, right_photos_order = self._assign_part_photos_order(left_page_boxes + right_page_boxes, all_photos)
+            left_photos_order, right_photos_order = self._assign_part_photos_order(
+                left_page_boxes + right_page_boxes, all_photos, chronology_first)
         else:
             # Independent mode: sort each page's photos by (rank, time) separately...
             left_page_photos = sorted(self.left_page_photos, key=lambda ph: (ph.rank, ph.general_time))
             right_page_photos = sorted(self.right_page_photos, key=lambda ph: (ph.rank, ph.general_time))
             # ...and assign each page against only its own boxes (ignore the other page's result).
-            left_photos_order, _ = self._assign_part_photos_order(left_page_boxes, left_page_photos)
-            _, right_photos_order = self._assign_part_photos_order(right_page_boxes, right_page_photos)
+            left_photos_order, _ = self._assign_part_photos_order(left_page_boxes, left_page_photos,
+                                                                  chronology_first)
+            _, right_photos_order = self._assign_part_photos_order(right_page_boxes, right_page_photos,
+                                                                   chronology_first)
 
         # Persist the computed orderings back onto the spread.
         self.set_photos_order(left_photos_order, right_photos_order)

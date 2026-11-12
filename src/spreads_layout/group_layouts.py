@@ -112,7 +112,7 @@ class GroupSingleLayout:
 
     def resolve_and_order(self, photos: List[Photo], layout_id2data: Dict[int, Any],
                           design_box_id2data: Dict[Tuple[int, int], Any],
-                          merge_pages: bool = False):
+                          merge_pages: bool = False, chronology_first: bool = False):
         """
         Resolve photo indices to Photo objects and assign them to layout boxes.
 
@@ -132,12 +132,16 @@ class GroupSingleLayout:
             merge_pages: If True, pool photos from both pages before assignment
                 (useful when page separation is not meaningful). If False, assign
                 each page's photos independently.
+            chronology_first: Whether this group's class must read in the order
+                the day happened. The area tiers only sort within a tier, so
+                without this a page of unequal boxes reads in rank order.
         """
         for spread in self.spreads_layouts:
             # Retrieve Photo objects from photo indices
             spread.resolve_photos(photos)
             # Assign photos to layout boxes
-            spread.assign_photos_order(layout_id2data, design_box_id2data, merge_pages)
+            spread.assign_photos_order(layout_id2data, design_box_id2data, merge_pages,
+                                       chronology_first)
 
 
 def process_group_lists(group_spreads_layouts: GroupLayoutsLists) -> List[GroupSingleLayout]:
