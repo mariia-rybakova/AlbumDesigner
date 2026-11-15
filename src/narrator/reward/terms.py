@@ -19,11 +19,20 @@ from ..data.preprocess import GalleryCache
 from ..data.schema import PackedGallery, ShapeSpec
 
 
-def _pair_mean(mat: np.ndarray, idx: list[int]) -> float:
-    """Mean of the strict upper triangle of mat restricted to idx x idx."""
+def _pair_mean(mat: np.ndarray, idx: list[int], transform=None) -> float:
+    """Mean of the strict upper triangle of mat restricted to idx x idx.
+
+    ``transform`` is applied to the idx x idx block, never to ``mat`` itself. These terms run for
+    every page at every step, and ``mat`` is (N, N): writing ``_pair_mean(1.0 - cache.dt, idx)``
+    built a whole new N x N matrix to read the few pairs of one page. On an 11,001-photo gallery
+    that made `select.narrator` take 277-317 s in production (2026-11-13, project 53440737); the
+    transform is elementwise, so slicing first gives the same values.
+    """
     if len(idx) < 2:
         return 0.0
     sub = mat[np.ix_(idx, idx)]
+    if transform is not None:
+        sub = transform(sub)
     iu = np.triu_indices(len(idx), k=1)
     return float(sub[iu].mean())
 
@@ -68,7 +77,7 @@ def cluster_purity(idx: list[int], pg: PackedGallery) -> float:
 
 def temporal_coherence(idx: list[int], cache: GalleryCache) -> float:
     # dt in [0,1]; closeness = 1 - dt.
-    return float(np.clip(_pair_mean(1.0 - cache.dt, idx), 0.0, 1.0))
+    return float(np.clip(_pair_mean(cache.dt, idx, lambda dt: 1.0 - dt), 0.0, 1.0))
 
 
 # What `cast` returns for a page carrying no cast evidence at all under ``"defined"`` (no pair has
@@ -110,14 +119,16 @@ def cast_consistency(idx: list[int], cache: GalleryCache, mode: str = "zero",
 
     See ``RewardConfig.cast_mode`` for the measurements behind each.
     """
-    face = np.clip(cache.face_sim, 0.0, 1.0)
-    if mode not in ("defined", "style"):
-        combined = 0.5 * cache.cast_jaccard + 0.5 * face
-        return float(np.clip(_pair_mean(combined, idx), 0.0, 1.0))
     if len(idx) < 2:
         return 0.0                      # as every other page-local term does for a 1-photo page
+    # Everything below reads the page's idx x idx block only. Clipping or combining the full
+    # (N, N) matrices first cost an N x N pass per page per step -- see `_pair_mean`.
     ii = np.ix_(idx, idx)
     iu = np.triu_indices(len(idx), k=1)
+    face = np.clip(cache.face_sim[ii], 0.0, 1.0)
+    if mode not in ("defined", "style"):
+        combined = 0.5 * cache.cast_jaccard[ii] + 0.5 * face
+        return float(np.clip(combined[iu].mean(), 0.0, 1.0))
     dj = cache.cast_defined[ii][iu]
     df = cache.face_defined[ii][iu]
 
@@ -132,12 +143,12 @@ def cast_consistency(idx: list[int], cache: GalleryCache, mode: str = "zero",
                 # No identity evidence at all; the face half alone still speaks if it is defined.
                 if not df.any():
                     return CAST_NO_EVIDENCE
-                return float(np.clip(face[ii][iu][df].mean(), 0.0, 1.0))
+                return float(np.clip(face[iu][df].mean(), 0.0, 1.0))
             if not df.any():
                 return float(np.clip(dom, 0.0, 1.0))
-            return float(np.clip(0.5 * dom + 0.5 * face[ii][iu][df].mean(), 0.0, 1.0))
+            return float(np.clip(0.5 * dom + 0.5 * face[iu][df].mean(), 0.0, 1.0))
 
-    num = np.where(dj, cache.cast_jaccard[ii][iu], 0.0) + np.where(df, face[ii][iu], 0.0)
+    num = np.where(dj, cache.cast_jaccard[ii][iu], 0.0) + np.where(df, face[iu], 0.0)
     den = dj.astype(np.float64) + df.astype(np.float64)
     ok = den > 0
     if not ok.any():
