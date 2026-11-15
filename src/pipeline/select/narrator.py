@@ -445,6 +445,71 @@ def _epoch(row, has) -> float:
     return float('nan')
 
 
+# -- one rollout, unscored -------------------------------------------------
+
+
+class _Unscored:
+    """Stands in for the `RewardEngine` once the episode is under way.
+
+    The env still reads `engine.cache` for the policy's own inputs (the
+    `dup_included` candidate feature, and `is_dup` in the mask when dedup is
+    enforced), so the cache is kept. What goes is the scoring: `terminal` and
+    `breakdown`, which the env calls once the album is done.
+    """
+
+    def __init__(self, cache):
+        self.cache = cache
+
+    def terminal(self, ordered_pages) -> float:
+        return 0.0
+
+    def breakdown(self, ordered_pages) -> dict:
+        return {}
+
+
+def _unscored_env_class():
+    """`AlbumNarratorEnv` without the reward, built lazily to keep torch off import."""
+    from src.narrator.env.album_env import AlbumNarratorEnv
+
+    class UnscoredEnv(AlbumNarratorEnv):
+        def reset(self, gallery):
+            obs = super().reset(gallery)
+            self.engine = _Unscored(self.engine.cache)
+            return obs
+
+        def _potential(self) -> float:
+            # Called twice a step for the shaping reward, which only PPO reads.
+            return 0.0
+
+    return UnscoredEnv
+
+
+def _compose_once(net, cfg, gallery, seed: int, temperature: float = 1.0):
+    """`export.compose(sample_k=1)` with the reward taken out: (packed, pages).
+
+    The reward chooses nothing at inference. The env returns it every step and
+    `run_episode` drops it; its only reader is `album_score`, which ranks the
+    `sample_k` rollouts. With one rollout there is nothing to rank, so the
+    score is computed only to be logged -- and on a large gallery it was most
+    of the cost. At 11,001 photos `_greedy_cover`, which exists only to
+    normalise the `photocov` term, took 28.6 of compose's 47.8 s.
+
+    So: the same rollout -- same selector, same seed, same temperature, same
+    rng draw sequence -- through an env that does not score. `photocov` is
+    zeroed on a copy of the config, which is what makes `build_cache` skip
+    `_greedy_cover`; that weight is read by nothing but the reward. The album
+    comes out identical to `export.compose`'s; only `album_score` is gone.
+    """
+    from src.narrator.eval import baselines
+
+    weights = {**cfg.reward.weights, 'photocov': 0.0}
+    cfg = replace(cfg, reward=replace(cfg.reward, weights=weights))
+    env = _unscored_env_class()(cfg)
+    rng = np.random.default_rng(seed)
+    ordered, _ = baselines.run_episode(env, gallery, baselines.policy_sample(net, temperature), rng)
+    return env.pg, ordered
+
+
 # -- the substage ----------------------------------------------------------
 
 
@@ -516,9 +581,13 @@ class NarratorSubStage(SubStage):
             from src.pipeline.select import narrator_covers
 
             sample_k = int(settings().get('sample_k', 1))
-            packed, pages, score = export.compose(
-                net, cfg, gallery, sample_k=sample_k,
-                seed=int(settings().get('seed', 0)))
+            seed = int(settings().get('seed', 0))
+            if sample_k == 1 and not settings().get('score_single_rollout', False):
+                packed, pages = _compose_once(net, cfg, gallery, seed=seed)
+                score = None
+            else:
+                packed, pages, score = export.compose(
+                    net, cfg, gallery, sample_k=sample_k, seed=seed)
             first, last = (hero.pick_hero_photos(packed)
                            if cfg.reward.hero_pages else (-1, -1))
             block = export.album_to_predefined_block(packed, pages, first, last)
@@ -545,7 +614,7 @@ class NarratorSubStage(SubStage):
         return context
 
     @staticmethod
-    def _commit(context: AlbumContext, block: dict, score: float) -> None:
+    def _commit(context: AlbumContext, block: dict, score: Optional[float]) -> None:
         """Record the composition as both a selection and a fixed grouping."""
         from src.predefined.models import PredefinedLayoutInput
 
@@ -555,8 +624,9 @@ class NarratorSubStage(SubStage):
 
         if context.logger:
             spreads = [len(s.photo_ids) for s in predefined.spreads]
+            scored = f"album_score {score:.4f}" if score is not None else "album_score not computed"
             context.logger.info(
                 f"narrator: {len(spreads)} spreads, {sum(spreads)} photos "
                 f"(+{len(predefined.first_page_photo_ids or [])} first, "
                 f"{len(predefined.last_page_photo_ids or [])} last cover), "
-                f"per spread {spreads}, album_score {score:.4f}")
+                f"per spread {spreads}, {scored}")

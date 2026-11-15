@@ -1043,6 +1043,11 @@ CONFIGS = {'DEBUG': True,
             # full 768-d dims on a laptop CPU.
             'sample_k': 1,
             'seed': 0,
+            # With one rollout there is nothing for the reward to rank, so it
+            # is not computed (`_compose_once`): same album, no album_score in
+            # the log. On 11,001 photos that is 28.6 of compose's 47.8 s, nearly
+            # all of it `_greedy_cover`. True scores the single rollout anyway.
+            'score_single_rollout': False,
 
             # One thread, not every core. The service already processes
             # galleries concurrently, so letting torch fan out per request

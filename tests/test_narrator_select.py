@@ -416,6 +416,52 @@ def test_page_sizes_respect_the_policys_own_bounds():
     assert all(env.min_photos_per_page <= n <= env.max_photos_per_page for n in sizes), sizes
 
 
+@needs_weights
+@pytest.mark.parametrize('n, seed', [(40, 0), (120, 1), (300, 2)])
+def test_one_unscored_rollout_composes_the_scored_album(n, seed):
+    """Skipping the reward must not change the album -- it chooses nothing."""
+    from src.narrator import export
+
+    net, cfg = narrator_stage._load_policy()
+    gallery = narrator_stage._gallery_from_frame(
+        gallery_frame(n=n), context(gallery_frame(n=n)), cfg)
+
+    _, scored, _ = export.compose(net, cfg, gallery, sample_k=1, seed=seed)
+    _, unscored = narrator_stage._compose_once(net, cfg, gallery, seed=seed)
+
+    assert unscored == scored
+
+
+@needs_weights
+def test_one_rollout_skips_the_greedy_cover(monkeypatch):
+    """`_greedy_cover` exists only to normalise a reward term."""
+    from src.narrator.data import preprocess
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("_greedy_cover ran for an unscored rollout")
+
+    monkeypatch.setattr(preprocess, '_greedy_cover', refuse)
+    narrator_stage._POLICY = None
+    ctx = build_select().run(context(gallery_frame(n=60)))
+
+    assert ctx.predefined is not None
+
+
+@needs_weights
+def test_scoring_a_single_rollout_can_be_turned_back_on(monkeypatch):
+    from src.narrator import export
+
+    calls = []
+    real = export.compose
+    monkeypatch.setattr(export, 'compose', lambda *a, **k: calls.append(1) or real(*a, **k))
+    CONFIGS['narrator'] = {**CONFIGS['narrator'], 'score_single_rollout': True}
+    narrator_stage._POLICY = None
+
+    ctx = build_select().run(context(gallery_frame(n=60)))
+
+    assert calls and ctx.predefined is not None
+
+
 # -- the population it is on for ------------------------------------------
 
 
