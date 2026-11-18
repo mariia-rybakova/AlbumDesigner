@@ -246,14 +246,38 @@ def test_a_higher_rating_lifts_further():
     assert lift[0] > lift[1] > lift[2] > lift[3] == 0.0
 
 
-def test_the_scale_is_taken_from_the_gallery_rather_than_assumed():
-    """Nothing in the payload says the rating is out of five. A gallery rated
-    out of 100 and one rated out of 5 must order the same way."""
+def test_three_stars_means_three_stars_in_every_gallery():
+    """The scale is Lightroom's fixed 1-5, not whatever the gallery used.
+
+    This replaced a per-frame normalisation written when the scale was
+    unknown. Under that one, a three-star photograph in a gallery where nobody
+    went above three was lifted as far as a five-star photograph is -- the same
+    rating meant different things in different galleries.
+    """
     from src.core.keywords import metadata_rating_lift
 
-    out_of_five = metadata_rating_lift(rated_frame([5, 4, 1, 0])).tolist()
-    out_of_hundred = metadata_rating_lift(rated_frame([100, 80, 20, 0])).tolist()
-    assert out_of_five == out_of_hundred
+    modest = metadata_rating_lift(rated_frame([3, 2, 1]))
+    generous = metadata_rating_lift(rated_frame([5, 3, 1]))
+
+    assert modest[0] == generous[1], "three stars lifts the same either way"
+    assert modest[2] == generous[2], "and so does one star"
+
+
+def test_the_lift_is_linear_in_the_stars():
+    from src.core.keywords import METADATA_RATING_BONUS, metadata_rating_lift
+
+    lift = metadata_rating_lift(rated_frame([5, 4, 3, 2, 1, 0]))
+    assert lift.tolist() == pytest.approx(
+        [METADATA_RATING_BONUS * n / 5 for n in (5, 4, 3, 2, 1, 0)])
+
+
+def test_a_rating_past_five_stars_is_read_as_five():
+    """Lightroom cannot produce one, so this is only about not trusting the
+    payload to hold what it promises."""
+    from src.core.keywords import metadata_rating_lift
+
+    lift = metadata_rating_lift(rated_frame([5, 17]))
+    assert lift[0] == lift[1]
 
 
 def test_the_album_keyword_beats_the_best_rating():
@@ -502,10 +526,14 @@ def test_a_gallery_with_no_reel_column_is_rated_as_before():
 
 
 def test_a_reel_in_a_gallery_nobody_rated_still_lifts():
-    from src.core.keywords import METADATA_RATING_BONUS, metadata_rating_lift
+    """At four and a half of the five stars, not at the full bonus -- the reel
+    is worth what it is worth whether or not anything else was rated."""
+    from src.core.keywords import (HIGHLIGHTS_STARS, MAX_STARS,
+                                   METADATA_RATING_BONUS, metadata_rating_lift)
 
     lift = metadata_rating_lift(standing_frame([0, 0], [True, False]))
-    assert lift.tolist() == [METADATA_RATING_BONUS, 0.0]
+    assert lift.tolist() == pytest.approx(
+        [METADATA_RATING_BONUS * HIGHLIGHTS_STARS / MAX_STARS, 0.0])
 
 
 def test_the_counts_include_the_reel():

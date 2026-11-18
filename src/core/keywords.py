@@ -127,6 +127,11 @@ RATING_COLUMN = "metadata_rating"
 #: (`Col.IN_HIGHLIGHTS`).
 HIGHLIGHTS_COLUMN = "in_highlights"
 
+#: Lightroom's scale, which is what the payload's `rating` is written on: a
+#: whole number of stars from 1 to 5, or nothing at all. Fixed, not guessed --
+#: the field is read straight out of the photographer's catalogue.
+MAX_STARS = 5.0
+
 #: What a place in Highlights is worth, said in stars.
 #:
 #: The brief ranks the marks `album` > 5 stars > **Highlights** > 4 stars, and
@@ -170,7 +175,7 @@ def standing_ratings(frame):
 
     if RATING_COLUMN in columns:
         ratings = pd.to_numeric(frame[RATING_COLUMN], errors='coerce')
-        ratings = ratings.fillna(0.0).clip(lower=0.0)
+        ratings = ratings.fillna(0.0).clip(lower=0.0, upper=MAX_STARS)
     else:
         ratings = pd.Series(0.0, index=frame.index)
 
@@ -185,19 +190,17 @@ def standing_ratings(frame):
 def metadata_rating_lift(frame, bonus: float = None):
     """Per-row lift from the rating and the reel, 0 where there is neither.
 
-    **Scaled against the frame's own best standing, because the scale is not
-    known.** The payload is written by whatever catalogue the photographer
-    uses; it is five stars often enough, but nothing in the record says so, and
-    a rule that divided by a hard-coded 5 would silently do almost nothing to a
-    gallery rated out of 100 and overshoot one rated out of 3. Dividing by the
-    best rating actually present needs no such assumption and keeps the only
-    property that was asked for: 5 beats 4 beats 1 beats unrated.
+    **Scaled against the fixed five-star scale**, because that is what the
+    payload holds: the `rating` is read out of the photographer's Lightroom
+    catalogue, where a star rating is a whole number from 1 to 5 and nothing
+    else is possible.
 
-    Scaled per *frame*, which is one content category, because that is the only
-    place these scores ever compete -- the picker fills each category from its
-    own ranking. Two categories whose photographers used different parts of the
-    scale are never compared, so there is nothing for a gallery-wide maximum to
-    make fairer.
+    This used to divide by the best rating present in the frame instead, back
+    when the scale was unknown and a gallery might have been rated out of 100.
+    That made a rating mean different things in different galleries: where
+    nobody went above three stars, a three-star photograph was lifted as far as
+    a five-star one is here. Three stars is three stars, and now it reads that
+    way everywhere.
 
     A rating of 0 or less, on a photograph outside the reel, lifts nothing. That is the same
     thing the reader means by 0 when a payload carried no `rating` at all; the
@@ -212,12 +215,7 @@ def metadata_rating_lift(frame, bonus: float = None):
                      and HIGHLIGHTS_COLUMN not in columns):
         return pd.Series(0.0, index=frame.index)
 
-    ratings = standing_ratings(frame)
-    best = ratings.max()
-    if not best > 0:
-        return pd.Series(0.0, index=frame.index)
-
-    return ratings / best * float(bonus)
+    return standing_ratings(frame) / MAX_STARS * float(bonus)
 
 
 def priority_lift(frame):
