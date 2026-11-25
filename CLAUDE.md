@@ -44,6 +44,22 @@ generic helpers. Two things are left: `configs.py` (the config, edited
 constantly, and read from 70-odd places) and `selection/`, which is mostly
 unreachable and waiting on a decision about deleting it. Add nothing to it.
 
+## Running the same request twice
+
+A request laid out twice gives the same album, and that is load-bearing: without
+it a real regression cannot be told from noise. The layout search's sampling is
+seeded (`CONFIGS['layout_search_seed']`), the solver has a seed and a
+deterministic budget, and `scikit-learn` is pinned with everything else.
+
+Two things are *not* pinned, on purpose: `pick_cpsat.workers` is 8, so the
+picked order is not reproducible across machines, and changing it to 1
+measurably changes albums. And a local run only compares to a deployed one when
+the environment matches — **check `python -V` against the floor at the top of
+`requirements.txt` first**, because a venv that cannot install the pins resolves
+to older ones silently and then disagrees with production for ever.
+
+`docs/reproducibility.md` has the detail, the measurements, and how to check.
+
 ## Tests
 
 `pytest tests -q` — 798 passing. Tests may import any module they need; the
