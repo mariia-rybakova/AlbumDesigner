@@ -383,9 +383,23 @@ class CpSatPicker:
         self.model_size = (len(proto.variables), len(proto.constraints))
 
         solver = cp_model.CpSolver()
+        # The deterministic budget is the one meant to bind; the wall clock is
+        # the safety net a queue worker needs and nothing else. Both are set far
+        # above what the solve actually uses.
+        solver.parameters.max_deterministic_time = float(self.cfg.get('deterministic_time', 120.0))
         solver.parameters.max_time_in_seconds = float(self.cfg.get('time_limit_seconds', 30))
+        solver.parameters.random_seed = int(self.cfg.get('random_seed', 1))
         solver.parameters.num_search_workers = int(self.cfg.get('workers', 8))
         status = solver.Solve(model)
+
+        # Anything short of OPTIMAL means a limit stopped the search, and which
+        # limit it was decides whether this album can be reproduced at all. Said
+        # out loud, because the alternative is finding out from a diff later.
+        if status == cp_model.FEASIBLE:
+            self.logger.warning(
+                f"cp-sat: stopped at FEASIBLE after {solver.WallTime():.2f}s "
+                f"({solver.DeterministicTime():.1f} deterministic); this album "
+                f"depends on where the search was cut and may not reproduce")
 
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             self.logger.error(f"cp-sat: no solution ({solver.StatusName(status)})")

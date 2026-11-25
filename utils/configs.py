@@ -1140,7 +1140,25 @@ CONFIGS = {'DEBUG': True,
             # album, and `--loop` on process_gallery forces the old path for a
             # comparison. See docs/cpsat_picker.md.
             'enabled': True,
+            # A wall clock is the wrong budget to decide an album by -- what it
+            # measures is how busy the machine was -- but it is the right last
+            # resort for a queue worker, so it stays as the safety net and
+            # `deterministic_time` is the budget that should actually bind.
+            # Measured: the solve reaches OPTIMAL in 0.00-0.05s against this 30,
+            # so neither limit is anywhere near firing in practice.
             'time_limit_seconds': 30,
+            # ortools' own unit of work, not seconds. Generous on purpose: it
+            # exists so the search cannot end on a timing accident, not to cut
+            # it short.
+            'deterministic_time': 120.0,
+            'random_seed': 1,
+            # Strict determinism wants 1, and that is NOT a free switch: on one
+            # wedding, 8 workers gave 16 spreads and 1 worker gave 18, from the
+            # same 107 photos. Eight workers race each other and the winner
+            # depends on the scheduler, so the picked order -- and through it the
+            # grouping -- is not reproducible across machines. Left at 8 because
+            # changing it changes albums and that is a decision to take on
+            # purpose, with the comparison in hand.
             'workers': 8,
             'rank_weight': 1,
             'cohesion_weight': 60,
