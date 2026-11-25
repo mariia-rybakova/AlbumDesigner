@@ -11,7 +11,7 @@ import pandas as pd
 from src.spreads_layout.layouts_tools import (filter_layouts, count_squares, is_large_spread_with_squares,
                                               update_with_page_capacities, apply_layouts_mask)
 from src.spreads_layout.combinations import Combination
-from src.spreads_layout.math_tools import limit_sample_size
+from src.spreads_layout.math_tools import SEARCH_RNG, limit_sample_size
 from src.core.models import SpreadSearchParams
 from src.core.photos import Photo, group_photos, get_portraits_landscapes
 from src.spreads_layout.spreads.spread import SingleSpreadLayout, Penalties
@@ -241,7 +241,7 @@ class SpreadLayoutsList:
         oriented_combs = cls._get_oriented_combs(landscape_set, portrait_set, n_left_landscapes, n_left_portraits)
 
         if len(oriented_combs) > max_oriented_combs:
-            sample_idxs = random.sample(range(len(oriented_combs)), max_oriented_combs)
+            sample_idxs = SEARCH_RNG.sample(range(len(oriented_combs)), max_oriented_combs)
             oriented_combs = [oriented_combs[i] for i in sample_idxs]
 
         results = []

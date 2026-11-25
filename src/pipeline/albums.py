@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+from src.spreads_layout import math_tools
 import pandas as pd
 
 from dataclasses import replace as _replace
@@ -361,6 +363,10 @@ def compose_albums(message, pipeline, count: int = 1, logger=None,
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
+            # The layout search draws from its own generator, so seeding the
+            # global one no longer reaches it -- and this is the one place that
+            # *wants* two runs to differ.
+            math_tools.reseed(seed)
         context = base.album_context(logger=logger)
         if variant is not None and hasattr(variant, "apply"):
             variant.apply(context)

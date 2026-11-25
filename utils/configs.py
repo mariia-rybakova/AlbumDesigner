@@ -20,6 +20,13 @@ CONFIGS = {'DEBUG': True,
            # the vows. See src/groups_operations/ceremony.py.
            'merge_ceremony_sequence': True,
 
+           # The layout search samples when a stage generates more candidates
+           # than it may score. Fixed, so one request laid out twice is the same
+           # album; `pipeline.albums` varies it per album where several are
+           # composed from one request, which is where the variety belongs --
+           # deliberate, rather than whatever the thread scheduler decided.
+           'layout_search_seed': 0,
+
            'queries_file': r'files/queries_embeddings_v1.pkl',
            'queries_file_v2': r'files/queries_embeddings_v2.pkl',
            'queries_file_v3': r'files/queries_embeddings_v3.pkl',

@@ -4,6 +4,33 @@ import random
 from itertools import combinations
 from typing import List, Tuple, Set, Iterable, Callable, Any, Optional
 
+from utils.configs import CONFIGS
+
+
+#: The layout search samples when a stage generates more candidates than it is
+#: allowed to score, and it has to sample from *something*. Drawing from the
+#: global `random` made a run unreproducible: two runs of one request picked
+#: different candidate sets and could land on different spreads, from identical
+#: photos. Measured on one wedding, two runs at the same commit gave the same
+#: 107 photos over the same 18 spreads but a different page order; seeded, they
+#: are identical.
+#:
+#: A generator of its own rather than `random.seed()` at start-up, so seeding
+#: the layout search cannot be undone by anything else reaching for the global
+#: one -- and so `pipeline.albums`, which varies the seed per album to get
+#: different variants, still can (`reseed`).
+SEARCH_RNG = random.Random(CONFIGS['layout_search_seed'])
+
+
+def reseed(seed: int) -> None:
+    """Point the layout search's sampling at `seed`.
+
+    Called per album where several are composed from one request: identical
+    variants must not produce identical albums, and the seed is what makes the
+    difference deliberate instead of a matter of thread timing.
+    """
+    SEARCH_RNG.seed(seed)
+
 
 def all_unique_partitions(n: int) -> list[list[int]]:
     """
@@ -168,7 +195,7 @@ def simple_partitions(photos_ids: Set[int], layout_part: List[int], max_combs: i
     l0_combs = list(combinations(photos_ids, layout_part[0]))
 
     if len(l0_combs) > max_combs:
-        sample_idxs = random.sample(range(len(l0_combs)), max_combs)
+        sample_idxs = SEARCH_RNG.sample(range(len(l0_combs)), max_combs)
         l0_combs = [l0_combs[i] for i in sample_idxs]
 
     l0_combs = [[set(l0_comb)] for l0_comb in l0_combs]
@@ -196,7 +223,7 @@ def simple_partitions(photos_ids: Set[int], layout_part: List[int], max_combs: i
     if len(layout_part) > 1:
         if len(layout_combs) > max_combs:
             # print(f"Sampling {max_combs} combinations from {len(layout_combs)}")
-            sample_idxs = random.sample(range(len(layout_combs)), max_combs)
+            sample_idxs = SEARCH_RNG.sample(range(len(layout_combs)), max_combs)
             layout_combs = [layout_combs[i] for i in sample_idxs]
             # rem_photos = [rem_photos[i] for i in sample_idxs]
         for comb_idx in range(len(layout_combs)):
@@ -206,6 +233,6 @@ def simple_partitions(photos_ids: Set[int], layout_part: List[int], max_combs: i
 
 def limit_sample_size(objects_list, max_threshold):
     if len(objects_list) > max_threshold:
-        sample_idxs = random.sample(range(len(objects_list)), max_threshold)
+        sample_idxs = SEARCH_RNG.sample(range(len(objects_list)), max_threshold)
         objects_list = [objects_list[i] for i in sample_idxs]
     return objects_list
