@@ -1,3 +1,13 @@
+# The interpreter this set is resolved against is **Python 3.12** -- what
+# `ubuntu:24.04` ships, which is what the Dockerfile builds on. It is not a
+# preference: `pandas==3.0.5` has no wheel below 3.11, so a 3.10 virtualenv
+# cannot install this file at all and silently resolves to pandas 2.x instead.
+# A local run on such a venv is a different program from the service -- a
+# different CP-SAT build breaking ties differently, a different pandas deciding
+# whether a chained write lands -- and it will not reproduce what production
+# did. If `python -V` here says anything below 3.12, fix that before trusting
+# any local result against a deployed one.
+
 # Not pinned to 1.26 any more. That pin was a pip-freeze artefact: before
 # a013ed73 (Apr 2025) this file was a 5 KB freeze dump carrying
 # numpy==1.26.3 alongside ortools==9.10.4067 and protobuf==5.27.0, a set that
@@ -32,7 +42,14 @@ numpy>=2.4.6,<3
 # `ortools` is the only thing here that depends on pandas at all (>=2.0.0,
 # no ceiling), so nothing else in this file constrains the major.
 pandas==3.0.5
-scikit-learn
+# Pinned, and for the same reason everything else here is: an unpinned
+# dependency means two images built weeks apart are two different environments.
+# sklearn is not incidental to the output -- the time clustering is a
+# GaussianMixture and the group split a KMeansConstrained, both seeded, and a
+# seeded estimator is only reproducible against the version it was seeded on.
+# A gallery laid out on one version and re-laid-out on another can legitimately
+# cluster differently, which reads as a regression nobody introduced.
+scikit-learn==1.9.1
 # Pinned because it is the package that drives numpy and ortools upward: each
 # release raises those floors, and unpinned it can move the whole set without
 # anything here changing. Used on the layout path -- src/groups_operations/
